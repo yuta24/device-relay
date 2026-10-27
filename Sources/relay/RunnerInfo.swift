@@ -1,0 +1,42 @@
+import Foundation
+
+/// The running runner's URL and token, saved by `relay start` as `.relay/runner.json` for other clients.
+struct RunnerInfo: Codable, Equatable {
+    static let fileName = "runner.json"
+
+    var url: String
+    var token: String
+    var udid: String
+
+    static func defaultURL(rootURL: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)) -> URL {
+        rootURL.appendingPathComponent(".relay", isDirectory: true).appendingPathComponent(fileName)
+    }
+
+    /// Writes the file readable by the owner only. It is created with mode 0600 instead of being
+    /// chmod-ed afterwards, so the token is never readable by others even briefly.
+    func write(to url: URL) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        let data = try encoder.encode(self)
+
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        // Drop a previous file, which may have looser permissions, so O_EXCL creates a fresh one.
+        // unlink(2) never removes a directory, unlike FileManager.removeItem.
+        Self.remove(at: url)
+        let fd = open(url.path, O_WRONLY | O_CREAT | O_EXCL, 0o600)
+        guard fd >= 0 else {
+            throw ArgumentError(description: "cannot create \(url.path): \(String(cString: strerror(errno)))")
+        }
+        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        try handle.write(contentsOf: data)
+        try handle.close()
+    }
+
+    static func read(from url: URL) throws -> RunnerInfo {
+        try JSONDecoder().decode(RunnerInfo.self, from: Data(contentsOf: url))
+    }
+
+    static func remove(at url: URL) {
+        unlink(url.path)
+    }
+}
