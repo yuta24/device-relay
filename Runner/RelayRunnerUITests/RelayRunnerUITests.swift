@@ -131,10 +131,12 @@ final class RelayRunnerUITests: XCTestCase {
             return .json(health())
         case ("GET", "/screenshot"):
             return try screenshot(query: request.query)
+        case ("GET", "/foreground"):
+            var object = foregroundApplication().json
+            object["ok"] = true
+            return .json(object)
         case ("GET", "/source"):
-            let bundleID = request.query["bundleId"] ?? lastActivatedBundleID ?? Self.springboardBundleID
-            let source = XCUIApplication(bundleIdentifier: bundleID).debugDescription
-            return RunnerHTTPResponse(status: 200, contentType: "text/plain; charset=utf-8", body: Data(source.utf8))
+            return try source(query: request.query)
         case ("POST", "/tap"):
             let body = try RunnerJSON(request.body)
             let x = try body.double("x"), y = try body.double("y")
@@ -163,10 +165,20 @@ final class RelayRunnerUITests: XCTestCase {
             return ok(mode: try swipe(body, mode: touchMode(body)))
         case ("POST", "/type"):
             let body = try RunnerJSON(request.body)
-            let text = try body.string("text")
-            let bundleID = body.optionalString("bundleId") ?? lastActivatedBundleID ?? Self.springboardBundleID
-            XCUIApplication(bundleIdentifier: bundleID).typeText(text)
-            return ok()
+            let keys = try body.keys()
+            let text = try body.typedText(keyCount: keys.count)
+            let bundleID = body.optionalString("bundleId") ?? foregroundApplication().bundleID
+            try type(text: text, keys: keys, bundleID: bundleID)
+            return .json(["ok": true, "bundleId": bundleID])
+        case ("POST", "/key"):
+            let body = try RunnerJSON(request.body)
+            let name = try body.string("key")
+            guard let key = RunnerKey(name: name) else {
+                throw RunnerError.invalidField(RunnerKeyError.unknownKey(name).description)
+            }
+            let bundleID = body.optionalString("bundleId") ?? foregroundApplication().bundleID
+            try type(text: "", keys: [key], bundleID: bundleID)
+            return .json(["ok": true, "bundleId": bundleID])
         case ("POST", "/button"):
             try pressButton(RunnerJSON(request.body).string("name"))
             return ok()
@@ -185,8 +197,9 @@ final class RelayRunnerUITests: XCTestCase {
                 lastActivatedBundleID = nil
             }
             return ok()
-        case (_, "/health"), (_, "/screenshot"), (_, "/source"), (_, "/tap"), (_, "/press"), (_, "/swipe"),
-             (_, "/type"), (_, "/button"), (_, "/orientation"), (_, "/launch"), (_, "/terminate"), (_, "/shutdown"):
+        case (_, "/health"), (_, "/foreground"), (_, "/screenshot"), (_, "/source"), (_, "/tap"), (_, "/press"),
+             (_, "/swipe"), (_, "/type"), (_, "/key"), (_, "/button"), (_, "/orientation"), (_, "/launch"),
+             (_, "/terminate"), (_, "/shutdown"):
             throw RunnerError.methodNotAllowed
         default:
             throw RunnerError.notFound
@@ -212,8 +225,138 @@ final class RelayRunnerUITests: XCTestCase {
             ],
             "orientation": Self.name(of: orientation),
             "coordinateSpace": "points",
-            "touchSynthesis": (RelayTouchSynthesizer.isAvailable ? TouchMode.private : .xcui).rawValue
+            "touchSynthesis": (RelayTouchSynthesizer.isAvailable ? TouchMode.private : .xcui).rawValue,
+            "foreground": foregroundApplication().json
         ]
+    }
+
+    // MARK: - Foreground application
+
+    struct ForegroundApplication {
+        let bundleID: String
+        let pid: pid_t?
+        let source: Source
+
+        enum Source: String {
+            /// XCTest's private accessibility client reported it.
+            case `private`
+            /// The last `/launch`ed app while it is still in the foreground, otherwise SpringBoard.
+            case fallback
+        }
+
+        var json: [String: Any] {
+            ["bundleId": bundleID, "pid": pid.map { Int($0) as Any } ?? NSNull(), "source": source.rawValue]
+        }
+    }
+
+    /// The app the user sees, including one switched to by hand, which `/type` and `/source` target
+    /// by default.
+    ///
+    /// The private accessibility client (WebDriverAgent's `fb_activeApplication`) reports the active
+    /// applications, SpringBoard on the home screen. It reports one, except in the middle of an app
+    /// switch, when both apps are listed with the new one first, so the first is used. Without it,
+    /// fall back to the last `/launch`ed app if the public `state` still says it is in the foreground,
+    /// and to SpringBoard otherwise.
+    private func foregroundApplication() -> ForegroundApplication {
+        if RelayActiveApplication.isAvailable {
+            // /health calls this too, so a failed lookup must not turn into a 422.
+            let (applications, failed) = ignoringIssues { try? RelayActiveApplication.activeApplications() }
+            if !failed, let active = applications?.first {
+                return ForegroundApplication(bundleID: active.bundleIdentifier, pid: active.processIdentifier, source: .private)
+            }
+        }
+        if let bundleID = lastActivatedBundleID {
+            let (state, failed) = ignoringIssues { XCUIApplication(bundleIdentifier: bundleID).state }
+            if !failed, state == .runningForeground {
+                return ForegroundApplication(bundleID: bundleID, pid: nil, source: .fallback)
+            }
+        }
+        return ForegroundApplication(bundleID: Self.springboardBundleID, pid: nil, source: .fallback)
+    }
+
+    // MARK: - Keyboard
+
+    /// Types `text`, then each of `keys`, into the focused element of `bundleID`.
+    ///
+    /// Keys go through `typeText` as their `XCUIKeyboardKey` characters (return is "\r", delete is
+    /// U+007F). `typeKey(_:modifierFlags:)` sends hardware key events instead, but on iPhone (simulator
+    /// and device) only space and tab arrived that way; return, delete, and escape were dropped.
+    private func type(text: String, keys: [RunnerKey], bundleID: String) throws {
+        let application = XCUIApplication(bundleIdentifier: bundleID)
+        let issueCount = capturedIssues?.count ?? 0
+        application.typeText(text + keys.map { Self.keyboardKey($0).rawValue }.joined())
+        // typeText fails with a long XCUI message that dumps the element tree; say what went wrong instead.
+        if let issues = capturedIssues, issues.count > issueCount,
+           issues[issueCount...].contains(where: RunnerTyping.isMissingKeyboardFocus) {
+            capturedIssues?.removeSubrange(issueCount...)
+            throw RunnerError.actionFailed(RunnerTyping.missingKeyboardFocusMessage(bundleID: bundleID))
+        }
+    }
+
+    private static func keyboardKey(_ key: RunnerKey) -> XCUIKeyboardKey {
+        switch key {
+        case .return: return .return
+        case .delete: return .delete
+        case .space: return .space
+        }
+    }
+
+    // MARK: - Source
+
+    private func source(query: [String: String]) throws -> RunnerHTTPResponse {
+        let bundleID = query["bundleId"].flatMap { $0.isEmpty ? nil : $0 } ?? foregroundApplication().bundleID
+        let application = XCUIApplication(bundleIdentifier: bundleID)
+        switch query["format"] ?? "json" {
+        case "json":
+            var maxDepth = Int.max
+            if let value = query["maxDepth"] {
+                guard let depth = RunnerElementTree.maxDepth(value) else { throw RunnerError.invalidField("maxDepth") }
+                maxDepth = depth
+            }
+            let snapshot: XCUIElementSnapshot
+            do {
+                snapshot = try application.snapshot()
+            } catch {
+                throw RunnerError.actionFailed("failed to snapshot \(bundleID): \(error.localizedDescription)")
+            }
+            let tree = RunnerElementTree.json(Self.elementNode(snapshot, depth: 0, maxDepth: maxDepth))
+            return .json(["ok": true, "bundleId": bundleID, "tree": tree])
+        case "text":
+            let source = application.debugDescription
+            return RunnerHTTPResponse(status: 200, contentType: "text/plain; charset=utf-8", body: Data(source.utf8))
+        default:
+            throw RunnerError.invalidField("format")
+        }
+    }
+
+    /// Snapshot frames of the foreground app are already in its interface orientation, the same
+    /// space as `/tap`, so they are used as is.
+    private static func elementNode(_ snapshot: XCUIElementSnapshot, depth: Int, maxDepth: Int) -> RunnerElementNode {
+        let children = snapshot.children
+        let expand = depth < maxDepth
+        return RunnerElementNode(
+            type: RunnerElementTree.typeName(rawValue: snapshot.elementType.rawValue),
+            identifier: snapshot.identifier,
+            label: snapshot.label,
+            value: snapshot.value.map { String(describing: $0) },
+            placeholder: snapshot.placeholderValue,
+            frame: snapshot.frame,
+            enabled: snapshot.isEnabled,
+            selected: snapshot.isSelected,
+            hasFocus: snapshot.hasFocus,
+            hasKeyboardFocus: hasKeyboardFocus(snapshot),
+            children: expand ? children.map { elementNode($0, depth: depth + 1, maxDepth: maxDepth) } : [],
+            truncated: !expand && !children.isEmpty
+        )
+    }
+
+    private static let hasKeyboardFocusSelector = NSSelectorFromString("hasKeyboardFocus")
+
+    /// `-[XCElementSnapshot hasKeyboardFocus]` is private; the public `hasFocus` is the focus engine's
+    /// focus, which a text field being typed into on iPhone does not have.
+    private static func hasKeyboardFocus(_ snapshot: XCUIElementSnapshot) -> Bool? {
+        guard let object = snapshot as? NSObject, object.responds(to: hasKeyboardFocusSelector) else { return nil }
+        return (object.value(forKey: "hasKeyboardFocus") as? NSNumber)?.boolValue
     }
 
     /// The screen size in points as the foreground app is displayed (landscape swaps width and height).
@@ -535,6 +678,7 @@ enum RunnerError: Error, CustomStringConvertible {
     case methodNotAllowed
     case internalError(String)
     case touchFailed(String)
+    case actionFailed(String)
 
     var description: String {
         switch self {
@@ -543,7 +687,7 @@ enum RunnerError: Error, CustomStringConvertible {
         case .invalidField(let name): return "invalid field: \(name)"
         case .notFound: return "not found"
         case .methodNotAllowed: return "method not allowed"
-        case .internalError(let message), .touchFailed(let message): return message
+        case .internalError(let message), .touchFailed(let message), .actionFailed(let message): return message
         }
     }
 
@@ -553,7 +697,7 @@ enum RunnerError: Error, CustomStringConvertible {
         case .notFound: return 404
         case .methodNotAllowed: return 405
         case .internalError: return 500
-        case .touchFailed: return 422
+        case .touchFailed, .actionFailed: return 422
         }
     }
 }
@@ -635,6 +779,27 @@ struct RunnerJSON {
     func optionalString(_ name: String) -> String? {
         guard let value = object[name] as? String, !value.isEmpty else { return nil }
         return value
+    }
+
+    /// The optional `keys` array of key names; empty when absent.
+    func keys() throws -> [RunnerKey] {
+        guard let value = object["keys"] else { return [] }
+        do {
+            return try RunnerKey.parse(value)
+        } catch let error as RunnerKeyError {
+            throw RunnerError.invalidField(error.description)
+        }
+    }
+
+    /// The `text` of `/type`; see `RunnerTyping.text(_:keyCount:)`.
+    func typedText(keyCount: Int) throws -> String {
+        do {
+            return try RunnerTyping.text(object["text"], keyCount: keyCount)
+        } catch RunnerTextError.missing {
+            throw RunnerError.missingField("text")
+        } catch RunnerTextError.notAString {
+            throw RunnerError.invalidField("text")
+        }
     }
 
     func point(_ name: String) throws -> (x: Double, y: Double) {

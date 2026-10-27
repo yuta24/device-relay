@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 @testable import relay
 import Testing
@@ -388,6 +389,126 @@ struct RunnerHTTPFramingTests {
         } else {
             Issue.record("expected invalid UTF-8 to be rejected")
         }
+    }
+}
+
+struct RunnerKeyboardTests {
+    @Test func parsesKeyNamesAndAliases() {
+        #expect(RunnerKey(name: "return") == .return)
+        #expect(RunnerKey(name: "Enter") == .return)
+        #expect(RunnerKey(name: "delete") == .delete)
+        #expect(RunnerKey(name: "BACKSPACE") == .delete)
+        #expect(RunnerKey(name: "space") == .space)
+        for unknown in ["", "home", "returns", " return", "\n"] {
+            #expect(RunnerKey(name: unknown) == nil, "\(unknown.debugDescription)")
+        }
+    }
+
+    @Test func parsesKeysArrayInOrder() throws {
+        #expect(try RunnerKey.parse(["delete", "delete", "return"]) == [.delete, .delete, .return])
+        #expect(try RunnerKey.parse([String]()) == [])
+    }
+
+    @Test func rejectsInvalidKeysArrays() {
+        #expect(throws: RunnerKeyError.notAnArray) { try RunnerKey.parse("return") }
+        #expect(throws: RunnerKeyError.notAString) { try RunnerKey.parse(["return", 1]) }
+        #expect(throws: RunnerKeyError.unknownKey("f1")) { try RunnerKey.parse(["return", "f1"]) }
+        #expect(RunnerKeyError.unknownKey("f1").description == "key: unsupported key 'f1' (expected return, delete, space)")
+    }
+
+    /// Tab and escape have no key on the iPhone software keyboard, so they are rejected rather than
+    /// typed as a "\t" character or silently dropped.
+    @Test func rejectsTabAndEscape() {
+        for name in ["tab", "Tab", "escape", "esc"] {
+            #expect(RunnerKey(name: name) == nil, "\(name)")
+        }
+        #expect(throws: RunnerKeyError.unknownKey("tab")) { try RunnerKey.parse(["return", "tab"]) }
+        #expect(throws: RunnerKeyError.unknownKey("esc")) { try RunnerKey.parse(["esc"]) }
+    }
+
+    @Test func requiresNonEmptyTextWithoutKeys() throws {
+        #expect(try RunnerTyping.text("hello", keyCount: 0) == "hello")
+        #expect(throws: RunnerTextError.missing) { try RunnerTyping.text(nil, keyCount: 0) }
+        #expect(throws: RunnerTextError.missing) { try RunnerTyping.text("", keyCount: 0) }
+        #expect(throws: RunnerTextError.notAString) { try RunnerTyping.text(123, keyCount: 0) }
+    }
+
+    @Test func allowsAbsentOrEmptyTextWithKeys() throws {
+        #expect(try RunnerTyping.text(nil, keyCount: 1) == "")
+        #expect(try RunnerTyping.text("", keyCount: 1) == "")
+        #expect(try RunnerTyping.text("abc", keyCount: 2) == "abc")
+    }
+
+    /// `{"text": 123, "keys": ["return"]}` used to drop the text silently and press only Return.
+    @Test func rejectsNonStringTextWithKeys() throws {
+        let body = try JSONSerialization.jsonObject(with: Data(#"{"text":123,"t":true,"n":null,"a":["x"],"o":{}}"#.utf8)) as? [String: Any]
+        for name in ["text", "t", "n", "a", "o"] {
+            #expect(throws: RunnerTextError.notAString, "\(name)") { try RunnerTyping.text(body?[name], keyCount: 1) }
+        }
+    }
+
+    @Test func recognizesMissingKeyboardFocus() {
+        let issue = "Failed to synthesize event: Neither element nor any descendant has keyboard focus. Event dispatch snapshot: ..."
+        #expect(RunnerTyping.isMissingKeyboardFocus(issue))
+        #expect(!RunnerTyping.isMissingKeyboardFocus("Application com.example is not running"))
+        #expect(RunnerTyping.missingKeyboardFocusMessage(bundleID: "com.apple.mobilesafari") == "no element has keyboard focus in com.apple.mobilesafari")
+    }
+}
+
+struct RunnerElementTreeTests {
+    private func node(_ type: String, children: [RunnerElementNode] = [], truncated: Bool = false) -> RunnerElementNode {
+        RunnerElementNode(
+            type: type, identifier: "", label: "", value: nil, placeholder: nil, frame: .zero,
+            enabled: true, selected: false, hasFocus: false, hasKeyboardFocus: nil, children: children,
+            truncated: truncated
+        )
+    }
+
+    @Test func namesElementTypesByRawValue() {
+        #expect(RunnerElementTree.typeName(rawValue: 0) == "any")
+        #expect(RunnerElementTree.typeName(rawValue: 2) == "application")
+        #expect(RunnerElementTree.typeName(rawValue: 9) == "button")
+        #expect(RunnerElementTree.typeName(rawValue: 48) == "staticText")
+        #expect(RunnerElementTree.typeName(rawValue: 49) == "textField")
+        #expect(RunnerElementTree.typeName(rawValue: 75) == "cell")
+        #expect(RunnerElementTree.typeName(rawValue: 82) == "statusItem")
+        #expect(RunnerElementTree.typeName(rawValue: 83) == "type83")
+    }
+
+    @Test func parsesMaxDepth() {
+        #expect(RunnerElementTree.maxDepth("0") == 0)
+        #expect(RunnerElementTree.maxDepth("3") == 3)
+        for invalid in ["", "-1", "1.5", "abc"] {
+            #expect(RunnerElementTree.maxDepth(invalid) == nil, "\(invalid)")
+        }
+    }
+
+    @Test func buildsJSONWithEveryKey() throws {
+        var field = node("textField")
+        field.identifier = "relay.input"
+        field.label = "Name"
+        field.value = "hello"
+        field.placeholder = "Type here"
+        field.frame = CGRect(x: 16, y: 83.3333333, width: 370, height: 34)
+        field.hasKeyboardFocus = true
+        let object = RunnerElementTree.json(node("application", children: [field]))
+
+        let data = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+        let json = try #require(String(data: data, encoding: .utf8))
+        #expect(json == """
+            {"children":[{"children":[],"enabled":true,"frame":{"height":34,"width":370,"x":16,"y":83.333},\
+            "hasFocus":false,"hasKeyboardFocus":true,"identifier":"relay.input","label":"Name","placeholder":"Type here","selected":false,\
+            "type":"textField","value":"hello"}],"enabled":true,"frame":{"height":0,"width":0,"x":0,"y":0},\
+            "hasFocus":false,"hasKeyboardFocus":null,"identifier":"","label":"","placeholder":null,"selected":false,"type":"application",\
+            "value":null}
+            """)
+    }
+
+    @Test func marksTruncatedChildren() {
+        let object = RunnerElementTree.json(node("window", truncated: true))
+        #expect(object["truncated"] as? Bool == true)
+        #expect((object["children"] as? [Any])?.isEmpty == true)
+        #expect(RunnerElementTree.json(node("window"))["truncated"] == nil)
     }
 }
 
