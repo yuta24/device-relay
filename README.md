@@ -132,7 +132,7 @@ xcodebuild の出力に `RELAY_RUNNER_READY port=8100 addresses=en0=…,utun3=�
 | メソッド / パス | ボディ / クエリ | 説明 |
 | --- | --- | --- |
 | `GET /health` | – | 端末情報、表示の向きでの画面サイズ（points / scale）、`orientation`、`touchSynthesis` |
-| `GET /screenshot` | `?format=png\|jpeg&quality=0.05–1.0`（既定は png、jpeg の既定 quality は 0.7） | 画面全体のスクリーンショット（表示の向きに正規化済み） |
+| `GET /screenshot` | `?format=png\|jpeg&quality=0.05–1.0`（既定は png、jpeg の既定 quality は 0.7。範囲外・数値以外の quality と、png への quality の指定は 400） | 画面全体のスクリーンショット（表示の向きに正規化済み） |
 | `GET /source` | `?bundleId=`（省略時は最後に `/launch` したアプリ、なければ SpringBoard） | XCUI の要素ツリー（`debugDescription` のテキスト） |
 | `POST /tap` | `{"x":200,"y":120}` | タップ |
 | `POST /press` | `{"x":200,"y":120,"duration":1.0}` | 長押し |
@@ -158,15 +158,16 @@ xcodebuild の出力に `RELAY_RUNNER_READY port=8100 addresses=en0=…,utun3=�
 | コード | 意味 |
 | --- | --- |
 | `200` | 成功 |
-| `400` | リクエスト不正（JSON、必須フィールド、値の範囲、負の値・数値以外・矛盾する `Content-Length`） |
-| `401` | `Authorization: Bearer <token>` がない、または一致しない（`{"ok":false,"error":"unauthorized"}`）。ほかのどの判定よりも先に行います |
+| `400` | リクエスト不正（JSON、必須フィールド、値の範囲、数値フィールドへの数値以外（真偽値を含む）、負の値・数値以外・矛盾する `Content-Length`） |
+| `401` | `Authorization: Bearer <token>` がない、または一致しない（`{"ok":false,"error":"unauthorized"}`）。リクエストヘッダーの形式の判定（`400`・`413`・`431`・`501`）の次、ほかのどの判定よりも先に行います |
 | `404` / `405` | 未知のパス / メソッド違い |
 | `409` | 別のコマンドを実行中（`{"ok":false,"error":"busy"}`）。待たずにすぐ返ります |
 | `422` | XCUI 側で操作に失敗（エラーメッセージを JSON で返し、ランナーは動き続けます） |
 | `413` / `431` | ボディが 16 MB を超える / リクエストヘッダーが 64 KB を超える |
 | `500` | 内部エラー（JPEG エンコード失敗など） |
+| `501` | `Transfer-Encoding` ヘッダーがある（値に関わらず。ボディは `Content-Length` でのみ受け付けます） |
 
-`400`・`401`・`413`・`431` は、応答した後に接続を閉じます。リクエストは、接続を開いてから（keep-alive の場合は前の応答を返してから）30 秒以内に全体が届かないと、接続を閉じます。実行中のコマンドの時間はこの 30 秒に含めません。
+`400`・`401`・`413`・`431`・`501` は、応答した後に接続を閉じます。リクエストは、接続を開いてから（keep-alive の場合は前の応答を返してから）30 秒以内に全体が届かないと、接続を閉じます。実行中のコマンドの時間はこの 30 秒に含めません。
 
 ```sh
 R=http://127.0.0.1:8100

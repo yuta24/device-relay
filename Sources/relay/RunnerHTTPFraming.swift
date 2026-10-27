@@ -66,6 +66,11 @@ enum RunnerHTTPFraming {
             }
         }
 
+        // Only Content-Length bodies are read. Treating a chunked body as empty would make its bytes
+        // the next request on this connection, so any transfer coding is refused (RFC 9112, section 6.1).
+        guard headers["transfer-encoding"] == nil else {
+            return .failure(Failure(status: 501, message: "Transfer-Encoding is not supported"))
+        }
         let contentLength: Int
         switch parseContentLength(contentLengths) {
         case .success(let length): contentLength = length
