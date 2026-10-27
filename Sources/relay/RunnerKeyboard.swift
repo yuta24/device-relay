@@ -5,20 +5,19 @@ import Foundation
 /// This file is compiled into both the `relay` CLI and the RelayRunnerUITests target, so the name
 /// parsing the runner relies on is covered by the SwiftPM unit tests. The runner maps each case to an
 /// `XCUIKeyboardKey`.
+///
+/// Only keys that work on iPhone are offered. Tab and escape are left out: the software keyboard has
+/// neither key, so tab was typed as a "\t" character and escape did nothing (simulator and device).
 enum RunnerKey: String, CaseIterable {
     case `return`
     case delete
-    case tab
-    case escape
     case space
 
-    /// Case-insensitive, with a few common aliases (`enter`, `backspace`, `esc`).
+    /// Case-insensitive, with a few common aliases (`enter`, `backspace`).
     init?(name: String) {
         switch name.lowercased() {
         case "return", "enter": self = .return
         case "delete", "backspace": self = .delete
-        case "tab": self = .tab
-        case "escape", "esc": self = .escape
         case "space": self = .space
         default: return nil
         }

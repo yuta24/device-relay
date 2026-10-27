@@ -398,9 +398,6 @@ struct RunnerKeyboardTests {
         #expect(RunnerKey(name: "Enter") == .return)
         #expect(RunnerKey(name: "delete") == .delete)
         #expect(RunnerKey(name: "BACKSPACE") == .delete)
-        #expect(RunnerKey(name: "tab") == .tab)
-        #expect(RunnerKey(name: "esc") == .escape)
-        #expect(RunnerKey(name: "escape") == .escape)
         #expect(RunnerKey(name: "space") == .space)
         for unknown in ["", "home", "returns", " return", "\n"] {
             #expect(RunnerKey(name: unknown) == nil, "\(unknown.debugDescription)")
@@ -416,7 +413,17 @@ struct RunnerKeyboardTests {
         #expect(throws: RunnerKeyError.notAnArray) { try RunnerKey.parse("return") }
         #expect(throws: RunnerKeyError.notAString) { try RunnerKey.parse(["return", 1]) }
         #expect(throws: RunnerKeyError.unknownKey("f1")) { try RunnerKey.parse(["return", "f1"]) }
-        #expect(RunnerKeyError.unknownKey("f1").description == "key: unsupported key 'f1' (expected return, delete, tab, escape, space)")
+        #expect(RunnerKeyError.unknownKey("f1").description == "key: unsupported key 'f1' (expected return, delete, space)")
+    }
+
+    /// Tab and escape have no key on the iPhone software keyboard, so they are rejected rather than
+    /// typed as a "\t" character or silently dropped.
+    @Test func rejectsTabAndEscape() {
+        for name in ["tab", "Tab", "escape", "esc"] {
+            #expect(RunnerKey(name: name) == nil, "\(name)")
+        }
+        #expect(throws: RunnerKeyError.unknownKey("tab")) { try RunnerKey.parse(["return", "tab"]) }
+        #expect(throws: RunnerKeyError.unknownKey("esc")) { try RunnerKey.parse(["esc"]) }
     }
 
     @Test func recognizesMissingKeyboardFocus() {

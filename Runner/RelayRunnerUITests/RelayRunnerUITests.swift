@@ -297,8 +297,6 @@ final class RelayRunnerUITests: XCTestCase {
         switch key {
         case .return: return .return
         case .delete: return .delete
-        case .tab: return .tab
-        case .escape: return .escape
         case .space: return .space
         }
     }

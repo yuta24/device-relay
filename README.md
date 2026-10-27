@@ -139,7 +139,7 @@ xcodebuild の出力に `RELAY_RUNNER_READY port=8100 addresses=en0=…,utun3=�
 | `POST /press` | `{"x":200,"y":120,"duration":1.0}` | 長押し |
 | `POST /swipe` | `{"from":{"x":200,"y":700},"to":{"x":200,"y":200},"duration":0.3,"hold":0.05}` | スワイプ（ドラッグ） |
 | `POST /type` | `{"text":"hello","keys":["return"],"bundleId":"com.apple.Preferences"}`（`keys` と `bundleId` は省略可。`keys` があれば `text` も省略可） | キーボードのフォーカスがある要素への文字入力。`text` の後に `keys` を順に送ります。対象の既定は前面アプリ |
-| `POST /key` | `{"key":"return","bundleId":"…"}`（bundleId は省略可） | 特殊キー（`return` / `delete` / `tab` / `escape` / `space`）を 1 つ送ります。詳しくは「文字入力と特殊キー」 |
+| `POST /key` | `{"key":"return","bundleId":"…"}`（bundleId は省略可） | 特殊キー（`return` / `delete` / `space`）を 1 つ送ります。それ以外のキー名は 400。詳しくは「文字入力と特殊キー」 |
 | `POST /button` | `{"name":"home"}`（`volumeUp` / `volumeDown` は実機のみ） | ハードウェアボタン。`home` は実機では画面下端からのスワイプで代用します（「既知の制約」を参照） |
 | `POST /orientation` | `{"orientation":"portrait\|portraitUpsideDown\|landscapeLeft\|landscapeRight"}` | 端末の向き（`UIDeviceOrientation`）を設定 |
 | `POST /launch` | `{"bundleId":"com.apple.Preferences"}` | アプリの起動・前面化（`activate()`） |
@@ -230,11 +230,12 @@ curl -s -H "$AUTH" -X POST $R/shutdown
 ## 文字入力と特殊キー
 
 - `/type {"text":"..."}` は前面アプリ（または `bundleId`）で、キーボードのフォーカスがある要素に `XCUIElement.typeText` で入力します。入力欄をタップしてフォーカスを当ててから送ってください。
-- 特殊キーは `POST /key {"key":"return"}`、または `/type` の `keys` 配列（`{"text":"abc","keys":["delete","return"]}`。`text` の後に順に送ります）で送ります。キー名は大文字小文字を区別せず、別名 `enter`（= return）、`backspace`（= delete）、`esc`（= escape）も使えます。
-- キーは `XCUIKeyboardKey` の文字（return は `\r`、delete は U+007F、tab は `\t`、escape は U+001B、space は ` `）として `typeText` で送ります。`typeKey(_:modifierFlags:)`（ハードウェアキーのイベント）も試しましたが、iPhone ではシミュレータ・実機とも space と tab しか届かず、return・delete・escape は何も起きませんでした。
+- 特殊キーは `POST /key {"key":"return"}`、または `/type` の `keys` 配列（`{"text":"abc","keys":["delete","return"]}`。`text` の後に順に送ります）で送ります。キー名は大文字小文字を区別せず、別名 `enter`（= return）、`backspace`（= delete）も使えます。
+- 対応するキーは `return`・`delete`・`space` だけです。`tab` と `escape` は iPhone のソフトウェアキーボードにキーがなく、tab は `\t` の文字として入力され、escape は何も起きなかったため、外しました。対応していないキー名は、`/key` でも `keys` でも `400 {"ok":false,"error":"invalid field: key: unsupported key 'tab' (expected return, delete, space)"}` を返し、何も入力しません。
+- キーは `XCUIKeyboardKey` の文字（return は `\r`、delete は U+007F、space は ` `）として `typeText` で送ります。`typeKey(_:modifierFlags:)`（ハードウェアキーのイベント）も試しましたが、iPhone ではシミュレータ・実機とも space と tab しか届かず、return・delete・escape は何も起きませんでした。
 - フォーカスがない場合は、XCUI の長いエラー文の代わりに `422 {"ok":false,"error":"no element has keyboard focus in <bundleId>"}` を返します（XCUI が待つため約 2–3 秒かかります）。
 
-RelayRunnerHost の入力欄（`relay.input`）で確認した結果（シミュレータ・実機とも同じ）:
+RelayRunnerHost の入力欄（`relay.input`）で確認した結果（シミュレータ・実機とも同じ。`tab`・`escape` は外す前の結果）:
 
 | キー | 結果 |
 | --- | --- |
@@ -242,8 +243,8 @@ RelayRunnerHost の入力欄（`relay.input`）で確認した結果（シミュ
 | `return` | `textFieldShouldReturn` が呼ばれ、入力が確定します。シミュレータの Safari のアドレスバーでもページが開きます |
 | `delete` | 1 文字削除されます |
 | `space` | 空白が入力されます |
-| `tab` | 1 行の入力欄には `\t` の文字として入力されます（次の入力欄にフォーカスは移りません。ソフトウェアキーボードに Tab キーがないため） |
-| `escape` | 何も起きません（ソフトウェアキーボードに Esc キーがなく、キーイベントとしても届きません）。エラーにはなりません |
+| `tab`（対応外、400） | 1 行の入力欄に `\t` の文字として入力されました（次の入力欄にフォーカスは移らない。ソフトウェアキーボードに Tab キーがないため） |
+| `escape`（対応外、400） | 何も起きませんでした（ソフトウェアキーボードに Esc キーがなく、キーイベントとしても届かない） |
 
 1 回の `/key` は、シミュレータで約 0.26 秒、実機で約 0.66 秒でした。
 
@@ -390,7 +391,7 @@ iPhone 17 Pro シミュレータ（iOS 27.0、Apple Silicon Mac、`127.0.0.1`）
 
 - **タッチ合成は非公開 API 依存**: `private` 経路は Xcode / iOS の更新でセレクタやシグネチャが変わると使えなくなります。消えた場合は自動で `xcui` に落ちますが、シグネチャだけ変わった場合は検出できません。表示の向きの取得（`interfaceOrientation`）も非公開 API で、使えない場合はスクリーンショットから求めるので遅くなります。
 - **`xcui` 経路は遅い**: XCUI はイベントを送る前後に対象アプリがアイドルになる（quiescence）のを待つため、タップ 1 回にシミュレータの Safari で約 1.6 秒、実機の計算機で約 1.2 秒（以前の計測では約 1.9 秒）かかります。
-- **`/type`・`/key`**: キーボードのフォーカスがある要素が必要です。対象は前面アプリで、`fallback`（非公開 API が使えない場合）では手で切り替えたアプリを判別できないので、`bundleId` を明示してください。`escape` は iPhone では効果がなく、`tab` は文字として入力されます（「文字入力と特殊キー」）。
+- **`/type`・`/key`**: キーボードのフォーカスがある要素が必要です。対象は前面アプリで、`fallback`（非公開 API が使えない場合）では手で切り替えたアプリを判別できないので、`bundleId` を明示してください。`tab` と `escape` は iPhone で効かないため対応しておらず、400 になります（「文字入力と特殊キー」）。
 - **前面アプリの取得は非公開 API 依存**: `XCAXClient_iOS` などが変わると `fallback` に落ちます。`/health` も前面アプリを返すぶん遅くなりました（実機で p50 約 16 ms）。
 - **映像ストリームはまだない**: 画面はスクリーンショットのポーリングで取得します（シミュレータの縦向きで png 約 90 ms / jpeg 約 110 ms、横向きは正規化のぶん遅くなります）。
 - **ローカルネットワーク許可**: 実機では初回にローカルネットワークの許可ダイアログが出ることがあります。
