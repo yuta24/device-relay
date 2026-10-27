@@ -127,6 +127,8 @@ xcodebuild の出力に `RELAY_RUNNER_READY port=8100 addresses=en0=…,utun3=�
 | `POST /tap` | `{"x":200,"y":120}` | タップ |
 | `POST /press` | `{"x":200,"y":120,"duration":1.0}` | 長押し |
 | `POST /swipe` | `{"from":{"x":200,"y":700},"to":{"x":200,"y":200},"duration":0.3,"hold":0.05}` | スワイプ（ドラッグ） |
+
+`/tap` `/press` `/swipe` は `"mode": "private" | "xcui"` を受け付けます（省略時は使えれば `private`）。応答の `mode` に実際に使った経路が入り、`/health` の `touchSynthesis` で端末側の既定経路がわかります。詳しくは「タッチ合成の経路」を参照してください。
 | `POST /type` | `{"text":"hello","bundleId":"com.apple.Preferences"}`（bundleId は省略可） | フォーカス中のフィールドへの文字入力 |
 | `POST /button` | `{"name":"home"}`（`volumeUp` / `volumeDown` は実機のみ） | ハードウェアボタン |
 | `POST /orientation` | `{"orientation":"portrait\|portraitUpsideDown\|landscapeLeft\|landscapeRight"}` | 画面の向き |
@@ -166,9 +168,36 @@ iPhone 17 Pro シミュレータ（iOS 27.0、Apple Silicon Mac、`127.0.0.1`）
 
 n=5 なので p90 は max と同じ値です。散発的に 1 回だけ遅いサンプルがあり、それが p90/max に出ています。手動で計測したほかの操作: swipe 約 0.7 s、launch 約 5.9 s、tap は 370–630 ms 程度でした。実機の値はまだ計測していません。
 
+## タッチ合成の経路
+
+| 経路 | 仕組み | 特徴 |
+| --- | --- | --- |
+| `private`（既定） | XCTest の非公開 API でタッチを直接合成（WebDriverAgent と同じ方式） | アプリのアイドル待ちをしない。完了 callback を待ってから応答する |
+| `xcui` | 公開 API の `XCUICoordinate.tap()` / `press(forDuration:)` / `press(forDuration:thenDragTo:…)` | 前後で quiescence を待つため遅い |
+
+`private` で使う非公開 API（Xcode 27 では `XCUIAutomation.framework` にあります）:
+
+- `XCPointerEventPath`: `-initForTouchAtPoint:offset:`、`-moveToPoint:atOffset:`、`-liftUpAtOffset:`
+- `XCSynthesizedEventRecord`: `-initWithName:interfaceOrientation:`、`-addPointerEventPath:`
+- `-[XCUIDevice eventSynthesizer]` が返すオブジェクトの `-synthesizeEvent:completion:`（completion は `^(BOOL, NSError *)`）
+
+クラスとセレクタはすべて実行時に `NSClassFromString` / `respondsToSelector:` で確認します（`Runner/RelayRunnerUITests/RelayTouchSynthesizer.m`）。1 つでも欠けていれば自動で `xcui` に落ち、`/health` は `"touchSynthesis":"xcui"` になります。`mode: "private"` を明示して使えない場合は 400 を返します。動作確認用に、ランナーの環境変数 `RELAY_DISABLE_PRIVATE_TOUCH=1`（xcodebuild には `TEST_RUNNER_RELAY_DISABLE_PRIVATE_TOUCH=1`）で `private` を無効にできます。
+
+ジェスチャーの組み立て: tap は 0.05 秒押して離す、press は `duration` 秒後に離す、swipe は `from` で `hold` 秒止まってから `duration` 秒かけて `to` へ移動し、すぐ離します。向きは `XCUIDevice.shared.orientation` から決めます（平置き・不明のときは portrait）。
+
+`relay bench --count 10 --tap 196,30 --mode private|xcui` の `/tap` の結果（ms）:
+
+| 環境 | private p50 / p90 | xcui p50 / p90 |
+| --- | ---: | ---: |
+| iPhone 17 Pro シミュレータ（iOS 26.5） | 300 / 303 | 1599 / 1600 |
+| iPhone 14 Pro 実機（iOS 26.7.1、CoreDevice） | 304 / 305 | 1901 / 1902 |
+
+ランナー側で測った処理時間（実機）: press 0.5 s → 743 ms / 1.0 s → 1230 ms、swipe（hold 0.05 + 0.3 s）→ 592–606 ms。xcui では同じ操作がそれぞれ 2059 / 2030 ms、1632–2097 ms でした。private でも、指定時間に対して約 0.25 秒の固定オーバーヘッドがあります（合成イベントの完了通知までの時間）。
+
 ## 既知の制約
 
-- **タップが遅い**: XCUI はイベントを送る前後に対象アプリがアイドルになる（quiescence）のを待つため、タップ 1 回に 0.4–0.6 秒かかります。将来は、非公開 API の `XCSynthesizedEventRecord` などでイベントを直接合成する高速パスを検討します。
+- **タッチ合成は非公開 API 依存**: `private` 経路は Xcode / iOS の更新でセレクタやシグネチャが変わると使えなくなります。消えた場合は自動で `xcui` に落ちますが、シグネチャだけ変わった場合は検出できません。
+- **`xcui` 経路は遅い**: XCUI はイベントを送る前後に対象アプリがアイドルになる（quiescence）のを待つため、タップ 1 回に 1.6–1.9 秒かかります。
 - **`/type`**: キーボードのフォーカスがあるフィールドが必要です。対象アプリは `bundleId` で指定し、省略すると最後に `/launch` した bundleId（なければ SpringBoard）を使います。`/launch` を経由せずに前面に出たアプリには、`bundleId` を明示してください。
 - **映像ストリームはまだない**: 画面はスクリーンショットのポーリングで取得します（png 約 130 ms / jpeg 約 165 ms）。
 - **ローカルネットワーク許可**: 実機では初回にローカルネットワークの許可ダイアログが出ることがあります。

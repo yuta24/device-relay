@@ -13,7 +13,9 @@ enum Bench {
             ("GET /screenshot (jpeg q=0.5)", { try client.get("/screenshot?format=jpeg&quality=0.5") })
         ]
         if let tap = options.tap {
-            cases.append(("POST /tap", { try client.post("/tap", json: ["x": tap.x, "y": tap.y]) }))
+            var body: [String: Any] = ["x": tap.x, "y": tap.y]
+            body["mode"] = options.mode
+            cases.append(("POST /tap (\(options.mode ?? "auto"))", { try client.post("/tap", json: body) }))
         }
 
         print("runner: \(baseURL.absoluteString)  iterations: \(options.count)")
