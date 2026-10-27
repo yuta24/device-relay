@@ -7,6 +7,26 @@ struct StartupFailure: Equatable {
     var isUITestingSetup: Bool
 }
 
+/// Counts consecutive failed `/health` checks once the runner is ready.
+struct LivenessMonitor {
+    static let interval: TimeInterval = 3
+    static let failureLimit = 3
+
+    private(set) var consecutiveFailures = 0
+
+    /// 200 is healthy and 409 means the runner is busy with a command. Anything else, including no
+    /// response or a 401 from something else listening on the port, counts as a failure.
+    static func isAlive(status: Int?) -> Bool {
+        status == 200 || status == 409
+    }
+
+    /// Records one check and returns true once the runner should be considered dead.
+    mutating func record(status: Int?) -> Bool {
+        consecutiveFailures = Self.isAlive(status: status) ? 0 : consecutiveFailures + 1
+        return consecutiveFailures >= Self.failureLimit
+    }
+}
+
 /// Builds, launches, and locates the resident XCTest runner.
 final class RunnerLauncher {
     static let projectPath = "Runner/RelayRunner.xcodeproj"
@@ -16,10 +36,14 @@ final class RunnerLauncher {
     private let options: StartOptions
     private let rootURL: URL
     private let stateURL: URL
+    /// Generated per launch. The runner gets only its hash, through the environment (never the command
+    /// line), so the token itself never reaches xcodebuild or the xcresult bundle.
+    private let token = RunnerAuth.generateToken()
     private var process: Process?
     private var runnerURL: URL?
     private var markerAddresses: [String] = []
     private var startupFailure: StartupFailure?
+    private var isStopping = false
     private let lock = NSLock()
 
     init(options: StartOptions, rootURL: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)) {
@@ -73,11 +97,12 @@ final class RunnerLauncher {
                 isSimulator: isSimulator,
                 udid: options.udid,
                 tunnelAddress: tunnelAddress,
-                markerAddresses: currentMarkerAddresses()
+                markerAddresses: currentMarkerAddresses(),
+                allowWiFi: options.allowWiFi
             )
             for host in hosts {
                 guard let url = Self.url(host: host, port: options.port) else { continue }
-                var client = RunnerClient(baseURL: url)
+                var client = RunnerClient(baseURL: url, token: token)
                 client.timeout = 1.5
                 if let response = try? client.get("/health"), response.status == 200 {
                     setRunnerURL(url)
@@ -100,17 +125,60 @@ final class RunnerLauncher {
             return process.terminationReason == .exit && process.terminationStatus != 0 ? process.terminationStatus : 1
         }
 
+        let infoURL = stateURL.appendingPathComponent(RunnerInfo.fileName)
         if let url = currentRunnerURL() {
+            do {
+                // The token goes only to the 0600 file: stdout often ends up in CI logs and terminal scrollback.
+                try RunnerInfo(url: url.absoluteString, token: token, udid: options.udid).write(to: infoURL)
+            } catch {
+                info("cannot save the runner token: \(error)")
+                shutdown()
+                process.waitUntilExit()
+                return 1
+            }
             print("ready: \(url.absoluteString)")
+            print("token: \(infoURL.path)")
             info("press Ctrl-C to stop the runner")
+            if !superviseUntilExit(process: process, url: url) {
+                info("runner stopped answering /health (\(LivenessMonitor.failureLimit) checks in a row); stopping xcodebuild")
+                info("see \(runnerLogURL.path)")
+                if process.isRunning {
+                    process.terminate()
+                }
+                process.waitUntilExit()
+                RunnerInfo.remove(at: infoURL)
+                return 1
+            }
         } else if process.isRunning {
             info("runner did not answer /health within \(Int(options.readyTimeout))s; addresses reported: \(currentMarkerAddresses())")
-            info("check \(runnerLogURL.path); the device must be reachable from this Mac over Wi-Fi or the CoreDevice tunnel")
+            let reachability = options.allowWiFi ? "over the CoreDevice tunnel or Wi-Fi" : "over the CoreDevice tunnel (or pass --allow-wifi)"
+            info("check \(runnerLogURL.path); the device must be reachable from this Mac \(reachability)")
         }
 
         process.waitUntilExit()
+        RunnerInfo.remove(at: infoURL)
         info("runner exited with status \(process.terminationStatus)")
         return process.terminationStatus
+    }
+
+    /// Checks `/health` every few seconds until xcodebuild exits. Returns false when the runner stopped
+    /// answering while xcodebuild kept running (a crashed runner otherwise leaves relay waiting forever).
+    private func superviseUntilExit(process: Process, url: URL) -> Bool {
+        var monitor = LivenessMonitor()
+        var lastCheck = Date()
+        var client = RunnerClient(baseURL: url, token: token)
+        client.timeout = 2
+        while process.isRunning {
+            Thread.sleep(forTimeInterval: 0.5)
+            guard !currentIsStopping(), Date().timeIntervalSince(lastCheck) >= LivenessMonitor.interval else { continue }
+            lastCheck = Date()
+            let status = (try? client.get("/health"))?.status
+            // A failure while Ctrl-C is shutting the runner down is expected.
+            if !currentIsStopping(), process.isRunning, monitor.record(status: status) {
+                return false
+            }
+        }
+        return true
     }
 
     // MARK: - Process
@@ -143,6 +211,7 @@ final class RunnerLauncher {
         // xcodebuild forwards TEST_RUNNER_-prefixed variables to the test process without the prefix.
         var environment = ProcessInfo.processInfo.environment
         environment["TEST_RUNNER_RELAY_RUNNER_PORT"] = "\(options.port)"
+        environment["TEST_RUNNER_\(RunnerAuth.tokenHashEnvironmentKey)"] = RunnerAuth.tokenHash(token)
         process.environment = environment
         process.standardInput = FileHandle.nullDevice
 
@@ -210,6 +279,9 @@ final class RunnerLauncher {
 
     private func shutdown() {
         info("stopping runner")
+        lock.lock()
+        isStopping = true
+        lock.unlock()
         let process = self.process
         guard let url = currentRunnerURL() else {
             // Without a runner URL there is nobody to send /shutdown to, so stop xcodebuild right away.
@@ -218,7 +290,7 @@ final class RunnerLauncher {
             }
             return
         }
-        var client = RunnerClient(baseURL: url)
+        var client = RunnerClient(baseURL: url, token: token)
         client.timeout = 3
         _ = try? client.post("/shutdown")
         DispatchQueue.global().asyncAfter(deadline: .now() + 10) {
@@ -238,6 +310,12 @@ final class RunnerLauncher {
         lock.lock()
         runnerURL = url
         lock.unlock()
+    }
+
+    private func currentIsStopping() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return isStopping
     }
 
     private func currentStartupFailure() -> StartupFailure? {
@@ -297,7 +375,9 @@ final class RunnerLauncher {
     }
 
     /// Hosts to probe, most preferred first: the CoreDevice tunnel works over USB without Wi-Fi.
-    static func candidateHosts(isSimulator: Bool, udid: String, tunnelAddress: String?, markerAddresses: [String]) -> [String] {
+    /// The interface addresses the runner reports (Wi-Fi and others) are probed only with `allowWiFi`,
+    /// because the token would travel there as plain HTTP on a shared network.
+    static func candidateHosts(isSimulator: Bool, udid: String, tunnelAddress: String?, markerAddresses: [String], allowWiFi: Bool) -> [String] {
         if isSimulator {
             return ["127.0.0.1"]
         }
@@ -306,6 +386,7 @@ final class RunnerLauncher {
             hosts.append(tunnelAddress)
         }
         hosts.append("\(udid).coredevice.local")
+        guard allowWiFi else { return hosts }
         // IPv4 link-local addresses (169.254/16) are usually unreachable from the host.
         hosts += markerAddresses.filter { !$0.hasPrefix("169.254.") }
         var seen = Set<String>()

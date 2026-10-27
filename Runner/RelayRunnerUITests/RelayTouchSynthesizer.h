@@ -17,7 +17,8 @@ NS_ASSUME_NONNULL_BEGIN
 
 /// A single-finger touch: down at `points[0]` (offset 0), then a move to each following point at
 /// the matching entry of `offsets` (seconds from touch down), then lift up at `liftOffset`.
-/// `points` are screen points from the top-left corner in the given interface orientation.
+/// `points` are screen points from the top-left corner of the native portrait screen; the synthesizer
+/// does not rotate them by `orientation`, so callers convert landscape points first.
 /// The completion may run on any thread.
 + (BOOL)synthesizeTouchWithPoints:(NSArray<NSValue *> *)points
                           offsets:(NSArray<NSNumber *> *)offsets

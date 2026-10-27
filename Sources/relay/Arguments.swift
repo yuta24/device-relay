@@ -13,6 +13,8 @@ struct StartOptions: Equatable {
     var rebuild = false
     var verbose = false
     var readyTimeout: TimeInterval = 180
+    /// Also probe the runner's Wi-Fi (and other interface) addresses, not only the CoreDevice tunnel.
+    var allowWiFi = false
 }
 
 struct BenchOptions: Equatable {
@@ -21,10 +23,12 @@ struct BenchOptions: Equatable {
     var tap: (x: Double, y: Double)?
     /// Touch path for `/tap`: `private` or `xcui`. Nil lets the runner choose.
     var mode: String?
+    /// Bearer token for the runner. Nil reads it from `.relay/runner.json`.
+    var token: String?
 
     static func == (lhs: BenchOptions, rhs: BenchOptions) -> Bool {
         lhs.url == rhs.url && lhs.count == rhs.count && lhs.tap?.x == rhs.tap?.x && lhs.tap?.y == rhs.tap?.y
-            && lhs.mode == rhs.mode
+            && lhs.mode == rhs.mode && lhs.token == rhs.token
     }
 }
 
@@ -64,6 +68,7 @@ enum Arguments {
                     options.readyTimeout = timeout
                 case "--rebuild": options.rebuild = true
                 case "--verbose": options.verbose = true
+                case "--allow-wifi": options.allowWiFi = true
                 default: throw ArgumentError(description: "unknown option: \(option)")
                 }
             }
@@ -94,6 +99,7 @@ enum Arguments {
                         throw ArgumentError(description: "--mode requires private or xcui")
                     }
                     options.mode = mode
+                case "--token": options.token = try value(for: option)
                 default: throw ArgumentError(description: "unknown option: \(option)")
                 }
             }
@@ -110,12 +116,16 @@ enum Arguments {
 
     static let usage = """
     Usage:
-      relay start --udid <UDID> [--port 8100] [--team-id <TEAM_ID>] [--rebuild] [--verbose] [--ready-timeout 180]
-      relay bench --url <RUNNER_URL> [--count 10] [--tap x,y] [--mode private|xcui]
+      relay start --udid <UDID> [--port 8100] [--team-id <TEAM_ID>] [--rebuild] [--verbose] [--ready-timeout 180] [--allow-wifi]
+      relay bench --url <RUNNER_URL> [--count 10] [--tap x,y] [--mode private|xcui] [--token <TOKEN>]
 
     start  Builds the RelayRunner XCTest runner if needed, launches it on the device or simulator,
-           and prints the runner URL once it answers /health. Ctrl-C shuts the runner down.
+           and prints the runner URL once it answers /health. The URL and a per-launch access token
+           are saved to .relay/runner.json (mode 0600) and removed on exit. Ctrl-C shuts the runner down.
+           Devices are reached over the CoreDevice tunnel only; --allow-wifi also tries the device's
+           Wi-Fi addresses, where the token travels as plain HTTP.
     bench  Measures round-trip latency of /health, /screenshot, and optionally /tap.
            --mode forces the runner's touch path (private event synthesis or public XCUI).
+           --token defaults to the token in .relay/runner.json.
     """
 }

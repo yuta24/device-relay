@@ -11,6 +11,8 @@
 		111111111111111111111112 /* RunnerHTTPServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222222 /* RunnerHTTPServer.swift */; };
 		111111111111111111111113 /* RelayRunnerUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222223 /* RelayRunnerUITests.swift */; };
 		111111111111111111111114 /* RelayTouchSynthesizer.m in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222226 /* RelayTouchSynthesizer.m */; };
+		111111111111111111111115 /* RunnerAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222229 /* RunnerAuth.swift */; };
+		111111111111111111111116 /* RunnerHTTPFraming.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22222222222222222222222A /* RunnerHTTPFraming.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -30,6 +32,8 @@
 		222222222222222222222226 /* RelayTouchSynthesizer.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = RelayRunnerUITests/RelayTouchSynthesizer.m; sourceTree = "<group>"; };
 		222222222222222222222227 /* RelayTouchSynthesizer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = RelayRunnerUITests/RelayTouchSynthesizer.h; sourceTree = "<group>"; };
 		222222222222222222222228 /* RelayRunnerUITests-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "RelayRunnerUITests/RelayRunnerUITests-Bridging-Header.h"; sourceTree = "<group>"; };
+		222222222222222222222229 /* RunnerAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/relay/RunnerAuth.swift; sourceTree = "<group>"; };
+		22222222222222222222222A /* RunnerHTTPFraming.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/relay/RunnerHTTPFraming.swift; sourceTree = "<group>"; };
 		222222222222222222222224 /* RelayRunnerHost.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RelayRunnerHost.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		222222222222222222222225 /* RelayRunnerUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RelayRunnerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -61,6 +65,8 @@
 				222222222222222222222227 /* RelayTouchSynthesizer.h */,
 				222222222222222222222226 /* RelayTouchSynthesizer.m */,
 				222222222222222222222228 /* RelayRunnerUITests-Bridging-Header.h */,
+				222222222222222222222229 /* RunnerAuth.swift */,
+				22222222222222222222222A /* RunnerHTTPFraming.swift */,
 				777777777777777777777772 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -164,6 +170,8 @@
 				111111111111111111111112 /* RunnerHTTPServer.swift in Sources */,
 				111111111111111111111113 /* RelayRunnerUITests.swift in Sources */,
 				111111111111111111111114 /* RelayTouchSynthesizer.m in Sources */,
+				111111111111111111111115 /* RunnerAuth.swift in Sources */,
+				111111111111111111111116 /* RunnerHTTPFraming.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

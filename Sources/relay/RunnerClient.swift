@@ -8,6 +8,8 @@ struct RunnerResponse {
 /// Small synchronous HTTP client for the on-device runner.
 struct RunnerClient {
     let baseURL: URL
+    /// Sent as `Authorization: Bearer <token>`; the runner answers 401 without it.
+    var token: String?
     var timeout: TimeInterval = 30
 
     private static let session: URLSession = {
@@ -31,6 +33,9 @@ struct RunnerClient {
         }
         var request = URLRequest(url: url, timeoutInterval: timeout)
         request.httpMethod = method
+        if let token {
+            request.setValue(RunnerAuth.authorizationHeader(token: token), forHTTPHeaderField: "Authorization")
+        }
         if let body {
             request.httpBody = body
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")

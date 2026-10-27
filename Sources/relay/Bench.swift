@@ -5,7 +5,7 @@ enum Bench {
         guard let baseURL = URL(string: options.url) else {
             throw ArgumentError(description: "invalid --url: \(options.url)")
         }
-        let client = RunnerClient(baseURL: baseURL)
+        let client = RunnerClient(baseURL: baseURL, token: try token(options))
 
         var cases: [(name: String, request: () throws -> RunnerResponse)] = [
             ("GET /health", { try client.get("/health") }),
@@ -35,6 +35,17 @@ enum Bench {
             }
             print(format(benchCase.name, samples: samples, bytes: bytes))
         }
+    }
+
+    /// `--token`, or the token `relay start` saved in `.relay/runner.json`.
+    static func token(_ options: BenchOptions, infoURL: URL = RunnerInfo.defaultURL()) throws -> String {
+        if let token = options.token {
+            return token
+        }
+        guard let info = try? RunnerInfo.read(from: infoURL) else {
+            throw ArgumentError(description: "no runner token: pass --token or start the runner with relay start (reads \(infoURL.path))")
+        }
+        return info.token
     }
 
     static func percentile(_ sorted: [Double], _ p: Double) -> Double {

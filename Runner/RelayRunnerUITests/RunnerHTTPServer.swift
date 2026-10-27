@@ -25,20 +25,26 @@ struct RunnerHTTPResponse {
 }
 
 /// Minimal HTTP/1.1 server on Network.framework. Supports keep-alive and Content-Length bodies only.
+///
+/// Every request must carry `Authorization: Bearer <token>`. The server holds only the token's
+/// normalized SHA-256 and compares the hash of the presented token against it. The check runs on the
+/// HTTP queue as soon as the head is parsed, before the body is read and before the handler sees the request.
 final class RunnerHTTPServer {
     typealias Handler = (RunnerHTTPRequest, @escaping (RunnerHTTPResponse) -> Void) -> Void
 
     private let listener: NWListener
     private let queue = DispatchQueue(label: "relay.runner.http")
+    private let tokenHash: String
     private let handler: Handler
 
-    init(port: UInt16, handler: @escaping Handler) throws {
+    init(port: UInt16, tokenHash: String, handler: @escaping Handler) throws {
         let parameters = NWParameters.tcp
         parameters.allowLocalEndpointReuse = true
         guard let nwPort = NWEndpoint.Port(rawValue: port) else {
             throw RunnerError.invalidField("port")
         }
         self.listener = try NWListener(using: parameters, on: nwPort)
+        self.tokenHash = tokenHash
         self.handler = handler
     }
 
@@ -53,8 +59,8 @@ final class RunnerHTTPServer {
                 break
             }
         }
-        listener.newConnectionHandler = { [queue, handler] connection in
-            RunnerHTTPConnection(connection: connection, queue: queue, handler: handler).start()
+        listener.newConnectionHandler = { [queue, tokenHash, handler] connection in
+            RunnerHTTPConnection(connection: connection, queue: queue, tokenHash: tokenHash, handler: handler).start()
         }
         listener.start(queue: queue)
     }
@@ -65,22 +71,27 @@ final class RunnerHTTPServer {
 }
 
 private final class RunnerHTTPConnection {
-    private static let maxRequestSize = 16 * 1024 * 1024
-    private static let headerTerminator = Data("\r\n\r\n".utf8)
+    /// A request must arrive in full within this time of the connection opening or the previous
+    /// response being sent; otherwise the connection is closed. The clock stops while a request runs.
+    private static let requestTimeout: TimeInterval = 30
 
     private let connection: NWConnection
     private let queue: DispatchQueue
+    private let tokenHash: String
     private let handler: RunnerHTTPServer.Handler
     private var buffer = Data()
+    private var requestDeadline: DispatchWorkItem?
 
-    init(connection: NWConnection, queue: DispatchQueue, handler: @escaping RunnerHTTPServer.Handler) {
+    init(connection: NWConnection, queue: DispatchQueue, tokenHash: String, handler: @escaping RunnerHTTPServer.Handler) {
         self.connection = connection
         self.queue = queue
+        self.tokenHash = tokenHash
         self.handler = handler
     }
 
     func start() {
         connection.start(queue: queue)
+        armRequestDeadline()
         receive()
     }
 
@@ -93,74 +104,88 @@ private final class RunnerHTTPConnection {
                 return
             }
             if isComplete || error != nil {
-                self.connection.cancel()
+                self.close()
                 return
             }
             self.receive()
         }
     }
 
-    /// Returns true when a request was dispatched; reading resumes after its response is sent.
+    /// Returns true when a request was dispatched or rejected; reading resumes after the response is sent.
     private func processBuffer() -> Bool {
-        guard let headerEnd = buffer.range(of: Self.headerTerminator) else {
-            if buffer.count > Self.maxRequestSize {
-                send(.error("request too large", status: 413), keepAlive: false)
-                return true
-            }
+        let head: RunnerHTTPFraming.Head
+        let headerLength: Int
+        switch RunnerHTTPFraming.parseHead(buffer) {
+        case .incomplete:
             return false
+        case .failure(let failure):
+            reject(.error(failure.message, status: failure.status))
+            return true
+        case .head(let parsed, let length):
+            head = parsed
+            headerLength = length
         }
-        guard let headerText = String(data: buffer[buffer.startIndex..<headerEnd.lowerBound], encoding: .utf8) else {
-            send(.error("invalid request head", status: 400), keepAlive: false)
+        // Before reading the body, so unauthenticated clients can't make the runner buffer it.
+        guard RunnerAuth.isAuthorized(authorizationHeader: head.headers["authorization"], tokenHash: tokenHash) else {
+            reject(.error("unauthorized", status: 401))
             return true
         }
 
-        var lines = headerText.components(separatedBy: "\r\n")
-        let requestLine = lines.removeFirst().split(separator: " ")
-        guard requestLine.count >= 2 else {
-            send(.error("invalid request line", status: 400), keepAlive: false)
-            return true
-        }
-        var headers: [String: String] = [:]
-        for line in lines {
-            guard let colon = line.firstIndex(of: ":") else { continue }
-            let name = line[..<colon].trimmingCharacters(in: .whitespaces).lowercased()
-            headers[name] = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
-        }
-
-        let contentLength = Int(headers["content-length"] ?? "0") ?? 0
-        guard contentLength <= Self.maxRequestSize else {
-            send(.error("request too large", status: 413), keepAlive: false)
-            return true
-        }
-        let bodyStart = headerEnd.upperBound
-        guard buffer.distance(from: bodyStart, to: buffer.endIndex) >= contentLength else {
+        let bodyStart = buffer.index(buffer.startIndex, offsetBy: headerLength)
+        guard buffer.distance(from: bodyStart, to: buffer.endIndex) >= head.contentLength else {
             return false
         }
-        let bodyEnd = buffer.index(bodyStart, offsetBy: contentLength)
+        let bodyEnd = buffer.index(bodyStart, offsetBy: head.contentLength)
         let body = Data(buffer[bodyStart..<bodyEnd])
         buffer = Data(buffer[bodyEnd...])
 
-        let target = String(requestLine[1])
-        let components = URLComponents(string: target)
+        let components = URLComponents(string: head.target)
         var query: [String: String] = [:]
         for item in components?.queryItems ?? [] {
             query[item.name] = item.value ?? ""
         }
         let request = RunnerHTTPRequest(
-            method: String(requestLine[0]).uppercased(),
-            path: components?.path ?? target,
+            method: head.method,
+            path: components?.path ?? head.target,
             query: query,
-            headers: headers,
+            headers: head.headers,
             body: body
         )
-        let keepAlive = headers["connection"]?.lowercased() != "close"
+        let keepAlive = head.headers["connection"]?.lowercased() != "close"
 
+        cancelRequestDeadline()
         handler(request) { response in
             self.queue.async {
                 self.send(response, keepAlive: keepAlive)
             }
         }
         return true
+    }
+
+    /// Answers and closes: the rest of the buffer can't be trusted to start at a request boundary.
+    private func reject(_ response: RunnerHTTPResponse) {
+        cancelRequestDeadline()
+        buffer = Data()
+        send(response, keepAlive: false)
+    }
+
+    private func armRequestDeadline() {
+        cancelRequestDeadline()
+        let deadline = DispatchWorkItem { [weak self] in
+            self?.close()
+        }
+        requestDeadline = deadline
+        queue.asyncAfter(deadline: .now() + Self.requestTimeout, execute: deadline)
+    }
+
+    private func cancelRequestDeadline() {
+        requestDeadline?.cancel()
+        requestDeadline = nil
+    }
+
+    private func close() {
+        cancelRequestDeadline()
+        connection.cancel()
     }
 
     private func send(_ response: RunnerHTTPResponse, keepAlive: Bool) {
@@ -174,9 +199,10 @@ private final class RunnerHTTPConnection {
 
         connection.send(content: data, completion: .contentProcessed { error in
             guard keepAlive, error == nil else {
-                self.connection.cancel()
+                self.close()
                 return
             }
+            self.armRequestDeadline()
             if !self.processBuffer() {
                 self.receive()
             }
@@ -187,9 +213,12 @@ private final class RunnerHTTPConnection {
         switch status {
         case 200: return "OK"
         case 400: return "Bad Request"
+        case 401: return "Unauthorized"
         case 404: return "Not Found"
         case 405: return "Method Not Allowed"
+        case 409: return "Conflict"
         case 413: return "Payload Too Large"
+        case 431: return "Request Header Fields Too Large"
         case 422: return "Unprocessable Entity"
         case 501: return "Not Implemented"
         default: return "Internal Server Error"

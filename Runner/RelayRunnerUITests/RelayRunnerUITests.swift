@@ -12,6 +12,7 @@ final class RelayRunnerUITests: XCTestCase {
     private var shouldStop = false
     private var capturedIssues: [String]?
     private var lastActivatedBundleID: String?
+    /// Portrait size and scale; they don't change with rotation, so they are measured once.
     private var cachedScreen: (size: CGSize, scale: CGFloat)?
 
     private lazy var springboard = XCUIApplication(bundleIdentifier: Self.springboardBundleID)
@@ -21,14 +22,42 @@ final class RelayRunnerUITests: XCTestCase {
 
         let environment = ProcessInfo.processInfo.environment
         let port = UInt16(environment["RELAY_RUNNER_PORT"] ?? "") ?? 8100
+        // There is no unauthenticated mode: when launched without relay, make a token and print it once.
+        // relay passes only the token's hash, so the token never lands in the xcresult bundle.
+        let tokenHash: String
+        if let given = environment[RunnerAuth.tokenHashEnvironmentKey], !given.isEmpty {
+            guard let normalized = RunnerAuth.normalizedTokenHash(given) else {
+                throw RunnerError.invalidField("\(RunnerAuth.tokenHashEnvironmentKey): expected 64 hex digits")
+            }
+            tokenHash = normalized
+        } else {
+            let token = RunnerAuth.generateToken()
+            tokenHash = RunnerAuth.tokenHash(token)
+            Self.emit("relay-runner: \(RunnerAuth.tokenHashEnvironmentKey) is not set; generated token: \(token)")
+        }
 
-        let server = try RunnerHTTPServer(port: port) { [weak self] request, respond in
+        // Runs on the HTTP queue. The main queue runs one command at a time, and a command can take
+        // seconds (a gesture, an app launch), so reject overlapping requests here instead of queueing.
+        let gate = CommandGate()
+        // The server answers 401 itself before calling this, so unauthenticated clients learn nothing
+        // about the busy state or command timing.
+        let server = try RunnerHTTPServer(port: port, tokenHash: tokenHash) { [weak self] request, respond in
+            if request.method == "POST" && request.path == "/shutdown" {
+                // Accepted even while a command runs; the runner stops once that command returns.
+                respond(.json(["ok": true]))
+                DispatchQueue.main.async { self?.shutdown() }
+                return
+            }
+            guard gate.tryEnter() else {
+                respond(.error("busy", status: 409))
+                return
+            }
             DispatchQueue.main.async {
-                guard let self else {
-                    respond(.error("runner is shutting down", status: 500))
-                    return
-                }
-                respond(self.handle(request))
+                let response = self?.handle(request) ?? .error("runner is shutting down", status: 500)
+                // Leave before responding so a client that sends its next request right after the
+                // response never sees a stale busy state.
+                gate.leave()
+                respond(response)
             }
         }
 
@@ -90,6 +119,12 @@ final class RelayRunnerUITests: XCTestCase {
         return response
     }
 
+    /// `/shutdown` is answered on the HTTP queue without waiting for the busy gate; this only stops the loop.
+    private func shutdown() {
+        shouldStop = true
+        Self.emit("relay-runner POST /shutdown -> 200")
+    }
+
     private func route(_ request: RunnerHTTPRequest) throws -> RunnerHTTPResponse {
         switch (request.method, request.path) {
         case ("GET", "/health"):
@@ -137,7 +172,6 @@ final class RelayRunnerUITests: XCTestCase {
             return ok()
         case ("POST", "/orientation"):
             XCUIDevice.shared.orientation = try orientation(RunnerJSON(request.body).string("orientation"))
-            cachedScreen = nil
             return ok()
         case ("POST", "/launch"):
             let bundleID = try RunnerJSON(request.body).string("bundleId")
@@ -151,9 +185,6 @@ final class RelayRunnerUITests: XCTestCase {
                 lastActivatedBundleID = nil
             }
             return ok()
-        case ("POST", "/shutdown"):
-            shouldStop = true
-            return ok()
         case (_, "/health"), (_, "/screenshot"), (_, "/source"), (_, "/tap"), (_, "/press"), (_, "/swipe"),
              (_, "/type"), (_, "/button"), (_, "/orientation"), (_, "/launch"), (_, "/terminate"), (_, "/shutdown"):
             throw RunnerError.methodNotAllowed
@@ -165,7 +196,8 @@ final class RelayRunnerUITests: XCTestCase {
     // MARK: - Commands
 
     private func health() -> [String: Any] {
-        let screen = self.screen()
+        let orientation = interfaceOrientation()
+        let screen = self.screen(in: orientation)
         return [
             "ok": true,
             "device": [
@@ -178,50 +210,97 @@ final class RelayRunnerUITests: XCTestCase {
                 "height": screen.size.height,
                 "scale": screen.scale
             ],
+            "orientation": Self.name(of: orientation),
             "coordinateSpace": "points",
             "touchSynthesis": (RelayTouchSynthesizer.isAvailable ? TouchMode.private : .xcui).rawValue
         ]
     }
 
-    /// The real screen size in points, taken from SpringBoard's frame (the origin of the coordinate space).
+    /// The screen size in points as the foreground app is displayed (landscape swaps width and height).
+    private func screen(in orientation: UIInterfaceOrientation) -> (size: CGSize, scale: CGFloat) {
+        let screen = portraitScreen()
+        guard orientation.isLandscape else { return screen }
+        return (CGSize(width: screen.size.height, height: screen.size.width), screen.scale)
+    }
+
+    /// The real portrait screen size in points, taken from SpringBoard's frame.
     /// UIScreen can't be trusted: on devices the xctrunner has no launch screen and runs in a 320x480
     /// compatibility mode. The scale is derived from a screenshot so points x scale = screenshot pixels.
-    private func screen() -> (size: CGSize, scale: CGFloat) {
+    private func portraitScreen() -> (size: CGSize, scale: CGFloat) {
         if let cachedScreen {
             return cachedScreen
         }
         // /health is the readiness probe, so a failed snapshot must not turn it into a 422.
-        let issueCount = capturedIssues?.count ?? 0
-        let frame = springboard.frame
-        let image = frame.isEmpty ? nil : XCUIScreen.main.screenshot().image.cgImage
-        let failed = (capturedIssues?.count ?? 0) > issueCount
-        if failed {
-            capturedIssues?.removeSubrange(issueCount...)
+        let (snapshot, failed) = ignoringIssues { () -> (CGRect, CGImage?) in
+            let frame = springboard.frame
+            return (frame, frame.isEmpty ? nil : XCUIScreen.main.screenshot().image.cgImage)
         }
+        let (frame, image) = snapshot
         guard !failed, !frame.isEmpty, let image else {
-            return (UIScreen.main.bounds.size, UIScreen.main.scale)
+            return (Self.portrait(UIScreen.main.bounds.size), UIScreen.main.scale)
         }
 
         let scale = CGFloat(max(image.width, image.height)) / max(frame.width, frame.height)
-        let screen = (size: frame.size, scale: scale)
+        // SpringBoard doesn't rotate on iPhone, but it does on iPad, so normalize to portrait.
+        let screen = (size: Self.portrait(frame.size), scale: scale)
         cachedScreen = screen
         return screen
     }
 
+    /// The foreground app's interface orientation, which touches and screenshots follow. It is read on
+    /// every request because it changes without `/orientation`: the device can be turned by hand, the
+    /// home screen stays portrait on a landscape iPhone, and iPhone apps ignore portraitUpsideDown.
+    ///
+    /// `-[XCUIApplication interfaceOrientation]` is private, but it is cheap (about 1 ms; testmanagerd
+    /// pushes updates) and reports the active app's orientation even when asked through SpringBoard.
+    /// Without it, fall back to the screenshot's image orientation (about 90 ms).
+    private func interfaceOrientation() -> UIInterfaceOrientation {
+        let (raw, failed) = ignoringIssues { () -> Int? in
+            guard springboard.responds(to: NSSelectorFromString("interfaceOrientation")) else { return nil }
+            return (springboard.value(forKey: "interfaceOrientation") as? NSNumber)?.intValue
+        }
+        if !failed, let raw, let orientation = UIInterfaceOrientation(rawValue: raw), orientation != .unknown {
+            return orientation
+        }
+        let (imageOrientation, _) = ignoringIssues { XCUIScreen.main.screenshot().image.imageOrientation }
+        switch imageOrientation {
+        case .down: return .portraitUpsideDown
+        case .left: return .landscapeRight
+        case .right: return .landscapeLeft
+        default: return .portrait
+        }
+    }
+
     private func screenshot(query: [String: String]) throws -> RunnerHTTPResponse {
         let screenshot = XCUIScreen.main.screenshot()
+        // The pixels are always portrait, with the rotation only in the image orientation. Redraw them
+        // upright so pixel coordinates are points x scale in the displayed orientation.
+        let image = screenshot.image
+        let upright = image.imageOrientation == .up ? nil : Self.uprightRenderer(for: image)
         switch query["format"] ?? "png" {
         case "png":
-            return RunnerHTTPResponse(status: 200, contentType: "image/png", body: screenshot.pngRepresentation)
+            let data = upright?.pngData { _ in image.draw(at: .zero) } ?? screenshot.pngRepresentation
+            return RunnerHTTPResponse(status: 200, contentType: "image/png", body: data)
         case "jpeg", "jpg":
-            let quality = Double(query["quality"] ?? "") ?? 0.7
-            guard let data = screenshot.image.jpegData(compressionQuality: min(max(quality, 0.05), 1.0)) else {
+            let quality = min(max(Double(query["quality"] ?? "") ?? 0.7, 0.05), 1.0)
+            let data = upright.map { $0.jpegData(withCompressionQuality: quality) { _ in image.draw(at: .zero) } }
+                ?? image.jpegData(compressionQuality: quality)
+            guard let data else {
                 throw RunnerError.internalError("failed to encode JPEG")
             }
             return RunnerHTTPResponse(status: 200, contentType: "image/jpeg", body: data)
         default:
             throw RunnerError.invalidField("format")
         }
+    }
+
+    private static func uprightRenderer(for image: UIImage) -> UIGraphicsImageRenderer {
+        let format = UIGraphicsImageRendererFormat()
+        // Same pixel count as the source; 8-bit sRGB even on wide-color devices.
+        format.scale = image.scale
+        format.opaque = true
+        format.preferredRange = .standard
+        return UIGraphicsImageRenderer(size: image.size, format: format)
     }
 
     private func swipe(_ body: RunnerJSON, mode: TouchMode) throws -> TouchMode {
@@ -287,13 +366,17 @@ final class RelayRunnerUITests: XCTestCase {
         offsets: [TimeInterval],
         liftOffset: TimeInterval
     ) throws {
+        let orientation = interfaceOrientation()
+        let portraitSize = portraitScreen().size
         let completion = TouchCompletion()
         do {
             try RelayTouchSynthesizer.synthesizeTouch(
-                withPoints: points.map { NSValue(cgPoint: CGPoint(x: $0.x, y: $0.y)) },
+                withPoints: points.map {
+                    NSValue(cgPoint: Self.portraitPoint(CGPoint(x: $0.x, y: $0.y), from: orientation, portraitSize: portraitSize))
+                },
                 offsets: offsets.map { NSNumber(value: $0) },
                 liftOffset: liftOffset,
-                interfaceOrientation: Self.interfaceOrientation,
+                interfaceOrientation: .portrait,
                 completion: { completion.finish($0) }
             )
         } catch {
@@ -312,21 +395,30 @@ final class RelayRunnerUITests: XCTestCase {
         }
     }
 
-    /// The interface orientation matching the current device orientation (portrait when flat or unknown).
-    private static var interfaceOrientation: UIInterfaceOrientation {
-        switch XCUIDevice.shared.orientation {
-        case .portraitUpsideDown: return .portraitUpsideDown
-        // Device and interface landscape orientations are mirrored.
-        case .landscapeLeft: return .landscapeRight
-        case .landscapeRight: return .landscapeLeft
-        default: return .portrait
+    /// Converts a point in the displayed orientation to the screen's native portrait space.
+    ///
+    /// The synthesizer takes native portrait points: the record's interface orientation is not applied
+    /// to them (a landscape point passed with `.landscapeRight` lands somewhere else), so rotate here
+    /// and always pass `.portrait`.
+    private static func portraitPoint(_ point: CGPoint, from orientation: UIInterfaceOrientation, portraitSize size: CGSize) -> CGPoint {
+        switch orientation {
+        case .portraitUpsideDown: return CGPoint(x: size.width - point.x, y: size.height - point.y)
+        // The top of the interface is the right edge of the portrait screen.
+        case .landscapeRight: return CGPoint(x: size.width - point.y, y: point.x)
+        // The top of the interface is the left edge of the portrait screen.
+        case .landscapeLeft: return CGPoint(x: point.y, y: size.height - point.x)
+        default: return point
         }
     }
 
     private func pressButton(_ name: String) throws {
         switch name {
         case "home":
+            #if targetEnvironment(simulator)
             XCUIDevice.shared.press(.home)
+            #else
+            try swipeHome()
+            #endif
         #if !targetEnvironment(simulator)
         case "volumeUp", "volume-up":
             XCUIDevice.shared.press(.volumeUp)
@@ -335,6 +427,34 @@ final class RelayRunnerUITests: XCTestCase {
         #endif
         default:
             throw RunnerError.invalidField("name: unsupported button '\(name)'")
+        }
+    }
+
+    /// Goes home with the home-indicator gesture: a quick swipe up from the bottom edge.
+    ///
+    /// On devices `XCUIDevice.press(.home)` reports success but does nothing (seen on iOS 26.7.1 with
+    /// Xcode 27): testmanagerd logs "Failed to load displays from CADisplay" and sends the button from a
+    /// keyboard that isn't tied to the display, which SpringBoard ignores. This assumes a device without
+    /// a home button, where the same swipe would open Control Center instead.
+    private func swipeHome() throws {
+        let size = screen(in: interfaceOrientation()).size
+        let from = (x: Double(size.width / 2), y: Double(size.height - 3))
+        if RelayTouchSynthesizer.isAvailable {
+            let to = (x: from.x, y: Double(size.height * 0.6))
+            let duration = 0.12
+            // Same shape as a private /swipe with hold 0: the extra move at `from` makes the synthesizer
+            // interpolate the drag; a lone move from the touch-down point arrives as a single jump.
+            try synthesizeTouch(points: [from, from, to], offsets: [0, duration], liftOffset: duration)
+        } else {
+            // XCUI drags only go home with a short press first; with forDuration 0 nothing happens.
+            let to = (x: from.x, y: Double(size.height * 0.5))
+            let duration = 0.2
+            coordinate(x: from.x, y: from.y).press(
+                forDuration: 0.02,
+                thenDragTo: coordinate(x: to.x, y: to.y),
+                withVelocity: XCUIGestureVelocity(rawValue: (from.y - to.y) / duration),
+                thenHoldForDuration: 0
+            )
         }
     }
 
@@ -348,7 +468,35 @@ final class RelayRunnerUITests: XCTestCase {
         }
     }
 
-    /// Screen coordinates in points, measured from the top-left corner of SpringBoard's frame.
+    /// The `/orientation` name of the device orientation that shows this interface orientation, so
+    /// `/health` reports `landscapeLeft` after `/orientation landscapeLeft`. The landscape cases are
+    /// mirrored because UIKit names device orientations by the home button and interface ones by the top.
+    private static func name(of orientation: UIInterfaceOrientation) -> String {
+        switch orientation {
+        case .portraitUpsideDown: return "portraitUpsideDown"
+        case .landscapeRight: return "landscapeLeft"
+        case .landscapeLeft: return "landscapeRight"
+        default: return "portrait"
+        }
+    }
+
+    private static func portrait(_ size: CGSize) -> CGSize {
+        CGSize(width: min(size.width, size.height), height: max(size.width, size.height))
+    }
+
+    /// Runs `body` and drops the XCUI issues it records, reporting only whether any were recorded.
+    private func ignoringIssues<T>(_ body: () -> T) -> (T, failed: Bool) {
+        let issueCount = capturedIssues?.count ?? 0
+        let result = body()
+        let failed = (capturedIssues?.count ?? 0) > issueCount
+        if failed {
+            capturedIssues?.removeSubrange(issueCount...)
+        }
+        return (result, failed)
+    }
+
+    /// Screen coordinates in points from the top-left corner in the displayed orientation. SpringBoard's
+    /// frame stays portrait, but XCTest converts the point with the active interface orientation.
     private func coordinate(x: Double, y: Double) -> XCUICoordinate {
         springboard
             .coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
@@ -404,6 +552,24 @@ enum RunnerError: Error, CustomStringConvertible {
         case .internalError: return 500
         case .touchFailed: return 422
         }
+    }
+}
+
+/// Admits one command at a time. Entered on the HTTP queue and left on the main queue.
+private final class CommandGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var busy = false
+
+    func tryEnter() -> Bool {
+        lock.withLock {
+            guard !busy else { return false }
+            busy = true
+            return true
+        }
+    }
+
+    func leave() {
+        lock.withLock { busy = false }
     }
 }
 
