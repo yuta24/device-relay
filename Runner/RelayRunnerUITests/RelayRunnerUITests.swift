@@ -12,6 +12,7 @@ final class RelayRunnerUITests: XCTestCase {
     private var shouldStop = false
     private var capturedIssues: [String]?
     private var lastActivatedBundleID: String?
+    private var cachedScreen: (size: CGSize, scale: CGFloat)?
 
     private lazy var springboard = XCUIApplication(bundleIdentifier: Self.springboardBundleID)
 
@@ -122,6 +123,7 @@ final class RelayRunnerUITests: XCTestCase {
             return ok()
         case ("POST", "/orientation"):
             XCUIDevice.shared.orientation = try orientation(RunnerJSON(request.body).string("orientation"))
+            cachedScreen = nil
             return ok()
         case ("POST", "/launch"):
             let bundleID = try RunnerJSON(request.body).string("bundleId")
@@ -149,7 +151,7 @@ final class RelayRunnerUITests: XCTestCase {
     // MARK: - Commands
 
     private func health() -> [String: Any] {
-        let screen = UIScreen.main
+        let screen = self.screen()
         return [
             "ok": true,
             "device": [
@@ -158,12 +160,37 @@ final class RelayRunnerUITests: XCTestCase {
                 "simulator": Self.isSimulator
             ],
             "screen": [
-                "width": screen.bounds.width,
-                "height": screen.bounds.height,
+                "width": screen.size.width,
+                "height": screen.size.height,
                 "scale": screen.scale
             ],
             "coordinateSpace": "points"
         ]
+    }
+
+    /// The real screen size in points, taken from SpringBoard's frame (the origin of the coordinate space).
+    /// UIScreen can't be trusted: on devices the xctrunner has no launch screen and runs in a 320x480
+    /// compatibility mode. The scale is derived from a screenshot so points x scale = screenshot pixels.
+    private func screen() -> (size: CGSize, scale: CGFloat) {
+        if let cachedScreen {
+            return cachedScreen
+        }
+        // /health is the readiness probe, so a failed snapshot must not turn it into a 422.
+        let issueCount = capturedIssues?.count ?? 0
+        let frame = springboard.frame
+        let image = frame.isEmpty ? nil : XCUIScreen.main.screenshot().image.cgImage
+        let failed = (capturedIssues?.count ?? 0) > issueCount
+        if failed {
+            capturedIssues?.removeSubrange(issueCount...)
+        }
+        guard !failed, !frame.isEmpty, let image else {
+            return (UIScreen.main.bounds.size, UIScreen.main.scale)
+        }
+
+        let scale = CGFloat(max(image.width, image.height)) / max(frame.width, frame.height)
+        let screen = (size: frame.size, scale: scale)
+        cachedScreen = screen
+        return screen
     }
 
     private func screenshot(query: [String: String]) throws -> RunnerHTTPResponse {

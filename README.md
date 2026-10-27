@@ -68,7 +68,7 @@ curl -s http://127.0.0.1:8100/health
 xcrun swift run relay bench --url http://127.0.0.1:8100 --count 5 --tap 200,120
 ```
 
-Ctrl-C を押すと `relay` が `/shutdown` を送ります。ランナーがテストメソッドから抜けて `** TEST EXECUTE SUCCEEDED **` で終了し、`relay` も終了します（10 秒以内に終わらなければ xcodebuild を terminate します）。
+Ctrl-C を押すと `relay` が `/shutdown` を送ります。ランナーがテストメソッドから抜けて `** TEST EXECUTE SUCCEEDED **` で終了し、`relay` も終了します（10 秒以内に終わらなければ xcodebuild を terminate します）。ランナーが ready になる前に Ctrl-C を押した場合は、`/shutdown` を送る先がないので xcodebuild をすぐに terminate します。
 
 オプション:
 
@@ -78,7 +78,7 @@ Ctrl-C を押すと `relay` が `/shutdown` を送ります。ランナーがテ
 | `--team-id <TEAM_ID>` | 実機向けの署名チーム。`-allowProvisioningUpdates RELAY_DEVELOPMENT_TEAM=<TEAM_ID>` を付けてビルドします |
 | `--rebuild` | `.relay/DerivedData-*` に既存の `.xctestrun` があっても再ビルドします |
 | `--verbose` | xcodebuild の出力をそのまま表示します |
-| `--ready-timeout 180` | `/health` が応答するまで待つ秒数 |
+| `--ready-timeout 180` | `/health` が応答するまで待つ秒数。xcodebuild の出力に `Failed to initialize for UI testing` やテストの失敗が出た場合は、待たずにエラー内容と対処のヒントを表示して非ゼロで終了します |
 
 手動で起動する場合:
 
@@ -95,14 +95,16 @@ xcodebuild の出力に `RELAY_RUNNER_READY port=8100 addresses=en0=…,utun3=�
 
 1. 端末で デベロッパモード を有効にします（設定 > プライバシーとセキュリティ > デベロッパモード。有効にすると再起動します）。
 2. USB で接続して Mac とペアリングし、`xcrun devicectl list devices` に表示されることを確認します。
-3. ランナーをビルドして起動します。
+3. Xcode の Window > Devices and Simulators で端末を選び、接続済み（準備完了）の状態にします。初回はここで開発用ディスクイメージ（DDI）が端末に適用されるので、完了するまで待ちます。
+4. 端末の 設定 > デベロッパ >「UI オートメーションを有効にする」をオンにします。オフのままだと、ランナーが `Failed to initialize for UI testing`（`Timed out while enabling automation mode.`）で起動に失敗します。
+5. ランナーをビルドして起動します。
 
    ```sh
    xcrun swift run relay start --udid <DEVICE_UDID> --team-id <TEAM_ID>
    ```
 
-4. 無料の Personal Team などで署名した場合、初回の起動時に「信頼されていないデベロッパ」と表示されることがあります。端末の 設定 > 一般 > VPNとデバイス管理 で開発元の証明書を信頼してから、もう一度 `relay start` を実行してください。
-5. 初回は「ローカルネットワーク上のデバイスの検索および接続」の許可ダイアログが出ることがあります。許可しないと Wi-Fi 経由では届きません。
+6. 無料の Personal Team などで署名した場合、初回の起動時に「信頼されていないデベロッパ」と表示されることがあります。端末の 設定 > 一般 > VPNとデバイス管理 で開発元の証明書を信頼してから、もう一度 `relay start` を実行してください。
+7. 初回は「ローカルネットワーク上のデバイスの検索および接続」の許可ダイアログが出ることがあります。許可しないと Wi-Fi 経由では届きません。
 
 `relay start` は、次の順に `/health` を投げて最初に応答したアドレスを `ready:` として表示します。
 
@@ -164,14 +166,24 @@ iPhone 17 Pro シミュレータ（iOS 27.0、Apple Silicon Mac、`127.0.0.1`）
 | `GET /screenshot` (jpeg q=0.5) | 162 | 163 | 243 | 243 | 329 KB |
 | `POST /tap` | 475 | 484 | 1042 | 1042 | – |
 
-n=5 なので p90 は max と同じ値です。散発的に 1 回だけ遅いサンプルがあり、それが p90/max に出ています。手動で計測したほかの操作: swipe 約 0.7 s、launch 約 5.9 s、tap は 370–630 ms 程度でした。実機の値はまだ計測していません。
+n=5 なので p90 は max と同じ値です。散発的に 1 回だけ遅いサンプルがあり、それが p90/max に出ています。手動で計測したほかの操作: swipe 約 0.7 s、launch 約 5.9 s、tap は 370–630 ms 程度でした。
+
+実機 iPhone 14 Pro（iOS 26.7.1、USB 接続の CoreDevice トンネル経由）で計測した `relay bench --count 10` の p50（ms）:
+
+| リクエスト | p50 | サイズ |
+| --- | ---: | ---: |
+| `GET /health` | 3 | – |
+| `GET /screenshot` (png) | 88 | 225 KB |
+| `GET /screenshot` (jpeg) | 107 | – |
+| `POST /tap` | 1835 | – |
 
 ## 既知の制約
 
-- **タップが遅い**: XCUI はイベントを送る前後に対象アプリがアイドルになる（quiescence）のを待つため、タップ 1 回に 0.4–0.6 秒かかります。将来は、非公開 API の `XCSynthesizedEventRecord` などでイベントを直接合成する高速パスを検討します。
+- **タップ・スワイプ・長押しが遅い**: XCUI はイベントを送る前後に対象アプリがアイドルになる（quiescence）のを待つため、タップ 1 回にシミュレータで 0.4–0.6 秒、実機では約 1.8 秒かかります。スワイプや長押しも、指定した時間よりかなり長くかかります。将来は、非公開 API の `XCSynthesizedEventRecord` などでイベントを直接合成する高速パスを検討します。
 - **`/type`**: キーボードのフォーカスがあるフィールドが必要です。対象アプリは `bundleId` で指定し、省略すると最後に `/launch` した bundleId（なければ SpringBoard）を使います。`/launch` を経由せずに前面に出たアプリには、`bundleId` を明示してください。
 - **映像ストリームはまだない**: 画面はスクリーンショットのポーリングで取得します（png 約 130 ms / jpeg 約 165 ms）。
 - **ローカルネットワーク許可**: 実機では初回にローカルネットワークの許可ダイアログが出ることがあります。
+- **`/health` の画面サイズ**: xctrunner には起動画面の設定がないため、実機ではランナー内の `UIScreen` が 320×480 の互換モードになります。そのため `/health` は SpringBoard の frame から画面サイズを、スクリーンショットのピクセル数から scale を求めます（初回だけ計測してキャッシュし、`/orientation` で破棄します）。
 - **座標系**: SpringBoard の原点からのポイント単位です（ピクセルではありません）。`/health` の `screen.scale` を掛けるとスクリーンショットのピクセル座標になります。回転時の座標の扱いはまだ検証していません。
 - **音量ボタン**: `volumeUp` / `volumeDown` は実機でのみ使えます（シミュレータでは 400）。
 - **usbmux 非対応**: 実機への接続には CoreDevice トンネルか Wi-Fi のどちらかが必要です。

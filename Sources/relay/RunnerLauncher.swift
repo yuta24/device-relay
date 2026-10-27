@@ -1,5 +1,12 @@
 import Foundation
 
+/// A failure reported by xcodebuild before the runner answered /health.
+struct StartupFailure: Equatable {
+    var message: String
+    /// XCTest could not take control of the device (automation mode disabled, device locked, ...).
+    var isUITestingSetup: Bool
+}
+
 /// Builds, launches, and locates the resident XCTest runner.
 final class RunnerLauncher {
     static let projectPath = "Runner/RelayRunner.xcodeproj"
@@ -12,6 +19,7 @@ final class RunnerLauncher {
     private var process: Process?
     private var runnerURL: URL?
     private var markerAddresses: [String] = []
+    private var startupFailure: StartupFailure?
     private let lock = NSLock()
 
     init(options: StartOptions, rootURL: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)) {
@@ -56,7 +64,7 @@ final class RunnerLauncher {
         let deadline = Date().addingTimeInterval(options.readyTimeout)
         var tunnelAddress: String?
         var lastTunnelLookup = Date.distantPast
-        while process.isRunning, Date() < deadline, currentRunnerURL() == nil {
+        while process.isRunning, Date() < deadline, currentRunnerURL() == nil, currentStartupFailure() == nil {
             if !isSimulator, Date().timeIntervalSince(lastTunnelLookup) > 5 {
                 tunnelAddress = Self.tunnelAddress(udid: options.udid)
                 lastTunnelLookup = Date()
@@ -77,6 +85,19 @@ final class RunnerLauncher {
                 }
             }
             Thread.sleep(forTimeInterval: 0.5)
+        }
+
+        if currentRunnerURL() == nil, let failure = currentStartupFailure() {
+            info("runner failed to start: \(failure.message)")
+            for hint in Self.startupFailureHints {
+                info("hint: \(hint)")
+            }
+            info("see \(runnerLogURL.path)")
+            if process.isRunning {
+                process.terminate()
+            }
+            process.waitUntilExit()
+            return process.terminationReason == .exit && process.terminationStatus != 0 ? process.terminationStatus : 1
         }
 
         if let url = currentRunnerURL() {
@@ -152,6 +173,14 @@ final class RunnerLauncher {
     }
 
     private func handleRunnerLine(_ line: String, verbose: Bool) {
+        if let failure = Self.startupFailure(in: line) {
+            lock.lock()
+            // Keep the specific UI testing error over the generic "TEST EXECUTE FAILED" that follows it.
+            if startupFailure == nil || (failure.isUITestingSetup && startupFailure?.isUITestingSetup == false) {
+                startupFailure = failure
+            }
+            lock.unlock()
+        }
         if let addresses = Self.parseReadyLine(line) {
             lock.lock()
             markerAddresses = addresses
@@ -181,12 +210,17 @@ final class RunnerLauncher {
 
     private func shutdown() {
         info("stopping runner")
-        if let url = currentRunnerURL() {
-            var client = RunnerClient(baseURL: url)
-            client.timeout = 3
-            _ = try? client.post("/shutdown")
-        }
         let process = self.process
+        guard let url = currentRunnerURL() else {
+            // Without a runner URL there is nobody to send /shutdown to, so stop xcodebuild right away.
+            if process?.isRunning == true {
+                process?.terminate()
+            }
+            return
+        }
+        var client = RunnerClient(baseURL: url)
+        client.timeout = 3
+        _ = try? client.post("/shutdown")
         DispatchQueue.global().asyncAfter(deadline: .now() + 10) {
             if process?.isRunning == true {
                 process?.terminate()
@@ -204,6 +238,12 @@ final class RunnerLauncher {
         lock.lock()
         runnerURL = url
         lock.unlock()
+    }
+
+    private func currentStartupFailure() -> StartupFailure? {
+        lock.lock()
+        defer { lock.unlock() }
+        return startupFailure
     }
 
     private func currentMarkerAddresses() -> [String] {
@@ -230,6 +270,30 @@ final class RunnerLauncher {
                 return String(entry[entry.index(after: equals)...])
             }
             .filter { !$0.isEmpty }
+    }
+
+    static let startupFailureHints = [
+        "on the device, turn on Settings > Developer > Enable UI Automation",
+        "unlock the device and keep it unlocked until the runner is ready"
+    ]
+
+    /// Detects xcodebuild output that means the runner will never become ready, e.g.
+    /// `... Failed to initialize for UI testing: Error Domain=... "Timed out while enabling automation mode." ...`.
+    static func startupFailure(in line: String) -> StartupFailure? {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        if let range = trimmed.range(of: "Failed to initialize for UI testing") {
+            let detail = trimmed[range.upperBound...]
+            // Prefer the quoted localized description over the raw NSError dump.
+            let parts = detail.split(separator: "\"", omittingEmptySubsequences: false)
+            let reason = parts.count >= 3 ? ": \(parts[1])" : String(detail)
+            return StartupFailure(message: "Failed to initialize for UI testing\(reason)", isUITestingSetup: true)
+        }
+        let isTestFailure = trimmed.hasPrefix("** TEST") && trimmed.contains("FAILED **")
+            || trimmed.hasPrefix("Test Case '") && trimmed.contains("' failed")
+        if isTestFailure {
+            return StartupFailure(message: trimmed, isUITestingSetup: false)
+        }
+        return nil
     }
 
     /// Hosts to probe, most preferred first: the CoreDevice tunnel works over USB without Wi-Fi.

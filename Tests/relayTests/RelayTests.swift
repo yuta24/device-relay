@@ -64,6 +64,35 @@ struct RunnerLauncherTests {
         let json = Data(#"{"result":{"connectionProperties":{"tunnelState":"connected","tunnelIPAddress":"fdb2::1"}}}"#.utf8)
         #expect(RunnerLauncher.findTunnelAddress(inDevicectlJSON: json) == "fdb2::1")
     }
+
+    @Test func detectsUITestingInitializationFailure() {
+        let line = #"2026-10-27 16:41:08.305411+0900 RelayRunnerUITests-Runner[4774:518973] [Default] Failed to initialize for UI testing: Error Domain=com.apple.dt.XCTest.XCTFuture Code=1000 "Timed out while enabling automation mode." UserInfo={NSLocalizedDescription=Timed out while enabling automation mode.}"#
+        #expect(RunnerLauncher.startupFailure(in: line) == StartupFailure(
+            message: "Failed to initialize for UI testing: Timed out while enabling automation mode.",
+            isUITestingSetup: true
+        ))
+    }
+
+    @Test func detectsTestFailures() {
+        #expect(RunnerLauncher.startupFailure(in: "** TEST EXECUTE FAILED **") == StartupFailure(message: "** TEST EXECUTE FAILED **", isUITestingSetup: false))
+        #expect(RunnerLauncher.startupFailure(in: "** TEST FAILED **")?.isUITestingSetup == false)
+        let testCase = "Test Case '-[RelayRunnerUITests.RelayRunnerUITests testRunServer]' failed (60.123 seconds)."
+        #expect(RunnerLauncher.startupFailure(in: testCase)?.message == testCase)
+    }
+
+    @Test func ignoresNormalRunnerOutput() {
+        let lines = [
+            "Test Case '-[RelayRunnerUITests.RelayRunnerUITests testRunServer]' started.",
+            "Test Case '-[RelayRunnerUITests.RelayRunnerUITests testRunServer]' passed (8.971 seconds).",
+            "\t Executed 1 test, with 0 failures (0 unexpected) in 8.971 (8.976) seconds",
+            "** TEST EXECUTE SUCCEEDED **",
+            "RELAY_RUNNER_READY port=8100 addresses=en0=192.168.1.5",
+            "nw_listener_socket_inbox_create_socket setsockopt SO_NECP_LISTENUUID failed [2: No such file or directory]"
+        ]
+        for line in lines {
+            #expect(RunnerLauncher.startupFailure(in: line) == nil)
+        }
+    }
 }
 
 struct BenchTests {
