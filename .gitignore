@@ -1,0 +1,5 @@
+.build/
+.relay/
+.swiftpm/
+xcuserdata/
+.DS_Store

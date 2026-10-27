@@ -1,0 +1,298 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		111111111111111111111111 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222221 /* AppDelegate.swift */; };
+		111111111111111111111112 /* RunnerHTTPServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222222 /* RunnerHTTPServer.swift */; };
+		111111111111111111111113 /* RelayRunnerUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222223 /* RelayRunnerUITests.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		333333333333333333333331 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 444444444444444444444441 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 555555555555555555555551;
+			remoteInfo = RelayRunnerHost;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		222222222222222222222221 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayRunnerHost/AppDelegate.swift; sourceTree = "<group>"; };
+		222222222222222222222222 /* RunnerHTTPServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayRunnerUITests/RunnerHTTPServer.swift; sourceTree = "<group>"; };
+		222222222222222222222223 /* RelayRunnerUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayRunnerUITests/RelayRunnerUITests.swift; sourceTree = "<group>"; };
+		222222222222222222222224 /* RelayRunnerHost.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RelayRunnerHost.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		222222222222222222222225 /* RelayRunnerUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RelayRunnerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		666666666666666666666661 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		666666666666666666666662 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		777777777777777777777771 = {
+			isa = PBXGroup;
+			children = (
+				222222222222222222222221 /* AppDelegate.swift */,
+				222222222222222222222222 /* RunnerHTTPServer.swift */,
+				222222222222222222222223 /* RelayRunnerUITests.swift */,
+				777777777777777777777772 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		777777777777777777777772 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				222222222222222222222224 /* RelayRunnerHost.app */,
+				222222222222222222222225 /* RelayRunnerUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		555555555555555555555551 /* RelayRunnerHost */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 888888888888888888888881 /* Build configuration list for PBXNativeTarget "RelayRunnerHost" */;
+			buildPhases = (
+				999999999999999999999991 /* Sources */,
+				666666666666666666666661 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = RelayRunnerHost;
+			productName = RelayRunnerHost;
+			productReference = 222222222222222222222224 /* RelayRunnerHost.app */;
+			productType = "com.apple.product-type.application";
+		};
+		555555555555555555555552 /* RelayRunnerUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 888888888888888888888882 /* Build configuration list for PBXNativeTarget "RelayRunnerUITests" */;
+			buildPhases = (
+				999999999999999999999992 /* Sources */,
+				666666666666666666666662 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				AAAAAAAAAAAAAAAAAAAAAAA1 /* PBXTargetDependency */,
+			);
+			name = RelayRunnerUITests;
+			productName = RelayRunnerUITests;
+			productReference = 222222222222222222222225 /* RelayRunnerUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		444444444444444444444441 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2700;
+				LastUpgradeCheck = 2700;
+				TargetAttributes = {
+					555555555555555555555551 = {
+						CreatedOnToolsVersion = 16.2;
+					};
+					555555555555555555555552 = {
+						CreatedOnToolsVersion = 16.2;
+						TestTargetID = 555555555555555555555551;
+					};
+				};
+			};
+			buildConfigurationList = 888888888888888888888880 /* Build configuration list for PBXProject "RelayRunner" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 777777777777777777777771;
+			productRefGroup = 777777777777777777777772 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				555555555555555555555551 /* RelayRunnerHost */,
+				555555555555555555555552 /* RelayRunnerUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		999999999999999999999991 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				111111111111111111111111 /* AppDelegate.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		999999999999999999999992 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				111111111111111111111112 /* RunnerHTTPServer.swift in Sources */,
+				111111111111111111111113 /* RelayRunnerUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		AAAAAAAAAAAAAAAAAAAAAAA1 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 555555555555555555555551 /* RelayRunnerHost */;
+			targetProxy = 333333333333333333333331 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		BBBBBBBBBBBBBBBBBBBBBBB1 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				SDKROOT = iphoneos;
+			};
+			name = Debug;
+		};
+		BBBBBBBBBBBBBBBBBBBBBBB2 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				SDKROOT = iphoneos;
+			};
+			name = Release;
+		};
+		BBBBBBBBBBBBBBBBBBBBBBB3 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_APPICON_NAME = "";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "$(RELAY_DEVELOPMENT_TEAM)";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = RelayRunner;
+				INFOPLIST_KEY_UIRequiresFullScreen = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.yuta24.devicerelay.RelayRunnerHost;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		BBBBBBBBBBBBBBBBBBBBBBB4 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_APPICON_NAME = "";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "$(RELAY_DEVELOPMENT_TEAM)";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = RelayRunner;
+				INFOPLIST_KEY_UIRequiresFullScreen = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.yuta24.devicerelay.RelayRunnerHost;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		BBBBBBBBBBBBBBBBBBBBBBB5 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "$(RELAY_DEVELOPMENT_TEAM)";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.yuta24.devicerelay.RelayRunnerHost.UITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "RelayRunner accepts device-control commands from the host Mac.";
+				TEST_TARGET_NAME = RelayRunnerHost;
+			};
+			name = Debug;
+		};
+		BBBBBBBBBBBBBBBBBBBBBBB6 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "$(RELAY_DEVELOPMENT_TEAM)";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.yuta24.devicerelay.RelayRunnerHost.UITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "RelayRunner accepts device-control commands from the host Mac.";
+				TEST_TARGET_NAME = RelayRunnerHost;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		888888888888888888888880 /* Build configuration list for PBXProject "RelayRunner" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BBBBBBBBBBBBBBBBBBBBBBB1 /* Debug */,
+				BBBBBBBBBBBBBBBBBBBBBBB2 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		888888888888888888888881 /* Build configuration list for PBXNativeTarget "RelayRunnerHost" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BBBBBBBBBBBBBBBBBBBBBBB3 /* Debug */,
+				BBBBBBBBBBBBBBBBBBBBBBB4 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		888888888888888888888882 /* Build configuration list for PBXNativeTarget "RelayRunnerUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BBBBBBBBBBBBBBBBBBBBBBB5 /* Debug */,
+				BBBBBBBBBBBBBBBBBBBBBBB6 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 444444444444444444444441 /* Project object */;
+}
