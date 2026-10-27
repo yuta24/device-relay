@@ -424,10 +424,13 @@ final class RelayRunnerUITests: XCTestCase {
         let upright = image.imageOrientation == .up ? nil : Self.uprightRenderer(for: image)
         switch query["format"] ?? "png" {
         case "png":
+            guard query["quality"] == nil else { throw RunnerError.invalidField("quality") }
             let data = upright?.pngData { _ in image.draw(at: .zero) } ?? screenshot.pngRepresentation
             return RunnerHTTPResponse(status: 200, contentType: "image/png", body: data)
         case "jpeg", "jpg":
-            let quality = min(max(Double(query["quality"] ?? "") ?? 0.7, 0.05), 1.0)
+            guard let quality = RunnerRequestValues.jpegQuality(query["quality"]) else {
+                throw RunnerError.invalidField("quality")
+            }
             let data = upright.map { $0.jpegData(withCompressionQuality: quality) { _ in image.draw(at: .zero) } }
                 ?? image.jpegData(compressionQuality: quality)
             guard let data else {
@@ -752,10 +755,10 @@ struct RunnerJSON {
 
     func double(_ name: String) throws -> Double {
         guard let value = object[name] else { throw RunnerError.missingField(name) }
-        guard let number = value as? NSNumber, number.doubleValue.isFinite, number.doubleValue >= 0 else {
+        guard let number = RunnerRequestValues.number(value), number.isFinite, number >= 0 else {
             throw RunnerError.invalidField(name)
         }
-        return number.doubleValue
+        return number
     }
 
     func positiveDouble(_ name: String, default defaultValue: Double) throws -> Double {

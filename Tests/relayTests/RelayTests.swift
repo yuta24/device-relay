@@ -373,6 +373,13 @@ struct RunnerHTTPFramingTests {
         #expect(status("GET / HTTP/1.1\r\nX: \(fits)\r\n\r\n") == nil)
     }
 
+    /// A chunked body used to be read as empty, and its bytes then parsed as the next request.
+    @Test func rejectsTransferEncoding() {
+        #expect(status("POST /tap HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n") == 501)
+        #expect(status("POST /tap HTTP/1.1\r\ntransfer-encoding: identity\r\nContent-Length: 5\r\n\r\n") == 501)
+        #expect(status("GET /health HTTP/1.1\r\nTransfer-Encoding: \r\n\r\n") == 501)
+    }
+
     @Test func rejectsInvalidRequestLineAndEncoding() {
         #expect(status("GARBAGE\r\n\r\n") == 400)
         var bytes = Data("GET /\u{FF} HTTP/1.1\r\n\r\n".utf8)
@@ -474,5 +481,45 @@ struct RunnerElementTreeTests {
         #expect(object["truncated"] as? Bool == true)
         #expect((object["children"] as? [Any])?.isEmpty == true)
         #expect(RunnerElementTree.json(node("window"))["truncated"] == nil)
+    }
+}
+
+struct RunnerRequestValuesTests {
+    private func number(fromJSON text: String) throws -> Double? {
+        let object = try JSONSerialization.jsonObject(with: Data("{\"v\":\(text)}".utf8)) as? [String: Any]
+        return try RunnerRequestValues.number(#require(object?["v"]))
+    }
+
+    @Test func acceptsJSONNumbers() throws {
+        #expect(try number(fromJSON: "1") == 1)
+        #expect(try number(fromJSON: "0") == 0)
+        #expect(try number(fromJSON: "12.5") == 12.5)
+        #expect(try number(fromJSON: "-3") == -3)
+    }
+
+    /// `{"x": true, "y": 1}` used to be read as a tap at (1, 1).
+    @Test func rejectsBooleansAndNonNumbers() throws {
+        #expect(try number(fromJSON: "true") == nil)
+        #expect(try number(fromJSON: "false") == nil)
+        #expect(try number(fromJSON: "\"1\"") == nil)
+        #expect(try number(fromJSON: "null") == nil)
+        #expect(try number(fromJSON: "[1]") == nil)
+    }
+
+    @Test func jpegQualityDefaultsWhenAbsent() {
+        #expect(RunnerRequestValues.jpegQuality(nil) == RunnerRequestValues.defaultJPEGQuality)
+    }
+
+    @Test func acceptsJPEGQualityInRange() {
+        #expect(RunnerRequestValues.jpegQuality("0.05") == 0.05)
+        #expect(RunnerRequestValues.jpegQuality("0.5") == 0.5)
+        #expect(RunnerRequestValues.jpegQuality("1") == 1)
+    }
+
+    /// Unparsable values used to fall back to 0.7, and out-of-range ones were clamped.
+    @Test func rejectsInvalidJPEGQuality() {
+        for value in ["abc", "", " 0.5", "0", "0.04", "1.01", "2.0", "-0.5", "nan", "inf"] {
+            #expect(RunnerRequestValues.jpegQuality(value) == nil, "\(value)")
+        }
     }
 }
