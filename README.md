@@ -17,7 +17,7 @@ WebDriverAgent と同じ「常駐 XCTest ランナー」方式を使います。
 ```
 
 - `Runner/RelayRunner.xcodeproj` の UI テストメソッドが端末上で HTTP サーバ（Network.framework）を立ち上げ、`/shutdown` を受けるまで戻りません。
-- 操作は XCUITest の公開 API（`XCUICoordinate`、`XCUIScreen`、`XCUIDevice` など）で行います。対象アプリ側の改修や SDK の組み込みは不要です。
+- 操作は XCUITest の API（`XCUICoordinate`、`XCUIScreen`、`XCUIDevice` など）で行います。対象アプリ側の改修や SDK の組み込みは不要です。タッチ合成、表示の向き、前面アプリの取得には XCTest の非公開 API も使い、使えない場合は公開 API に落ちます。
 - 座標系は「前面アプリの表示の向き（interface orientation）での、画面左上を原点とするポイント単位」です。横向きなら幅 > 高さの座標で指定します（詳しくは「座標系と画面の向き」）。
 - 全エンドポイントで `Authorization: Bearer <token>` が必要です。トークンは `relay start` が起動ごとに生成します（詳しくは「認証」）。
 - XCUI の失敗（`record(_:)` に送られる issue）はテストを失敗させずに HTTP 422 として返し、ランナーはそのまま動き続けます。
@@ -27,7 +27,7 @@ WebDriverAgent と同じ「常駐 XCTest ランナー」方式を使います。
 ```
 Package.swift / Sources/relay      ホスト CLI (relay start / relay bench)
 Tests/relayTests                   CLI のユニットテスト (Swift Testing)
-Runner/RelayRunner.xcodeproj       RelayRunnerHost (空のホストアプリ) + RelayRunnerUITests (常駐ランナー)
+Runner/RelayRunner.xcodeproj       RelayRunnerHost (文字入力を試すためのホストアプリ) + RelayRunnerUITests (常駐ランナー)
 .relay/                            DerivedData、ログ、runner.json (git 管理外)
 ```
 
@@ -131,13 +131,15 @@ xcodebuild の出力に `RELAY_RUNNER_READY port=8100 addresses=en0=…,utun3=�
 
 | メソッド / パス | ボディ / クエリ | 説明 |
 | --- | --- | --- |
-| `GET /health` | – | 端末情報、表示の向きでの画面サイズ（points / scale）、`orientation`、`touchSynthesis` |
+| `GET /health` | – | 端末情報、表示の向きでの画面サイズ（points / scale）、`orientation`、`touchSynthesis`、`foreground` |
+| `GET /foreground` | – | 前面アプリの `bundleId` と `pid`、取得経路 `source`（`private` / `fallback`）。詳しくは「前面アプリ」 |
 | `GET /screenshot` | `?format=png\|jpeg&quality=0.05–1.0`（既定は png、jpeg の既定 quality は 0.7） | 画面全体のスクリーンショット（表示の向きに正規化済み） |
-| `GET /source` | `?bundleId=`（省略時は最後に `/launch` したアプリ、なければ SpringBoard） | XCUI の要素ツリー（`debugDescription` のテキスト） |
+| `GET /source` | `?format=json\|text&maxDepth=<n>&bundleId=`（既定は json、bundleId の既定は前面アプリ） | XCUI の要素ツリー。json は要素ごとの属性と frame、text は `debugDescription`。詳しくは「要素ツリー（/source）」 |
 | `POST /tap` | `{"x":200,"y":120}` | タップ |
 | `POST /press` | `{"x":200,"y":120,"duration":1.0}` | 長押し |
 | `POST /swipe` | `{"from":{"x":200,"y":700},"to":{"x":200,"y":200},"duration":0.3,"hold":0.05}` | スワイプ（ドラッグ） |
-| `POST /type` | `{"text":"hello","bundleId":"com.apple.Preferences"}`（bundleId は省略可） | フォーカス中のフィールドへの文字入力 |
+| `POST /type` | `{"text":"hello","keys":["return"],"bundleId":"com.apple.Preferences"}`（`keys` と `bundleId` は省略可。`keys` があれば `text` も省略可） | キーボードのフォーカスがある要素への文字入力。`text` の後に `keys` を順に送ります。対象の既定は前面アプリ |
+| `POST /key` | `{"key":"return","bundleId":"…"}`（bundleId は省略可） | 特殊キー（`return` / `delete` / `tab` / `escape` / `space`）を 1 つ送ります。詳しくは「文字入力と特殊キー」 |
 | `POST /button` | `{"name":"home"}`（`volumeUp` / `volumeDown` は実機のみ） | ハードウェアボタン。`home` は実機では画面下端からのスワイプで代用します（「既知の制約」を参照） |
 | `POST /orientation` | `{"orientation":"portrait\|portraitUpsideDown\|landscapeLeft\|landscapeRight"}` | 端末の向き（`UIDeviceOrientation`）を設定 |
 | `POST /launch` | `{"bundleId":"com.apple.Preferences"}` | アプリの起動・前面化（`activate()`） |
@@ -149,7 +151,8 @@ xcodebuild の出力に `RELAY_RUNNER_READY port=8100 addresses=en0=…,utun3=�
 `/health` の例（横向きの Safari が前面のとき）:
 
 ```json
-{"coordinateSpace":"points","device":{"model":"iPhone","simulator":true,"systemVersion":"27.0"},"ok":true,
+{"coordinateSpace":"points","device":{"model":"iPhone","simulator":true,"systemVersion":"27.0"},
+ "foreground":{"bundleId":"com.apple.mobilesafari","pid":42390,"source":"private"},"ok":true,
  "orientation":"landscapeLeft","screen":{"height":402,"scale":3,"width":874},"touchSynthesis":"private"}
 ```
 
@@ -162,7 +165,7 @@ xcodebuild の出力に `RELAY_RUNNER_READY port=8100 addresses=en0=…,utun3=�
 | `401` | `Authorization: Bearer <token>` がない、または一致しない（`{"ok":false,"error":"unauthorized"}`）。ほかのどの判定よりも先に行います |
 | `404` / `405` | 未知のパス / メソッド違い |
 | `409` | 別のコマンドを実行中（`{"ok":false,"error":"busy"}`）。待たずにすぐ返ります |
-| `422` | XCUI 側で操作に失敗（エラーメッセージを JSON で返し、ランナーは動き続けます） |
+| `422` | XCUI 側で操作に失敗（エラーメッセージを JSON で返し、ランナーは動き続けます）。`/type`・`/key` でキーボードのフォーカスがない場合は `no element has keyboard focus in <bundleId>` |
 | `413` / `431` | ボディが 16 MB を超える / リクエストヘッダーが 64 KB を超える |
 | `500` | 内部エラー（JPEG エンコード失敗など） |
 
@@ -174,17 +177,144 @@ AUTH="Authorization: Bearer $(jq -r .token .relay/runner.json)"
 curl -s -H "$AUTH" $R/health
 curl -s -H "$AUTH" -o shot.png $R/screenshot
 curl -s -H "$AUTH" -o shot.jpg "$R/screenshot?format=jpeg&quality=0.5"
-curl -s -H "$AUTH" "$R/source?bundleId=com.apple.Preferences" | head
+curl -s -H "$AUTH" $R/foreground
+curl -s -H "$AUTH" "$R/source?maxDepth=3" | jq .tree
+curl -s -H "$AUTH" "$R/source?format=text&bundleId=com.apple.Preferences" | head
 curl -s -H "$AUTH" -X POST $R/launch      -H 'Content-Type: application/json' -d '{"bundleId":"com.apple.Preferences"}'
 curl -s -H "$AUTH" -X POST $R/tap         -H 'Content-Type: application/json' -d '{"x":200,"y":120}'
 curl -s -H "$AUTH" -X POST $R/press       -H 'Content-Type: application/json' -d '{"x":200,"y":400,"duration":1.0}'
 curl -s -H "$AUTH" -X POST $R/swipe       -H 'Content-Type: application/json' -d '{"from":{"x":200,"y":700},"to":{"x":200,"y":200}}'
 curl -s -H "$AUTH" -X POST $R/type        -H 'Content-Type: application/json' -d '{"text":"hello"}'
+curl -s -H "$AUTH" -X POST $R/type        -H 'Content-Type: application/json' -d '{"text":"example.com","keys":["return"]}'
+curl -s -H "$AUTH" -X POST $R/key         -H 'Content-Type: application/json' -d '{"key":"delete"}'
 curl -s -H "$AUTH" -X POST $R/button      -H 'Content-Type: application/json' -d '{"name":"home"}'
 curl -s -H "$AUTH" -X POST $R/orientation -H 'Content-Type: application/json' -d '{"orientation":"landscapeLeft"}'
 curl -s -H "$AUTH" -X POST $R/terminate   -H 'Content-Type: application/json' -d '{"bundleId":"com.apple.Preferences"}'
 curl -s -H "$AUTH" -X POST $R/shutdown
 ```
+
+## 前面アプリ
+
+`/type`・`/key`・`/source` は、`bundleId` を省略すると前面アプリを対象にします。`/launch` を経由せずに手で切り替えたアプリ（ホーム画面のアイコン、ステータスバーの「◀ 戻る」、他アプリからの起動など）にも追従します。`GET /foreground` と `/health` の `foreground` で確認できます。
+
+```json
+{"bundleId":"com.apple.springboard","ok":true,"pid":35,"source":"private"}
+```
+
+| `source` | 仕組み |
+| --- | --- |
+| `private` | XCTest の非公開 API で、アクセシビリティ上アクティブなアプリを取得します（WebDriverAgent の `fb_activeApplication` と同じ方式）。ホーム画面では SpringBoard（`com.apple.springboard`）になります |
+| `fallback` | 非公開 API が使えない場合。最後に `/launch` したアプリが公開 API の `XCUIApplication.state` でまだ `runningForeground` ならそのアプリ、そうでなければ SpringBoard です。`pid` は `null` です。手で切り替えたアプリは判別できません |
+
+`private` で使う非公開 API（`Runner/RelayRunnerUITests/RelayActiveApplication.m`）:
+
+- `-[XCUIDevice accessibilityInterface]`（`XCAXClient_iOS`）の `-activeApplications` → `XCAccessibilityElement` の配列。各要素の `-processIdentifier` で PID を得ます
+- `-[XCUIDevice applicationMonitor]` の `-monitoredApplicationWithProcessIdentifier:` → `XCUIApplication`。その `-bundleID` でバンドル ID を得ます
+
+クラスとセレクタは実行時に確認し、欠けていれば `fallback` になります。動作確認用に、ランナーの環境変数 `RELAY_DISABLE_PRIVATE_FOREGROUND=1`（xcodebuild には `TEST_RUNNER_RELAY_DISABLE_PRIVATE_FOREGROUND=1`）で `private` を無効にできます。
+
+`activeApplications` が返すのは通常 1 つです。アプリの切り替えの途中だけ 2 つ返ることがあり（実機で計算機 → RelayRunnerHost の切り替え直後に、切り替え先が先頭でした）、先頭のアプリを前面とみなします。ホーム画面に戻るジェスチャーの直後など、切り替えのアニメーション中は直前のアプリが返ることがあります。
+
+確認した結果（シミュレータ iOS 27.0 と実機 iPhone 14 Pro iOS 26.7.1。いずれも `private`）:
+
+| 状態 | シミュレータ | 実機 |
+| --- | --- | --- |
+| ホーム画面 | `com.apple.springboard` | `com.apple.springboard` |
+| `/launch` したアプリ | RelayRunnerHost、設定（シミュレータには計算機がありません） | `com.apple.calculator`、`dev.yuta24.devicerelay.RelayRunnerHost` |
+| relay を通さずに起動（`simctl launch` / `devicectl device process launch`） | `com.apple.mobilesafari`、`com.apple.Preferences`、RelayRunnerHost | `com.apple.calculator`、RelayRunnerHost |
+| タッチで切り替え（ステータスバーの「◀ Calculator」をタップ） | – | `com.apple.calculator` |
+
+`/health` は前面アプリの取得のぶん遅くなりました（実機の p50 で約 3 ms → 約 16 ms）。
+
+## 文字入力と特殊キー
+
+- `/type {"text":"..."}` は前面アプリ（または `bundleId`）で、キーボードのフォーカスがある要素に `XCUIElement.typeText` で入力します。入力欄をタップしてフォーカスを当ててから送ってください。
+- 特殊キーは `POST /key {"key":"return"}`、または `/type` の `keys` 配列（`{"text":"abc","keys":["delete","return"]}`。`text` の後に順に送ります）で送ります。キー名は大文字小文字を区別せず、別名 `enter`（= return）、`backspace`（= delete）、`esc`（= escape）も使えます。
+- キーは `XCUIKeyboardKey` の文字（return は `\r`、delete は U+007F、tab は `\t`、escape は U+001B、space は ` `）として `typeText` で送ります。`typeKey(_:modifierFlags:)`（ハードウェアキーのイベント）も試しましたが、iPhone ではシミュレータ・実機とも space と tab しか届かず、return・delete・escape は何も起きませんでした。
+- フォーカスがない場合は、XCUI の長いエラー文の代わりに `422 {"ok":false,"error":"no element has keyboard focus in <bundleId>"}` を返します（XCUI が待つため約 2–3 秒かかります）。
+
+RelayRunnerHost の入力欄（`relay.input`）で確認した結果（シミュレータ・実機とも同じ）:
+
+| キー | 結果 |
+| --- | --- |
+| `text` | 入力されます（`hello world`） |
+| `return` | `textFieldShouldReturn` が呼ばれ、入力が確定します。シミュレータの Safari のアドレスバーでもページが開きます |
+| `delete` | 1 文字削除されます |
+| `space` | 空白が入力されます |
+| `tab` | 1 行の入力欄には `\t` の文字として入力されます（次の入力欄にフォーカスは移りません。ソフトウェアキーボードに Tab キーがないため） |
+| `escape` | 何も起きません（ソフトウェアキーボードに Esc キーがなく、キーイベントとしても届きません）。エラーにはなりません |
+
+1 回の `/key` は、シミュレータで約 0.26 秒、実機で約 0.66 秒でした。
+
+### 検証用のホストアプリ
+
+実機で他のアプリやデータに触れずに文字入力を試せるよう、RelayRunnerHost（`dev.yuta24.devicerelay.RelayRunnerHost`）に入力欄とラベルを置いています。ランナーの起動時に一緒にインストールされるので、`/launch` で前面に出して使います。
+
+| accessibilityIdentifier | 内容 |
+| --- | --- |
+| `relay.input` / `relay.input2` | 入力欄 |
+| `relay.text` | `relay.input` の現在の文字列（`text: …`） |
+| `relay.submitted` | Return で確定したときの文字列と回数（`submitted #2: …`） |
+| `relay.events` | 直近の編集（insert / delete / return）とハードウェアキーの押下（`press Tab` など）。新しい順 |
+
+```sh
+curl -s -H "$AUTH" -X POST $R/launch -H 'Content-Type: application/json' -d '{"bundleId":"dev.yuta24.devicerelay.RelayRunnerHost"}'
+curl -s -H "$AUTH" "$R/source" | jq -c '.tree | .. | objects | select(.identifier? == "relay.input") | .frame'
+# frame の中心を /tap してから
+curl -s -H "$AUTH" -X POST $R/type -H 'Content-Type: application/json' -d '{"text":"hello","keys":["return"]}'
+curl -s -H "$AUTH" "$R/source" | jq -r '.tree | .. | objects | select(.identifier? == "relay.submitted") | .label'
+```
+
+iOS 27 では UIScene のライフサイクルを採用していないアプリが起動時に落ちるので、ホストアプリは `UIWindowSceneDelegate` を使います。また起動画面の設定（`UILaunchScreen`）がないと実機で 320×480 の互換モードになるので、Info.plist に生成させています。
+
+## 要素ツリー（/source）
+
+`GET /source` は既定で JSON を返します（`format=json`）。`XCUIElement.snapshot()` で取得したツリーで、各要素は次のキーをすべて持ちます。
+
+| キー | 内容 |
+| --- | --- |
+| `type` | `XCUIElement.ElementType` のケース名（`application`、`button`、`textField`、`staticText` など） |
+| `identifier` / `label` | accessibilityIdentifier / ラベル（なければ空文字列） |
+| `value` / `placeholder` | 値 / プレースホルダ（なければ `null`。値は文字列に変換） |
+| `frame` | `{"x","y","width","height"}`。`/tap` と同じ、表示の向きでのポイント単位（小数点以下 3 桁） |
+| `enabled` / `selected` | 有効か / 選択されているか |
+| `hasFocus` | 公開 API の `hasFocus`。フォーカスエンジン（iPad のキーボード操作や tvOS）のフォーカスで、iPhone で入力中の欄でも `false` です |
+| `hasKeyboardFocus` | キーボードのフォーカスがあるか（非公開の `-[XCElementSnapshot hasKeyboardFocus]`。使えなければ `null`） |
+| `children` | 子要素の配列 |
+| `truncated` | `maxDepth` で子要素を省いた要素にだけ付きます（`true`） |
+
+実機の計算機での出力の抜粋（`children` の中身を省略。キーはソート順です）:
+
+```json
+{"bundleId":"com.apple.calculator","ok":true,"tree":{"children":[…],"enabled":true,
+ "frame":{"height":852,"width":393,"x":0,"y":0},"hasFocus":false,"hasKeyboardFocus":false,"identifier":"",
+ "label":"Calculator","placeholder":null,"selected":false,"type":"application","value":null}}
+```
+
+ツリーの中のボタン 1 つ:
+
+```json
+{"children":[],"enabled":true,"frame":{"height":36,"width":36,"x":20,"y":63},"hasFocus":false,
+ "hasKeyboardFocus":false,"identifier":"SidebarButton","label":"History","placeholder":null,"selected":false,
+ "type":"button","value":null}
+```
+
+- `maxDepth=<n>` で深さを制限します（`0` はルートだけ）。ただし XCTest は常にツリー全体を取得するので、短くなるのは応答の大きさだけで、時間はほとんど変わりません。
+- `format=text` は従来の `debugDescription` のテキストです。
+- 既定を JSON にしたのは、プログラムから扱う用途が主で、計測ではテキストより速かったためです（`debugDescription` はツリーの取得に加えて文字列の整形に時間がかかります）。テキストは人が読むとき用に残しています。
+- 横向きでも `frame` は表示の向きの座標です（シミュレータの landscapeLeft / landscapeRight と実機の landscapeLeft で、`relay.input2` の frame の中心を `/tap` するとその欄にフォーカスが移ることを確認しました）。
+
+取得時間（`curl` で 7 回の p50。シミュレータは iPhone 17 Pro / iOS 27.0、実機は iPhone 14 Pro / iOS 26.7.1。括弧内は応答の大きさ）:
+
+| 対象 | json | text | json `maxDepth=3` |
+| --- | ---: | ---: | ---: |
+| シミュレータ: 設定（トップ） | 50 ms（37 KB） | 198 ms（17 KB） | 46 ms（0.9 KB） |
+| シミュレータ: RelayRunnerHost（キーボードなし） | 10 ms（2.5 KB） | 22 ms（1.3 KB） | 10 ms（0.9 KB） |
+| シミュレータ: RelayRunnerHost（キーボード表示中） | 25 ms（16 KB） | 86 ms（6 KB） | 24 ms（2.5 KB） |
+| シミュレータ: ホーム画面（SpringBoard） | 43 ms（36 KB） | 161 ms（13 KB） | – |
+| 実機: RelayRunnerHost（キーボード表示中） | 140 ms（16 KB） | 238 ms（6 KB） | 132 ms（2.7 KB） |
+| 実機: 計算機 | 89 ms（10 KB） | 187 ms（4 KB） | 122 ms（1.6 KB） |
+| 実機: ホーム画面（SpringBoard） | 194 ms（70 KB） | 589 ms（25 KB） | 182 ms（9 KB） |
 
 ## 座標系と画面の向き
 
@@ -259,7 +389,8 @@ iPhone 17 Pro シミュレータ（iOS 27.0、Apple Silicon Mac、`127.0.0.1`）
 
 - **タッチ合成は非公開 API 依存**: `private` 経路は Xcode / iOS の更新でセレクタやシグネチャが変わると使えなくなります。消えた場合は自動で `xcui` に落ちますが、シグネチャだけ変わった場合は検出できません。表示の向きの取得（`interfaceOrientation`）も非公開 API で、使えない場合はスクリーンショットから求めるので遅くなります。
 - **`xcui` 経路は遅い**: XCUI はイベントを送る前後に対象アプリがアイドルになる（quiescence）のを待つため、タップ 1 回にシミュレータの Safari で約 1.6 秒、実機の計算機で約 1.2 秒（以前の計測では約 1.9 秒）かかります。
-- **`/type`**: キーボードのフォーカスがあるフィールドが必要です。対象アプリは `bundleId` で指定し、省略すると最後に `/launch` した bundleId（なければ SpringBoard）を使います。`/launch` を経由せずに前面に出たアプリには、`bundleId` を明示してください。
+- **`/type`・`/key`**: キーボードのフォーカスがある要素が必要です。対象は前面アプリで、`fallback`（非公開 API が使えない場合）では手で切り替えたアプリを判別できないので、`bundleId` を明示してください。`escape` は iPhone では効果がなく、`tab` は文字として入力されます（「文字入力と特殊キー」）。
+- **前面アプリの取得は非公開 API 依存**: `XCAXClient_iOS` などが変わると `fallback` に落ちます。`/health` も前面アプリを返すぶん遅くなりました（実機で p50 約 16 ms）。
 - **映像ストリームはまだない**: 画面はスクリーンショットのポーリングで取得します（シミュレータの縦向きで png 約 90 ms / jpeg 約 110 ms、横向きは正規化のぶん遅くなります）。
 - **ローカルネットワーク許可**: 実機では初回にローカルネットワークの許可ダイアログが出ることがあります。
 - **`/health` の画面サイズ**: xctrunner には起動画面の設定がないため、実機ではランナー内の `UIScreen` が 320×480 の互換モードになります。そのため `/health` は SpringBoard の frame から縦向きの画面サイズを、スクリーンショットのピクセル数から scale を求めます（初回だけ計測してキャッシュします）。向きはリクエストのたびに読み直して幅と高さに反映します。

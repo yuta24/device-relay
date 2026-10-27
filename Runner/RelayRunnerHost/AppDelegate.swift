@@ -1,20 +1,136 @@
 import UIKit
 
-/// Placeholder host app required by the UI test bundle. It is never launched by the runner.
+/// Host app required by the UI test bundle. The runner never launches it, but `/launch` can bring it
+/// to the front: it shows text fields to try `/type` and `/key` on a device without touching other apps.
+///
+/// It uses the scene lifecycle: on iOS 27 an app without it traps at launch.
 @main
 final class AppDelegate: UIResponder, UIApplicationDelegate {
-    var window: UIWindow?
-
     func application(
         _ application: UIApplication,
-        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
-    ) -> Bool {
-        let window = UIWindow(frame: UIScreen.main.bounds)
-        let viewController = UIViewController()
-        viewController.view.backgroundColor = .systemBackground
-        window.rootViewController = viewController
+        configurationForConnecting connectingSceneSession: UISceneSession,
+        options: UIScene.ConnectionOptions
+    ) -> UISceneConfiguration {
+        let configuration = UISceneConfiguration(name: nil, sessionRole: connectingSceneSession.role)
+        configuration.delegateClass = SceneDelegate.self
+        return configuration
+    }
+}
+
+final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
+    var window: UIWindow?
+
+    func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
+        guard let windowScene = scene as? UIWindowScene else { return }
+        let window = UIWindow(windowScene: windowScene)
+        window.rootViewController = InputViewController()
         window.makeKeyAndVisible()
         self.window = window
+    }
+}
+
+/// Two text fields and labels that echo what reached them.
+///
+/// Accessibility identifiers: `relay.input` and `relay.input2` (the fields), `relay.text` (the
+/// current text of `relay.input`), `relay.submitted` (the text when Return was pressed, with a count),
+/// and `relay.events` (the latest edits and hardware key presses, newest first).
+final class InputViewController: UIViewController, UITextFieldDelegate {
+    private let input = KeyRecordingTextField()
+    private let secondInput = KeyRecordingTextField()
+    private let textLabel = UILabel()
+    private let submittedLabel = UILabel()
+    private let eventsLabel = UILabel()
+    private var submitCount = 0
+    private var events: [String] = []
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .systemBackground
+
+        configure(input, identifier: "relay.input", placeholder: "Type here")
+        configure(secondInput, identifier: "relay.input2", placeholder: "Second field")
+        configure(textLabel, identifier: "relay.text", text: "text: ")
+        configure(submittedLabel, identifier: "relay.submitted", text: "submitted: (none)")
+        configure(eventsLabel, identifier: "relay.events", text: "events: ")
+        eventsLabel.numberOfLines = 0
+        input.addTarget(self, action: #selector(textChanged), for: .editingChanged)
+
+        let stack = UIStackView(arrangedSubviews: [input, secondInput, textLabel, submittedLabel, eventsLabel])
+        stack.axis = .vertical
+        stack.spacing = 12
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 24),
+            stack.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16),
+            stack.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16)
+        ])
+    }
+
+    private func configure(_ field: KeyRecordingTextField, identifier: String, placeholder: String) {
+        field.accessibilityIdentifier = identifier
+        field.placeholder = placeholder
+        field.borderStyle = .roundedRect
+        field.autocorrectionType = .no
+        field.autocapitalizationType = .none
+        field.spellCheckingType = .no
+        field.returnKeyType = .done
+        field.delegate = self
+        field.onKeyPress = { [weak self] name in self?.record("\(identifier) press \(name)") }
+    }
+
+    private func configure(_ label: UILabel, identifier: String, text: String) {
+        label.accessibilityIdentifier = identifier
+        label.text = text
+        label.font = .monospacedSystemFont(ofSize: 15, weight: .regular)
+    }
+
+    @objc private func textChanged() {
+        textLabel.text = "text: \(input.text ?? "")"
+    }
+
+    private func record(_ event: String) {
+        events.insert(event, at: 0)
+        events = Array(events.prefix(6))
+        eventsLabel.text = "events: " + events.joined(separator: "\n")
+    }
+
+    func textField(_ textField: UITextField, shouldChangeCharactersIn range: NSRange, replacementString string: String) -> Bool {
+        let name = textField.accessibilityIdentifier ?? "field"
+        record(string.isEmpty ? "\(name) delete \(range.length)" : "\(name) insert \(string.debugDescription)")
         return true
+    }
+
+    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+        if textField === input {
+            submitCount += 1
+            submittedLabel.text = "submitted #\(submitCount): \(input.text ?? "")"
+        }
+        record("\(textField.accessibilityIdentifier ?? "field") return")
+        return false
+    }
+}
+
+/// Reports hardware key presses (`UIPress`), so keys sent as key events can be told apart from text.
+final class KeyRecordingTextField: UITextField {
+    var onKeyPress: ((String) -> Void)?
+
+    override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        for press in presses {
+            guard let key = press.key else { continue }
+            onKeyPress?(Self.name(of: key))
+        }
+        super.pressesBegan(presses, with: event)
+    }
+
+    private static func name(of key: UIKey) -> String {
+        switch key.keyCode {
+        case .keyboardReturnOrEnter: return "Return"
+        case .keyboardDeleteOrBackspace: return "Backspace"
+        case .keyboardTab: return "Tab"
+        case .keyboardEscape: return "Escape"
+        case .keyboardSpacebar: return "Space"
+        default: return key.characters.isEmpty ? "keyCode \(key.keyCode.rawValue)" : key.characters.debugDescription
+        }
     }
 }
