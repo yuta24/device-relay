@@ -102,16 +102,30 @@ final class RelayRunnerUITests: XCTestCase {
             return RunnerHTTPResponse(status: 200, contentType: "text/plain; charset=utf-8", body: Data(source.utf8))
         case ("POST", "/tap"):
             let body = try RunnerJSON(request.body)
-            coordinate(x: try body.double("x"), y: try body.double("y")).tap()
-            return ok()
+            let x = try body.double("x"), y = try body.double("y")
+            switch try touchMode(body) {
+            case .private:
+                try synthesizeTouch(points: [(x, y)], offsets: [], liftOffset: Self.tapDuration)
+                return ok(mode: .private)
+            case .xcui:
+                coordinate(x: x, y: y).tap()
+                return ok(mode: .xcui)
+            }
         case ("POST", "/press"):
             let body = try RunnerJSON(request.body)
             let duration = try body.positiveDouble("duration", default: 1.0)
-            coordinate(x: try body.double("x"), y: try body.double("y")).press(forDuration: duration)
-            return ok()
+            let x = try body.double("x"), y = try body.double("y")
+            switch try touchMode(body) {
+            case .private:
+                try synthesizeTouch(points: [(x, y)], offsets: [], liftOffset: duration)
+                return ok(mode: .private)
+            case .xcui:
+                coordinate(x: x, y: y).press(forDuration: duration)
+                return ok(mode: .xcui)
+            }
         case ("POST", "/swipe"):
-            try swipe(RunnerJSON(request.body))
-            return ok()
+            let body = try RunnerJSON(request.body)
+            return ok(mode: try swipe(body, mode: touchMode(body)))
         case ("POST", "/type"):
             let body = try RunnerJSON(request.body)
             let text = try body.string("text")
@@ -164,7 +178,8 @@ final class RelayRunnerUITests: XCTestCase {
                 "height": screen.size.height,
                 "scale": screen.scale
             ],
-            "coordinateSpace": "points"
+            "coordinateSpace": "points",
+            "touchSynthesis": (RelayTouchSynthesizer.isAvailable ? TouchMode.private : .xcui).rawValue
         ]
     }
 
@@ -209,11 +224,20 @@ final class RelayRunnerUITests: XCTestCase {
         }
     }
 
-    private func swipe(_ body: RunnerJSON) throws {
+    private func swipe(_ body: RunnerJSON, mode: TouchMode) throws -> TouchMode {
         let from = try body.point("from")
         let to = try body.point("to")
         let duration = try body.positiveDouble("duration", default: 0.3)
         let hold = try body.nonNegativeDouble("hold", default: 0.05)
+        if mode == .private {
+            // Down at `from`, rest for `hold`, move to `to` over `duration`, lift immediately.
+            try synthesizeTouch(
+                points: [from, from, to],
+                offsets: [hold, hold + duration],
+                liftOffset: hold + duration
+            )
+            return .private
+        }
         let distance = hypot(to.x - from.x, to.y - from.y)
         let velocity = XCUIGestureVelocity(rawValue: max(distance / duration, 1))
         coordinate(x: from.x, y: from.y).press(
@@ -222,6 +246,81 @@ final class RelayRunnerUITests: XCTestCase {
             withVelocity: velocity,
             thenHoldForDuration: 0
         )
+        return .xcui
+    }
+
+    // MARK: - Touch synthesis
+
+    enum TouchMode: String {
+        /// XCTest's private event synthesizer: no wait for the app to become idle.
+        case `private`
+        /// Public `XCUICoordinate` gestures, which wait for quiescence before and after.
+        case xcui
+    }
+
+    /// How long a synthesized tap keeps the finger down.
+    private static let tapDuration: TimeInterval = 0.05
+
+    /// `"mode"` in the body forces a path; when omitted, the private path is used if available.
+    private func touchMode(_ body: RunnerJSON) throws -> TouchMode {
+        switch body.optionalString("mode") {
+        case nil, "auto":
+            return RelayTouchSynthesizer.isAvailable ? .private : .xcui
+        case "xcui":
+            return .xcui
+        case "private":
+            if let reason = RelayTouchSynthesizer.unavailableReason {
+                throw RunnerError.invalidField("mode: private touch synthesis is unavailable (\(reason))")
+            }
+            return .private
+        default:
+            throw RunnerError.invalidField("mode: expected private, xcui, or auto")
+        }
+    }
+
+    /// Sends one synthesized touch and waits for its completion before returning.
+    ///
+    /// This runs on the main queue, and the synthesizer may call back on the main queue, so wait by
+    /// spinning the run loop instead of blocking (a semaphore here would deadlock).
+    private func synthesizeTouch(
+        points: [(x: Double, y: Double)],
+        offsets: [TimeInterval],
+        liftOffset: TimeInterval
+    ) throws {
+        let completion = TouchCompletion()
+        do {
+            try RelayTouchSynthesizer.synthesizeTouch(
+                withPoints: points.map { NSValue(cgPoint: CGPoint(x: $0.x, y: $0.y)) },
+                offsets: offsets.map { NSNumber(value: $0) },
+                liftOffset: liftOffset,
+                interfaceOrientation: Self.interfaceOrientation,
+                completion: { completion.finish($0) }
+            )
+        } catch {
+            throw RunnerError.internalError("touch synthesis failed: \(error.localizedDescription)")
+        }
+
+        let deadline = Date(timeIntervalSinceNow: liftOffset + 10)
+        while !completion.isFinished {
+            guard Date() < deadline else {
+                throw RunnerError.touchFailed("touch synthesis did not complete within \(Int(liftOffset + 10))s")
+            }
+            _ = RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.005))
+        }
+        if let error = completion.error {
+            throw RunnerError.touchFailed("touch synthesis failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// The interface orientation matching the current device orientation (portrait when flat or unknown).
+    private static var interfaceOrientation: UIInterfaceOrientation {
+        switch XCUIDevice.shared.orientation {
+        case .portraitUpsideDown: return .portraitUpsideDown
+        // Device and interface landscape orientations are mirrored.
+        case .landscapeLeft: return .landscapeRight
+        case .landscapeRight: return .landscapeLeft
+        default: return .portrait
+        }
     }
 
     private func pressButton(_ name: String) throws {
@@ -260,6 +359,10 @@ final class RelayRunnerUITests: XCTestCase {
         .json(["ok": true])
     }
 
+    private func ok(mode: TouchMode) -> RunnerHTTPResponse {
+        .json(["ok": true, "mode": mode.rawValue])
+    }
+
     private static var isSimulator: Bool {
         #if targetEnvironment(simulator)
         return true
@@ -280,6 +383,7 @@ enum RunnerError: Error, CustomStringConvertible {
     case notFound
     case methodNotAllowed
     case internalError(String)
+    case touchFailed(String)
 
     var description: String {
         switch self {
@@ -288,7 +392,7 @@ enum RunnerError: Error, CustomStringConvertible {
         case .invalidField(let name): return "invalid field: \(name)"
         case .notFound: return "not found"
         case .methodNotAllowed: return "method not allowed"
-        case .internalError(let message): return message
+        case .internalError(let message), .touchFailed(let message): return message
         }
     }
 
@@ -298,6 +402,24 @@ enum RunnerError: Error, CustomStringConvertible {
         case .notFound: return 404
         case .methodNotAllowed: return 405
         case .internalError: return 500
+        case .touchFailed: return 422
+        }
+    }
+}
+
+/// Completion state shared with the synthesizer callback, which may arrive on any thread.
+private final class TouchCompletion: @unchecked Sendable {
+    private let lock = NSLock()
+    private var finished = false
+    private var storedError: Error?
+
+    var isFinished: Bool { lock.withLock { finished } }
+    var error: Error? { lock.withLock { storedError } }
+
+    func finish(_ error: Error?) {
+        lock.withLock {
+            storedError = error
+            finished = true
         }
     }
 }

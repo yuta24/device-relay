@@ -25,6 +25,20 @@ struct ArgumentsTests {
         #expect(command == .bench(expected))
     }
 
+    @Test func parsesBenchMode() throws {
+        let command = try Arguments.parse(["bench", "--url", "http://127.0.0.1:8100", "--tap", "1,2", "--mode", "xcui"])
+        var expected = BenchOptions(url: "http://127.0.0.1:8100")
+        expected.tap = (1, 2)
+        expected.mode = "xcui"
+        #expect(command == .bench(expected))
+    }
+
+    @Test func rejectsUnknownBenchMode() {
+        #expect(throws: ArgumentError.self) {
+            try Arguments.parse(["bench", "--url", "http://127.0.0.1:8100", "--mode", "fast"])
+        }
+    }
+
     @Test func noArgumentsShowsHelp() throws {
         #expect(try Arguments.parse([]) == .help)
     }

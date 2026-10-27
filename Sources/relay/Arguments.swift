@@ -19,9 +19,12 @@ struct BenchOptions: Equatable {
     var url: String
     var count = 10
     var tap: (x: Double, y: Double)?
+    /// Touch path for `/tap`: `private` or `xcui`. Nil lets the runner choose.
+    var mode: String?
 
     static func == (lhs: BenchOptions, rhs: BenchOptions) -> Bool {
         lhs.url == rhs.url && lhs.count == rhs.count && lhs.tap?.x == rhs.tap?.x && lhs.tap?.y == rhs.tap?.y
+            && lhs.mode == rhs.mode
     }
 }
 
@@ -85,6 +88,12 @@ enum Arguments {
                         throw ArgumentError(description: "--tap requires x,y")
                     }
                     options.tap = (parts[0], parts[1])
+                case "--mode":
+                    let mode = try value(for: option)
+                    guard ["private", "xcui"].contains(mode) else {
+                        throw ArgumentError(description: "--mode requires private or xcui")
+                    }
+                    options.mode = mode
                 default: throw ArgumentError(description: "unknown option: \(option)")
                 }
             }
@@ -102,10 +111,11 @@ enum Arguments {
     static let usage = """
     Usage:
       relay start --udid <UDID> [--port 8100] [--team-id <TEAM_ID>] [--rebuild] [--verbose] [--ready-timeout 180]
-      relay bench --url <RUNNER_URL> [--count 10] [--tap x,y]
+      relay bench --url <RUNNER_URL> [--count 10] [--tap x,y] [--mode private|xcui]
 
     start  Builds the RelayRunner XCTest runner if needed, launches it on the device or simulator,
            and prints the runner URL once it answers /health. Ctrl-C shuts the runner down.
     bench  Measures round-trip latency of /health, /screenshot, and optionally /tap.
+           --mode forces the runner's touch path (private event synthesis or public XCUI).
     """
 }

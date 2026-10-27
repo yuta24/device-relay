@@ -10,6 +10,7 @@
 		111111111111111111111111 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222221 /* AppDelegate.swift */; };
 		111111111111111111111112 /* RunnerHTTPServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222222 /* RunnerHTTPServer.swift */; };
 		111111111111111111111113 /* RelayRunnerUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222223 /* RelayRunnerUITests.swift */; };
+		111111111111111111111114 /* RelayTouchSynthesizer.m in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222226 /* RelayTouchSynthesizer.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -26,6 +27,9 @@
 		222222222222222222222221 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayRunnerHost/AppDelegate.swift; sourceTree = "<group>"; };
 		222222222222222222222222 /* RunnerHTTPServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayRunnerUITests/RunnerHTTPServer.swift; sourceTree = "<group>"; };
 		222222222222222222222223 /* RelayRunnerUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayRunnerUITests/RelayRunnerUITests.swift; sourceTree = "<group>"; };
+		222222222222222222222226 /* RelayTouchSynthesizer.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = RelayRunnerUITests/RelayTouchSynthesizer.m; sourceTree = "<group>"; };
+		222222222222222222222227 /* RelayTouchSynthesizer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = RelayRunnerUITests/RelayTouchSynthesizer.h; sourceTree = "<group>"; };
+		222222222222222222222228 /* RelayRunnerUITests-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "RelayRunnerUITests/RelayRunnerUITests-Bridging-Header.h"; sourceTree = "<group>"; };
 		222222222222222222222224 /* RelayRunnerHost.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RelayRunnerHost.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		222222222222222222222225 /* RelayRunnerUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RelayRunnerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -54,6 +58,9 @@
 				222222222222222222222221 /* AppDelegate.swift */,
 				222222222222222222222222 /* RunnerHTTPServer.swift */,
 				222222222222222222222223 /* RelayRunnerUITests.swift */,
+				222222222222222222222227 /* RelayTouchSynthesizer.h */,
+				222222222222222222222226 /* RelayTouchSynthesizer.m */,
+				222222222222222222222228 /* RelayRunnerUITests-Bridging-Header.h */,
 				777777777777777777777772 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -156,6 +163,7 @@
 			files = (
 				111111111111111111111112 /* RunnerHTTPServer.swift in Sources */,
 				111111111111111111111113 /* RelayRunnerUITests.swift in Sources */,
+				111111111111111111111114 /* RelayTouchSynthesizer.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -240,6 +248,8 @@
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "RelayRunner accepts device-control commands from the host Mac.";
+				CLANG_ENABLE_OBJC_ARC = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "RelayRunnerUITests/RelayRunnerUITests-Bridging-Header.h";
 				TEST_TARGET_NAME = RelayRunnerHost;
 			};
 			name = Debug;
@@ -258,6 +268,8 @@
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "RelayRunner accepts device-control commands from the host Mac.";
+				CLANG_ENABLE_OBJC_ARC = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "RelayRunnerUITests/RelayRunnerUITests-Bridging-Header.h";
 				TEST_TARGET_NAME = RelayRunnerHost;
 			};
 			name = Release;
