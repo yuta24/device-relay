@@ -29,15 +29,19 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 }
 
-/// Two text fields and labels that echo what reached them.
+/// Text fields and labels that echo what reached them.
 ///
-/// Accessibility identifiers: `relay.input` and `relay.input2` (the fields), `relay.text` (the
-/// current text of `relay.input`), `relay.submitted` (the text when Return was pressed, with a count),
-/// and `relay.events` (the latest edits and hardware key presses, newest first).
+/// Accessibility identifiers: `relay.input` and `relay.input2` (the fields), `relay.password` (a
+/// secure field), `relay.text` (the current text of `relay.input`), `relay.passwordLength` (only the
+/// number of characters in `relay.password`, never the text), `relay.submitted` (the text when Return
+/// was pressed, with a count), and `relay.events` (the latest edits and hardware key presses, newest
+/// first; edits to the password field show only their length).
 final class InputViewController: UIViewController, UITextFieldDelegate {
     private let input = KeyRecordingTextField()
     private let secondInput = KeyRecordingTextField()
+    private let passwordInput = KeyRecordingTextField()
     private let textLabel = UILabel()
+    private let passwordLengthLabel = UILabel()
     private let submittedLabel = UILabel()
     private let eventsLabel = UILabel()
     private var submitCount = 0
@@ -49,13 +53,19 @@ final class InputViewController: UIViewController, UITextFieldDelegate {
 
         configure(input, identifier: "relay.input", placeholder: "Type here")
         configure(secondInput, identifier: "relay.input2", placeholder: "Second field")
+        configure(passwordInput, identifier: "relay.password", placeholder: "Password")
+        passwordInput.isSecureTextEntry = true
         configure(textLabel, identifier: "relay.text", text: "text: ")
+        configure(passwordLengthLabel, identifier: "relay.passwordLength", text: "password: 0 chars")
         configure(submittedLabel, identifier: "relay.submitted", text: "submitted: (none)")
         configure(eventsLabel, identifier: "relay.events", text: "events: ")
         eventsLabel.numberOfLines = 0
         input.addTarget(self, action: #selector(textChanged), for: .editingChanged)
+        passwordInput.addTarget(self, action: #selector(passwordChanged), for: .editingChanged)
 
-        let stack = UIStackView(arrangedSubviews: [input, secondInput, textLabel, submittedLabel, eventsLabel])
+        let stack = UIStackView(arrangedSubviews: [
+            input, secondInput, passwordInput, textLabel, passwordLengthLabel, submittedLabel, eventsLabel
+        ])
         stack.axis = .vertical
         stack.spacing = 12
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -76,7 +86,10 @@ final class InputViewController: UIViewController, UITextFieldDelegate {
         field.spellCheckingType = .no
         field.returnKeyType = .done
         field.delegate = self
-        field.onKeyPress = { [weak self] name in self?.record("\(identifier) press \(name)") }
+        // A secure field's key presses are logged without the key, so the label never shows the password.
+        field.onKeyPress = { [weak self, weak field] name in
+            self?.record(field?.isSecureTextEntry == true ? "\(identifier) press" : "\(identifier) press \(name)")
+        }
     }
 
     private func configure(_ label: UILabel, identifier: String, text: String) {
@@ -89,6 +102,10 @@ final class InputViewController: UIViewController, UITextFieldDelegate {
         textLabel.text = "text: \(input.text ?? "")"
     }
 
+    @objc private func passwordChanged() {
+        passwordLengthLabel.text = "password: \(passwordInput.text?.count ?? 0) chars"
+    }
+
     private func record(_ event: String) {
         events.insert(event, at: 0)
         events = Array(events.prefix(6))
@@ -97,7 +114,13 @@ final class InputViewController: UIViewController, UITextFieldDelegate {
 
     func textField(_ textField: UITextField, shouldChangeCharactersIn range: NSRange, replacementString string: String) -> Bool {
         let name = textField.accessibilityIdentifier ?? "field"
-        record(string.isEmpty ? "\(name) delete \(range.length)" : "\(name) insert \(string.debugDescription)")
+        if string.isEmpty {
+            record("\(name) delete \(range.length)")
+        } else if textField.isSecureTextEntry {
+            record("\(name) insert \(string.count) chars")
+        } else {
+            record("\(name) insert \(string.debugDescription)")
+        }
         return true
     }
 

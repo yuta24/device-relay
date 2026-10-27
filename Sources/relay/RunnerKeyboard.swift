@@ -54,7 +54,25 @@ enum RunnerKeyError: Error, Equatable, CustomStringConvertible {
     }
 }
 
+enum RunnerTextError: Error, Equatable {
+    case missing
+    case notAString
+}
+
 enum RunnerTyping {
+    /// The `text` of a `/type` body, typed before `keyCount` keys. Without keys it is required and must
+    /// not be empty. With keys it may be absent or empty, but a value that is present must be a string,
+    /// so `{"text": 123, "keys": ["return"]}` is rejected instead of pressing only Return.
+    static func text(_ value: Any?, keyCount: Int) throws -> String {
+        guard let value else {
+            guard keyCount > 0 else { throw RunnerTextError.missing }
+            return ""
+        }
+        guard let text = value as? String else { throw RunnerTextError.notAString }
+        guard !text.isEmpty || keyCount > 0 else { throw RunnerTextError.missing }
+        return text
+    }
+
     /// True when an XCUI issue says that nothing in the app has keyboard focus, as `typeText` reports
     /// with "Neither element nor any descendant has keyboard focus".
     static func isMissingKeyboardFocus(_ issue: String) -> Bool {

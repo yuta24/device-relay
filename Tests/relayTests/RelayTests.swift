@@ -426,6 +426,27 @@ struct RunnerKeyboardTests {
         #expect(throws: RunnerKeyError.unknownKey("esc")) { try RunnerKey.parse(["esc"]) }
     }
 
+    @Test func requiresNonEmptyTextWithoutKeys() throws {
+        #expect(try RunnerTyping.text("hello", keyCount: 0) == "hello")
+        #expect(throws: RunnerTextError.missing) { try RunnerTyping.text(nil, keyCount: 0) }
+        #expect(throws: RunnerTextError.missing) { try RunnerTyping.text("", keyCount: 0) }
+        #expect(throws: RunnerTextError.notAString) { try RunnerTyping.text(123, keyCount: 0) }
+    }
+
+    @Test func allowsAbsentOrEmptyTextWithKeys() throws {
+        #expect(try RunnerTyping.text(nil, keyCount: 1) == "")
+        #expect(try RunnerTyping.text("", keyCount: 1) == "")
+        #expect(try RunnerTyping.text("abc", keyCount: 2) == "abc")
+    }
+
+    /// `{"text": 123, "keys": ["return"]}` used to drop the text silently and press only Return.
+    @Test func rejectsNonStringTextWithKeys() throws {
+        let body = try JSONSerialization.jsonObject(with: Data(#"{"text":123,"t":true,"n":null,"a":["x"],"o":{}}"#.utf8)) as? [String: Any]
+        for name in ["text", "t", "n", "a", "o"] {
+            #expect(throws: RunnerTextError.notAString, "\(name)") { try RunnerTyping.text(body?[name], keyCount: 1) }
+        }
+    }
+
     @Test func recognizesMissingKeyboardFocus() {
         let issue = "Failed to synthesize event: Neither element nor any descendant has keyboard focus. Event dispatch snapshot: ..."
         #expect(RunnerTyping.isMissingKeyboardFocus(issue))

@@ -166,7 +166,7 @@ final class RelayRunnerUITests: XCTestCase {
         case ("POST", "/type"):
             let body = try RunnerJSON(request.body)
             let keys = try body.keys()
-            let text = try keys.isEmpty ? body.string("text") : (body.optionalString("text") ?? "")
+            let text = try body.typedText(keyCount: keys.count)
             let bundleID = body.optionalString("bundleId") ?? foregroundApplication().bundleID
             try type(text: text, keys: keys, bundleID: bundleID)
             return .json(["ok": true, "bundleId": bundleID])
@@ -788,6 +788,17 @@ struct RunnerJSON {
             return try RunnerKey.parse(value)
         } catch let error as RunnerKeyError {
             throw RunnerError.invalidField(error.description)
+        }
+    }
+
+    /// The `text` of `/type`; see `RunnerTyping.text(_:keyCount:)`.
+    func typedText(keyCount: Int) throws -> String {
+        do {
+            return try RunnerTyping.text(object["text"], keyCount: keyCount)
+        } catch RunnerTextError.missing {
+            throw RunnerError.missingField("text")
+        } catch RunnerTextError.notAString {
+            throw RunnerError.invalidField("text")
         }
     }
 
