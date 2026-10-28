@@ -3,7 +3,10 @@ import Foundation
 enum Command: Equatable {
     case start(StartOptions)
     case bench(BenchOptions)
+    case runner(RunnerControlOptions)
     case help
+    /// `relay <command> --help`.
+    case commandHelp(String)
 }
 
 struct StartOptions: Equatable {
@@ -37,7 +40,8 @@ struct ArgumentError: Error, CustomStringConvertible {
 }
 
 enum Arguments {
-    static func parse(_ raw: [String]) throws -> Command {
+    /// `standardInput` is read only by `relay type --stdin`; tests pass their own.
+    static func parse(_ raw: [String], standardInput: () -> Data = { FileHandle.standardInput.readDataToEndOfFile() }) throws -> Command {
         guard let subcommand = raw.first else { return .help }
         var rest = Array(raw.dropFirst())
 
@@ -108,8 +112,14 @@ enum Arguments {
             }
             return .bench(options)
         case "-h", "--help", "help":
+            if let name = rest.first, runnerUsages[name] != nil {
+                return .commandHelp(name)
+            }
             return .help
         default:
+            if runnerUsages[subcommand] != nil {
+                return try parseRunnerCommand(subcommand, rest, standardInput: standardInput)
+            }
             throw ArgumentError(description: "unknown command: \(subcommand)")
         }
     }
@@ -127,5 +137,10 @@ enum Arguments {
     bench  Measures round-trip latency of /health, /screenshot, and optionally /tap.
            --mode forces the runner's touch path (private event synthesis or public XCUI).
            --token defaults to the token in .relay/runner.json.
+
+    Runner commands (operate the runner relay start launched; relay <command> --help for details):
+    \(runnerCommandOrder.map { "  " + runnerUsages[$0]!.synopsis }.joined(separator: "\n"))
+
+    \(runnerCommonUsage)
     """
 }
