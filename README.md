@@ -136,8 +136,9 @@ xcodebuild の出力に `RELAY_RUNNER_READY port=8100 addresses=en0=…,utun3=�
 | `GET /foreground` | – | 前面アプリの `bundleId` と `pid`、取得経路 `source`（`private` / `fallback`）。詳しくは「前面アプリ」 |
 | `GET /screenshot` | `?format=png\|jpeg&quality=0.05–1.0`（既定は png、jpeg の既定 quality は 0.7。範囲外・数値以外の quality と、png への quality の指定は 400） | 画面全体のスクリーンショット（表示の向きに正規化済み） |
 | `GET /source` | `?format=json\|text&maxDepth=<n>&bundleId=`（既定は json、bundleId の既定は前面アプリ） | XCUI の要素ツリー。json は要素ごとの属性と frame、text は `debugDescription`。詳しくは「要素ツリー（/source）」 |
-| `POST /tap` | `{"x":200,"y":120}` | タップ |
-| `POST /press` | `{"x":200,"y":120,"duration":1.0}` | 長押し |
+| `POST /tap` | `{"x":200,"y":120}`、または `{"element":{"identifier":"relay.input"}}` | タップ。`element` で要素を指定すると、その frame の中心をタップします（「要素セレクタ」） |
+| `POST /press` | `{"x":200,"y":120,"duration":1.0}`、または `{"element":{…},"duration":1.0}` | 長押し |
+| `POST /find` | `{"element":{"type":"button"},"limit":20,"bundleId":"…","timeout":0}`（`limit`・`bundleId`・`timeout` は省略可） | セレクタに一致する要素の一覧（type / identifier / label / value / frame / enabled）。ツリー全体を読まずに要素を探せます（「要素セレクタ」） |
 | `POST /swipe` | `{"from":{"x":200,"y":700},"to":{"x":200,"y":200},"duration":0.3,"hold":0.05}` | スワイプ（ドラッグ） |
 | `POST /type` | `{"text":"hello","keys":["return"],"bundleId":"com.apple.Preferences"}`（`keys` と `bundleId` は省略可。`keys` があれば `text` は省略・空文字でも可。`text` が文字列以外なら `keys` があっても 400） | キーボードのフォーカスがある要素への文字入力。`text` の後に `keys` を順に送ります。対象の既定は前面アプリ |
 | `POST /key` | `{"key":"return","bundleId":"…"}`（bundleId は省略可） | 特殊キー（`return` / `delete` / `space`）を 1 つ送ります。それ以外のキー名は 400。詳しくは「文字入力と特殊キー」 |
@@ -166,7 +167,7 @@ xcodebuild の出力に `RELAY_RUNNER_READY port=8100 addresses=en0=…,utun3=�
 | `401` | `Authorization: Bearer <token>` がない、または一致しない（`{"ok":false,"error":"unauthorized"}`）。リクエストヘッダーの形式の判定（`400`・`413`・`431`・`501`）の次、ほかのどの判定よりも先に行います |
 | `404` / `405` | 未知のパス / メソッド違い |
 | `409` | 別のコマンドを実行中（`{"ok":false,"error":"busy"}`）。待たずにすぐ返ります。`/ping` と `/shutdown` 以外のすべてのエンドポイント（`/health` を含む）で起こります。詳しくは「同時リクエスト」 |
-| `422` | XCUI 側で操作に失敗（エラーメッセージを JSON で返し、ランナーは動き続けます）。`/type`・`/key` でキーボードのフォーカスがない場合は `no element has keyboard focus in <bundleId>` |
+| `422` | XCUI 側で操作に失敗（エラーメッセージを JSON で返し、ランナーは動き続けます）。`/type`・`/key` でキーボードのフォーカスがない場合は `no element has keyboard focus in <bundleId>`。`/tap`・`/press` の `element` で触れる要素が 1 つに決まらない場合は `reason`・`count`・`candidates` 付き（「要素セレクタ」） |
 | `413` / `431` | ボディが 16 MB を超える / リクエストヘッダーが 64 KB を超える |
 | `500` | 内部エラー（JPEG エンコード失敗など） |
 | `501` | `Transfer-Encoding` ヘッダーがある（値に関わらず。ボディは `Content-Length` でのみ受け付けます） |
@@ -186,6 +187,8 @@ curl -s -H "$AUTH" "$R/source?format=text&bundleId=com.apple.Preferences" | head
 curl -s -H "$AUTH" -X POST $R/launch      -H 'Content-Type: application/json' -d '{"bundleId":"com.apple.Preferences"}'
 curl -s -H "$AUTH" -X POST $R/tap         -H 'Content-Type: application/json' -d '{"x":200,"y":120}'
 curl -s -H "$AUTH" -X POST $R/press       -H 'Content-Type: application/json' -d '{"x":200,"y":400,"duration":1.0}'
+curl -s -H "$AUTH" -X POST $R/tap         -H 'Content-Type: application/json' -d '{"element":{"label":"General","type":"button"}}'
+curl -s -H "$AUTH" -X POST $R/find        -H 'Content-Type: application/json' -d '{"element":{"type":"cell"},"limit":5}'
 curl -s -H "$AUTH" -X POST $R/swipe       -H 'Content-Type: application/json' -d '{"from":{"x":200,"y":700},"to":{"x":200,"y":200}}'
 curl -s -H "$AUTH" -X POST $R/type        -H 'Content-Type: application/json' -d '{"text":"hello"}'
 curl -s -H "$AUTH" -X POST $R/type        -H 'Content-Type: application/json' -d '{"text":"example.com","keys":["return"]}'
@@ -265,8 +268,7 @@ RelayRunnerHost の入力欄（`relay.input`）で確認した結果（シミュ
 
 ```sh
 curl -s -H "$AUTH" -X POST $R/launch -H 'Content-Type: application/json' -d '{"bundleId":"dev.yuta24.devicerelay.RelayRunnerHost"}'
-curl -s -H "$AUTH" "$R/source" | jq -c '.tree | .. | objects | select(.identifier? == "relay.input") | .frame'
-# frame の中心を /tap してから
+curl -s -H "$AUTH" -X POST $R/tap -H 'Content-Type: application/json' -d '{"element":{"identifier":"relay.input"}}'
 curl -s -H "$AUTH" -X POST $R/type -H 'Content-Type: application/json' -d '{"text":"hello","keys":["return"]}'
 curl -s -H "$AUTH" "$R/source" | jq -r '.tree | .. | objects | select(.identifier? == "relay.submitted") | .label'
 ```
@@ -322,6 +324,85 @@ iOS 27 では UIScene のライフサイクルを採用していないアプリ�
 | 実機: 計算機 | 89 ms（10 KB） | 187 ms（4 KB） | 122 ms（1.6 KB） |
 | 実機: ホーム画面（SpringBoard） | 194 ms（70 KB） | 589 ms（25 KB） | 182 ms（9 KB） |
 
+## 要素セレクタ
+
+`/tap` と `/press` は、`x`・`y` の代わりに `element` で要素を指定できます。`/find` は同じセレクタで一致した要素の一覧を返します。
+
+```json
+{"element":{"identifier":"relay.input"}}
+{"element":{"label":"History","type":"button"}}
+{"element":{"type":"textField","index":1},"bundleId":"dev.yuta24.devicerelay.RelayRunnerHost","timeout":3}
+```
+
+| キー | 内容 |
+| --- | --- |
+| `element.identifier` / `element.label` / `element.value` | `/source` の同名の値との完全一致（大文字小文字も区別） |
+| `element.type` | `/source` の `type` と同じケース名（`button`、`textField`、`cell` など）。知らない名前は `400` |
+| `element.index` | 一致した要素のうち何番目を使うか（0 から。順序は `/source` の JSON と同じ文書順＝親が先の深さ優先） |
+| `bundleId` | 対象アプリ。省略時は前面アプリ（`/source` と同じ） |
+| `timeout` | 要素が現れるまで待つ秒数（0–10、既定 0 = 1 回だけ探す）。0.25 秒ごとにスナップショットを取り直します |
+| `limit`（`/find` のみ） | 返す要素の上限（1–100、既定 20）。`count` は常に一致した総数で、上限で切った場合は `truncated: true` |
+
+- 条件（`identifier`・`label`・`type`・`value`）は AND で組み合わせ、少なくとも 1 つ必要です。空文字列・文字列以外・未知のキー（`id` など）は `400` です。打ち間違いで条件が黙って消え、意図より広く一致するのを防ぐためです。
+- 部分一致・正規表現は入れていません。完全一致なら同じセレクタが常に同じ要素を指し、一致の理由が説明しやすいためです。部分一致は複数一致が増え、`index` の意味が画面の内容で変わりやすくなります。曖昧な名前で探したいときは、`/find` を `type` などで絞って一覧から選び、その `identifier` や `index` を使ってください。
+- 解決には `/source` と同じ `snapshot()` を使い、frame は表示の向きのポイント（`/tap` と同じ座標系）なので、横向きでもそのまま使えます。タップ位置は「frame と画面の重なる部分」の中心です（画面端で一部が切れたセルも、見えている部分の中心を押します）。タッチは座標指定と同じ経路（`private`、だめなら `xcui`。`mode` も同じ）で送ります。
+- `x`・`y` と `element` を両方指定すると `400` です。
+
+応答（`/tap`）には、実際に使った要素とタップ座標が入ります:
+
+```json
+{"bundleId":"dev.yuta24.devicerelay.RelayRunnerHost","element":{"enabled":true,
+ "frame":{"height":34,"width":370,"x":16,"y":132},"identifier":"relay.input2","index":0,"label":"",
+ "type":"textField","value":null},"mode":"private","ok":true,"point":{"x":201,"y":149}}
+```
+
+要素が 1 つに決まらない・触れない場合は `422` で、`reason`、一致した総数 `count`、候補（最大 5 件）`candidates` を返します。
+
+| `reason` | 条件 | `candidates` |
+| --- | --- | --- |
+| `notFound` | 一致なし | 空 |
+| `ambiguous` | 2 件以上一致して `index` がない | 一致した要素（先頭 5 件） |
+| `indexOutOfRange` | `index` が一致件数以上 | 一致した要素（先頭 5 件） |
+| `emptyFrame` | 選んだ要素の frame の幅か高さが 0 | 選んだ要素 |
+| `offscreen` | 選んだ要素の frame が画面と重ならない | 選んだ要素 |
+| `disabled` | 選んだ要素が `enabled: false` | 選んだ要素 |
+
+```json
+{"candidates":[{"enabled":true,"frame":{"height":52,"width":370,"x":16,"y":380.333},
+  "identifier":"com.apple.settings.general","index":0,"label":"General","type":"button","value":null},
+ {"enabled":true,"frame":{"height":29,"width":101.667,"x":29.667,"y":392},"identifier":"","index":1,
+  "label":"General","type":"staticText","value":null}],
+ "count":2,"error":"2 elements match the selector; add conditions or an index","ok":false,"reason":"ambiguous"}
+```
+
+（設定アプリのトップでは「一般」のセルが `button` と、その中の `staticText` の 2 つとして見えるので、`{"label":"General","type":"button"}` のように型も指定します。）
+
+`/find` の例（`{"element":{"type":"textField"}}`、RelayRunnerHost）:
+
+```json
+{"bundleId":"dev.yuta24.devicerelay.RelayRunnerHost","count":2,"elements":[
+ {"enabled":true,"frame":{"height":34,"width":370,"x":16,"y":86},"identifier":"relay.input","index":0,"label":"","type":"textField","value":null},
+ {"enabled":true,"frame":{"height":34,"width":370,"x":16,"y":132},"identifier":"relay.input2","index":1,"label":"","type":"textField","value":null}],
+ "ok":true,"truncated":false}
+```
+
+`/find` は一致がなくても `200`（`count: 0`）です。`elements[].index` はそのまま `/tap` の `index` に使えます。`/find` に `index` を付けると、その 1 件だけ（範囲外なら空）を返します（`count` は一致した総数のままです）。
+
+### 待機（timeout）
+
+- `timeout` を付けると、`/tap`・`/press` は要素が触れる状態（`notFound`・`indexOutOfRange`・`emptyFrame`・`offscreen`・`disabled` 以外）になるまで、`/find` は 1 件以上一致するまで待ちます。期限を過ぎると最後の結果を返します（`/tap` は `422`、`/find` は `count: 0`）。`ambiguous` は待っても解消しにくいので、待たずにすぐ `422` を返します。
+- 待っている間もスナップショットの失敗（アプリがまだ起動していないなど）は再試行します。
+- 上限は 10 秒です。待っている間はコマンドが busy ゲートを持ち続けるので、ほかのリクエスト（`/health` を含む）は `409` になります（`/ping` は `busy: true` を返します）。長く待つ必要がある場合は、短い `timeout` で繰り返してください。
+- `timeout` は「次のスナップショットを取るかどうか」の期限で、1 回のスナップショット自体は中断できません（「既知の制約」を参照）。
+
+シミュレータで、RelayRunnerHost を終了した状態から `{"element":{"identifier":"relay.input2"},"bundleId":"…RelayRunnerHost","timeout":5}` を送り、1.5 秒後に `simctl launch` で起動すると、約 3.8 秒で 200 が返って `relay.input2` にフォーカスが移りました。待機中の `/ping` は `{"busy":true,"busyForMs":719}`、`/health` は `409` でした。
+
+確認した結果（シミュレータ iPhone 17 Pro）:
+
+- RelayRunnerHost: `relay.input` / `relay.input2` を identifier 指定・`{"type":"textField","index":1}` でタップすると、`/source` の `hasKeyboardFocus` がその欄に移りました（`private`・`xcui`、`/press` も同じ）。
+- 横向き（landscapeLeft / landscapeRight）でも、identifier 指定のタップでフォーカスが移りました（`point` は 874×402 の座標で `{"x":437,"y":87}` など）。
+- 設定: `{"label":"General","type":"button"}` → `{"label":"About","type":"button"}` と順にタップして「情報」画面に移りました。
+
 ## 座標系と画面の向き
 
 - 座標は **前面アプリの表示の向き（interface orientation）での、画面左上を原点とするポイント単位** です。縦向きなら 402×874、横向きなら 874×402 の範囲で指定します（iPhone 17 Pro の場合）。
@@ -355,6 +436,18 @@ iPhone 17 Pro シミュレータ（iOS 27.0、Apple Silicon Mac、`127.0.0.1`）
 | `GET /screenshot` (jpeg q=0.5、横・正規化あり) | 113 | 117 | 118 | 118 | 151 KB |
 | `POST /tap` (private) | 292 | 298 | 304 | 315 | – |
 | `POST /tap` (xcui) | 1598 | 1617 | 1634 | 1636 | – |
+
+要素指定のタップ（同じシミュレータ、RelayRunnerHost の縦向き・キーボード表示中、`relay.input2` を `curl` で 10 回。ms）:
+
+| リクエスト | min | p50 | p90 | max |
+| --- | ---: | ---: | ---: | ---: |
+| `POST /tap` `{"x":201,"y":149}` (private) | 295 | 300 | 304 | 304 |
+| `POST /tap` `{"element":{"identifier":"relay.input2"}}` (private) | 334 | 347 | 351 | 353 |
+| `POST /tap` `{"x":201,"y":149}` (xcui) | 598 | 749 | 773 | 776 |
+| `POST /tap` `{"element":{"identifier":"relay.input2"}}` (xcui) | 593 | 739 | 770 | 773 |
+| `POST /find` `{"element":{"identifier":"relay.input2"}}` | 25 | 26 | 31 | 56 |
+
+要素指定は、スナップショットとツリーの組み立てのぶん（`/find` 単体とほぼ同じ約 25–50 ms）遅くなります。設定アプリのトップのように要素が多い画面では、`/find` が約 130–150 ms でした。
 
 実機 iPhone 14 Pro（iOS 26.7.1、USB 接続の CoreDevice トンネル経由）で、計算機を前面にして計測しました。`relay bench --count 10 --tap 150,748 --mode private|xcui`（「0」キー）の結果（ms）:
 
@@ -416,5 +509,6 @@ iPhone 17 Pro シミュレータ（iOS 27.0、Apple Silicon Mac、`127.0.0.1`）
 - **`portraitUpsideDown`**: iPhone のアプリの多くは上下逆さに回転しないので、`/orientation portraitUpsideDown` の後も `/health` の `orientation` は直前の向きのままになることがあります。表示が逆さになった場合の座標変換は実装していますが、検証していません。
 - **音量ボタン**: `volumeUp` / `volumeDown` は実機でのみ使えます（シミュレータでは 400）。
 - **実機の `home`**: 実機では `XCUIDevice.press(.home)` が成功を返すのに何も起きません（iOS 26.7.1 + Xcode 27 で確認）。testmanagerd が `Failed to load displays from CADisplay` で画面を取得できず、ボタンのイベントを画面に結びつかないキーボードから送るため、SpringBoard が無視します。そのため実機の `/button home` は、ホームインジケーターのジェスチャー（画面下端から上への素早いスワイプ）で代用します。`private` 経路では 0.12 秒のスワイプ（約 0.35 秒で応答）、`private` が使えない場合は XCUI のドラッグ（最初に 0.02 秒押す必要があります。約 1.8 秒）です。ホームボタンのない端末が前提で、ホームボタンのある端末では同じジェスチャーでコントロールセンターが開きます。シミュレータでは `press(.home)` が効くので、そのまま使います。
+- **要素セレクタ**: 完全一致だけです（「要素セレクタ」）。キーボードやシートに隠れている要素も frame が画面内なら `offscreen` にならず、隠している側がタップされます（`isHittable` は見ていません）。`timeout` は 1 回のスナップショットを中断できず、別プロセスのシート（設定の Apple Account のサインイン画面など）が出ている間は、XCTest のスナップショットが `Timed out while evaluating UI query` で失敗するまで約 3 分戻らないことがありました（`/source` も同じです）。その間は busy ゲートを持ったままなので、ほかのリクエストは `409` になります。また `/launch` の直後は前面アプリの取得が切り替え前のアプリを返すことがあるので、確実に対象を決めたい場合は `bundleId` を指定してください。
 - **usbmux 非対応**: 実機への接続には CoreDevice トンネル（または `--allow-wifi` で Wi-Fi）が必要です。
 - **通信は平文**: 認証はトークンだけで、TLS はありません（「認証」の脅威モデルを参照）。`relay` を `kill -9` などで強制終了した場合は `.relay/runner.json` が残ります。
