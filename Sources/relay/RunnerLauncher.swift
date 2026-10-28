@@ -50,6 +50,8 @@ final class RunnerLauncher {
     private let options: StartOptions
     private let rootURL: URL
     private let stateURL: URL
+    /// The copy of `runner.json` for runner commands run in other directories (see `RunnerLocator`).
+    private let userInfoURL: URL?
     /// Generated per launch. The runner gets only its hash, through the environment (never the command
     /// line), so the token itself never reaches xcodebuild or the xcresult bundle.
     private let token = RunnerAuth.generateToken()
@@ -60,10 +62,15 @@ final class RunnerLauncher {
     private var isStopping = false
     private let lock = NSLock()
 
-    init(options: StartOptions, rootURL: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)) {
+    init(
+        options: StartOptions,
+        rootURL: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
+        userInfoURL: URL? = RunnerLocator.userURL()
+    ) {
         self.options = options
         self.rootURL = rootURL
         self.stateURL = rootURL.appendingPathComponent(".relay", isDirectory: true)
+        self.userInfoURL = userInfoURL
     }
 
     func run() throws -> Int32 {
@@ -142,14 +149,24 @@ final class RunnerLauncher {
 
         let infoURL = stateURL.appendingPathComponent(RunnerInfo.fileName)
         if let url = currentRunnerURL() {
+            let runnerInfo = RunnerInfo(url: url.absoluteString, token: token, udid: options.udid)
             do {
                 // The token goes only to the 0600 file: stdout often ends up in CI logs and terminal scrollback.
-                try RunnerInfo(url: url.absoluteString, token: token, udid: options.udid).write(to: infoURL)
+                try runnerInfo.write(to: infoURL)
             } catch {
                 info("cannot save the runner token: \(error)")
                 shutdown()
                 process.waitUntilExit()
                 return 1
+            }
+            if let userInfoURL, userInfoURL.standardizedFileURL != infoURL.standardizedFileURL {
+                // Only a convenience for other directories, so a failure is not fatal. The latest runner wins.
+                do {
+                    try runnerInfo.write(to: userInfoURL)
+                    info("runner commands in other directories read \(userInfoURL.path)")
+                } catch {
+                    info("cannot save \(userInfoURL.path): \(error)")
+                }
             }
             print("ready: \(url.absoluteString)")
             print("token: \(infoURL.path)")
@@ -161,7 +178,7 @@ final class RunnerLauncher {
                     process.terminate()
                 }
                 process.waitUntilExit()
-                RunnerInfo.remove(at: infoURL)
+                removeRunnerInfo(at: infoURL)
                 return 1
             }
         } else if process.isRunning {
@@ -171,7 +188,7 @@ final class RunnerLauncher {
         }
 
         process.waitUntilExit()
-        RunnerInfo.remove(at: infoURL)
+        removeRunnerInfo(at: infoURL)
         info("runner exited with status \(process.terminationStatus)")
         return process.terminationStatus
     }
@@ -298,6 +315,14 @@ final class RunnerLauncher {
     }
 
     private var signalSources: [DispatchSourceSignal] = []
+
+    /// The home copy is removed only while it is ours: a later `relay start` may have replaced it.
+    private func removeRunnerInfo(at infoURL: URL) {
+        RunnerInfo.remove(at: infoURL)
+        if let userInfoURL {
+            RunnerInfo.remove(at: userInfoURL, ifTokenIs: token)
+        }
+    }
 
     private func shutdown() {
         info("stopping runner")

@@ -870,3 +870,305 @@ struct CommandGateTests {
         #expect(String(decoding: busy, as: UTF8.self) == #"{"busy":true,"busyForMs":3000,"ok":true}"#)
     }
 }
+
+struct RunnerArgumentsTests {
+    private func operation(_ arguments: [String]) throws -> RunnerOperation {
+        guard case .runner(let options) = try Arguments.parse(arguments) else {
+            Issue.record("not a runner command: \(arguments)")
+            return .ping
+        }
+        return options.operation
+    }
+
+    @Test func parsesCommandsWithoutArguments() throws {
+        #expect(try operation(["ping"]) == .ping)
+        #expect(try operation(["health"]) == .health)
+        #expect(try operation(["foreground"]) == .foreground)
+        #expect(try operation(["shutdown"]) == .shutdown)
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["health", "extra"]) }
+    }
+
+    @Test func parsesRunnerPathAnywhere() throws {
+        #expect(try Arguments.parse(["health", "--runner", "a.json"])
+            == .runner(RunnerControlOptions(operation: .health, runnerPath: "a.json")))
+        #expect(try Arguments.parse(["launch", "--runner", "a.json", "com.example"])
+            == .runner(RunnerControlOptions(operation: .launch(bundleID: "com.example"), runnerPath: "a.json")))
+    }
+
+    @Test func parsesScreenshotFormats() throws {
+        #expect(try operation(["screenshot"]) == .screenshot(RunnerScreenshot()))
+        #expect(try operation(["screenshot", "-o", "shot.png"]) == .screenshot(RunnerScreenshot(output: "shot.png")))
+        #expect(try operation(["screenshot", "--output", "shot.JPG"]) == .screenshot(RunnerScreenshot(format: "jpeg", output: "shot.JPG")))
+        #expect(try operation(["screenshot", "--quality", "0.5"]) == .screenshot(RunnerScreenshot(format: "jpeg", quality: 0.5)))
+        #expect(try operation(["screenshot", "--format", "jpeg", "-o", "-"]) == .screenshot(RunnerScreenshot(format: "jpeg", output: "-")))
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["screenshot", "--format", "png", "--quality", "0.5"]) }
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["screenshot", "--quality", "2"]) }
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["screenshot", "--format", "gif"]) }
+    }
+
+    @Test func parsesSource() throws {
+        #expect(try operation(["source"]) == .source(format: nil, maxDepth: nil, bundleID: nil))
+        #expect(try operation(["source", "--format", "text", "--max-depth", "3", "--bundle-id", "com.apple.Preferences"])
+            == .source(format: "text", maxDepth: 3, bundleID: "com.apple.Preferences"))
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["source", "--max-depth", "-1"]) }
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["source", "--bundle-id", ""]) }
+    }
+
+    @Test func parsesFindSelector() throws {
+        #expect(try operation(["find", "--type", "textField"])
+            == .find(RunnerElementSelector(type: "textField"), limit: nil, timeout: nil, bundleID: nil))
+        #expect(try operation(["find", "--label", "General", "--type", "button", "--index", "1", "--limit", "5", "--timeout", "2.5", "--bundle-id", "b"])
+            == .find(RunnerElementSelector(label: "General", type: "button", index: 1), limit: 5, timeout: 2.5, bundleID: "b"))
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["find"]) }
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["find", "--index", "0"]) }
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["find", "--type", "notAType"]) }
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["find", "--id", "a", "--limit", "101"]) }
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["find", "--id", "a", "--timeout", "11"]) }
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["find", "--id", "a", "--id", "b"]) }
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["find", "--id", "a", "--duration", "1"]) }
+    }
+
+    @Test func parsesTapByPointOrSelector() throws {
+        #expect(try operation(["tap", "200", "120.5"]) == .tap(RunnerTouch(target: .point(RunnerPoint(x: 200, y: 120.5)))))
+        #expect(try operation(["tap", "--id", "relay.input", "--mode", "xcui", "--timeout", "3"])
+            == .tap(RunnerTouch(target: .element(RunnerElementSelector(identifier: "relay.input")), mode: "xcui", timeout: 3)))
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["tap"]) }
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["tap", "200"]) }
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["tap", "x", "y"]) }
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["tap", "1", "2", "--id", "a"]) }
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["tap", "1", "2", "--timeout", "1"]) }
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["tap", "1", "2", "--mode", "fast"]) }
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["tap", "1", "2", "--duration", "1"]) }
+    }
+
+    @Test func parsesPressDuration() throws {
+        #expect(try operation(["press", "1", "2", "--duration", "1.5"])
+            == .press(RunnerTouch(target: .point(RunnerPoint(x: 1, y: 2)), duration: 1.5)))
+        #expect(try operation(["press", "--label", "History", "--bundle-id", "b"])
+            == .press(RunnerTouch(target: .element(RunnerElementSelector(label: "History")), bundleID: "b")))
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["press", "1", "2", "--duration", "0"]) }
+    }
+
+    @Test func parsesSwipe() throws {
+        #expect(try operation(["swipe", "200", "700", "200", "200", "--duration", "0.5", "--hold", "0", "--mode", "private"])
+            == .swipe(from: RunnerPoint(x: 200, y: 700), to: RunnerPoint(x: 200, y: 200), duration: 0.5, hold: 0, mode: "private"))
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["swipe", "1", "2", "3"]) }
+    }
+
+    @Test func parsesTypeTextAndKeys() throws {
+        #expect(try operation(["type", "hello world"]) == .type(text: "hello world", keys: [], bundleID: nil))
+        #expect(try operation(["type", "example.com", "--key", "return", "--key", "Enter", "--bundle-id", "b"])
+            == .type(text: "example.com", keys: ["return", "Enter"], bundleID: "b"))
+        #expect(try operation(["type", "--key", "delete"]) == .type(text: nil, keys: ["delete"], bundleID: nil))
+        // `--` lets text start with a dash; a negative number needs nothing.
+        #expect(try operation(["type", "--", "--verbose"]) == .type(text: "--verbose", keys: [], bundleID: nil))
+        #expect(try operation(["type", "-5"]) == .type(text: "-5", keys: [], bundleID: nil))
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["type"]) }
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["type", ""]) }
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["type", "a", "b"]) }
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["type", "a", "--key", "tab"]) }
+    }
+
+    @Test func readsTypeTextFromStandardInput() throws {
+        func parse(_ arguments: [String], input: String) throws -> Command {
+            try Arguments.parse(arguments, standardInput: { Data(input.utf8) })
+        }
+        func type(_ text: String?, keys: [String] = []) -> Command {
+            .runner(RunnerControlOptions(operation: .type(text: text, keys: keys, bundleID: nil), runnerPath: nil))
+        }
+        #expect(try parse(["type", "--stdin"], input: "secret") == type("secret"))
+        // Only one trailing line break is dropped.
+        #expect(try parse(["type", "--stdin"], input: "secret\n") == type("secret"))
+        #expect(try parse(["type", "--stdin"], input: "secret\r\n") == type("secret"))
+        #expect(try parse(["type", "--stdin"], input: "two\nlines\n\n") == type("two\nlines\n"))
+        #expect(try parse(["type", "--stdin"], input: " -x ") == type(" -x "))
+        #expect(try parse(["type", "--key", "return", "--stdin"], input: "secret\n") == type("secret", keys: ["return"]))
+        #expect(try parse(["type", "--stdin", "--key", "return"], input: "") == type(nil, keys: ["return"]))
+        #expect(throws: ArgumentError.self) { try parse(["type", "--stdin"], input: "\n") }
+        #expect(throws: ArgumentError.self) { try parse(["type", "--stdin", "text"], input: "secret") }
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["type", "--stdin"], standardInput: { Data([0xff, 0xfe]) }) }
+        // Standard input is read only for --stdin, and --stdin is only a flag of type.
+        #expect(try Arguments.parse(["type", "hello"], standardInput: { Issue.record("read stdin"); return Data() }) == type("hello"))
+        #expect(throws: ArgumentError.self) { try parse(["key", "return", "--stdin"], input: "") }
+    }
+
+    @Test func parsesNamedArguments() throws {
+        #expect(try operation(["key", "space"]) == .key("space", bundleID: nil))
+        #expect(try operation(["button", "home"]) == .button("home"))
+        #expect(try operation(["orientation", "landscapeLeft"]) == .orientation("landscapeLeft"))
+        #expect(try operation(["launch", "com.apple.Preferences"]) == .launch(bundleID: "com.apple.Preferences"))
+        #expect(try operation(["terminate", "com.apple.Preferences"]) == .terminate(bundleID: "com.apple.Preferences"))
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["key", "escape"]) }
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["button", "power"]) }
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["orientation", "upsideDown"]) }
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["launch"]) }
+    }
+
+    @Test func showsCommandHelp() throws {
+        #expect(try Arguments.parse(["tap", "--help"]) == .commandHelp("tap"))
+        #expect(try Arguments.parse(["screenshot", "-h"]) == .commandHelp("screenshot"))
+        #expect(try Arguments.parse(["help", "find"]) == .commandHelp("find"))
+        #expect(try Arguments.parse(["help", "start"]) == .help)
+        #expect(Arguments.usage(for: "swipe").contains("relay swipe <x1> <y1> <x2> <y2>"))
+        // Every runner command is in the overall usage.
+        for name in Arguments.runnerUsages.keys {
+            #expect(Arguments.usage.contains("relay \(name)"))
+        }
+        #expect(Set(Arguments.runnerCommandOrder) == Set(Arguments.runnerUsages.keys))
+    }
+}
+
+struct RunnerOperationTests {
+    private func body(_ request: RunnerHTTPRequest) throws -> String? {
+        try request.body.map { String(decoding: try JSONSerialization.data(withJSONObject: $0, options: [.sortedKeys]), as: UTF8.self) }
+    }
+
+    @Test func buildsGetQueries() {
+        #expect(RunnerOperation.health.request.path == "/health")
+        #expect(RunnerOperation.screenshot(RunnerScreenshot()).request.path == "/screenshot")
+        #expect(RunnerOperation.screenshot(RunnerScreenshot(format: "jpeg", quality: 0.5)).request.path == "/screenshot?format=jpeg&quality=0.5")
+        let source = RunnerOperation.source(format: "text", maxDepth: 3, bundleID: "com.apple.Preferences").request
+        #expect(source.method == "GET")
+        #expect(source.path == "/source?format=text&maxDepth=3&bundleId=com.apple.Preferences")
+        #expect(source.body == nil)
+    }
+
+    @Test func buildsTouchBodies() throws {
+        let point = RunnerOperation.tap(RunnerTouch(target: .point(RunnerPoint(x: 200, y: 120.5)), mode: "xcui")).request
+        #expect(point.method == "POST")
+        #expect(point.path == "/tap")
+        #expect(try body(point) == #"{"mode":"xcui","x":200,"y":120.5}"#)
+
+        let element = RunnerOperation.press(RunnerTouch(
+            target: .element(RunnerElementSelector(label: "General", type: "button", index: 0)),
+            duration: 1, timeout: 3, bundleID: "com.apple.Preferences"
+        )).request
+        #expect(element.path == "/press")
+        #expect(try body(element)
+            == #"{"bundleId":"com.apple.Preferences","duration":1,"element":{"index":0,"label":"General","type":"button"},"timeout":3}"#)
+    }
+
+    @Test func buildsOtherBodies() throws {
+        #expect(try body(RunnerOperation.find(RunnerElementSelector(type: "cell"), limit: 5, timeout: nil, bundleID: nil).request)
+            == #"{"element":{"type":"cell"},"limit":5}"#)
+        #expect(try body(RunnerOperation.swipe(from: RunnerPoint(x: 1, y: 2), to: RunnerPoint(x: 3, y: 4), duration: nil, hold: nil, mode: nil).request)
+            == #"{"from":{"x":1,"y":2},"to":{"x":3,"y":4}}"#)
+        #expect(try body(RunnerOperation.type(text: "hi", keys: ["return"], bundleID: nil).request) == #"{"keys":["return"],"text":"hi"}"#)
+        #expect(try body(RunnerOperation.type(text: nil, keys: ["delete"], bundleID: "b").request) == #"{"bundleId":"b","keys":["delete"]}"#)
+        #expect(try body(RunnerOperation.key("space", bundleID: nil).request) == #"{"key":"space"}"#)
+        #expect(try body(RunnerOperation.button("home").request) == #"{"name":"home"}"#)
+        #expect(try body(RunnerOperation.orientation("portrait").request) == #"{"orientation":"portrait"}"#)
+        #expect(try body(RunnerOperation.launch(bundleID: "b").request) == #"{"bundleId":"b"}"#)
+        #expect(RunnerOperation.terminate(bundleID: "b").request.path == "/terminate")
+        #expect(RunnerOperation.shutdown.request.method == "POST")
+    }
+
+    @Test func allowsForWaitsInTheTimeout() {
+        #expect(RunnerOperation.health.waitTime == 0)
+        #expect(RunnerOperation.find(RunnerElementSelector(type: "cell"), limit: nil, timeout: 5, bundleID: nil).waitTime == 5)
+        #expect(RunnerOperation.press(RunnerTouch(target: .point(RunnerPoint(x: 0, y: 0)), duration: 4, timeout: 2)).waitTime == 6)
+    }
+}
+
+struct RunnerLocatorTests {
+    /// A scratch tree: <root>/home, <root>/home/app/sub (the current directory), <root>/elsewhere.
+    private struct Tree {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).resolvingSymlinksInPath()
+        var home: URL { root.appendingPathComponent("home") }
+        var app: URL { home.appendingPathComponent("app") }
+        var current: URL { app.appendingPathComponent("sub") }
+
+        init() throws {
+            try FileManager.default.createDirectory(at: current, withIntermediateDirectories: true)
+        }
+
+        @discardableResult
+        func write(_ token: String, under directory: URL) throws -> URL {
+            let url = RunnerInfo.defaultURL(rootURL: directory)
+            try RunnerInfo(url: "http://127.0.0.1:8100/", token: token, udid: "SIM").write(to: url)
+            return url
+        }
+
+        func locate(_ explicitPath: String? = nil, environment: [String: String] = [:]) throws -> URL {
+            try RunnerLocator.locate(explicitPath: explicitPath, environment: environment, currentDirectory: current, home: home)
+        }
+    }
+
+    @Test func prefersOptionThenEnvironmentThenParentsThenHome() throws {
+        let tree = try Tree()
+        defer { try? FileManager.default.removeItem(at: tree.root) }
+        #expect(throws: RunnerUnavailableError.self) { try tree.locate() }
+
+        let home = try tree.write("home", under: tree.home)
+        #expect(try tree.locate() == home)
+        let app = try tree.write("app", under: tree.app)
+        #expect(try tree.locate() == app)
+        let current = try tree.write("current", under: tree.current)
+        #expect(try tree.locate() == current)
+
+        let other = try tree.write("other", under: tree.root.appendingPathComponent("elsewhere"))
+        #expect(try tree.locate(environment: [RunnerLocator.environmentKey: other.path]) == other)
+        // --runner wins over the environment, and relative paths start at the current directory.
+        #expect(try tree.locate("../.relay/runner.json", environment: [RunnerLocator.environmentKey: other.path]) == app)
+        // An empty variable is ignored.
+        #expect(try tree.locate(environment: [RunnerLocator.environmentKey: ""]) == current)
+    }
+
+    @Test func givenPathMustExist() throws {
+        let tree = try Tree()
+        defer { try? FileManager.default.removeItem(at: tree.root) }
+        try tree.write("home", under: tree.home)
+        // No fallback to another runner when the requested one is gone.
+        #expect(throws: RunnerUnavailableError.self) { try tree.locate("missing.json") }
+        #expect(throws: RunnerUnavailableError.self) { try tree.locate(environment: [RunnerLocator.environmentKey: "/nonexistent/runner.json"]) }
+    }
+
+    @Test func searchPathEndsWithTheHomeCopyOnce() {
+        let home = URL(fileURLWithPath: "/Users/me")
+        let path = RunnerLocator.searchPath(currentDirectory: URL(fileURLWithPath: "/Users/me/src/app"), home: home).map(\.path)
+        #expect(path == [
+            "/Users/me/src/app/.relay/runner.json", "/Users/me/src/.relay/runner.json", "/Users/me/.relay/runner.json",
+            "/Users/.relay/runner.json", "/.relay/runner.json"
+        ])
+        let outside = RunnerLocator.searchPath(currentDirectory: URL(fileURLWithPath: "/tmp/x"), home: home).map(\.path)
+        #expect(outside.last == "/Users/me/.relay/runner.json")
+    }
+
+    @Test func removesTheSharedCopyOnlyWhileItIsOurs() throws {
+        let tree = try Tree()
+        defer { try? FileManager.default.removeItem(at: tree.root) }
+        let url = try tree.write("newer", under: tree.home)
+        RunnerInfo.remove(at: url, ifTokenIs: "older")
+        #expect(FileManager.default.fileExists(atPath: url.path))
+        RunnerInfo.remove(at: url, ifTokenIs: "newer")
+        #expect(!FileManager.default.fileExists(atPath: url.path))
+    }
+}
+
+struct RunnerControlTests {
+    @Test func mapsStatusesToExitCodes() {
+        #expect(RunnerExitCode(status: 200) == .success)
+        #expect(RunnerExitCode(status: 400) == .badRequest)
+        #expect(RunnerExitCode(status: 401) == .unauthorized)
+        #expect(RunnerExitCode(status: 404) == .badRequest)
+        #expect(RunnerExitCode(status: 409) == .busy)
+        #expect(RunnerExitCode(status: 422) == .actionFailed)
+        #expect(RunnerExitCode(status: 501) == .runnerError)
+        #expect(RunnerExitCode(status: 0) == .runnerError)
+    }
+
+    @Test func savesScreenshotsUnderTheTemporaryDirectoryByDefault() throws {
+        let now = try #require(ISO8601DateFormatter().date(from: "2026-10-29T01:02:03Z"))
+        let temporary = URL(fileURLWithPath: "/private/tmp/t")
+        let current = URL(fileURLWithPath: "/work/app")
+        let url = RunnerControl.screenshotURL(RunnerScreenshot(format: "jpeg"), now: now, currentDirectory: current, temporaryDirectory: temporary)
+        #expect(url.deletingLastPathComponent().path == "/private/tmp/t/relay")
+        #expect(url.lastPathComponent.hasPrefix("screenshot-"))
+        #expect(url.pathExtension == "jpg")
+
+        #expect(RunnerControl.screenshotURL(RunnerScreenshot(output: "shots/a.png"), currentDirectory: current, temporaryDirectory: temporary).path
+            == "/work/app/shots/a.png")
+        #expect(RunnerControl.screenshotURL(RunnerScreenshot(output: "/abs/b.png"), currentDirectory: current, temporaryDirectory: temporary).path
+            == "/abs/b.png")
+    }
+}

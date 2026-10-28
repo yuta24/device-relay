@@ -39,4 +39,11 @@ struct RunnerInfo: Codable, Equatable {
     static func remove(at url: URL) {
         unlink(url.path)
     }
+
+    /// Removes the file only while it still holds `token`, so a runner that stops does not delete the
+    /// shared copy another `relay start` has replaced since.
+    static func remove(at url: URL, ifTokenIs token: String) {
+        guard let info = try? read(from: url), info.token == token else { return }
+        remove(at: url)
+    }
 }

@@ -9,7 +9,7 @@ WebDriverAgent と同じ「常駐 XCTest ランナー」方式を使います。
 ```
  Mac (host)                                   iOS device / simulator
 ┌──────────────────────┐   HTTP/1.1 (JSON)   ┌──────────────────────────────────────┐
-│ relay start / bench  │ ──────────────────▶ │ RelayRunnerUITests-Runner            │
+│ relay start / tap …  │ ──────────────────▶ │ RelayRunnerUITests-Runner            │
 │ curl / 任意のクライアント │ ◀────────────────── │  testRelay() が NWListener で待ち受け │
 └──────────────────────┘                     │  └─ XCUIApplication / XCUIDevice で   │
         │ xcodebuild test-without-building   │     SpringBoard や任意アプリを操作    │
@@ -25,7 +25,7 @@ WebDriverAgent と同じ「常駐 XCTest ランナー」方式を使います。
 - `relay` CLI（SwiftPM）は、ビルド、ランナーの起動、到達可能なアドレスの探索、Ctrl-C での後片付けをまとめて行います。
 
 ```
-Package.swift / Sources/relay      ホスト CLI (relay start / relay bench)
+Package.swift / Sources/relay      ホスト CLI (relay start / relay bench / ランナー操作のサブコマンド)
 Tests/relayTests                   CLI のユニットテスト (Swift Testing)
 Runner/RelayRunner.xcodeproj       RelayRunnerHost (文字入力を試すためのホストアプリ) + RelayRunnerUITests (常駐ランナー)
 .relay/                            DerivedData、ログ、runner.json (git 管理外)
@@ -63,7 +63,7 @@ xcrun swift run relay start --udid <SIM_UDID>
 # token: /path/to/device-relay/.relay/runner.json
 ```
 
-ready になると、URL とアクセストークンが `.relay/runner.json`（パーミッション 0600）に書き出されます。別のターミナルから:
+ready になると、URL とアクセストークンが `.relay/runner.json` と `~/.relay/runner.json`（パーミッション 0600）に書き出されます。別のターミナルから（`relay health` などのサブコマンドは「CLI から操作する」を参照）:
 
 ```sh
 TOKEN=$(jq -r .token .relay/runner.json)
@@ -198,6 +198,76 @@ curl -s -H "$AUTH" -X POST $R/orientation -H 'Content-Type: application/json' -d
 curl -s -H "$AUTH" -X POST $R/terminate   -H 'Content-Type: application/json' -d '{"bundleId":"com.apple.Preferences"}'
 curl -s -H "$AUTH" -X POST $R/shutdown
 ```
+
+## CLI から操作する
+
+`relay` には、エンドポイントを 1 つずつ呼ぶサブコマンドがあります。トークンを自分で扱わずに、人もスクリプトもエージェントも同じ形で操作できます。`relay <command> --help` で各コマンドの使い方を表示します。
+
+```sh
+relay health                                   # curl -s -H "$AUTH" $R/health
+relay launch dev.yuta24.devicerelay.RelayRunnerHost
+relay find --type textField                    # POST /find {"element":{"type":"textField"}}
+relay tap --id relay.input                     # POST /tap {"element":{"identifier":"relay.input"}}
+relay tap 200 120 --mode xcui                  # POST /tap {"x":200,"y":120,"mode":"xcui"}
+relay press --label General --type button --duration 1.0
+relay swipe 200 700 200 200 --duration 0.3
+relay type "hello" --key return                # POST /type {"text":"hello","keys":["return"]}
+printf '%s' "$PASSWORD" | relay type --stdin   # 文字列を標準入力から読む（ps やシェルの履歴に残さない）
+relay key delete
+relay screenshot                               # 保存先の絶対パスを出力（既定は $TMPDIR/relay/screenshot-<時刻>.png）
+relay screenshot -o shot.jpg --quality 0.5     # 拡張子 .jpg / --quality で jpeg
+relay source --max-depth 3 | jq .tree
+relay source --format text --bundle-id com.apple.Preferences
+relay button home
+relay orientation landscapeLeft
+relay terminate com.apple.Preferences
+relay shutdown
+```
+
+（リポジトリ内では `xcrun swift run relay …`、他のディレクトリからは `.build/debug/relay` などビルド済みのバイナリを PATH に置いて使います。）
+
+| コマンド | エンドポイント | 主なオプション |
+| --- | --- | --- |
+| `ping` / `health` / `foreground` | `GET /ping` / `/health` / `/foreground` | – |
+| `screenshot` | `GET /screenshot` | `-o <file>`（`-` で stdout）、`--format png\|jpeg`、`--quality 0.05–1.0` |
+| `source` | `GET /source` | `--format json\|text`、`--max-depth <n>`、`--bundle-id <id>` |
+| `find` | `POST /find` | セレクタ、`--limit <n>`、`--timeout <s>`、`--bundle-id <id>` |
+| `tap` / `press` | `POST /tap` / `/press` | `<x> <y>` かセレクタ、`--mode private\|xcui`、`--timeout`・`--bundle-id`（セレクタのみ）、`--duration`（press のみ） |
+| `swipe` | `POST /swipe` | `<x1> <y1> <x2> <y2>`、`--duration`、`--hold`、`--mode` |
+| `type` | `POST /type` | `<text>` か `--stdin`、`--key <name>`（複数可、順に送る）、`--bundle-id` |
+| `key` / `button` / `orientation` | `POST /key` / `/button` / `/orientation` | 名前（`key` は `--bundle-id` も可） |
+| `launch` / `terminate` | `POST /launch` / `/terminate` | `<bundle-id>` |
+| `shutdown` | `POST /shutdown` | – |
+
+- セレクタは `--id`（= `identifier`）・`--label`・`--type`・`--value` を 1 つ以上と、任意の `--index <n>` です（「要素セレクタ」と同じ完全一致・AND）。`--type` の名前、キー名、ボタン名、向きの名前、数値の範囲は送る前に確認し、間違っていれば終了コード 1 で何も送りません。
+- `-` で始まる文字列を入力するときは `relay type -- --text` のように `--` を挟みます。
+- パスワードなど、`ps` やシェルの履歴に残したくない文字列は `relay type --stdin` で標準入力から渡します。末尾の改行 1 つ（`\n` か `\r\n`。`echo` が付けるもの）だけを除き、それ以外はそのまま入力します。`--key` と併用でき、`<text>` と同時に指定すると終了コード 1 で何も送りません。標準入力が空でも `--key` があればキーだけを送ります。
+- 成功時はランナーの JSON をそのまま stdout に出します（`source --format text` はテキスト）。`screenshot` だけは画像をファイルに保存し、その絶対パスを 1 行出します。既定の保存先を `$TMPDIR` にしたのは、操作する側（対象アプリのリポジトリ）の作業ツリーを汚さないためです。
+- 失敗時はランナーの JSON を stderr に出し、ステータスごとに次の終了コードで終わります。`relay:` で始まる行は人向けのヒントです。
+
+| 終了コード | 意味 |
+| --- | --- |
+| `0` | 成功（2xx） |
+| `1` | 引数の誤り、runner.json が読めない、スクリーンショットを保存できないなど、ローカルの失敗 |
+| `3` | ランナーに届かない（runner.json がない、接続できない・タイムアウト）。`relay start` が動いているか確認してください |
+| `4` | `401`。runner.json のトークンが動いているランナーのものではない（古いファイル、別のランナー） |
+| `5` | `409`（busy）。再試行してよい |
+| `6` | `422`。XCUI で失敗（フォーカスがない、要素が見つからない・1 つに決まらないなど） |
+| `7` | `400` とその他の 4xx |
+| `8` | 5xx などそれ以外 |
+
+### 接続先（runner.json）の探し方
+
+URL とトークンは `runner.json` から読みます。トークンはコマンドライン引数では受け取りません（`ps` やシェルの履歴に残るため）。次の順に探し、最初に見つかったものを使います。
+
+1. `--runner <path>`
+2. 環境変数 `RELAY_RUNNER`（runner.json のパス）
+3. カレントディレクトリから親へ順に `.relay/runner.json`
+4. `~/.relay/runner.json`
+
+1 と 2 で指定したファイルがなければ、3・4 に進まずに終了コード 3 で終わります（意図しない別の端末を操作しないため）。
+
+`relay start` は device-relay のリポジトリで動かしますが、操作は対象アプリのリポジトリなど別のディレクトリから行うことが多いので、`relay start` は `.relay/runner.json` に加えて `~/.relay/runner.json`（同じ内容、パーミッション 0600）も書き出します。親ディレクトリの探索だけでは、device-relay の外からは見つからないためです。停止時には、まだ自分のトークンが書かれている場合だけ削除します。複数の `relay start` を同時に動かすと `~/.relay/runner.json` は最後に起動したものになるので、その場合は `--runner` か `RELAY_RUNNER` で各 `.relay/runner.json` を指定してください。
 
 ## 前面アプリ
 
@@ -417,7 +487,7 @@ iOS 27 では UIScene のライフサイクルを採用していないアプリ�
 - `relay start` は起動ごとに 32 バイトのランダムなトークン（`SecRandomCopyBytes`、hex 64 文字）を生成します。ランナーにはトークンそのものではなく、その SHA-256 だけを xcodebuild の環境変数 `TEST_RUNNER_RELAY_RUNNER_TOKEN_SHA256` で渡します（コマンドライン引数には載せません）。ランナーは提示されたトークンの SHA-256 を、保持しているハッシュと定数時間で比較します。
 - ランナーは全エンドポイント（`/ping`、`/health`、`/shutdown` を含む）で `Authorization: Bearer <token>` を要求し、ない場合や一致しない場合は `401` を返します。比較は定数時間で行います。判定は HTTP キュー上で、リクエストヘッダーを読み終えた時点（ボディを読む前）に行い、`409` の busy 判定や `/ping` の応答よりも先です。未認証のリクエストからは busy 状態も処理時間もわからず、ボディを溜め込ませることもできません。
 - 認証の前に処理するのはリクエストヘッダーの解析だけで、ヘッダーは 64 KB まで、リクエスト全体が届くまでは 30 秒までに制限しています。
-- ready になると `relay start` は `{"url","token","udid"}` を `.relay/runner.json` にパーミッション 0600 で書き出し、stdout には `ready: <url>` とファイルの場所（`token: <path>`）だけを出します。トークンそのものは stdout に出しません（CI のログやターミナルの履歴に残りやすいため）。停止時にファイルを削除します。
+- ready になると `relay start` は `{"url","token","udid"}` を `.relay/runner.json` と `~/.relay/runner.json` にパーミッション 0600 で書き出し、stdout には `ready: <url>` とファイルの場所（`token: <path>`）だけを出します。トークンそのものは stdout に出しません（CI のログやターミナルの履歴に残りやすいため）。停止時にファイルを削除します。
 - `relay bench` は `--token` を受け付け、省略時は `.relay/runner.json` から読みます。`relay start` 内部の `/health` 探索、`/ping` の生存確認、`/shutdown` もトークンを付けます。
 - ランナーのログ（`relay-runner GET /health -> 200 1ms`、busy で弾いた `relay-runner GET /screenshot -> 409` など）には、メソッドとパスしか出しません。`/ping` は数秒おきに届くのでログに出しません。
 - 脅威モデル: 同じネットワーク（Wi-Fi など）にいる第三者が、タップ、アプリの起動、スクリーンショットの取得をできないようにするためのものです。ランナーはすべてのインターフェースで待ち受けますが、トークンがなければ何もできません。通信は平文の HTTP です。既定では、`relay` は CoreDevice トンネル（USB などの Mac と端末の間の経路）にしかトークンを送りません。`--allow-wifi` を付けると、Wi-Fi 上にもトークンと画面が平文で流れ、同じネットワークで盗聴できる相手には守れません。
@@ -511,4 +581,4 @@ iPhone 17 Pro シミュレータ（iOS 27.0、Apple Silicon Mac、`127.0.0.1`）
 - **実機の `home`**: 実機では `XCUIDevice.press(.home)` が成功を返すのに何も起きません（iOS 26.7.1 + Xcode 27 で確認）。testmanagerd が `Failed to load displays from CADisplay` で画面を取得できず、ボタンのイベントを画面に結びつかないキーボードから送るため、SpringBoard が無視します。そのため実機の `/button home` は、ホームインジケーターのジェスチャー（画面下端から上への素早いスワイプ）で代用します。`private` 経路では 0.12 秒のスワイプ（約 0.35 秒で応答）、`private` が使えない場合は XCUI のドラッグ（最初に 0.02 秒押す必要があります。約 1.8 秒）です。ホームボタンのない端末が前提で、ホームボタンのある端末では同じジェスチャーでコントロールセンターが開きます。シミュレータでは `press(.home)` が効くので、そのまま使います。
 - **要素セレクタ**: 完全一致だけです（「要素セレクタ」）。キーボードやシートに隠れている要素も frame が画面内なら `offscreen` にならず、隠している側がタップされます（`isHittable` は見ていません）。`timeout` は 1 回のスナップショットを中断できず、別プロセスのシート（設定の Apple Account のサインイン画面など）が出ている間は、XCTest のスナップショットが `Timed out while evaluating UI query` で失敗するまで約 3 分戻らないことがありました（`/source` も同じです）。その間は busy ゲートを持ったままなので、ほかのリクエストは `409` になります。また `/launch` の直後は前面アプリの取得が切り替え前のアプリを返すことがあるので、確実に対象を決めたい場合は `bundleId` を指定してください。
 - **usbmux 非対応**: 実機への接続には CoreDevice トンネル（または `--allow-wifi` で Wi-Fi）が必要です。
-- **通信は平文**: 認証はトークンだけで、TLS はありません（「認証」の脅威モデルを参照）。`relay` を `kill -9` などで強制終了した場合は `.relay/runner.json` が残ります。
+- **通信は平文**: 認証はトークンだけで、TLS はありません（「認証」の脅威モデルを参照）。`relay` を `kill -9` などで強制終了した場合は `.relay/runner.json` と `~/.relay/runner.json` が残ります（サブコマンドは接続できずに終了コード 3、別のランナーが同じポートにいれば 4 になります）。
