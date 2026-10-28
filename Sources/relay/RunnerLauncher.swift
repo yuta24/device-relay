@@ -7,22 +7,36 @@ struct StartupFailure: Equatable {
     var isUITestingSetup: Bool
 }
 
-/// Counts consecutive failed `/health` checks once the runner is ready.
+/// Counts consecutive failed liveness checks once the runner is ready.
+///
+/// The check is `GET /ping`, which the runner answers on its HTTP queue without the busy gate: it is 200
+/// even while a command runs, and it never makes a user's request fail with 409. A runner built before
+/// `/ping` (an old `.xctestrun` reused without `--rebuild`) answers 404; the monitor then falls back to
+/// `/health`, where 409 also means alive.
 struct LivenessMonitor {
     static let interval: TimeInterval = 3
     static let failureLimit = 3
 
+    private(set) var path = "/ping"
     private(set) var consecutiveFailures = 0
 
-    /// 200 is healthy and 409 means the runner is busy with a command. Anything else, including no
+    var usesLegacyHealth: Bool { path == "/health" }
+
+    /// Only 200 is alive, plus 409 (busy) on the legacy `/health` check. Anything else, including no
     /// response or a 401 from something else listening on the port, counts as a failure.
-    static func isAlive(status: Int?) -> Bool {
-        status == 200 || status == 409
+    func isAlive(status: Int?) -> Bool {
+        status == 200 || (usesLegacyHealth && status == 409)
     }
 
     /// Records one check and returns true once the runner should be considered dead.
     mutating func record(status: Int?) -> Bool {
-        consecutiveFailures = Self.isAlive(status: status) ? 0 : consecutiveFailures + 1
+        if !usesLegacyHealth, status == 404 {
+            // The runner answered with a valid token, so it is alive; it just predates /ping.
+            path = "/health"
+            consecutiveFailures = 0
+            return false
+        }
+        consecutiveFailures = isAlive(status: status) ? 0 : consecutiveFailures + 1
         return consecutiveFailures >= Self.failureLimit
     }
 }
@@ -100,6 +114,7 @@ final class RunnerLauncher {
                 markerAddresses: currentMarkerAddresses(),
                 allowWiFi: options.allowWiFi
             )
+            // /health rather than /ping: it runs XCUI on the main queue, so 200 means commands can run.
             for host in hosts {
                 guard let url = Self.url(host: host, port: options.port) else { continue }
                 var client = RunnerClient(baseURL: url, token: token)
@@ -140,7 +155,7 @@ final class RunnerLauncher {
             print("token: \(infoURL.path)")
             info("press Ctrl-C to stop the runner")
             if !superviseUntilExit(process: process, url: url) {
-                info("runner stopped answering /health (\(LivenessMonitor.failureLimit) checks in a row); stopping xcodebuild")
+                info("runner stopped answering liveness checks (\(LivenessMonitor.failureLimit) in a row); stopping xcodebuild")
                 info("see \(runnerLogURL.path)")
                 if process.isRunning {
                     process.terminate()
@@ -161,7 +176,7 @@ final class RunnerLauncher {
         return process.terminationStatus
     }
 
-    /// Checks `/health` every few seconds until xcodebuild exits. Returns false when the runner stopped
+    /// Checks `/ping` every few seconds until xcodebuild exits. Returns false when the runner stopped
     /// answering while xcodebuild kept running (a crashed runner otherwise leaves relay waiting forever).
     private func superviseUntilExit(process: Process, url: URL) -> Bool {
         var monitor = LivenessMonitor()
@@ -172,10 +187,15 @@ final class RunnerLauncher {
             Thread.sleep(forTimeInterval: 0.5)
             guard !currentIsStopping(), Date().timeIntervalSince(lastCheck) >= LivenessMonitor.interval else { continue }
             lastCheck = Date()
-            let status = (try? client.get("/health"))?.status
+            let status = (try? client.get(monitor.path))?.status
             // A failure while Ctrl-C is shutting the runner down is expected.
-            if !currentIsStopping(), process.isRunning, monitor.record(status: status) {
+            guard !currentIsStopping(), process.isRunning else { continue }
+            let wasLegacy = monitor.usesLegacyHealth
+            if monitor.record(status: status) {
                 return false
+            }
+            if !wasLegacy, monitor.usesLegacyHealth {
+                info("runner has no /ping (built before it); checking /health instead, which can make requests fail with 409. Restart with --rebuild")
             }
         }
         return true

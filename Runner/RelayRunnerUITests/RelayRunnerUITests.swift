@@ -42,6 +42,12 @@ final class RelayRunnerUITests: XCTestCase {
         // The server answers 401 itself before calling this, so unauthenticated clients learn nothing
         // about the busy state or command timing.
         let server = try RunnerHTTPServer(port: port, tokenHash: tokenHash) { [weak self] request, respond in
+            if request.path == "/ping" {
+                // The liveness check: answered here, so it never takes the gate from a command and never
+                // waits for the main queue. Not logged, because relay sends it every few seconds.
+                respond(request.method == "GET" ? .json(gate.pingBody()) : .error(RunnerError.methodNotAllowed.description, status: 405))
+                return
+            }
             if request.method == "POST" && request.path == "/shutdown" {
                 // Accepted even while a command runs; the runner stops once that command returns.
                 respond(.json(["ok": true]))
@@ -49,6 +55,7 @@ final class RelayRunnerUITests: XCTestCase {
                 return
             }
             guard gate.tryEnter() else {
+                Self.emit("relay-runner \(request.method) \(request.path) -> 409")
                 respond(.error("busy", status: 409))
                 return
             }
@@ -699,24 +706,6 @@ enum RunnerError: Error, CustomStringConvertible {
         case .internalError: return 500
         case .touchFailed, .actionFailed: return 422
         }
-    }
-}
-
-/// Admits one command at a time. Entered on the HTTP queue and left on the main queue.
-private final class CommandGate: @unchecked Sendable {
-    private let lock = NSLock()
-    private var busy = false
-
-    func tryEnter() -> Bool {
-        lock.withLock {
-            guard !busy else { return false }
-            busy = true
-            return true
-        }
-    }
-
-    func leave() {
-        lock.withLock { busy = false }
     }
 }
 

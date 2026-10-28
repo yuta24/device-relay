@@ -73,7 +73,7 @@ xcrun swift run relay bench --url http://127.0.0.1:8100 --count 5 --tap 200,120 
 
 Ctrl-C を押すと `relay` が `/shutdown` を送り、`.relay/runner.json` を削除します。ランナーがテストメソッドから抜けて `** TEST EXECUTE SUCCEEDED **` で終了し、`relay` も終了します（10 秒以内に終わらなければ xcodebuild を terminate します）。ランナーが ready になる前に Ctrl-C を押した場合は、`/shutdown` を送る先がないので xcodebuild をすぐに terminate します。
 
-ready の後も、`relay start` は 3 秒ごとに `/health` を送ってランナーの生存を確認します（`200` と `409` は生存扱い）。3 回続けて応答がなければ、ランナーが落ちたとみなしてエラーを表示し、xcodebuild を止めて `.relay/runner.json` を削除し、終了コード 1 で終わります。`.relay/runner.json` を書き出せなかった場合も、ランナーを止めてから終了コード 1 で終わります。
+ready の後も、`relay start` は 3 秒ごとに `/ping` を送ってランナーの生存を確認します（`200` だけが生存扱い）。`/ping` はコマンドの実行中でも busy ゲートを通らずに即答するので、生存確認が利用者のリクエストと重なって `409` を起こすことはありません。ready の判定（起動直後の探索）には、XCUI が動くことを確かめるため `/health` を使います。3 回続けて応答がなければ（`200` 以外が 3 回続けば）、ランナーが落ちたとみなしてエラーを表示し、xcodebuild を止めて `.relay/runner.json` を削除し、終了コード 1 で終わります。`--rebuild` なしで `/ping` のない古いランナーを使った場合は、`/ping` が `404` になるので警告を出し、以後は `/health` で確認します（このときは `409` も生存扱いで、利用者のリクエストが `409` になることがあります）。`.relay/runner.json` を書き出せなかった場合も、ランナーを止めてから終了コード 1 で終わります。
 
 オプション:
 
@@ -131,6 +131,7 @@ xcodebuild の出力に `RELAY_RUNNER_READY port=8100 addresses=en0=…,utun3=�
 
 | メソッド / パス | ボディ / クエリ | 説明 |
 | --- | --- | --- |
+| `GET /ping` | – | 生存確認。busy ゲートもメインスレッドも通らずに即答します（`{"ok":true,"busy":<bool>,"busyForMs":<ms or null>}`）。詳しくは「生存確認（/ping）」 |
 | `GET /health` | – | 端末情報、表示の向きでの画面サイズ（points / scale）、`orientation`、`touchSynthesis`、`foreground` |
 | `GET /foreground` | – | 前面アプリの `bundleId` と `pid`、取得経路 `source`（`private` / `fallback`）。詳しくは「前面アプリ」 |
 | `GET /screenshot` | `?format=png\|jpeg&quality=0.05–1.0`（既定は png、jpeg の既定 quality は 0.7。範囲外・数値以外の quality と、png への quality の指定は 400） | 画面全体のスクリーンショット（表示の向きに正規化済み） |
@@ -164,7 +165,7 @@ xcodebuild の出力に `RELAY_RUNNER_READY port=8100 addresses=en0=…,utun3=�
 | `400` | リクエスト不正（JSON、必須フィールド、値の範囲、数値フィールドへの数値以外（真偽値を含む）、負の値・数値以外・矛盾する `Content-Length`） |
 | `401` | `Authorization: Bearer <token>` がない、または一致しない（`{"ok":false,"error":"unauthorized"}`）。リクエストヘッダーの形式の判定（`400`・`413`・`431`・`501`）の次、ほかのどの判定よりも先に行います |
 | `404` / `405` | 未知のパス / メソッド違い |
-| `409` | 別のコマンドを実行中（`{"ok":false,"error":"busy"}`）。待たずにすぐ返ります |
+| `409` | 別のコマンドを実行中（`{"ok":false,"error":"busy"}`）。待たずにすぐ返ります。`/ping` と `/shutdown` 以外のすべてのエンドポイント（`/health` を含む）で起こります。詳しくは「同時リクエスト」 |
 | `422` | XCUI 側で操作に失敗（エラーメッセージを JSON で返し、ランナーは動き続けます）。`/type`・`/key` でキーボードのフォーカスがない場合は `no element has keyboard focus in <bundleId>` |
 | `413` / `431` | ボディが 16 MB を超える / リクエストヘッダーが 64 KB を超える |
 | `500` | 内部エラー（JPEG エンコード失敗など） |
@@ -175,6 +176,7 @@ xcodebuild の出力に `RELAY_RUNNER_READY port=8100 addresses=en0=…,utun3=�
 ```sh
 R=http://127.0.0.1:8100
 AUTH="Authorization: Bearer $(jq -r .token .relay/runner.json)"
+curl -s -H "$AUTH" $R/ping
 curl -s -H "$AUTH" $R/health
 curl -s -H "$AUTH" -o shot.png $R/screenshot
 curl -s -H "$AUTH" -o shot.jpg "$R/screenshot?format=jpeg&quality=0.5"
@@ -332,11 +334,11 @@ iOS 27 では UIScene のライフサイクルを採用していないアプリ�
 ## 認証
 
 - `relay start` は起動ごとに 32 バイトのランダムなトークン（`SecRandomCopyBytes`、hex 64 文字）を生成します。ランナーにはトークンそのものではなく、その SHA-256 だけを xcodebuild の環境変数 `TEST_RUNNER_RELAY_RUNNER_TOKEN_SHA256` で渡します（コマンドライン引数には載せません）。ランナーは提示されたトークンの SHA-256 を、保持しているハッシュと定数時間で比較します。
-- ランナーは全エンドポイント（`/health` と `/shutdown` を含む）で `Authorization: Bearer <token>` を要求し、ない場合や一致しない場合は `401` を返します。比較は定数時間で行います。判定は HTTP キュー上で、リクエストヘッダーを読み終えた時点（ボディを読む前）に行い、`409` の busy 判定よりも先です。未認証のリクエストからは busy 状態も処理時間もわからず、ボディを溜め込ませることもできません。
+- ランナーは全エンドポイント（`/ping`、`/health`、`/shutdown` を含む）で `Authorization: Bearer <token>` を要求し、ない場合や一致しない場合は `401` を返します。比較は定数時間で行います。判定は HTTP キュー上で、リクエストヘッダーを読み終えた時点（ボディを読む前）に行い、`409` の busy 判定や `/ping` の応答よりも先です。未認証のリクエストからは busy 状態も処理時間もわからず、ボディを溜め込ませることもできません。
 - 認証の前に処理するのはリクエストヘッダーの解析だけで、ヘッダーは 64 KB まで、リクエスト全体が届くまでは 30 秒までに制限しています。
 - ready になると `relay start` は `{"url","token","udid"}` を `.relay/runner.json` にパーミッション 0600 で書き出し、stdout には `ready: <url>` とファイルの場所（`token: <path>`）だけを出します。トークンそのものは stdout に出しません（CI のログやターミナルの履歴に残りやすいため）。停止時にファイルを削除します。
-- `relay bench` は `--token` を受け付け、省略時は `.relay/runner.json` から読みます。`relay start` 内部の `/health` 探索と `/shutdown` もトークンを付けます。
-- ランナーのログ（`relay-runner GET /health -> 200 1ms` など）には、メソッドとパスしか出しません。
+- `relay bench` は `--token` を受け付け、省略時は `.relay/runner.json` から読みます。`relay start` 内部の `/health` 探索、`/ping` の生存確認、`/shutdown` もトークンを付けます。
+- ランナーのログ（`relay-runner GET /health -> 200 1ms`、busy で弾いた `relay-runner GET /screenshot -> 409` など）には、メソッドとパスしか出しません。`/ping` は数秒おきに届くのでログに出しません。
 - 脅威モデル: 同じネットワーク（Wi-Fi など）にいる第三者が、タップ、アプリの起動、スクリーンショットの取得をできないようにするためのものです。ランナーはすべてのインターフェースで待ち受けますが、トークンがなければ何もできません。通信は平文の HTTP です。既定では、`relay` は CoreDevice トンネル（USB などの Mac と端末の間の経路）にしかトークンを送りません。`--allow-wifi` を付けると、Wi-Fi 上にもトークンと画面が平文で流れ、同じネットワークで盗聴できる相手には守れません。
 - xcodebuild は `TEST_RUNNER_` 環境変数を xcresult（`~/Library/Developer/Xcode/DerivedData/RelayRunner-*/Logs/Test/*.xcresult`）に記録します。ここに残るのはトークンの SHA-256 だけで、トークンは 256 ビットのランダム値なので、ハッシュから求めることはできず、ハッシュ自体をトークンとして送っても `401` になります。
 
@@ -388,6 +390,19 @@ iPhone 17 Pro シミュレータ（iOS 27.0、Apple Silicon Mac、`127.0.0.1`）
 ## 同時リクエスト
 
 コマンドは 1 つずつ実行します。実行中（タッチの完了待ちなどを含む）に別のリクエストが来ると、ランナーは HTTP キュー上で即座に `409 {"ok":false,"error":"busy"}` を返し、メインスレッドには入れません（実行中のコマンドの後ろに並ばせることはしません）。`/shutdown` だけは実行中でも受け付けてすぐ `200` を返し、実行中のコマンドが終わった時点でランナーが止まります。シミュレータで 3 秒の `/swipe` 中に `/health`・`/screenshot`・`/tap` を送ると、それぞれ 1–5 ms で 409 が返り、swipe 自体は 200 で完了しました。
+
+409 が起きるのは、ゲートを通るリクエスト（`/ping` と `/shutdown` 以外のすべて。`/health` も含みます）が、別のゲートを通るリクエストの実行中に届いたときだけです。1 本のクライアントが応答を待ってから次を送る使い方では、自分のリクエスト同士は重なりません。ランナーは 409 を返すたびに `relay-runner GET /screenshot -> 409` の形でログに出します（`.relay/logs/runner-*.log`）。
+
+### 生存確認（/ping）
+
+以前は `relay start` が ready の後も 3 秒ごとに `/health` を送っていました。`/health` は他のコマンドと同じくゲートを通ってメインスレッドで実行される（前面アプリの取得を含み、実機で p50 約 16 ms）ため、利用者のリクエストとたまたま重なると、利用者側に 409 が返っていました。いまは生存確認に `GET /ping` を使います。
+
+- `/ping` は HTTP キュー上で即答し、ゲートを取らず、メインスレッドにも入りません。コマンドの実行中でも `200` です。
+- 応答は `{"ok":true,"busy":<bool>,"busyForMs":<ms or null>}` です。`busy` はゲートを通ったコマンドが実行中かどうか、`busyForMs` はそのコマンドが受け付けられてからの経過ミリ秒（実行中でなければ `null`）です。
+- 認証は他のエンドポイントと同じく必須で、`401` の判定が先なので、トークンなしでは busy 状態はわかりません。
+- `/ping` はメインスレッドが止まっていても応答するので、「XCUI が動くこと」の確認にはなりません。そのため ready の判定（起動直後のアドレス探索）は、これまでどおり `/health` の `200` で行います。
+- 生存確認では `200` だけを生存扱いにします（`/ping` は 409 を返さないので、409 は失敗として数えます）。`--rebuild` を付けずに `/ping` のない古いランナーを使い回した場合は `404` が返るので、`relay start` は警告を出して `/health` に切り替えます（この場合だけ 409 も生存扱いで、利用者側の 409 も起こりえます）。
+- 利用者のクライアントも、`/ping` の `busy` が `false` になるのを見てから送れば、実行中のコマンドとの重なりによる 409 を避けられます（ただし、ほかのクライアントが先に入ることはあります）。
 
 ## 既知の制約
 
