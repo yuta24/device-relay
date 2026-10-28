@@ -60,12 +60,7 @@ enum RunnerElementTree {
             "label": node.label,
             "value": node.value ?? NSNull(),
             "placeholder": node.placeholder ?? NSNull(),
-            "frame": [
-                "x": rounded(node.frame.origin.x),
-                "y": rounded(node.frame.origin.y),
-                "width": rounded(node.frame.size.width),
-                "height": rounded(node.frame.size.height)
-            ],
+            "frame": json(node.frame),
             "enabled": node.enabled,
             "selected": node.selected,
             "hasFocus": node.hasFocus,
@@ -76,6 +71,21 @@ enum RunnerElementTree {
             object["truncated"] = true
         }
         return object
+    }
+
+    /// `{"x","y","width","height"}`, rounded like every frame in `/source`.
+    static func json(_ frame: CGRect) -> [String: Any] {
+        [
+            "x": rounded(frame.origin.x),
+            "y": rounded(frame.origin.y),
+            "width": rounded(frame.size.width),
+            "height": rounded(frame.size.height)
+        ]
+    }
+
+    /// `{"x","y"}`, rounded the same way, for the point `/tap` touched.
+    static func json(_ point: CGPoint) -> [String: Any] {
+        ["x": rounded(point.x), "y": rounded(point.y)]
     }
 
     /// JSONSerialization writes a Double with 17 significant digits (83.333 becomes 83.332999999999998),

@@ -112,6 +112,8 @@ final class RelayRunnerUITests: XCTestCase {
         var response: RunnerHTTPResponse
         do {
             response = try route(request)
+        } catch RunnerError.elementNotResolved(let failure) {
+            response = .json(failure.json, status: 422)
         } catch let error as RunnerError {
             response = .error(error.description, status: error.status)
         } catch {
@@ -146,27 +148,12 @@ final class RelayRunnerUITests: XCTestCase {
             return try source(query: request.query)
         case ("POST", "/tap"):
             let body = try RunnerJSON(request.body)
-            let x = try body.double("x"), y = try body.double("y")
-            switch try touchMode(body) {
-            case .private:
-                try synthesizeTouch(points: [(x, y)], offsets: [], liftOffset: Self.tapDuration)
-                return ok(mode: .private)
-            case .xcui:
-                coordinate(x: x, y: y).tap()
-                return ok(mode: .xcui)
-            }
+            return try touch(body, duration: nil)
         case ("POST", "/press"):
             let body = try RunnerJSON(request.body)
-            let duration = try body.positiveDouble("duration", default: 1.0)
-            let x = try body.double("x"), y = try body.double("y")
-            switch try touchMode(body) {
-            case .private:
-                try synthesizeTouch(points: [(x, y)], offsets: [], liftOffset: duration)
-                return ok(mode: .private)
-            case .xcui:
-                coordinate(x: x, y: y).press(forDuration: duration)
-                return ok(mode: .xcui)
-            }
+            return try touch(body, duration: body.positiveDouble("duration", default: 1.0))
+        case ("POST", "/find"):
+            return try find(RunnerJSON(request.body))
         case ("POST", "/swipe"):
             let body = try RunnerJSON(request.body)
             return ok(mode: try swipe(body, mode: touchMode(body)))
@@ -205,7 +192,7 @@ final class RelayRunnerUITests: XCTestCase {
             }
             return ok()
         case (_, "/health"), (_, "/foreground"), (_, "/screenshot"), (_, "/source"), (_, "/tap"), (_, "/press"),
-             (_, "/swipe"), (_, "/type"), (_, "/key"), (_, "/button"), (_, "/orientation"), (_, "/launch"),
+             (_, "/find"), (_, "/swipe"), (_, "/type"), (_, "/key"), (_, "/button"), (_, "/orientation"), (_, "/launch"),
              (_, "/terminate"), (_, "/shutdown"):
             throw RunnerError.methodNotAllowed
         default:
@@ -320,19 +307,118 @@ final class RelayRunnerUITests: XCTestCase {
                 guard let depth = RunnerElementTree.maxDepth(value) else { throw RunnerError.invalidField("maxDepth") }
                 maxDepth = depth
             }
-            let snapshot: XCUIElementSnapshot
-            do {
-                snapshot = try application.snapshot()
-            } catch {
-                throw RunnerError.actionFailed("failed to snapshot \(bundleID): \(error.localizedDescription)")
-            }
-            let tree = RunnerElementTree.json(Self.elementNode(snapshot, depth: 0, maxDepth: maxDepth))
+            let tree = RunnerElementTree.json(try elementTree(application, bundleID: bundleID, maxDepth: maxDepth))
             return .json(["ok": true, "bundleId": bundleID, "tree": tree])
         case "text":
             let source = application.debugDescription
             return RunnerHTTPResponse(status: 200, contentType: "text/plain; charset=utf-8", body: Data(source.utf8))
         default:
             throw RunnerError.invalidField("format")
+        }
+    }
+
+    private func elementTree(_ application: XCUIApplication, bundleID: String, maxDepth: Int = .max) throws -> RunnerElementNode {
+        let snapshot: XCUIElementSnapshot
+        do {
+            snapshot = try application.snapshot()
+        } catch {
+            throw RunnerError.actionFailed("failed to snapshot \(bundleID): \(error.localizedDescription)")
+        }
+        return Self.elementNode(snapshot, depth: 0, maxDepth: maxDepth)
+    }
+
+    // MARK: - Elements
+
+    /// `/tap` (duration nil) and `/press` at `x`/`y`, or at the element that `element` selects.
+    private func touch(_ body: RunnerJSON, duration: TimeInterval?) throws -> RunnerHTTPResponse {
+        guard let element = body.object["element"] else {
+            let x = try body.double("x"), y = try body.double("y")
+            return .json(["ok": true, "mode": try touch(x: x, y: y, duration: duration, mode: touchMode(body)).rawValue])
+        }
+        guard body.object["x"] == nil, body.object["y"] == nil else {
+            throw RunnerError.invalidField("element: pass either x and y or element, not both")
+        }
+        let selector = try body.elementSelector(element)
+        let timeout = try body.elementTimeout()
+        let mode = try touchMode(body)
+        let bundleID = body.optionalString("bundleId") ?? foregroundApplication().bundleID
+        let target = try waitForElements(bundleID: bundleID, timeout: timeout) { root, isLastAttempt in
+            let screen = CGRect(origin: .zero, size: self.screen(in: self.interfaceOrientation()).size)
+            switch selector.resolve(in: root, screen: screen) {
+            case .success(let target):
+                return target
+            case .failure(let failure):
+                guard isLastAttempt || !failure.isRetryable else { return nil }
+                throw RunnerError.elementNotResolved(failure)
+            }
+        }
+        let x = Double(target.point.x), y = Double(target.point.y)
+        return .json([
+            "ok": true,
+            "mode": try touch(x: x, y: y, duration: duration, mode: mode).rawValue,
+            "bundleId": bundleID,
+            "element": target.match.json,
+            "point": RunnerElementTree.json(target.point)
+        ])
+    }
+
+    private func touch(x: Double, y: Double, duration: TimeInterval?, mode: TouchMode) throws -> TouchMode {
+        switch mode {
+        case .private:
+            try synthesizeTouch(points: [(x, y)], offsets: [], liftOffset: duration ?? Self.tapDuration)
+        case .xcui:
+            if let duration {
+                coordinate(x: x, y: y).press(forDuration: duration)
+            } else {
+                coordinate(x: x, y: y).tap()
+            }
+        }
+        return mode
+    }
+
+    /// `/find`: the elements `element` matches, in document order, waiting up to `timeout` for the first.
+    private func find(_ body: RunnerJSON) throws -> RunnerHTTPResponse {
+        let selector = try body.elementSelector(body.object["element"] ?? NSNull())
+        let timeout = try body.elementTimeout()
+        guard let limit = RunnerElementLookup.findLimit(body.object["limit"]) else {
+            throw RunnerError.invalidField("limit: expected an integer in 1...\(RunnerElementLookup.maxFindLimit)")
+        }
+        let bundleID = body.optionalString("bundleId") ?? foregroundApplication().bundleID
+        let (matches, count) = try waitForElements(bundleID: bundleID, timeout: timeout) { root, isLastAttempt in
+            let all = selector.allMatches(in: root)
+            let matches = selector.picked(from: all)
+            return matches.isEmpty && !isLastAttempt ? nil : (matches, all.count)
+        }
+        return .json(RunnerElementLookup.findJSON(matches, count: count, limit: limit, bundleID: bundleID))
+    }
+
+    /// Snapshots `bundleID` until `attempt` returns a value, every `pollInterval` for up to `timeout`
+    /// seconds. `attempt` returns nil to try again; on the last attempt it must return or throw. A failed
+    /// snapshot (the app isn't running yet) is retried too. The command keeps the busy gate while it
+    /// waits, so other requests get 409 meanwhile.
+    private func waitForElements<T>(
+        bundleID: String,
+        timeout: TimeInterval,
+        _ attempt: (RunnerElementNode, _ isLastAttempt: Bool) throws -> T?
+    ) throws -> T {
+        let application = XCUIApplication(bundleIdentifier: bundleID)
+        let deadline = Date(timeIntervalSinceNow: timeout)
+        while true {
+            let isLastAttempt = Date() >= deadline
+            let root: RunnerElementNode?
+            do {
+                root = try elementTree(application, bundleID: bundleID)
+            } catch where !isLastAttempt {
+                // Usually the app isn't running yet.
+                root = nil
+            }
+            if let root, let result = try attempt(root, isLastAttempt) {
+                return result
+            }
+            let next = min(deadline, Date(timeIntervalSinceNow: RunnerElementLookup.pollInterval))
+            while Date() < next {
+                _ = RunLoop.current.run(mode: .default, before: next)
+            }
         }
     }
 
@@ -686,6 +772,8 @@ enum RunnerError: Error, CustomStringConvertible {
     case internalError(String)
     case touchFailed(String)
     case actionFailed(String)
+    /// A selector that didn't lead to one touchable element; answered with the failure's JSON.
+    case elementNotResolved(RunnerElementLookupFailure)
 
     var description: String {
         switch self {
@@ -695,6 +783,7 @@ enum RunnerError: Error, CustomStringConvertible {
         case .notFound: return "not found"
         case .methodNotAllowed: return "method not allowed"
         case .internalError(let message), .touchFailed(let message), .actionFailed(let message): return message
+        case .elementNotResolved(let failure): return failure.message
         }
     }
 
@@ -704,7 +793,7 @@ enum RunnerError: Error, CustomStringConvertible {
         case .notFound: return 404
         case .methodNotAllowed: return 405
         case .internalError: return 500
-        case .touchFailed, .actionFailed: return 422
+        case .touchFailed, .actionFailed, .elementNotResolved: return 422
         }
     }
 }
@@ -789,6 +878,24 @@ struct RunnerJSON {
         } catch RunnerTextError.notAString {
             throw RunnerError.invalidField("text")
         }
+    }
+
+    /// The `element` selector of `/tap`, `/press`, and `/find`.
+    func elementSelector(_ value: Any) throws -> RunnerElementSelector {
+        guard !(value is NSNull) else { throw RunnerError.missingField("element") }
+        do {
+            return try RunnerElementSelector(json: value)
+        } catch let error as RunnerElementSelectorError {
+            throw RunnerError.invalidField(error.description)
+        }
+    }
+
+    /// The optional `timeout` (seconds) to wait for an element; see `RunnerElementLookup.timeout(_:)`.
+    func elementTimeout() throws -> TimeInterval {
+        guard let timeout = RunnerElementLookup.timeout(object["timeout"]) else {
+            throw RunnerError.invalidField("timeout: expected seconds in 0...\(Int(RunnerElementLookup.maxTimeout))")
+        }
+        return timeout
     }
 
     func point(_ name: String) throws -> (x: Double, y: Double) {
