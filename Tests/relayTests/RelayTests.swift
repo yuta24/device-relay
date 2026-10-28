@@ -98,23 +98,41 @@ struct RunnerLauncherTests {
         #expect(withoutTunnel == ["DEV.coredevice.local"])
     }
 
-    @Test func treatsHealthyAndBusyRunnersAsAlive() {
-        #expect(LivenessMonitor.isAlive(status: 200))
-        #expect(LivenessMonitor.isAlive(status: 409))
-        for status in [nil, 401, 404, 500] as [Int?] {
-            #expect(!LivenessMonitor.isAlive(status: status))
+    @Test func checksPingAndTreatsOnly200AsAlive() {
+        let monitor = LivenessMonitor()
+        #expect(monitor.path == "/ping")
+        #expect(monitor.isAlive(status: 200))
+        // /ping never goes through the busy gate, so a 409 is not the runner.
+        for status in [nil, 401, 409, 500] as [Int?] {
+            #expect(!monitor.isAlive(status: status))
         }
     }
 
     @Test func givesUpAfterConsecutiveFailuresOnly() {
         var monitor = LivenessMonitor()
         var results = [monitor.record(status: nil), monitor.record(status: nil)]
-        // A busy answer resets the count.
-        results.append(monitor.record(status: 409))
+        // A healthy answer resets the count.
+        results.append(monitor.record(status: 200))
         #expect(results == [false, false, false])
         #expect(monitor.consecutiveFailures == 0)
-        results = (0..<LivenessMonitor.failureLimit).map { _ in monitor.record(status: nil) }
+        results = (0..<LivenessMonitor.failureLimit).map { _ in monitor.record(status: 409) }
         #expect(results == Array(repeating: false, count: LivenessMonitor.failureLimit - 1) + [true])
+    }
+
+    /// A runner built before /ping answers it with 404 after checking the token.
+    @Test func fallsBackToHealthForRunnersWithoutPing() {
+        var monitor = LivenessMonitor()
+        _ = monitor.record(status: nil)
+        let gaveUp = monitor.record(status: 404)
+        #expect(!gaveUp)
+        #expect(monitor.path == "/health")
+        #expect(monitor.consecutiveFailures == 0)
+        // On /health a busy runner is alive, and a 404 is now a failure.
+        #expect(monitor.isAlive(status: 409))
+        #expect(!monitor.isAlive(status: 404))
+        let results = (0..<LivenessMonitor.failureLimit).map { _ in monitor.record(status: 404) }
+        #expect(results == Array(repeating: false, count: LivenessMonitor.failureLimit - 1) + [true])
+        #expect(monitor.path == "/health")
     }
 
     @Test func bracketsIPv6InURL() {
@@ -549,5 +567,47 @@ struct RunnerRequestValuesTests {
         for value in ["abc", "", " 0.5", "0", "0.04", "1.01", "2.0", "-0.5", "nan", "inf"] {
             #expect(RunnerRequestValues.jpegQuality(value) == nil, "\(value)")
         }
+    }
+}
+
+struct CommandGateTests {
+    /// A clock the test moves by hand, in nanoseconds.
+    private final class Clock: @unchecked Sendable {
+        var now: UInt64 = 5_000_000_000
+    }
+
+    @Test func admitsOneCommandAtATime() {
+        let gate = CommandGate()
+        #expect(gate.tryEnter())
+        #expect(!gate.tryEnter())
+        gate.leave()
+        #expect(gate.tryEnter())
+    }
+
+    @Test func reportsElapsedTimeOnlyWhileBusy() {
+        let clock = Clock()
+        let gate = CommandGate(now: { clock.now })
+        #expect(gate.busyForMs() == nil)
+        #expect(gate.tryEnter())
+        clock.now += 1_234_999_999
+        #expect(gate.busyForMs() == 1234)
+        // A rejected request doesn't restart the clock.
+        #expect(!gate.tryEnter())
+        clock.now += 1_000_000
+        #expect(gate.busyForMs() == 1235)
+        gate.leave()
+        #expect(gate.busyForMs() == nil)
+    }
+
+    @Test func pingBodyHasNullElapsedTimeWhenIdle() throws {
+        let clock = Clock()
+        let gate = CommandGate(now: { clock.now })
+        let idle = try JSONSerialization.data(withJSONObject: gate.pingBody(), options: [.sortedKeys])
+        #expect(String(decoding: idle, as: UTF8.self) == #"{"busy":false,"busyForMs":null,"ok":true}"#)
+
+        #expect(gate.tryEnter())
+        clock.now += 3_000_000_000
+        let busy = try JSONSerialization.data(withJSONObject: gate.pingBody(), options: [.sortedKeys])
+        #expect(String(decoding: busy, as: UTF8.self) == #"{"busy":true,"busyForMs":3000,"ok":true}"#)
     }
 }
