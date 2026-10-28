@@ -238,22 +238,24 @@ final class RunnerLauncher {
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = pipe
-        var pending = ""
+        var lines = RunnerOutputLineBuffer()
         let verbose = options.verbose
         pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
-            guard !data.isEmpty else { return }
+            guard !data.isEmpty else {
+                // End of output: the pipe is drained, so nothing is lost by stopping here.
+                handle.readabilityHandler = nil
+                try? log.close()
+                if let line = lines.finish() {
+                    self?.handleRunnerLine(line, verbose: verbose)
+                }
+                return
+            }
+            // The log keeps the raw bytes, including lines too long for the buffer.
             log.write(data)
-            pending += String(decoding: data, as: UTF8.self)
-            while let newline = pending.firstIndex(of: "\n") {
-                let line = String(pending[..<newline])
-                pending = String(pending[pending.index(after: newline)...])
+            for line in lines.append(data) {
                 self?.handleRunnerLine(line, verbose: verbose)
             }
-        }
-        process.terminationHandler = { _ in
-            pipe.fileHandleForReading.readabilityHandler = nil
-            try? log.close()
         }
 
         try process.run()
