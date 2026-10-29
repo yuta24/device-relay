@@ -10,9 +10,9 @@ do {
         if options.background {
             exit(BackgroundStart.run(options))
         }
-        if BackgroundStart.isDetachedChild {
-            StartCancellation.install()
-        }
+        // Held until this process exits, after the runner stopped (see StartLock).
+        _ = try StartLock.acquireForStart(port: options.port)
+        StartCancellation.install()
         let setup = try StartSetup.prepare(options)
         if StartCancellation.isRequested {
             setup.finish()
@@ -62,6 +62,10 @@ do {
     case .commandHelp(let name):
         print(Arguments.usage(for: name))
     }
+} catch where StartCancellation.isRequested {
+    // Ctrl-C or SIGTERM stopped the boot or the build; what failed because of it is not worth showing.
+    FileHandle.standardError.write(Data("relay: stopped before launching the runner\n".utf8))
+    exit(1)
 } catch let error as SetupError {
     FileHandle.standardError.write(Data("relay: \(error)\n".utf8))
     exit(1)

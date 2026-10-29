@@ -15,7 +15,7 @@ struct RunnerInfo: Codable, Equatable {
     /// unrelated one that reuses the pid later (see `RelayProcess`).
     var startedAt: Date?
 
-    static func defaultURL(rootURL: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)) -> URL {
+    static func defaultURL(rootURL: URL = WorkingDirectory.url) -> URL {
         rootURL.appendingPathComponent(".relay", isDirectory: true).appendingPathComponent(fileName)
     }
 

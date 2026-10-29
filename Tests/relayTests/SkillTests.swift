@@ -65,6 +65,22 @@ struct SkillTests {
         }
     }
 
+    @Test func destinationsAreCanonicalButALinkStaysALink() throws {
+        let tree = try Tree()
+        defer { try? FileManager.default.removeItem(at: tree.root) }
+        // The current directory as the process sees it after cd into a /tmp or /var/folders path.
+        let privateApp = URL(fileURLWithPath: "/private" + tree.app.path)
+        let destination = SkillInstaller.destination(.project, home: tree.home, currentDirectory: privateApp, commands: tree.commands)
+        #expect(destination.path == tree.projectSkill.path)
+        #expect(SkillInstaller.destination(.directory("/private" + tree.app.path + "/skills"), home: tree.home, currentDirectory: tree.app,
+                                           commands: tree.commands).path == tree.app.path + "/skills/device-relay")
+
+        let (_, lines) = try tree.run(["install", "--link"], currentDirectory: privateApp)
+        #expect(lines == ["installed the device-relay skill: \(tree.projectSkill.path) -> \(tree.checkout.path)/skills/device-relay (link, relay \(RelayVersion.current), commit cccccccccccc)"])
+        #expect(SkillInstaller.destination(.project, home: tree.home, currentDirectory: privateApp, commands: tree.commands).path == tree.projectSkill.path)
+        #expect(InstalledSkill.inspect(tree.projectSkill) == .link(tree.checkout.appendingPathComponent(AgentSkill.path).standardizedFileURL))
+    }
+
     @Test func parsesSkillCommands() throws {
         #expect(try Arguments.parse(["skill", "install"]) == .skill(SkillOptions(action: .install)))
         #expect(try Arguments.parseSkill(["install", "--global", "--link", "--force"])

@@ -149,7 +149,8 @@ enum SkillInstaller {
         case .directory(let path):
             skills = RunnerLocator.resolve(path, in: currentDirectory)
         }
-        return skills.appendingPathComponent(AgentSkill.name, isDirectory: true).standardizedFileURL
+        // Only the directory is made canonical: the skill itself may be a link, which must stay the link.
+        return skills.canonicalFileURL.appendingPathComponent(AgentSkill.name, isDirectory: true)
     }
 
     /// The git root of `currentDirectory`, else `currentDirectory`.
@@ -157,7 +158,7 @@ enum SkillInstaller {
         if let output = try? commands.run("/usr/bin/git", ["-C", currentDirectory.path, "rev-parse", "--show-toplevel"]) {
             let path = output.trimmingCharacters(in: .whitespacesAndNewlines)
             if path.hasPrefix("/") {
-                return URL(fileURLWithPath: path, isDirectory: true)
+                return URL(fileURLWithPath: path, isDirectory: true).canonicalFileURL
             }
         }
         return currentDirectory
@@ -169,7 +170,7 @@ enum SkillInstaller {
     @discardableResult
     static func install(_ source: SkillSource, to destination: URL, link: Bool, force: Bool, now: Date = Date()) throws -> InstalledSkill {
         let manager = FileManager.default
-        let sourcePath = source.directory.standardizedFileURL.path
+        let sourcePath = source.directory.canonicalFileURL.path
         guard destination.path != sourcePath, !destination.path.hasPrefix(sourcePath + "/"), !sourcePath.hasPrefix(destination.path + "/") else {
             throw SetupError(description: "cannot install the skill from \(sourcePath) into itself (\(destination.path))")
         }
@@ -184,7 +185,7 @@ enum SkillInstaller {
         let staging = parent.appendingPathComponent(".\(AgentSkill.name).new-\(UUID().uuidString)", isDirectory: true)
         defer { try? manager.removeItem(at: staging) }
         if link {
-            try manager.createSymbolicLink(at: staging, withDestinationURL: source.directory.standardizedFileURL)
+            try manager.createSymbolicLink(at: staging, withDestinationURL: source.directory.canonicalFileURL)
         } else {
             try manager.copyItem(at: source.directory, to: staging)
             let record = SkillInstallRecord(relayVersion: source.relayVersion, commit: source.commit, source: sourcePath,
@@ -243,7 +244,7 @@ enum SkillInstaller {
             guard AgentSkill.contains(target) else {
                 return .warning(title, "\(destination.path) -> \(target.path), which no longer exists", fix: "run relay skill install --link\(scopeOption) again")
             }
-            if target.path == AgentSkill.installedSource(home: home).standardizedFileURL.path,
+            if target.canonicalFileURL.path == AgentSkill.installedSource(home: home).canonicalFileURL.path,
                let version = RunnerInstallRecord.read(root: RunnerProject.installedRoot(home: home))?.relayVersion, version != RelayVersion.current {
                 return .warning(title, "\(destination.path) -> \(target.path), installed by relay \(version), but this is relay \(RelayVersion.current)",
                                 fix: "run relay install again")
@@ -252,7 +253,7 @@ enum SkillInstaller {
         case .copy(let record):
             // relay install's copy is itself from another relay, so installing from it again would not help.
             let staleSource = source.map {
-                $0.directory.standardizedFileURL.path == AgentSkill.installedSource(home: home).standardizedFileURL.path
+                $0.directory.canonicalFileURL.path == AgentSkill.installedSource(home: home).canonicalFileURL.path
                     && $0.relayVersion != RelayVersion.current
             } ?? false
             let fix = staleSource ? "run relay install, then relay skill install\(scopeOption)" : updateFix
@@ -311,7 +312,7 @@ enum SkillCommand {
         _ options: SkillOptions,
         commands: HostCommands = .live,
         home: URL = UserHome.url,
-        currentDirectory: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
+        currentDirectory: URL = WorkingDirectory.url,
         findCheckout: (() -> URL?)? = nil,
         now: Date = Date(),
         output: (String) -> Void = { print($0) }

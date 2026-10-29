@@ -124,7 +124,7 @@ enum RunnerControl {
     static func screenshotURL(
         _ screenshot: RunnerScreenshot,
         now: Date = Date(),
-        currentDirectory: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
+        currentDirectory: URL = WorkingDirectory.url,
         temporaryDirectory: URL = FileManager.default.temporaryDirectory
     ) -> URL {
         if let output = screenshot.output {

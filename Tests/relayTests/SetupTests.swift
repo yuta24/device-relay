@@ -333,6 +333,25 @@ struct TeamIDTests {
     }
 }
 
+struct CanonicalPathTests {
+    @Test func resolvesSymlinksAlsoInPathsThatDoNotExistYet() throws {
+        let missing = UUID().uuidString
+        #expect(URL(fileURLWithPath: "/private/tmp").canonicalFileURL.path == "/tmp")
+        #expect(URL(fileURLWithPath: "/private/tmp/\(missing)/a").canonicalFileURL.path == "/tmp/\(missing)/a")
+        #expect(URL(fileURLWithPath: "/tmp/\(missing)/../b").canonicalFileURL.path == "/tmp/b")
+
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let real = root.appendingPathComponent("real")
+        let link = root.appendingPathComponent("link")
+        try FileManager.default.createDirectory(at: real, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: real)
+        #expect(link.appendingPathComponent("x/y").canonicalFileURL.path == real.path + "/x/y")
+        #expect(URL(fileURLWithPath: "/private" + root.path).canonicalFileURL.path == root.path)
+        #expect(RunnerLocator.resolve("link/x", in: URL(fileURLWithPath: "/private" + root.path)).path == real.path + "/x")
+    }
+}
+
 struct RunnerProjectTests {
     /// <root>/relay (a checkout with the project), <root>/relay/bin/relay -> <root>/relay/.build/relay,
     /// <root>/links/relay -> the same, and <root>/app/sub (the current directory).
@@ -495,6 +514,27 @@ struct StartSetupTests {
         #expect(setup.bootedSimulator == nil)
         setup.finish(commands: host.commands) { _ in }
         #expect(!host.xcrunCalls.contains { $0.contains("boot") || $0.contains("shutdown") })
+    }
+
+    @Test func aSimulatorWhoseBootIsStoppedIsShutDown() throws {
+        for cancelled in [true, false] {
+            let host = FakeHost()
+            host.devicectl = #"{"result":{"devices":[]}}"#
+            var commands = host.commands
+            let xcrun = commands.xcrun
+            commands.xcrun = { args in
+                let output = try xcrun(args)
+                // simctl boot stopped by Ctrl-C (or failing on its own).
+                if args.prefix(2) == ["simctl", "boot"] { throw ShellError(args: args, status: 15, output: "") }
+                return output
+            }
+            #expect(throws: ShellError.self) {
+                try StartSetup.prepare(StartOptions(udid: simulatorUDID), commands: commands, configURL: URL(fileURLWithPath: "/nonexistent/config.json"),
+                                       resolveProject: project, isCancelled: { cancelled }, info: { _ in })
+            }
+            // Only a stopped boot is undone: a boot that failed on its own may be someone else's simulator.
+            #expect(host.xcrunCalls.last == (cancelled ? ["simctl", "shutdown", simulatorUDID] : ["simctl", "boot", simulatorUDID]))
+        }
     }
 
     @Test func picksTheConnectedDeviceAndRemembersTheKeychainTeam() throws {
@@ -805,6 +845,18 @@ struct RunnerInstallTests {
         // Another checkout's commit says nothing about this install.
         #expect(record.staleness(checkout: ("/other/relay", String(repeating: "b", count: 40))) == nil)
         #expect(record.staleness(currentVersion: "9.9.9", checkout: nil)?.contains("relay \(RelayVersion.current), but this is relay 9.9.9") == true)
+    }
+
+    @Test func comparesTheRecordedSourceCanonically() throws {
+        let tree = try Tree()
+        defer { try? FileManager.default.removeItem(at: tree.root) }
+        let alias = tree.root.appendingPathComponent("alias")
+        try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: tree.checkout)
+        // Recorded through a symbolic link (or as /private/tmp/...) by an older relay.
+        let record = RunnerInstallRecord(relayVersion: RelayVersion.current, commit: String(repeating: "a", count: 40), source: alias.path,
+                                         installedAt: "")
+        #expect(record.staleness(checkout: (tree.checkout.path, String(repeating: "b", count: 40)))?.contains("aaaaaaaaaaaa") == true)
+        #expect(CheckoutRunnerSource(root: alias).location == tree.checkout.path)
     }
 
     @Test func checksOnlyTheInstalledCopy() throws {

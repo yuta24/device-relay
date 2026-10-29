@@ -18,7 +18,7 @@ enum RunnerLocator {
     static func locate(
         explicitPath: String?,
         environment: [String: String] = ProcessInfo.processInfo.environment,
-        currentDirectory: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
+        currentDirectory: URL = WorkingDirectory.url,
         home: URL = UserHome.url
     ) throws -> URL {
         let given: (source: String, path: String)?
@@ -45,11 +45,11 @@ enum RunnerLocator {
         return found
     }
 
-    /// `path` as given when absolute, else under `directory`. `URL(fileURLWithPath:relativeTo:)` would
-    /// drop the last component of a directory URL without a trailing slash.
+    /// `path` as given when absolute, else under `directory`, canonical. `URL(fileURLWithPath:relativeTo:)`
+    /// would drop the last component of a directory URL without a trailing slash.
     static func resolve(_ path: String, in directory: URL) -> URL {
         let url = path.hasPrefix("/") ? URL(fileURLWithPath: path) : directory.appendingPathComponent(path)
-        return url.standardizedFileURL
+        return url.canonicalFileURL
     }
 
     /// `.relay/runner.json` in `currentDirectory` and each parent up to the root, then the home copy.
