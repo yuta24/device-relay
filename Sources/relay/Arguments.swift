@@ -287,7 +287,8 @@ enum Arguments {
              the runner is ready, printing ready: <url>; relay stop stops it. Agents and CI should use
              relay start --background, then the runner commands, then relay stop.
     status   Shows the runner in runner.json (URL, device, relay start pid, start time) and whether /ping
-             answers. Exits 0 if it does, 3 if there is no runner or it does not answer.
+             answers. Exits 0 if it does, 3 if there is no runner or it does not answer, 4 if it answers 401
+             (the token in runner.json is not that runner's).
     stop     Stops relay start (SIGTERM, like Ctrl-C), which shuts the runner down, shuts down a simulator
              it booted, and removes runner.json. Prints "not running" (exit 0) if nothing runs.
     install  Copies the runner project and the agent skill from the device-relay checkout (--project,

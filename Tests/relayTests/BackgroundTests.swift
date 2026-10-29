@@ -165,22 +165,56 @@ struct BackgroundStartTests {
 
     @Test func startsOnlyWhenNothingAnswersAtTheRunnerURL() throws {
         let existing = RunnerInfo(url: "http://127.0.0.1:8100/", token: "t", udid: "SIM", name: "iPhone 17 Pro")
-        #expect(BackgroundStart.conflict(with: existing, ping: .unreachable("refused"), owner: nil) == nil)
+        #expect(BackgroundStart.conflict(with: existing, port: 8100, ping: .unreachable("refused"), owner: nil) == nil)
 
-        let alive = try #require(BackgroundStart.conflict(with: existing, ping: .alive(busy: false, busyForMs: nil), owner: 1234))
+        let alive = try #require(BackgroundStart.conflict(with: existing, port: 8100, ping: .alive(busy: false, busyForMs: nil), owner: 1234))
         #expect(alive.contains("already running at http://127.0.0.1:8100/ (iPhone 17 Pro, relay start pid 1234)"))
         #expect(alive.contains("relay stop"))
+        #expect(alive.contains("--port"))
 
         // Another runner with another token on the same port.
-        let unauthorized = try #require(BackgroundStart.conflict(with: existing, ping: .status(401), owner: nil))
+        let unauthorized = try #require(BackgroundStart.conflict(with: existing, port: 8100, ping: .status(401), owner: nil))
         #expect(unauthorized.contains("401"))
         #expect(unauthorized.contains("another runner"))
         #expect(unauthorized.contains("relay stop"))
         #expect(unauthorized.contains("--port"))
 
-        let other = try #require(BackgroundStart.conflict(with: existing, ping: .status(404), owner: nil))
+        let other = try #require(BackgroundStart.conflict(with: existing, port: 8100, ping: .status(404), owner: nil))
         #expect(other.contains("HTTP 404"))
         #expect(other.contains("--port"))
+    }
+
+    @Test func startsOnAnotherPortWhateverAnswersAtTheRunnerURL() {
+        let existing = RunnerInfo(url: "http://127.0.0.1:8100/", token: "t", udid: "SIM")
+        for ping: RunnerPing in [.alive(busy: true, busyForMs: 10), .status(401), .status(404), .unreachable("refused")] {
+            #expect(BackgroundStart.conflict(with: existing, port: 8101, ping: ping, owner: 1234) == nil)
+        }
+    }
+
+    @Test func doesNotPingARunnerOnAnotherPort() {
+        let existing = RunnerInfo(url: "http://127.0.0.1:8100/", token: "t", udid: "SIM")
+        var pinged = false
+        func ping() -> RunnerPing {
+            pinged = true
+            return .alive(busy: false, busyForMs: nil)
+        }
+        #expect(BackgroundStart.conflict(with: existing, port: 8101, ping: ping(), owner: nil) == nil)
+        #expect(!pinged)
+        #expect(BackgroundStart.conflict(with: existing, port: 8100, ping: ping(), owner: nil) != nil)
+        #expect(pinged)
+    }
+
+    @Test func refusesWhenTheRunnerURLHasNoPort() {
+        for url in ["http://127.0.0.1/", "not a url"] {
+            let existing = RunnerInfo(url: url, token: "t", udid: "SIM")
+            #expect(BackgroundStart.conflict(with: existing, port: 8101, ping: .status(401), owner: nil) != nil)
+            #expect(BackgroundStart.conflict(with: existing, port: 8101, ping: .unreachable("refused"), owner: nil) == nil)
+        }
+    }
+
+    @Test func statusHelpListsTheExitStatuses() {
+        #expect(Arguments.usage.contains("4 if it answers 401"))
+        #expect(Arguments.usage(for: "status").contains("4 the token was rejected (401)"))
     }
 
     @Test func describesWaitStatus() {
