@@ -3,6 +3,8 @@ import Foundation
 struct DoctorOptions: Equatable {
     var udid: String?
     var device: String?
+    var simulator = false
+    var os: String?
     var project: String?
 }
 
@@ -37,20 +39,34 @@ enum Doctor {
                 + "\(devices.filter { $0.kind == .simulator && $0.isAvailable }.count) iOS simulator(s)"))
             deviceChecks += warnings.map { .warning("devicectl", $0, fix: "check that Xcode 15 or later is selected (xcode-select -p)") }
             do {
-                let device = try DeviceSelector.select(from: devices, udid: options.udid, name: options.device)
+                let selection = try DeviceSelector.select(from: devices, udid: options.udid, name: options.device,
+                                                          simulator: options.simulator, os: options.os)
+                let device = selection.device
                 target = device
-                let how = options.udid != nil ? "--udid" : options.device != nil ? "--device" : "relay start without --udid would use it"
-                deviceChecks.append(.ok("target", "\(device.summary) (\(how))"))
+                if !selection.isAutomatic {
+                    deviceChecks.append(.ok("target", "\(device.summary) (\(selection.reason))"))
+                } else if device.kind == .device {
+                    // A device needs signing and UI Automation; people trying relay out usually want a simulator.
+                    deviceChecks.append(.warning("target", "\(device.summary) (relay start without --udid/--device would use it: \(selection.reason))",
+                                                 fix: "to try a simulator first, pass --simulator (a booted one) or --device <simulator name>"))
+                } else {
+                    deviceChecks.append(.ok("target", "\(device.summary) (relay start without --udid/--device would use it: \(selection.reason))"))
+                }
             } catch {
                 // The candidates follow on the next lines; the table below lists them.
                 let firstLine = String(describing: error).split(separator: "\n").first.map { String($0.hasSuffix(":") ? $0.dropLast() : $0) } ?? ""
                 // Without --udid/--device nothing is wrong yet: relay start can still be told which one to use.
                 deviceChecks.append(options.udid == nil && options.device == nil
-                    ? .warning("target", firstLine, fix: "pass --udid or --device to relay start (relay devices lists them)")
+                    ? .warning("target", firstLine, fix: options.simulator
+                        ? "relay devices lists the simulators; relay doctor --device <name> checks the one relay start would boot"
+                        : "pass --udid or --device to relay start (relay devices lists them)")
                     : .problem("target", firstLine, fix: "pick one from relay devices and pass its --udid"))
             }
             section("Devices", deviceChecks)
-            let listed = devices.filter { $0.kind == .device || $0.isActive }
+            // What --simulator and --os leave out is not a candidate, so not listed either.
+            let listed = devices.filter {
+                ($0.kind == .device || $0.isActive) && (!options.simulator || $0.kind == .simulator) && (options.os.map($0.matches(os:)) ?? true)
+            }
             if !listed.isEmpty {
                 output(DeviceList.table(listed).split(separator: "\n").map { "    " + $0 }.joined(separator: "\n"))
             }

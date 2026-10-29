@@ -58,13 +58,18 @@ skills/device-relay/               コーディングエージェント向けの
 make install          # xcrun swift build -c release して ~/.local/bin/relay にリンク（PREFIX=... で変更可）
 relay install         # Runner プロジェクトを ~/.relay/runner にコピー（--build でシミュレータ用に事前ビルド）
 
-# 以降はどのディレクトリからでも（対象アプリのリポジトリなど）
-relay doctor          # Xcode・Runner・署名・端末を確認
-relay start --background   # 端末を自動で選んでランナーを起動し、ready になったらプロンプトに戻る
-relay status          # 動いているランナーの確認（生きていれば終了コード 0）
-relay screenshot      # 操作（「CLI から操作する」）
-relay stop            # ランナーを止める（relay が boot したシミュレータも shutdown）
+# 以降はどのディレクトリからでも（対象アプリのリポジトリなど）。まずはシミュレータで試します
+relay doctor --simulator   # Xcode・Runner・シミュレータを確認（署名は実機でだけ必要）
+relay devices              # シミュレータの名前を確かめる（下の "iPhone 17 Pro" は例）
+relay start --background --device "iPhone 17 Pro"   # 停止中なら boot してランナーを起動し、ready になったらプロンプトに戻る
+relay status               # 動いているランナーの確認（生きていれば終了コード 0）
+relay screenshot           # 操作（「CLI から操作する」）
+relay stop                 # ランナーを止める（relay が boot したシミュレータも shutdown）
 ```
+
+- 同じ名前のシミュレータが iOS のランタイムごとにあっても、`--device` は最も新しい iOS のものを選び、`relay: using …` に OS つきで表示します。古い iOS で試すときは `--os 26.5` のように絞ります（「端末の選択」）。
+- すでに起動しているシミュレータを使うなら `relay start --background --simulator` でも構いません。実機が接続されていても、シミュレータの中から選びます。
+- `--udid` / `--device` / `--simulator` を付けずに `relay start` すると、接続中の実機があればそれを優先します。実機は署名や UI オートメーションの準備が要るので、「実機」の手順を済ませてから使ってください。
 
 エージェントや CI、スクリプトからは、`relay start --background` → 操作 → `relay stop` が基本の流れです（「バックグラウンドで動かす」）。人が手元で見ながら使うときは、`relay start`（フォアグラウンド。Ctrl-C で停止）でもかまいません。
 
@@ -102,7 +107,7 @@ xcrun swift run relay doctor
 
 ### 端末の選択（relay devices）
 
-`relay devices` は、`xcrun devicectl list devices` の実機と `xcrun simctl list devices` の iOS シミュレータを一覧表示します（名前、UDID、種類、OS、状態）。`--json` で JSON の配列を出します。
+`relay devices` は、`xcrun devicectl list devices` の実機と `xcrun simctl list devices` の iOS シミュレータを一覧表示します（名前、UDID、種類、OS、状態）。`--json` で JSON の配列を出します。`--os <version>` を付けると、その OS のものだけを表示します（下の `--os` と同じ一致の仕方）。
 
 ```
 NAME           UDID                                  KIND       OS          STATE
@@ -111,11 +116,19 @@ iPhone 17 Pro  11111111-1111-1111-1111-111111111111  simulator  iOS 27.0    boot
 iPhone 17      22222222-2222-2222-2222-222222222222  simulator  iOS 27.0    shutdown
 ```
 
-`relay start` と `relay doctor` は、端末を次のように決めます。どれを使うかは必ず `relay: using …` として表示します。
+`relay start` と `relay doctor` は、端末を次のように決めます。どれを使うかは必ず `relay: using …` として、OS と選んだ理由つきで表示します。
 
 1. `--udid <UDID>`
-2. `--device <名前>`: 名前の完全一致（大文字小文字は無視）。同じ名前が複数あり（ランタイム違いのシミュレータなど）、そのうち接続中・起動中のものが 1 つだけならそれを、そうでなければ候補つきでエラーにします
+2. `--device <名前>`: 名前の完全一致（大文字小文字は無視）。同じ名前が複数ある（ランタイム違いのシミュレータなど）ときは、次の順に決めます
+   1. そのうち接続中・起動中のものが 1 つだけならそれ
+   2. 候補（起動中のものがあればその中、なければすべて）がすべてシミュレータなら、最も新しい iOS のもの（`26.10` は `26.5` より新しい、のように数値で比べます）。`relay: using iPhone 17 Pro (iPhone 17 Pro, iOS 27.0, simulator, shutdown) <SIM_UDID> (--device; the newest iOS of 3 simulators named "iPhone 17 Pro")` のように表示します
+   3. 実機とシミュレータが同じ名前の場合、同じ名前の実機が複数ある場合、最も新しい iOS のシミュレータが複数ある場合は、候補つきでエラーにします（実機は OS で推測しません。`--simulator` か `--udid` で選びます）
 3. どちらもなければ、接続中の実機が 1 台だけならそれ、実機がなく起動中のシミュレータが 1 台だけならそれ。複数・0 台なら候補一覧つきでエラーにします
+
+次の 2 つで、上の選択の前に候補を絞れます。`--udid` / `--device` とも、自動選択とも組み合わせられます。
+
+- `--simulator`: シミュレータだけから選びます。実機が接続されていても、`--device` で同じ名前の実機があっても、シミュレータを選びます。`--device` なしでは、起動中のシミュレータが 1 台ならそれ、複数ならエラー（候補つき）です。0 台のときもエラーにし、新しい iOS のものから順に候補を示して、`--device <名前>` で選ぶよう案内します。どのシミュレータ（iPhone か iPad か、画面の大きさ）を使うかはスクリーンショットや座標に関わるので、勝手に選んで boot はしません
+- `--os <version>`: OS のバージョンが前方一致するもの（区切りの `.` ごとに比べます）だけから選びます。`--os 27` は iOS 27.0 や 27.1、`--os 26.5` は 26.5 や 26.5.1 に一致し、26.6 や 26.50 には一致しません（足りない桁は 0 とみなすので、`--os 27.0` は iOS 27 にも一致します）。「以上」の比較にしないのは、`--os 26.5` で 27.0 が選ばれると意図と違うためです
 
 停止中のシミュレータを `--udid` / `--device` で指定した場合は、`relay start` が `simctl boot` して起動を待ちます。relay が boot したシミュレータは、`relay start` の終了時（Ctrl-C を含む）に shutdown します。boot やビルドの途中（ランナーの起動前）に Ctrl-C（または SIGTERM）した場合も、実行中の simctl や xcodebuild を止めてから shutdown します。もともと起動していたシミュレータはそのままにします。
 
@@ -138,11 +151,11 @@ relay config unset teamID         # 忘れて、次回はキーチェーンか�
 
 ### 環境の確認（relay doctor）
 
-`relay doctor [--udid <UDID> | --device <名前>] [--project <path>]` は、ビルドや起動をせずに次を確認し、各項目を ✓（問題なし）/ ✗（このままでは動かない）/ !（注意）で表示します。✗ と ! には直し方を 1 行添えます。✗ があれば終了コード 1（ローカルの失敗）、なければ 0 です。
+`relay doctor [--udid <UDID> | --device <名前>] [--simulator] [--os <version>] [--project <path>]` は、ビルドや起動をせずに次を確認し、各項目を ✓（問題なし）/ ✗（このままでは動かない）/ !（注意）で表示します。✗ と ! には直し方を 1 行添えます。✗ があれば終了コード 1（ローカルの失敗）、なければ 0 です。
 
 - relay のバージョン、Xcode（`xcodebuild -version` と `xcode-select -p`）、xcrun、devicectl
 - Runner プロジェクトの解決結果と、`relay install` の状態（記録したバージョン・コミット・コピー元、ずれていれば !）
-- 端末一覧と、`relay start` が使う端末（`--udid` / `--device` がなければ自動選択の結果）
+- 端末一覧と、同じオプションの `relay start` が使う端末（`--udid` / `--device` がなければ自動選択の結果）。自動選択で実機になる場合は、シミュレータで試すなら `--simulator` か `--device <シミュレータ名>` を付けるよう ! で知らせます
 - 実機: OS のバージョン（17 以上）、接続状態、ペアリング、デベロッパモード（`devicectl list devices`）、DDI のマウント状態（`ddiServicesAvailable`）、ロック状態（`devicectl device info lockState` の `passcodeRequired`）。UI オートメーションの有効状態は Mac から読めないので、常に ! で確認を促します
 - シミュレータ: ランタイムが入っているか、起動状態
 - 署名: 証明書と Team ID（実機なら見つからなければ ✗、シミュレータなら !）
@@ -155,7 +168,7 @@ relay config unset teamID         # 忘れて、次回はキーチェーンか�
 ```sh
 relay start --device "iPhone 17 Pro"   # 停止中なら boot し、終了時に shutdown
 # relay: runner project: ~/.relay/runner (from relay install)
-# relay: using iPhone 17 Pro (iPhone 17 Pro, iOS 27.0, simulator, shutdown) <SIM_UDID> (--device)
+# relay: using iPhone 17 Pro (iPhone 17 Pro, iOS 27.0, simulator, shutdown) <SIM_UDID> (--device; the newest iOS of 3 simulators named "iPhone 17 Pro")
 # relay: booting simulator iPhone 17 Pro (<SIM_UDID>); it is shut down when relay exits
 # relay: building runner (log: ~/.relay/logs/build-<時刻>-8100.log)   ← 初回か --rebuild 指定時だけ
 # relay: launching runner on <SIM_UDID> (log: ~/.relay/logs/runner-<時刻>-8100.log)
@@ -181,6 +194,8 @@ ready の後も、`relay start` は 3 秒ごとに `/ping` を送ってランナ
 | オプション | 説明 |
 | --- | --- |
 | `--udid <UDID>` / `--device <名前>` | 使う端末（「端末の選択」）。省略すると自動で選びます。同時には指定できません |
+| `--simulator` | シミュレータだけから選びます（「端末の選択」）。実機が接続されていてもシミュレータを使えます |
+| `--os <version>` | OS のバージョン（`27`、`27.0`、`26.5` など）で候補を絞ります（「端末の選択」） |
 | `--project <path>` | Runner プロジェクトの場所（「Runner の用意」）。`$RELAY_HOME` より優先します |
 | `--port 8100` | 端末側の待ち受けポート。xcodebuild には `TEST_RUNNER_RELAY_RUNNER_PORT` として渡され、ランナーからは `RELAY_RUNNER_PORT` として見えます |
 | `--team-id <TEAM_ID>` | 実機向けの署名チーム（「Team ID」。省略時は自動検出）。`-allowProvisioningUpdates RELAY_DEVELOPMENT_TEAM=<TEAM_ID>` を付けてビルドし、ランナーが起動できたら `~/.relay/config.json` に保存します |
@@ -197,7 +212,7 @@ ready の後も、`relay start` は 3 秒ごとに `/ping` を送ってランナ
 ```sh
 relay start --background --device "iPhone 17 Pro"
 # relay: started relay start in the background (pid 12345, log: ~/.relay/logs/start-<時刻>-8100.log)
-# relay: using iPhone 17 Pro (...) <SIM_UDID> (--device)
+# relay: using iPhone 17 Pro (...) <SIM_UDID> (--device; the newest iOS of ...)
 # relay: building runner (log: ...)            ← 進行状況（ログの relay: の行）は標準エラーに出ます
 # relay: launching runner on <SIM_UDID> (log: ...)
 # ready: http://127.0.0.1:8100/                ← ここから標準出力
@@ -236,11 +251,11 @@ xcodebuild の出力に `RELAY_RUNNER_READY port=8100 addresses=en0=…,utun3=�
 3. Xcode の Window > Devices and Simulators で端末を選び、接続済み（準備完了）の状態にします。初回はここで開発用ディスクイメージ（DDI）が端末に適用されるので、完了するまで待ちます。
 4. 端末の 設定 > デベロッパ >「UI オートメーションを有効にする」をオンにします。オフのままだと、ランナーが `Failed to initialize for UI testing`（`Timed out while enabling automation mode.`）で起動に失敗します（Mac からは状態を読めないので、`relay doctor` は確認を促すだけです）。
 5. `relay doctor` で ✗ がないことを確認します（ペアリング、デベロッパモード、DDI、ロック、署名の Team ID）。
-6. ランナーをビルドして起動します。接続中の実機が 1 台だけなら `--udid` も `--team-id` も要りません（Team ID はキーチェーンから検出し、起動できたら保存します）。
+6. ランナーをビルドして起動します。接続中の実機が 1 台だけなら `--udid` も `--team-id` も要りません（Team ID はキーチェーンから検出し、起動できたら保存します）。意図した端末を確実に使うには `--device "<端末名>"` か `--udid` で指定します。
 
    ```sh
    relay start
-   # relay: using <端末名> (iPhone 14 Pro, iOS 26.7.1, device, connected) <DEVICE_UDID> (selected automatically)
+   # relay: using <端末名> (iPhone 14 Pro, iOS 26.7.1, device, connected) <DEVICE_UDID> (selected automatically; the only connected device)
    # relay: signing team: <TEAM_ID> (from keychain)
    # ...
    # relay: saved the team to ~/.relay/config.json; relay config unset teamID forgets it   ← ランナーが起動できたとき

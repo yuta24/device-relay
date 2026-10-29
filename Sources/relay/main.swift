@@ -31,13 +31,16 @@ do {
         }
         setup.finish()
         exit(status)
-    case .devices(let json):
-        let (devices, warnings) = try DeviceList.load()
+    case .devices(let json, let os):
+        var (devices, warnings) = try DeviceList.load()
+        if let os {
+            devices = devices.filter { $0.matches(os: os) }
+        }
         warnings.forEach { FileHandle.standardError.write(Data("relay: \($0)\n".utf8)) }
         if json {
             FileHandle.standardOutput.write(try DeviceList.json(devices) + Data("\n".utf8))
         } else {
-            print(devices.isEmpty ? "no devices or iOS simulators found" : DeviceList.table(devices))
+            print(devices.isEmpty ? "no devices or iOS simulators found\(os.map { " with --os \($0)" } ?? "")" : DeviceList.table(devices))
         }
     case .doctor(let options):
         exit(Doctor.run(options))

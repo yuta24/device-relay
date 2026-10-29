@@ -33,6 +33,21 @@ struct Device: Equatable {
         os?.split(separator: " ").last?.split(separator: ".").first.flatMap { Int($0) }
     }
 
+    /// The version in `os`, e.g. [26, 7, 1] for `iOS 26.7.1`.
+    var osVersion: [Int]? {
+        guard let version = os?.split(separator: " ").last else { return nil }
+        let parts = version.split(separator: ".").map { Int($0) }
+        return parts.isEmpty || parts.contains(nil) ? nil : parts.compactMap { $0 }
+    }
+
+    /// `--os`: each component of `version` equals the OS's, so `27` matches iOS 27.0 and 27.1, and
+    /// `26.5` matches 26.5 and 26.5.1 but not 26.6. Missing components count as 0 (`27.0` matches iOS 27).
+    func matches(os version: String) -> Bool {
+        guard let osVersion else { return false }
+        let requested = version.split(separator: ".").compactMap { Int($0) }
+        return requested.enumerated().allSatisfy { index, part in part == (index < osVersion.count ? osVersion[index] : 0) }
+    }
+
     /// One line for messages: `Test Phone (iPhone 14 Pro, iOS 26.7.1, device, connected) <UDID>`.
     var summary: String {
         let details = [model, os, kind.rawValue, state].compactMap { $0 }.joined(separator: ", ")
@@ -214,51 +229,122 @@ enum DeviceList {
     }
 }
 
+/// The device `DeviceSelector` picked, and how, for `relay start` and `relay doctor` to show.
+struct DeviceSelection: Equatable {
+    var device: Device
+    /// The options that picked it and why, e.g. `--device; the newest iOS of 3 simulators named "iPhone 17 Pro"`,
+    /// or why it was picked automatically, e.g. `the only booted simulator (--simulator)`.
+    var reason: String
+    /// Neither `--udid` nor `--device`: picked from what is connected or booted.
+    var isAutomatic: Bool
+}
+
 /// Picks the device `relay start` and `relay doctor` work on.
 enum DeviceSelector {
     /// `--udid`, else `--device <name>`, else the only connected device, else the only booted simulator.
-    static func select(from devices: [Device], udid: String?, name: String?) throws -> Device {
-        if let udid {
-            guard let device = devices.first(where: { $0.udid.caseInsensitiveCompare(udid) == .orderedSame }) else {
-                throw SetupError(description: "no device or iOS simulator with UDID \(udid)\(candidateList(devices))")
+    /// `simulator` (`--simulator`) leaves out devices, and `os` (`--os`) keeps those whose OS version
+    /// starts with it (see `Device.matches(os:)`), before any of that.
+    static func select(from devices: [Device], udid: String?, name: String?, simulator: Bool = false, os: String? = nil) throws -> DeviceSelection {
+        let candidates = devices.filter { (!simulator || $0.kind == .simulator) && (os.map($0.matches(os:)) ?? true) }
+        let scope = simulator ? "iOS simulator" : "device or iOS simulator"
+        let filters = [simulator ? "--simulator" : nil, os.map { "--os \($0)" }].compactMap { $0 }
+        let filterNote = filters.isEmpty ? "" : " (\(filters.joined(separator: " ")))"
+        func selection(_ device: Device, _ option: String?, _ detail: String? = nil) -> DeviceSelection {
+            guard let option else {
+                return DeviceSelection(device: device, reason: (detail ?? "") + filterNote, isAutomatic: true)
             }
-            return device
+            let options = ([option] + filters).joined(separator: " ")
+            return DeviceSelection(device: device, reason: [options, detail].compactMap { $0 }.joined(separator: "; "), isAutomatic: false)
+        }
+
+        if let udid {
+            guard let device = candidates.first(where: { $0.udid.caseInsensitiveCompare(udid) == .orderedSame }) else {
+                throw SetupError(description: "no \(scope) with UDID \(udid)\(filterNote)\(candidateList(candidates))")
+            }
+            return selection(device, "--udid")
         }
         if let name {
-            let matches = devices.filter { $0.name.caseInsensitiveCompare(name) == .orderedSame }
+            let named = { (devices: [Device]) in devices.filter { $0.name.caseInsensitiveCompare(name) == .orderedSame } }
+            let matches = named(candidates)
             switch matches.count {
             case 0:
-                throw SetupError(description: "no device or iOS simulator named \"\(name)\"\(candidateList(devices))")
+                // The same name outside --simulator/--os shows what to change; otherwise every candidate.
+                let others = named(devices)
+                throw SetupError(description: "no \(scope) named \"\(name)\"\(filterNote)\(candidateList(others.isEmpty ? candidates : others))")
             case 1:
-                return matches[0]
+                return selection(matches[0], "--device")
             default:
                 // Simulators of different runtimes share names; the one in use is what people mean.
                 let active = matches.filter(\.isActive)
                 if active.count == 1 {
-                    return active[0]
+                    return selection(active[0], "--device", "the only connected or booted one of \(matches.count) named \"\(name)\"")
                 }
-                throw SetupError(description: "\(matches.count) devices are named \"\(name)\"; pass --udid with one of them"
+                // Else the newest runtime, usually the one the selected Xcode ships with. Devices are never guessed.
+                let pool = active.isEmpty ? matches : active
+                if pool.allSatisfy({ $0.kind == .simulator }), let newest = newest(pool) {
+                    let which = active.isEmpty ? "" : " booted"
+                    return selection(newest, "--device", "the newest iOS of \(pool.count)\(which) simulators named \"\(name)\"")
+                }
+                let kinds = Set(matches.map(\.kind))
+                let hint = kinds.count > 1 ? " (or --simulator for the simulator)" : ""
+                throw SetupError(description: "\(matches.count) devices are named \"\(name)\"\(filterNote); pass --udid with one of them\(hint)"
                     + candidateList(matches))
             }
         }
 
-        let connected = devices.filter { $0.kind == .device && $0.isAvailable }
-        if connected.count == 1 {
-            return connected[0]
+        if !simulator {
+            let connected = candidates.filter { $0.kind == .device && $0.isAvailable }
+            if connected.count == 1 {
+                return selection(connected[0], nil, "the only connected device")
+            }
+            if connected.count > 1 {
+                throw SetupError(description: "\(connected.count) devices are connected\(filterNote); pass --udid or --device (or --simulator)"
+                    + candidateList(connected))
+            }
         }
-        if connected.count > 1 {
-            throw SetupError(description: "\(connected.count) devices are connected; pass --udid or --device" + candidateList(connected))
-        }
-        let booted = devices.filter(\.isBooted)
+        let booted = candidates.filter(\.isBooted)
         if booted.count == 1 {
-            return booted[0]
+            return selection(booted[0], nil, "the only booted simulator")
         }
         if booted.count > 1 {
-            throw SetupError(description: "\(booted.count) simulators are booted; pass --udid or --device" + candidateList(booted))
+            throw SetupError(description: "\(booted.count) simulators are booted\(filterNote); pass --udid or --device" + candidateList(booted))
         }
-        let simulators = devices.filter { $0.kind == .simulator && $0.isAvailable }
-        throw SetupError(description: "no connected device or booted simulator; connect a device, or pass --udid/--device "
+        // Newest runtime first, so the list starts with the simulators worth booting.
+        let simulators = candidates.filter { $0.kind == .simulator && $0.isAvailable }
+            .sorted {
+                let order = compare($0.osVersion ?? [], $1.osVersion ?? [])
+                return order != 0 ? order > 0 : $0.name.lowercased() < $1.name.lowercased()
+            }
+        if simulator {
+            throw SetupError(description: "no booted iOS simulator\(filterNote); pass --device <name> to boot one "
+                + "(it is shut down when relay exits)" + candidateList(simulators))
+        }
+        throw SetupError(description: "no connected device or booted simulator\(filterNote); connect a device, or pass --udid/--device "
             + "(a shut-down simulator is booted for you)" + candidateList(simulators))
+    }
+
+    /// The device with the highest OS version, or nil when two share it or one has no version.
+    private static func newest(_ devices: [Device]) -> Device? {
+        let versions = devices.compactMap(\.osVersion)
+        guard versions.count == devices.count, let highest = versions.max(by: { compare($0, $1) < 0 }) else { return nil }
+        let newest = devices.filter { compare($0.osVersion ?? [], highest) == 0 }
+        return newest.count == 1 ? newest[0] : nil
+    }
+
+    /// Compares versions component by component, missing ones as 0 (`27` equals `27.0`).
+    static func compare(_ lhs: [Int], _ rhs: [Int]) -> Int {
+        for index in 0..<max(lhs.count, rhs.count) {
+            let left = index < lhs.count ? lhs[index] : 0
+            let right = index < rhs.count ? rhs[index] : 0
+            if left != right { return left < right ? -1 : 1 }
+        }
+        return 0
+    }
+
+    /// `--os`: a version such as `27`, `27.0`, or `26.5`.
+    static func isValidOSVersion(_ value: String) -> Bool {
+        let parts = value.split(separator: ".", omittingEmptySubsequences: false)
+        return !parts.isEmpty && parts.count <= 3 && parts.allSatisfy { !$0.isEmpty && $0.allSatisfy { ("0"..."9").contains($0) } }
     }
 
     private static func candidateList(_ devices: [Device]) -> String {
