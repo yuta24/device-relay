@@ -143,9 +143,10 @@ struct StartSetup {
 
         let (devices, warnings) = try DeviceList.load(commands)
         warnings.forEach(info)
-        let device = try DeviceSelector.select(from: devices, udid: options.udid, name: options.device)
-        let how = options.udid != nil ? "--udid" : options.device != nil ? "--device" : "selected automatically"
-        info("using \(device.summary) (\(how))")
+        let selection = try DeviceSelector.select(from: devices, udid: options.udid, name: options.device,
+                                                  simulator: options.simulator, os: options.os)
+        let device = selection.device
+        info("using \(device.summary) (\(selection.isAutomatic ? "selected automatically; " : "")\(selection.reason))")
 
         let locked = device.kind == .device ? DeviceChecks.lockState(udid: device.udid, commands: commands) : nil
         let checks = DeviceChecks.checks(for: device, locked: locked, includeHints: false)

@@ -204,30 +204,135 @@ struct DeviceListTests {
 struct DeviceSelectorTests {
     @Test func picksByUDIDCaseInsensitively() throws {
         let devices = [device("Phone", udid: "ABC-1"), simulator("Sim", udid: "DEF-2")]
-        #expect(try DeviceSelector.select(from: devices, udid: "def-2", name: nil).udid == "DEF-2")
+        #expect(try DeviceSelector.select(from: devices, udid: "def-2", name: nil).device.udid == "DEF-2")
         #expect(throws: SetupError.self) { try DeviceSelector.select(from: devices, udid: "missing", name: nil) }
     }
 
     @Test func picksByExactNameIgnoringCase() throws {
         let devices = [device("Test Phone", udid: "D1"), simulator("iPhone 17", udid: "S1"), simulator("iPhone 17 Pro", udid: "S2")]
-        #expect(try DeviceSelector.select(from: devices, udid: nil, name: "iphone 17").udid == "S1")
-        #expect(try DeviceSelector.select(from: devices, udid: nil, name: "TEST PHONE").udid == "D1")
+        #expect(try DeviceSelector.select(from: devices, udid: nil, name: "iphone 17").device.udid == "S1")
+        #expect(try DeviceSelector.select(from: devices, udid: nil, name: "TEST PHONE").device.udid == "D1")
         // No partial matches.
         #expect(throws: SetupError.self) { try DeviceSelector.select(from: devices, udid: nil, name: "iPhone") }
     }
 
-    @Test func ambiguousNamesNeedAUDIDUnlessOneIsActive() throws {
-        let shutDown = [simulator("iPhone 17 Pro", udid: "S1", os: "iOS 26.5"), simulator("iPhone 17 Pro", udid: "S2")]
-        #expect(throws: SetupError.self) { try DeviceSelector.select(from: shutDown, udid: nil, name: "iPhone 17 Pro") }
-        let oneBooted = [simulator("iPhone 17 Pro", udid: "S1", os: "iOS 26.5"), simulator("iPhone 17 Pro", udid: "S2", booted: true)]
-        #expect(try DeviceSelector.select(from: oneBooted, udid: nil, name: "iPhone 17 Pro").udid == "S2")
+    @Test func sameNamesPreferTheOnlyActiveOne() throws {
+        let oneBooted = [simulator("iPhone 17 Pro", udid: "S1", booted: true, os: "iOS 26.5"), simulator("iPhone 17 Pro", udid: "S2")]
+        let selection = try DeviceSelector.select(from: oneBooted, udid: nil, name: "iPhone 17 Pro")
+        #expect(selection.device.udid == "S1")
+        #expect(selection.reason == #"--device; the only connected or booted one of 2 named "iPhone 17 Pro""#)
+        // Several booted: the newest of those.
         let bothBooted = oneBooted.map { var device = $0; device.state = "booted"; return device }
-        #expect(throws: SetupError.self) { try DeviceSelector.select(from: bothBooted, udid: nil, name: "iPhone 17 Pro") }
+        #expect(try DeviceSelector.select(from: bothBooted + [simulator("iPhone 17 Pro", udid: "S3", os: "iOS 28.0")], udid: nil,
+                                          name: "iPhone 17 Pro").device.udid == "S2")
+    }
+
+    @Test func picksTheNewestRuntimeOfSimulatorsWithTheSameName() throws {
+        let simulators = [simulator("iPhone 17 Pro", udid: "S1", os: "iOS 26.5"), simulator("iPhone 17 Pro", udid: "S3", os: "iOS 27.0"),
+                          simulator("iPhone 17 Pro", udid: "S2", os: "iOS 26.10")]
+        let selection = try DeviceSelector.select(from: simulators, udid: nil, name: "iPhone 17 Pro")
+        #expect(selection.device.udid == "S3")
+        #expect(selection.reason == #"--device; the newest iOS of 3 simulators named "iPhone 17 Pro""#)
+        #expect(!selection.isAutomatic)
+        // 26.10 is newer than 26.5: components are compared as numbers.
+        #expect(try DeviceSelector.select(from: Array(simulators.prefix(1)) + simulators.suffix(1), udid: nil, name: "iPhone 17 Pro").device.udid == "S2")
+        // Two on the newest runtime: nothing to tell them apart.
+        let tied = simulators + [simulator("iPhone 17 Pro", udid: "S4", os: "iOS 27.0")]
+        #expect {
+            try DeviceSelector.select(from: tied, udid: nil, name: "iPhone 17 Pro")
+        } throws: { error in
+            String(describing: error).hasPrefix(#"4 devices are named "iPhone 17 Pro"; pass --udid"#)
+                && String(describing: error).contains("iPhone 17 Pro (iOS 27.0, simulator, shutdown) S4")
+        }
+    }
+
+    @Test func aDeviceAndASimulatorWithTheSameNameNeedAChoice() throws {
+        let devices = [device("iPhone", udid: "D1", available: false), simulator("iPhone", udid: "S1"), simulator("iPhone", udid: "S2", os: "iOS 26.5")]
+        #expect {
+            try DeviceSelector.select(from: devices, udid: nil, name: "iPhone")
+        } throws: { error in
+            String(describing: error).hasPrefix(#"3 devices are named "iPhone"; pass --udid with one of them (or --simulator for the simulator):"#)
+                && String(describing: error).contains("D1")
+        }
+        #expect(try DeviceSelector.select(from: devices, udid: nil, name: "iPhone", simulator: true).device.udid == "S1")
+        // The connected device is the one in use, as before.
+        var connected = devices
+        connected[0] = device("iPhone", udid: "D1")
+        #expect(try DeviceSelector.select(from: connected, udid: nil, name: "iPhone").device.udid == "D1")
+        // Devices of the same name are never guessed by OS.
+        let twoDevices = [device("iPhone", udid: "D1", available: false), device("iPhone", udid: "D2", available: false)]
+        #expect(throws: SetupError.self) { try DeviceSelector.select(from: twoDevices, udid: nil, name: "iPhone") }
+    }
+
+    @Test func simulatorLeavesConnectedDevicesOut() throws {
+        let devices = [device("Phone", udid: "D1"), simulator("Sim", udid: "S1", booted: true), simulator("Off", udid: "S2")]
+        #expect(try DeviceSelector.select(from: devices, udid: nil, name: nil).device.udid == "D1")
+        let selection = try DeviceSelector.select(from: devices, udid: nil, name: nil, simulator: true)
+        #expect(selection.device.udid == "S1")
+        #expect(selection.reason == "the only booted simulator (--simulator)")
+        #expect(selection.isAutomatic)
+        #expect(throws: SetupError.self) { try DeviceSelector.select(from: devices, udid: "D1", name: nil, simulator: true) }
+
+        let twoBooted = devices + [simulator("Other", udid: "S3", booted: true)]
+        #expect {
+            try DeviceSelector.select(from: twoBooted, udid: nil, name: nil, simulator: true)
+        } throws: { error in
+            String(describing: error).hasPrefix("2 simulators are booted (--simulator); pass --udid or --device:\n  Sim")
+        }
+    }
+
+    @Test func simulatorWithNothingBootedListsTheNewestFirst() {
+        let devices = [device("Phone", udid: "D1"), simulator("A", udid: "S1", os: "iOS 26.5"), simulator("B", udid: "S2"),
+                       Device(name: "Gone", udid: "S3", kind: .simulator, os: "iOS 28.0", state: "shutdown", isAvailable: false)]
+        #expect {
+            try DeviceSelector.select(from: devices, udid: nil, name: nil, simulator: true)
+        } throws: { error in
+            let lines = String(describing: error).split(separator: "\n").map(String.init)
+            return lines.first == "no booted iOS simulator (--simulator); pass --device <name> to boot one (it is shut down when relay exits):"
+                && lines.dropFirst() == ["  B (iOS 27.0, simulator, shutdown) S2", "  A (iOS 26.5, simulator, shutdown) S1"]
+        }
+    }
+
+    @Test func osKeepsMatchingVersionsOnly() throws {
+        let devices = [device("Phone", udid: "D1"), simulator("iPhone 17 Pro", udid: "S1", os: "iOS 26.5"),
+                       simulator("iPhone 17 Pro", udid: "S2"), simulator("iPhone 17 Pro", udid: "S3", booted: true, os: "iOS 26.2")]
+        #expect(try DeviceSelector.select(from: devices, udid: nil, name: "iPhone 17 Pro", os: "26.5").device.udid == "S1")
+        #expect(try DeviceSelector.select(from: devices, udid: nil, name: "iPhone 17 Pro", os: "27").device.udid == "S2")
+        // The booted one wins without --os, and --os 26 leaves it with 26.5: still the booted one.
+        #expect(try DeviceSelector.select(from: devices, udid: nil, name: "iPhone 17 Pro").device.udid == "S3")
+        #expect(try DeviceSelector.select(from: devices, udid: nil, name: "iPhone 17 Pro", os: "26").device.udid == "S3")
+        // Automatic: the device runs iOS 26.0, so --os 26.2 falls through to the booted simulator.
+        #expect(try DeviceSelector.select(from: devices, udid: nil, name: nil).device.udid == "D1")
+        let selection = try DeviceSelector.select(from: devices, udid: nil, name: nil, os: "26.2")
+        #expect(selection.device.udid == "S3")
+        #expect(selection.reason == "the only booted simulator (--os 26.2)")
+        #expect(try DeviceSelector.select(from: devices, udid: "s2", name: nil, simulator: true, os: "27.0").reason == "--udid --simulator --os 27.0")
+        // No such version: the simulators of that name show which versions there are.
+        #expect {
+            try DeviceSelector.select(from: devices, udid: nil, name: "iPhone 17 Pro", os: "25")
+        } throws: { error in
+            String(describing: error).hasPrefix(#"no device or iOS simulator named "iPhone 17 Pro" (--os 25):"#)
+                && String(describing: error).contains("iOS 26.5, simulator, shutdown) S1")
+        }
+    }
+
+    @Test func matchesOSVersionsByComponent() {
+        let os = { (version: String) in Device(name: "S", udid: "S", kind: .simulator, os: version, state: "shutdown", isAvailable: true) }
+        #expect(os("iOS 27.0").matches(os: "27"))
+        #expect(os("iOS 27.0").matches(os: "27.0"))
+        #expect(os("iOS 27").matches(os: "27.0"))
+        #expect(os("iOS 26.5.1").matches(os: "26.5"))
+        #expect(!os("iOS 26.5").matches(os: "26.5.1"))
+        #expect(!os("iOS 26.5").matches(os: "2"))
+        #expect(!os("iOS 26.6").matches(os: "26.5"))
+        #expect(!os("iOS 26.10").matches(os: "26.1"))
+        #expect(DeviceSelector.isValidOSVersion("27") && DeviceSelector.isValidOSVersion("26.5") && DeviceSelector.isValidOSVersion("26.5.1"))
+        #expect(!["", "iOS 27", "27.", ".5", "+27", "27.x", "1.2.3.4"].contains(where: DeviceSelector.isValidOSVersion))
     }
 
     @Test func prefersTheOnlyConnectedDevice() throws {
         let devices = [device("Phone", udid: "D1"), device("Away", udid: "D2", available: false), simulator("Sim", udid: "S1", booted: true)]
-        #expect(try DeviceSelector.select(from: devices, udid: nil, name: nil).udid == "D1")
+        #expect(try DeviceSelector.select(from: devices, udid: nil, name: nil).device.udid == "D1")
     }
 
     @Test func refusesToGuessBetweenConnectedDevices() {
@@ -237,7 +342,7 @@ struct DeviceSelectorTests {
 
     @Test func fallsBackToTheOnlyBootedSimulator() throws {
         let devices = [device("Away", udid: "D1", available: false), simulator("Sim", udid: "S1", booted: true), simulator("Off", udid: "S2")]
-        #expect(try DeviceSelector.select(from: devices, udid: nil, name: nil).udid == "S1")
+        #expect(try DeviceSelector.select(from: devices, udid: nil, name: nil).device.udid == "S1")
     }
 
     @Test func listsCandidatesWhenNothingOrTooMuchIsRunning() {
@@ -597,8 +702,10 @@ struct DoctorTests {
                                 resolveProject: project, home: URL(fileURLWithPath: "/nonexistent"), output: { lines.append($0) })
         #expect(status == RunnerExitCode.success.rawValue)
         let output = lines.joined(separator: "\n")
-        #expect(output.contains("✓ target"))
-        #expect(output.contains("Test Phone"))
+        // The only connected device, picked automatically: a note with how to try a simulator instead.
+        #expect(output.contains("! target           Test Phone"))
+        #expect(output.contains("relay start without --udid/--device would use it: the only connected device"))
+        #expect(output.contains("→ to try a simulator first, pass --simulator (a booted one) or --device <simulator name>"))
         #expect(output.contains("✓ signing          team TEAM000001 (from keychain)"))
         #expect(output.contains("! UI Automation"))
     }
@@ -614,6 +721,25 @@ struct DoctorTests {
         #expect(output.contains("✗ runner project"))
         #expect(output.contains("✗ signing"))
         #expect(output.hasSuffix("2 problem(s) found; fix the ✗ items above."))
+    }
+
+    @Test func checksTheSimulatorRelayStartWouldPickWithSimulator() {
+        let host = FakeHost()
+        host.simctl = simctlList([(simulatorUDID, "iPhone 17 Pro", "Booted")])
+        var lines: [String] = []
+        _ = Doctor.run(DoctorOptions(simulator: true), commands: host.commands, configURL: URL(fileURLWithPath: "/nonexistent/config.json"),
+                       resolveProject: project, home: URL(fileURLWithPath: "/nonexistent"), output: { lines.append($0) })
+        #expect(lines.contains { $0.hasPrefix("  ✓ target           iPhone 17 Pro") && $0.hasSuffix("(relay start without --udid/--device would use it: the only booted simulator (--simulator))") })
+        #expect(lines.contains("Target: iPhone 17 Pro"))
+        // The connected device is not a candidate, so not listed.
+        #expect(!lines.contains { $0.contains("Test Phone") })
+
+        host.simctl = simctlList([(simulatorUDID, "iPhone 17 Pro", "Shutdown")])
+        lines = []
+        _ = Doctor.run(DoctorOptions(simulator: true), commands: host.commands, configURL: URL(fileURLWithPath: "/nonexistent/config.json"),
+                       resolveProject: project, home: URL(fileURLWithPath: "/nonexistent"), output: { lines.append($0) })
+        #expect(lines.contains { $0.hasPrefix("  ! target           no booted iOS simulator (--simulator)")
+            && $0.hasSuffix("→ relay devices lists the simulators; relay doctor --device <name> checks the one relay start would boot") })
     }
 
     @Test func aMissingTeamIsOnlyANoteForSimulators() {

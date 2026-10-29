@@ -6,7 +6,7 @@ enum Command: Equatable {
     case runner(RunnerControlOptions)
     case status(RunnerStatusOptions)
     case stop(RunnerStopOptions)
-    case devices(json: Bool)
+    case devices(json: Bool, os: String?)
     case doctor(DoctorOptions)
     case config(ConfigOptions)
     case install(InstallOptions)
@@ -22,6 +22,10 @@ struct StartOptions: Equatable {
     var udid: String?
     /// `--device <name>`: a device or simulator name, case-insensitive.
     var device: String?
+    /// `--simulator`: pick among simulators only.
+    var simulator = false
+    /// `--os <version>`: pick among devices and simulators of that OS version.
+    var os: String?
     /// `--project <path>`: the device-relay checkout (see `RunnerProject`).
     var project: String?
     var port: Int = 8100
@@ -39,6 +43,8 @@ struct StartOptions: Equatable {
         var arguments = ["start"]
         if let udid { arguments += ["--udid", udid] }
         if let device { arguments += ["--device", device] }
+        if simulator { arguments.append("--simulator") }
+        if let os { arguments += ["--os", os] }
         if let project { arguments += ["--project", project] }
         arguments += ["--port", "\(port)"]
         if let teamID { arguments += ["--team-id", teamID] }
@@ -102,6 +108,8 @@ enum Arguments {
                 switch option {
                 case "--udid": options.udid = try value(for: option)
                 case "--device": options.device = try value(for: option)
+                case "--simulator": options.simulator = true
+                case "--os": options.os = try osVersion(try value(for: option))
                 case "--project": options.project = try value(for: option)
                 case "--port":
                     guard let port = Int(try value(for: option)), (1...65535).contains(port) else {
@@ -140,14 +148,16 @@ enum Arguments {
             return subcommand == "status" ? .status(RunnerStatusOptions(json: json, runnerPath: runnerPath)) : .stop(RunnerStopOptions(runnerPath: runnerPath))
         case "devices":
             var json = false
+            var os: String?
             while !rest.isEmpty {
                 let option = rest.removeFirst()
                 switch option {
                 case "--json": json = true
+                case "--os": os = try osVersion(try value(for: option))
                 default: throw ArgumentError(description: "unknown option: \(option)")
                 }
             }
-            return .devices(json: json)
+            return .devices(json: json, os: os)
         case "doctor":
             var options = DoctorOptions()
             while !rest.isEmpty {
@@ -155,6 +165,8 @@ enum Arguments {
                 switch option {
                 case "--udid": options.udid = try value(for: option)
                 case "--device": options.device = try value(for: option)
+                case "--simulator": options.simulator = true
+                case "--os": options.os = try osVersion(try value(for: option))
                 case "--project": options.project = try value(for: option)
                 default: throw ArgumentError(description: "unknown option: \(option)")
                 }
@@ -258,23 +270,33 @@ enum Arguments {
         return value
     }
 
+    private static func osVersion(_ value: String) throws -> String {
+        guard DeviceSelector.isValidOSVersion(value) else {
+            throw ArgumentError(description: "--os requires a version such as 27, 27.0, or 26.5")
+        }
+        return value
+    }
+
     static let usage = """
     Usage:
-      relay start [--udid <UDID> | --device <NAME>] [--team-id <TEAM_ID>] [--project <PATH>] [--port 8100] [--rebuild] [--verbose]
+      relay start [--udid <UDID> | --device <NAME>] [--simulator] [--os <VERSION>] [--team-id <TEAM_ID>] [--project <PATH>] [--port 8100] [--rebuild] [--verbose]
                   [--ready-timeout 180] [--allow-wifi] [--background]
       relay status [--json] [--runner <PATH>]
       relay stop [--runner <PATH>]
       relay install [--project <PATH>] [--build [--verbose]] | relay install --remove | relay uninstall
       relay skill install [--global | --dir <skills dir>] [--link] [--force] | relay skill uninstall | relay skill status
-      relay devices [--json]
-      relay doctor [--udid <UDID> | --device <NAME>] [--project <PATH>]
+      relay devices [--json] [--os <VERSION>]
+      relay doctor [--udid <UDID> | --device <NAME>] [--simulator] [--os <VERSION>] [--project <PATH>]
       relay config [get <key> | set <key> <value> | unset <key>]
       relay bench --url <RUNNER_URL> [--count 10] [--tap x,y] [--mode private|xcui] [--token <TOKEN>]
 
     start    Builds the RelayRunner XCTest runner if needed, launches it on the device or simulator,
              and prints the runner URL once it answers /health. The URL and a per-launch access token
              are saved to ~/.relay/runner.json (mode 0600) and removed on exit. Ctrl-C shuts the runner down.
-             Without --udid or --device it uses the only connected device, else the only booted simulator.
+             Without --udid or --device it uses the only connected device, else the only booted simulator;
+             --simulator leaves devices out (to try a simulator with a device connected), and --os 27 or
+             --os 26.5 keeps those whose OS version starts with it. --device picks, of several with that name,
+             the only connected or booted one, else the simulator with the newest iOS, and prints which.
              A shut-down simulator named with --udid/--device is booted, and shut down again on exit.
              For devices, the Team ID defaults to teamID in ~/.relay/config.json, else the team of the
              Apple Development certificates in the keychain; the one used is saved there.
@@ -299,8 +321,10 @@ enum Arguments {
     skill    Installs the device-relay agent skill into .claude/skills of the current git repository
              (--global: ~/.claude/skills; relay skill --help for details).
     devices  Lists devices (devicectl) and iOS simulators (simctl): name, UDID, kind, OS, and state.
+             --os lists those of that OS version only.
     doctor   Checks Xcode, the runner project, the agent skill, signing, and the device relay start would
-             use, marking each ✓ / ✗ / ! with a fix. Exits 1 if anything is ✗.
+             use (with the same --udid, --device, --simulator, and --os), marking each ✓ / ✗ / ! with a fix.
+             Exits 1 if anything is ✗.
     config   Shows or changes ~/.relay/config.json (key: teamID).
     bench    Measures round-trip latency of /health, /screenshot, and optionally /tap.
              --mode forces the runner's touch path (private event synthesis or public XCUI).

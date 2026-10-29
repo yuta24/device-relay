@@ -12,7 +12,7 @@ description: relay CLI（device-relay）で iOS のシミュレータや実機�
 ## セットアップ（初回だけ）
 
 1. `command -v relay` で確認します。なければ、device-relay のチェックアウトで `make install`（`~/.local/bin/relay` にリンク。`~/.local/bin` が PATH にあること）→ `relay install`（Runner プロジェクトとこのスキルを `~/.relay/runner` にコピー）を実行するよう利用者に頼みます。利用者のホームに書き込むので、断りなく実行しないでください。
-2. `relay doctor [--udid <UDID> | --device <名前>]` で環境を確かめます。✗ があれば終了コード 1 で、各行に直し方が出ます。! は注意で、起動は止めません。
+2. `relay doctor [--udid <UDID> | --device <名前>] [--simulator] [--os <version>]` で環境を確かめます（`relay start` に付けるのと同じ指定で、その端末を確認します）。✗ があれば終了コード 1 で、各行に直し方が出ます。! は注意で、起動は止めません。
 3. このスキル自体は `relay skill install`（対象アプリのリポジトリの `.claude/skills/device-relay` にコピー。`--global` なら `~/.claude/skills`）で入ります。`relay skill status` で ! が出たら（relay の更新でスキルが古い）、`relay skill install` で更新するよう利用者に伝えます。リポジトリやホームのファイルを書き換えるので、断りなく実行しないでください。
 
 ## 基本の流れ
@@ -20,7 +20,7 @@ description: relay CLI（device-relay）で iOS のシミュレータや実機�
 ```sh
 relay status                                    # 0: 応答あり（それを使う）。3: ランナーがない・応答なし。4: トークン拒否
 relay devices                                   # 端末の一覧（NAME、UDID、KIND、OS、STATE）
-relay start --background --device "<名前>"      # または --udid <UDID>。ready まで待ち、stdout に ready:/device:/pid:/log:/token: を出して 0
+relay start --background --device "<名前>"      # または --udid <UDID>（--os <version> で絞れる）。ready まで待ち、stdout に ready:/device:/pid:/log:/token: を出して 0
 relay launch <bundle-id>                        # 対象アプリを起動・前面化
 relay screenshot                                # 保存先の絶対パスが出る → そのファイルを画像として読む
 relay find --type button                        # 要素の一覧（JSON）。全体は relay source
@@ -32,7 +32,7 @@ relay stop                                      # 自分で起動したときだ
 - **動いているランナーはそのまま使う。** `relay status` が 0 なら、利用者などがすでに起動しています。それを使い、止めないでください。`~/.relay/runner.json` のランナーが同じポート（`--port`、既定 8100）で応答していると `relay start --background` は起動せずに終了コード 1 で終わり `relay stop` を案内しますが、`relay stop` はフォアグラウンドの `relay start` も止めるので、止めてよいのは自分が起動したものだけです。同じポートで別の `relay start` がまだ起動の途中（boot やビルド中）のときも、`another relay start ... is starting or running a runner on port ...` で終了コード 1 になります。そのときは `relay status` が 0 になるのを待ってそれを使います。
 - **`relay status` が 4 なら止めずに確かめる。** 見つかった runner.json のトークンが、そのアドレスで応答しているランナーのものではありません（別の `relay start` のランナーが同じポートにいる、古い runner.json、`--runner` / `$RELAY_RUNNER` / カレントディレクトリから親へ順にたどった `.relay/runner.json` が別のものを指している）。自分で起動したものでなければ、`relay stop` や起動し直しをせずに利用者に確認します。
 - **自分のランナーを覚えておく。** `relay start --background` が出す `pid:` を控え、終わるときは `relay status` の `pid` が同じであることを確かめてから `relay stop` します。
-- **端末は明示する。** `--udid` / `--device` がないと、`relay start` は接続中の実機が 1 台ならそれ、なければ起動中のシミュレータが 1 台ならそれを選び、決まらなければ候補つきでエラーにします。実機がつながっているとシミュレータより実機が選ばれるので、利用者に実機を指定されていない限り、`relay devices` で選んだシミュレータを `--device` / `--udid` で指定します。同じ名前のシミュレータが複数ある（ランタイム違い）ときは `--udid` を使います。停止中のシミュレータを指定すると boot し、`relay stop` で shutdown します。
+- **端末は明示する。** `--udid` / `--device` がないと、`relay start` は接続中の実機が 1 台ならそれ、なければ起動中のシミュレータが 1 台ならそれを選び、決まらなければ候補つきでエラーにします。実機がつながっているとシミュレータより実機が選ばれるので、利用者に実機を指定されていない限り、`relay devices` で選んだシミュレータを `--device` / `--udid` で指定します（起動中のシミュレータを使うなら `--simulator` でも、実機を除いて選べます）。同じ名前のシミュレータが複数ある（ランタイム違い）ときは、`--device` が最も新しい iOS のものを選び、`relay: using …` に OS を出します。特定の iOS が要るときは `--os 26.5` のように絞るか `--udid` を使います。停止中のシミュレータを指定すると boot し、`relay stop` で shutdown します。
 - `relay start --background` の進行状況（boot、ビルド、起動）は stderr の `relay:` 行に出ます。初回はランナーのビルドで数分かかるので、コマンドのタイムアウトを長めにします（起動まで最大 30 分、起動後は `--ready-timeout`（既定 180 秒）+ 15 秒待ちます）。
 - 起動に失敗すると、子の `relay start` を止め、stderr にログの末尾と原因（ログのパス付き）を出して非ゼロで終わります。終了コードは、ready の前に子が終了した（ビルドの失敗、端末が見つからない、`Failed to initialize for UI testing` など）なら 1、時間切れなら 3、同じポートですでにランナーが応答しているなら 1 です。ログの末尾と、必要ならログファイル（`~/.relay/logs/start-<時刻>-<port>.log`）を読んでから対処します（[トラブルシューティング](reference.md#トラブルシューティング)）。
 - 対象アプリは端末にインストール済みである必要があります（プロジェクトのやり方で Xcode や `xcodebuild` / `xcrun simctl install` でビルド・インストールする）。`relay launch` は起動・前面化だけです。

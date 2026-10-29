@@ -9,8 +9,8 @@
 | `relay status [--json] [--runner <path>]` | runner.json のランナーの URL・端末・`relay start` の PID・起動時刻と `/ping` の結果。下の「start --background / status / stop」 |
 | `relay start --background [オプション]` | `relay start` を端末から切り離して起動し、ready になったら戻ります。同上 |
 | `relay stop [--runner <path>]` | runner.json の `relay start` を止めます（ランナー、relay が boot したシミュレータ、runner.json も片付く）。同上 |
-| `relay devices [--json]` | 実機とシミュレータの一覧（NAME、UDID、KIND、OS、STATE） |
-| `relay doctor [--udid <UDID> \| --device <名前>] [--project <path>]` | Xcode、Runner、署名、端末を確認。✗ があれば 1 |
+| `relay devices [--json] [--os <version>]` | 実機とシミュレータの一覧（NAME、UDID、KIND、OS、STATE）。`--os` でその OS のものだけ |
+| `relay doctor [--udid <UDID> \| --device <名前>] [--simulator] [--os <version>] [--project <path>]` | Xcode、Runner、署名、端末（同じ指定の `relay start` が使うもの）を確認。✗ があれば 1 |
 | `relay ping` | `{"ok":true,"busy":<bool>,"busyForMs":<ms or null>}`。busy でも即答します |
 | `relay skill status` | このスキルの取り出し元とインストール先（プロジェクト・グローバル）、relay とのバージョンのずれ（!）。入れ直しは `relay skill install [--global \| --dir <skills dir>]`（利用者に確認してから）。詳しくは `relay skill --help` |
 | `relay health` | 端末情報、表示の向きでの画面サイズ（`screen.width` / `height` / `scale`）、`orientation`、`foreground` |
@@ -19,7 +19,9 @@
 
 | オプション | 説明 |
 | --- | --- |
-| `--udid <UDID>` / `--device <名前>` | 使う端末。同時には指定できません。名前は完全一致（大文字小文字は無視） |
+| `--udid <UDID>` / `--device <名前>` | 使う端末。同時には指定できません。名前は完全一致（大文字小文字は無視）。同じ名前が複数あれば、接続中・起動中の 1 つ、なければ最も新しい iOS のシミュレータ。実機とシミュレータが同じ名前なら候補つきのエラー |
+| `--simulator` | シミュレータだけから選ぶ（実機がつながっていても）。`--device` なしでは起動中の 1 台。起動中がなければエラーになるので `--device` で名前を指定する |
+| `--os <version>` | OS で候補を絞る。`.` ごとの前方一致（`27` は 27.x、`26.5` は 26.5.x） |
 | `--port 8100` | 端末側の待ち受けポート。同じ Mac で別の `relay start` と同時に動かすときは分けます |
 | `--rebuild` | 既存のビルドがあってもランナーを再ビルド |
 | `--ready-timeout 180` | ready まで待つ秒数 |

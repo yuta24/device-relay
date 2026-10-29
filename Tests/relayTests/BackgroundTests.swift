@@ -17,6 +17,8 @@ struct BackgroundArgumentsTests {
     @Test func foregroundArgumentsParseBackToTheSameOptions() throws {
         var options = StartOptions()
         options.udid = "SIM"
+        options.simulator = true
+        options.os = "27.0"
         options.project = "/tmp/device relay"
         options.port = 8123
         options.teamID = "TEAM000001"

@@ -18,14 +18,25 @@ struct ArgumentsTests {
         #expect(throws: ArgumentError.self) { try Arguments.parse(["start", "--udid", "A", "--device", "B"]) }
     }
 
+    @Test func startAndDoctorNarrowTheCandidates() throws {
+        #expect(try Arguments.parse(["start", "--simulator", "--os", "26.5"]) == .start(StartOptions(simulator: true, os: "26.5")))
+        #expect(try Arguments.parse(["start", "--device", "iPhone 17", "--os", "27"]) == .start(StartOptions(device: "iPhone 17", os: "27")))
+        #expect(try Arguments.parse(["doctor", "--simulator"]) == .doctor(DoctorOptions(simulator: true)))
+        #expect(try Arguments.parse(["doctor", "--os", "27.0"]) == .doctor(DoctorOptions(os: "27.0")))
+        #expect(try Arguments.parse(["devices", "--os", "26"]) == .devices(json: false, os: "26"))
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["start", "--os", "iOS 27"]) }
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["doctor", "--os"]) }
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["devices", "--os", "latest"]) }
+    }
+
     @Test func rejectsMalformedTeamID() {
         #expect(throws: ArgumentError.self) { try Arguments.parse(["start", "--team-id", "TEAM"]) }
         #expect(throws: ArgumentError.self) { try Arguments.parse(["start", "--team-id", "abcde12345"]) }
     }
 
     @Test func parsesSetupCommands() throws {
-        #expect(try Arguments.parse(["devices"]) == .devices(json: false))
-        #expect(try Arguments.parse(["devices", "--json"]) == .devices(json: true))
+        #expect(try Arguments.parse(["devices"]) == .devices(json: false, os: nil))
+        #expect(try Arguments.parse(["devices", "--json"]) == .devices(json: true, os: nil))
         #expect(try Arguments.parse(["doctor", "--device", "iPad"]) == .doctor(DoctorOptions(device: "iPad")))
         #expect(throws: ArgumentError.self) { try Arguments.parse(["doctor", "--udid", "A", "--device", "B"]) }
         #expect(try Arguments.parse(["config"]) == .config(ConfigOptions(action: .show)))
