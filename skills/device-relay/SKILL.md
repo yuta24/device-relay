@@ -29,12 +29,12 @@ relay find --id <次の画面の要素> --timeout 5    # 結果を待ってか�
 relay stop                                      # 自分で起動したときだけ。stopped か not running で 0
 ```
 
-- **動いているランナーはそのまま使う。** `relay status` が 0 なら、利用者などがすでに起動しています。それを使い、止めないでください。`~/.relay/runner.json` のランナーが応答していると `relay start --background` は起動せずに終了コード 1 で終わり `relay stop` を案内しますが、`relay stop` はフォアグラウンドの `relay start` も止めるので、止めてよいのは自分が起動したものだけです。
-- **`relay status` が 4 なら止めずに確かめる。** 見つかった runner.json のトークンが、そのアドレスで応答しているランナーのものではありません（別の `relay start` のランナーが同じポートにいる、古い runner.json、`--runner` / `$RELAY_RUNNER` / カレントディレクトリの親の `.relay/runner.json` が別のものを指している）。自分で起動したものでなければ、`relay stop` や起動し直しをせずに利用者に確認します。
+- **動いているランナーはそのまま使う。** `relay status` が 0 なら、利用者などがすでに起動しています。それを使い、止めないでください。`~/.relay/runner.json` のランナーが同じポート（`--port`、既定 8100）で応答していると `relay start --background` は起動せずに終了コード 1 で終わり `relay stop` を案内しますが、`relay stop` はフォアグラウンドの `relay start` も止めるので、止めてよいのは自分が起動したものだけです。
+- **`relay status` が 4 なら止めずに確かめる。** 見つかった runner.json のトークンが、そのアドレスで応答しているランナーのものではありません（別の `relay start` のランナーが同じポートにいる、古い runner.json、`--runner` / `$RELAY_RUNNER` / カレントディレクトリから親へ順にたどった `.relay/runner.json` が別のものを指している）。自分で起動したものでなければ、`relay stop` や起動し直しをせずに利用者に確認します。
 - **自分のランナーを覚えておく。** `relay start --background` が出す `pid:` を控え、終わるときは `relay status` の `pid` が同じであることを確かめてから `relay stop` します。
 - **端末は明示する。** `--udid` / `--device` がないと、`relay start` は接続中の実機が 1 台ならそれ、なければ起動中のシミュレータが 1 台ならそれを選び、決まらなければ候補つきでエラーにします。実機がつながっているとシミュレータより実機が選ばれるので、利用者に実機を指定されていない限り、`relay devices` で選んだシミュレータを `--device` / `--udid` で指定します。同じ名前のシミュレータが複数ある（ランタイム違い）ときは `--udid` を使います。停止中のシミュレータを指定すると boot し、`relay stop` で shutdown します。
 - `relay start --background` の進行状況（boot、ビルド、起動）は stderr の `relay:` 行に出ます。初回はランナーのビルドで数分かかるので、コマンドのタイムアウトを長めにします（起動まで最大 30 分、起動後は `--ready-timeout`（既定 180 秒）+ 15 秒待ちます）。
-- 起動に失敗すると、子の `relay start` を止め、stderr にログの末尾と原因（ログのパス付き）を出して非ゼロで終わります。終了コードは、ready の前に子が終了した（ビルドの失敗、端末が見つからない、`Failed to initialize for UI testing` など）なら 1、時間切れなら 3、すでにランナーが応答しているなら 1 です。ログの末尾と、必要ならログファイル（`~/.relay/logs/start-<時刻>.log`）を読んでから対処します（[トラブルシューティング](reference.md#トラブルシューティング)）。
+- 起動に失敗すると、子の `relay start` を止め、stderr にログの末尾と原因（ログのパス付き）を出して非ゼロで終わります。終了コードは、ready の前に子が終了した（ビルドの失敗、端末が見つからない、`Failed to initialize for UI testing` など）なら 1、時間切れなら 3、同じポートですでにランナーが応答しているなら 1 です。ログの末尾と、必要ならログファイル（`~/.relay/logs/start-<時刻>.log`）を読んでから対処します（[トラブルシューティング](reference.md#トラブルシューティング)）。
 - 対象アプリは端末にインストール済みである必要があります（プロジェクトのやり方で Xcode や `xcodebuild` / `xcrun simctl install` でビルド・インストールする）。`relay launch` は起動・前面化だけです。
 - バンドル ID はプロジェクトの `PRODUCT_BUNDLE_IDENTIFIER` で調べるか、アプリを前面にして `relay foreground` で確かめます。
 
@@ -72,7 +72,7 @@ relay press --label "Photo" --type cell --duration 1.0
 | 0 | 成功 | – |
 | 1 | 引数の誤りやローカルの失敗（何も送っていない） | コマンドを直す。`relay <command> --help` |
 | 3 | ランナーに届かない（runner.json がない、接続できない） | `relay status`。runner.json がなければ `relay start --background …`。runner.json はあるが応答しない（`relay start` が強制終了されたなど）なら、`relay stop` で片付けてから起動 |
-| 4 | トークンが拒否された（401）。runner.json が古いか、別のランナーのもの | `relay status` で URL・端末・PID を確かめ、`--runner` / `$RELAY_RUNNER` / カレントディレクトリの親の `.relay/runner.json` も確認。自分で起動したものなら `relay stop` → 起動し直す。そうでなければ止めずに利用者に確認 |
+| 4 | トークンが拒否された（401）。runner.json が古いか、別のランナーのもの | `relay status` で URL・端末・PID を確かめ、`--runner` / `$RELAY_RUNNER` / カレントディレクトリから親へ順にたどった `.relay/runner.json` も確認。自分で起動したものなら `relay stop` → 起動し直す。そうでなければ止めずに利用者に確認 |
 | 5 | busy（409）。別のコマンドを実行中 | 1 秒ほど待つか、`relay ping` が `"busy":false` になってから再試行 |
 | 6 | 操作の失敗（422）: 要素が見つからない・1 つに決まらない・無効・画面外、キーボードのフォーカスがない | stderr の `reason` と `candidates` を読み、観察し直してセレクタを直す |
 | 7 | リクエストの拒否（400 などの 4xx） | エラー文を読む。多くは値の範囲や対応外の値 |

@@ -199,6 +199,26 @@ struct SkillTests {
         #expect(try tree.run(["status", "--global"]).lines[1].contains("was not installed by relay"))
     }
 
+    @Test func statusAsksForRelayInstallWhenItsCopyIsOutdated() throws {
+        let tree = try Tree(installedVersion: "0.0.1")
+        defer { try? FileManager.default.removeItem(at: tree.root) }
+        try tree.run(["install"])
+        try tree.run(["install", "--global"])
+        var lines = try tree.run(["status"]).lines
+        #expect(lines[1].hasPrefix("  ! project"))
+        #expect(lines[1].contains("written for relay 0.0.1"))
+        #expect(lines[1].contains("→ run relay install, then relay skill install"))
+        #expect(try tree.run(["status", "--global"]).lines[1].hasSuffix("→ run relay install, then relay skill install --global"))
+
+        // Once relay install has refreshed its copy, only the installed skill is out of date.
+        var runner = try #require(RunnerInstallRecord.read(root: RunnerProject.installedRoot(home: tree.home)))
+        runner.relayVersion = RelayVersion.current
+        try runner.write(root: RunnerProject.installedRoot(home: tree.home))
+        lines = try tree.run(["status"]).lines
+        #expect(lines[1].hasPrefix("  ! project"))
+        #expect(lines[1].hasSuffix("→ run relay skill install to update it"))
+    }
+
     @Test func relayInstallCopiesTheSkillWithTheRunner() throws {
         let tree = try Tree(installed: false)
         defer { try? FileManager.default.removeItem(at: tree.root) }

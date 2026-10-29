@@ -37,20 +37,22 @@
 **`relay start --background`**: 同じオプションの `relay start` を新しいセッションとして起動し（端末を閉じても止まらない。stdin は `/dev/null`、出力は `~/.relay/logs/start-<時刻>.log`）、そのログを読んで待ちます。
 
 ```
-relay: started relay start in the background (pid <PID>, log: ~/.relay/logs/start-<時刻>.log)   ← stderr（進行状況の relay: 行）
+relay: started relay start in the background (pid <PID>, log: /Users/<you>/.relay/logs/start-<時刻>.log)   ← stderr（進行状況の relay: 行）
 relay: building runner (log: ...)
 relay: launching runner on <UDID> (log: ...)
 ready: http://127.0.0.1:8100/                                                                   ← ここから stdout
 device: <端末名> (<UDID>)
 pid: <PID>
-log: ~/.relay/logs/start-<時刻>.log
-token: ~/.relay/runner.json
+log: /Users/<you>/.relay/logs/start-<時刻>.log
+token: /Users/<you>/.relay/runner.json
 ```
+
+パスはホームディレクトリを含む絶対パスで出ます（`/Users/<you>` は利用者のホーム）。
 
 | 終了コード | 場合 |
 | --- | --- |
 | 0 | ready |
-| 1 | ready の前に子の `relay start` が終了した（ビルドの失敗、端末が見つからない、`Failed to initialize for UI testing` など）。`~/.relay/runner.json` のランナーがすでに応答している。待っている間に中断された |
+| 1 | ready の前に子の `relay start` が終了した（ビルドの失敗、端末が見つからない、`Failed to initialize for UI testing` など）。`~/.relay/runner.json` のランナーが同じポートですでに応答している。待っている間に中断された |
 | 3 | 時間切れ（起動まで 30 分、起動後 `--ready-timeout` + 15 秒） |
 
 失敗したときは子を止め（ビルド中の xcodebuild も止まり、relay が boot したシミュレータは shutdown されます）、stderr にログの末尾 20 行と原因、ログのパス（`(log: …)`）を出します。末尾で足りなければログファイル全体を読みます。
@@ -63,8 +65,10 @@ device:      <端末名> (<UDID>)
 pid:         <PID> (relay start running)
 started:     <日時>
 ping:        ok (idle)
-runner.json: ~/.relay/runner.json
+runner.json: /Users/<you>/.relay/runner.json
 ```
+
+`runner.json:` も絶対パスで出ます。
 
 `--json` は 1 つのオブジェクトです: `alive`（`/ping` が 200 か）、`url`、`udid`、`name`、`pid`、`processRunning`（その `relay start` がまだ動いているか）、`startedAt`（ISO 8601）、`ping`（`{"status":200,"busy":…,"busyForMs":…}`、`{"status":401}` など、応答がなければ `{"error":"…"}`）、`runnerInfo`（runner.json のパス）。値がないものは `null` です。runner.json がなければ `{"alive":false,"error":"…"}` だけを出します。
 
@@ -72,7 +76,7 @@ runner.json: ~/.relay/runner.json
 | --- | --- |
 | 0 | `/ping` に応答した |
 | 3 | runner.json がない、または応答しない（stderr に「relay stop で片付け、relay start --background で起動」の案内） |
-| 4 | トークンが拒否された（401）。runner.json が、そのアドレスで動いているランナーのものではない（別の `relay start`、古いファイル、`--runner` / `$RELAY_RUNNER` / 親の `.relay/runner.json`）。自分で起動したものでなければ利用者に確認する |
+| 4 | トークンが拒否された（401）。runner.json が、そのアドレスで動いているランナーのものではない（別の `relay start`、古いファイル、`--runner` / `$RELAY_RUNNER` / カレントディレクトリから親へ順にたどった `.relay/runner.json`）。自分で起動したものでなければ利用者に確認する |
 | ほか | `/ping` がそれ以外の HTTP 状態を返した（ランナー操作のコマンドと同じ対応: 404 などは 7、5xx は 8） |
 
 **`relay stop`**: runner.json の `relay start` に SIGTERM を送り、終わるのを待ちます（Ctrl-C と同じ経路で、ランナーの `/shutdown`、relay が boot したシミュレータの shutdown、runner.json の削除）。フォアグラウンドの `relay start` も止まるので、自分で起動したものにだけ使います。
@@ -188,6 +192,6 @@ relay find --id relay.submitted       # label が "submitted #1: hello"
 | 1 回の操作が数分戻らず、その間 busy が続く | 別プロセスのシート（Apple Account のサインインなど）が出ていてスナップショットが詰まっている。待つか、利用者に閉じてもらう | 「既知の制約」 |
 | 実機で `relay button home` が効かない | ホームボタンのある端末では、代用のスワイプでコントロールセンターが開く | 「既知の制約」 |
 | 終了コード 3 だが runner.json がある | `relay start` が強制終了され、ファイルだけ残っている（`relay status` の pid が `relay start not running`、ping が応答なし）。`relay stop` で片付けて（`not running`）から起動する | 「バックグラウンドで動かす」「既知の制約」 |
-| `relay start --background` が「a runner is already running」で 1 | `~/.relay/runner.json` のランナーが応答している。`relay status` で確かめ、そのまま使う。自分で起動したものでなければ止めない | 「バックグラウンドで動かす」 |
+| `relay start --background` が「a runner is already running」で 1 | `~/.relay/runner.json` のランナーが同じポートで応答している。`relay status` で確かめ、そのまま使う。自分で起動したものでなければ止めない | 「バックグラウンドで動かす」 |
 
 起動に失敗したときのログは `~/.relay/logs/`（`start-*.log`、`build-*.log`、`runner-*.log`）にあります。`relay start --background` は失敗時に原因、ログの末尾、`start-*.log` のパスを stderr に出すので、まずそれを読み、足りなければそのファイルや、そこに書かれた `build-*.log` / `runner-*.log` を読みます。

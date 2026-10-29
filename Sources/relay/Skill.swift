@@ -232,7 +232,7 @@ enum SkillInstaller {
         case .global: scopeOption = " --global"
         case .directory: scopeOption = " --dir <skills dir>"
         }
-        let fix = "run relay skill install\(scopeOption) to update it"
+        let updateFix = "run relay skill install\(scopeOption) to update it"
         switch InstalledSkill.inspect(destination) {
         case .none:
             return nil
@@ -250,6 +250,12 @@ enum SkillInstaller {
             }
             return .ok(title, "\(destination.path) -> \(target.path) (link)")
         case .copy(let record):
+            // relay install's copy is itself from another relay, so installing from it again would not help.
+            let staleSource = source.map {
+                $0.directory.standardizedFileURL.path == AgentSkill.installedSource(home: home).standardizedFileURL.path
+                    && $0.relayVersion != RelayVersion.current
+            } ?? false
+            let fix = staleSource ? "run relay install, then relay skill install\(scopeOption)" : updateFix
             let detail = "\(destination.path) (relay \(record.relayVersion)\(record.commit.map { ", commit \($0.prefix(12))" } ?? ""), \(record.installedAt))"
             if record.relayVersion != RelayVersion.current {
                 return .warning(title, "\(detail): written for relay \(record.relayVersion), but this is relay \(RelayVersion.current)", fix: fix)
