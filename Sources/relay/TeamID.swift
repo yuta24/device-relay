@@ -172,8 +172,11 @@ enum ConfigCommand {
                 output("# \(url.path)")
                 output("teamID: \(config.teamID ?? "(not set)")")
             case .get:
-                // teamID is the only key.
-                guard let teamID = config.teamID else { return RunnerExitCode.usage.rawValue }
+                // teamID is the only key. Nothing on stdout when unset, so scripts can test the exit code.
+                guard let teamID = config.teamID else {
+                    FileHandle.standardError.write(Data("relay: teamID is not set\n".utf8))
+                    return RunnerExitCode.usage.rawValue
+                }
                 output(teamID)
             case .set(_, let value):
                 config.teamID = value

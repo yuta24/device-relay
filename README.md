@@ -125,7 +125,7 @@ iPhone 17      22222222-2222-2222-2222-222222222222  simulator  iOS 27.0    shut
 
 ```sh
 relay config                      # 設定の一覧
-relay config get teamID
+relay config get teamID           # 未設定なら終了コード 1（標準エラーに relay: teamID is not set）
 relay config set teamID <TEAM_ID>
 relay config unset teamID         # 忘れて、次回はキーチェーンから検出し直す
 ```
