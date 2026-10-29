@@ -7,6 +7,13 @@ struct RunnerInfo: Codable, Equatable {
     var url: String
     var token: String
     var udid: String
+    /// The device's name, for `relay status`.
+    var name: String?
+    /// The `relay start` process that owns the runner, which `relay stop` sends SIGTERM to.
+    var pid: Int32?
+    /// When that process started (whole seconds). With `pid`, it tells the process apart from an
+    /// unrelated one that reuses the pid later (see `RelayProcess`).
+    var startedAt: Date?
 
     static func defaultURL(rootURL: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)) -> URL {
         rootURL.appendingPathComponent(".relay", isDirectory: true).appendingPathComponent(fileName)
@@ -17,6 +24,7 @@ struct RunnerInfo: Codable, Equatable {
     func write(to url: URL) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        encoder.dateEncodingStrategy = .iso8601
         let data = try encoder.encode(self)
 
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -33,7 +41,9 @@ struct RunnerInfo: Codable, Equatable {
     }
 
     static func read(from url: URL) throws -> RunnerInfo {
-        try JSONDecoder().decode(RunnerInfo.self, from: Data(contentsOf: url))
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode(RunnerInfo.self, from: Data(contentsOf: url))
     }
 
     static func remove(at url: URL) {

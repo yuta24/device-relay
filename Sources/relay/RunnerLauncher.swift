@@ -49,6 +49,8 @@ final class RunnerLauncher {
     private let options: StartOptions
     private let udid: String
     private let isSimulator: Bool
+    /// Saved in runner.json for `relay status`.
+    private let deviceName: String?
     /// The runner root (see `RunnerProject`).
     private let rootURL: URL
     /// `DerivedData-sim` / `DerivedData-device` go here (`RunnerProject.buildDirectory`).
@@ -76,6 +78,7 @@ final class RunnerLauncher {
         isSimulator: Bool,
         rootURL: URL,
         buildURL: URL,
+        deviceName: String? = nil,
         stateURL: URL = RunnerLocator.userURL().deletingLastPathComponent(),
         userInfoURL: URL? = RunnerLocator.userURL()
     ) {
@@ -84,6 +87,7 @@ final class RunnerLauncher {
         self.isSimulator = isSimulator
         self.rootURL = rootURL
         self.buildURL = buildURL
+        self.deviceName = deviceName
         self.stateURL = stateURL
         self.userInfoURL = userInfoURL
     }
@@ -118,9 +122,17 @@ final class RunnerLauncher {
             xctestrun = built
         }
 
+        if StartCancellation.isRequested {
+            info("stopped before launching the runner")
+            return 1
+        }
         info("launching runner on \(udid) (log: \(runnerLogURL.path))")
         let process = try launch(xctestrun: xctestrun, logURL: runnerLogURL)
         installSignalHandlers()
+        if StartCancellation.isRequested {
+            // SIGTERM arrived before the handlers above were installed.
+            shutdown()
+        }
 
         let deadline = Date().addingTimeInterval(options.readyTimeout)
         var tunnelAddress: String?
@@ -165,7 +177,9 @@ final class RunnerLauncher {
 
         let infoURL = stateURL.appendingPathComponent(RunnerInfo.fileName)
         if let url = currentRunnerURL() {
-            let runnerInfo = RunnerInfo(url: url.absoluteString, token: token, udid: udid)
+            // pid and startedAt let relay stop find this process, and tell it from one that reuses the pid.
+            let runnerInfo = RunnerInfo(url: url.absoluteString, token: token, udid: udid, name: deviceName,
+                                        pid: getpid(), startedAt: RelayProcess.currentStartTime())
             do {
                 // The token goes only to the 0600 file: stdout often ends up in CI logs and terminal scrollback.
                 try runnerInfo.write(to: infoURL)

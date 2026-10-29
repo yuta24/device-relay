@@ -22,18 +22,18 @@ WebDriverAgent と同じ「常駐 XCTest ランナー」方式を使います。
 - 全エンドポイントで `Authorization: Bearer <token>` が必要です。トークンは `relay start` が起動ごとに生成します（詳しくは「認証」）。
 - XCUI の失敗（`record(_:)` に送られる issue）はテストを失敗させずに HTTP 422 として返し、ランナーはそのまま動き続けます。
 - ホストからの接続経路は、シミュレータでは `127.0.0.1` です。実機では CoreDevice トンネルのアドレス（`devicectl` の `tunnelIPAddress`）か `<udid>.coredevice.local` を使います。Wi-Fi の IP は `--allow-wifi` を付けたときだけ使います。usbmux は現時点では使いません。
-- `relay` CLI（SwiftPM）は、ビルド、ランナーの起動、到達可能なアドレスの探索、Ctrl-C での後片付けをまとめて行います。
+- `relay` CLI（SwiftPM）は、ビルド、ランナーの起動、到達可能なアドレスの探索、Ctrl-C（または `relay stop`）での後片付けをまとめて行います。
 
 ```
-Package.swift / Sources/relay      ホスト CLI (relay start / install / devices / doctor / ランナー操作のサブコマンドなど)
+Package.swift / Sources/relay      ホスト CLI (relay start / status / stop / install / devices / doctor / ランナー操作のサブコマンドなど)
 Tests/relayTests                   CLI のユニットテスト (Swift Testing)
 Runner/RelayRunner.xcodeproj       RelayRunnerHost (文字入力を試すためのホストアプリ) + RelayRunnerUITests (常駐ランナー)
 Makefile                           make install / make uninstall (relay を ~/.local/bin にリンク)
 
 ~/.relay/runner/                   relay install がコピーした Runner プロジェクトと install.json
 ~/.relay/build/                    DerivedData (Runner プロジェクトごと)
-~/.relay/logs/                     ビルドとランナーのログ
-~/.relay/runner.json               起動中のランナーの URL とトークン (0600)
+~/.relay/logs/                     ビルドとランナーのログ、relay start --background の出力 (start-*.log)
+~/.relay/runner.json               起動中のランナーの URL・トークン・端末名と、relay start の PID・起動時刻 (0600)
 ~/.relay/config.json               relay config の設定 (teamID)
 ```
 
@@ -59,8 +59,13 @@ relay install         # Runner プロジェクトを ~/.relay/runner にコピ�
 
 # 以降はどのディレクトリからでも（対象アプリのリポジトリなど）
 relay doctor          # Xcode・Runner・署名・端末を確認
-relay start           # 端末を自動で選んでランナーを起動
+relay start --background   # 端末を自動で選んでランナーを起動し、ready になったらプロンプトに戻る
+relay status          # 動いているランナーの確認（生きていれば終了コード 0）
+relay screenshot      # 操作（「CLI から操作する」）
+relay stop            # ランナーを止める（relay が boot したシミュレータも shutdown）
 ```
+
+エージェントや CI、スクリプトからは、`relay start --background` → 操作 → `relay stop` が基本の流れです（「バックグラウンドで動かす」）。人が手元で見ながら使うときは、`relay start`（フォアグラウンド。Ctrl-C で停止）でもかまいません。
 
 - `make install` は `.build/release/relay` へのシンボリックリンクを `$(PREFIX)/bin/relay`（既定 `~/.local/bin/relay`）に作ります。`~/.local/bin` が PATH になければ追加してください。`make uninstall` はそのリンクがこのチェックアウトを指している場合だけ削除します。リポジトリを更新したら `make install` と `relay install` をやり直します。
 - 開発中はリポジトリ内で `xcrun swift run relay …` でも動きます。リポジトリ内ではカレントディレクトリのチェックアウトの Runner を使うので、`relay install` 済みでもインストールしたコピーではなく手元の変更がビルドされます。
@@ -165,7 +170,7 @@ curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8100/health
 relay bench --url http://127.0.0.1:8100 --count 5 --tap 200,120   # トークンは runner.json から読む
 ```
 
-Ctrl-C を押すと `relay` が `/shutdown` を送り、`runner.json` を削除します。ランナーがテストメソッドから抜けて `** TEST EXECUTE SUCCEEDED **` で終了し、`relay` も終了します（10 秒以内に終わらなければ xcodebuild を terminate します）。ランナーが ready になる前に Ctrl-C を押した場合は、`/shutdown` を送る先がないので xcodebuild をすぐに terminate します。
+Ctrl-C を押す（または別のターミナルで `relay stop` を実行する）と `relay` が `/shutdown` を送り、`runner.json` を削除します。ランナーがテストメソッドから抜けて `** TEST EXECUTE SUCCEEDED **` で終了し、`relay` も終了します（10 秒以内に終わらなければ xcodebuild を terminate します）。ランナーが ready になる前に Ctrl-C を押した場合は、`/shutdown` を送る先がないので xcodebuild をすぐに terminate します。
 
 ready の後も、`relay start` は 3 秒ごとに `/ping` を送ってランナーの生存を確認します（`200` だけが生存扱い）。`/ping` はコマンドの実行中でも busy ゲートを通らずに即答するので、生存確認が利用者のリクエストと重なって `409` を起こすことはありません。ready の判定（起動直後の探索）には、XCUI が動くことを確かめるため `/health` を使います。3 回続けて応答がなければ（`200` 以外が 3 回続けば）、ランナーが落ちたとみなしてエラーを表示し、xcodebuild を止めて `runner.json` を削除し、終了コード 1 で終わります。`--rebuild` なしで `/ping` のない古いランナーを使った場合は、`/ping` が `404` になるので警告を出し、以後は `/health` で確認します（このときは `409` も生存扱いで、利用者のリクエストが `409` になることがあります）。`runner.json` を書き出せなかった場合も、ランナーを止めてから終了コード 1 で終わります。
 
@@ -181,6 +186,34 @@ ready の後も、`relay start` は 3 秒ごとに `/ping` を送ってランナ
 | `--verbose` | xcodebuild の出力をそのまま表示します |
 | `--allow-wifi` | 実機で、CoreDevice トンネルに加えて Wi-Fi などのアドレスも探索します。トークンが同じネットワークに平文で流れるので、既定では無効です |
 | `--ready-timeout 180` | `/health` が応答するまで待つ秒数。xcodebuild の出力に `Failed to initialize for UI testing` やテストの失敗が出た場合は、待たずにエラー内容と対処のヒントを表示して非ゼロで終了します |
+| `--background` | 端末から切り離して起動し、ready になったら終了します（「バックグラウンドで動かす」） |
+
+### バックグラウンドで動かす（relay start --background / status / stop）
+
+`relay start` はフォアグラウンドで動き続けてターミナルを占有します。エージェントや CI、スクリプトからは `--background` を付けて起動し、終わったら `relay stop` で止めます。
+
+```sh
+relay start --background --device "iPhone 17 Pro"
+# relay: started relay start in the background (pid 12345, log: ~/.relay/logs/start-<時刻>.log)
+# relay: using iPhone 17 Pro (...) <SIM_UDID> (--device)
+# relay: building runner (log: ...)            ← 進行状況（ログの relay: の行）は標準エラーに出ます
+# relay: launching runner on <SIM_UDID> (log: ...)
+# ready: http://127.0.0.1:8100/                ← ここから標準出力
+# device: iPhone 17 Pro (<SIM_UDID>)
+# pid: 12345
+# log: ~/.relay/logs/start-<時刻>.log
+# token: ~/.relay/runner.json
+relay status          # URL・端末・PID・起動時刻・/ping の結果
+relay tap --id relay.input
+relay stop            # stopped
+```
+
+- `relay start --background [start の他のオプション]` は、同じオプションの `relay start`（`--background` なし）を新しいセッションとして起動します（端末を閉じても止まりません）。その stdin は `/dev/null`、stdout と stderr は `~/.relay/logs/start-<時刻>.log` です。親（実行したコマンド）はそのログを読み、`ready:` が出たら上のように URL・端末・PID・ログのパスを表示して終了コード 0 で終わります。
+- ready にならなかった場合は、子の `relay start` を止め（SIGTERM。ビルド中なら xcodebuild を止め、relay が boot したシミュレータは shutdown します。60 秒以内に終わらなければ子と、子が起動したプロセスを強制終了します）、ログの末尾と原因を表示して終了します。終了コードは、子が ready の前に終了した場合（ビルドの失敗、端末が見つからない、`Failed to initialize for UI testing` など）は `1`、時間切れは `3`（ランナーに届かない）です。時間切れは、ランナーの起動（ビルドの完了）から `--ready-timeout` + 15 秒、起動まで（シミュレータの boot とビルド）は 30 分です。待っている間に Ctrl-C を押した場合も子を止めて `1` で終わります。
+- 起動の前に `~/.relay/runner.json` の URL へ `/ping` を送り、何かが HTTP で応答した場合は、ポートが衝突するので起動せずにエラー（終了コード `1`）にします。`200` なら、ランナーが動いているので `relay stop` で止めるか、そのまま使うように案内します。`401` なら、runner.json に書かれたものとは別のランナー（別のトークン）がその URL で動いている可能性があり、`404` などそれ以外の応答なら別の何かがそのポートで待ち受けています。どちらの場合も、それを止める（`relay stop`、またはそのランナーを起動した `relay start`）か、`--port` で別のポートを使うように案内します。起動に進むのは、応答がない（接続できない・タイムアウトした）ときと、runner.json がないときだけです。
+- `relay status [--json]` は、runner.json（「接続先（runner.json）の探し方」と同じ順に探します。`--runner <path>` も可）の URL・端末名と UDID・`relay start` の PID とそれがまだ動いているか・起動時刻・`/ping` の結果（`busy` を含む）を表示します。`--json` では 1 つの JSON オブジェクト（`alive`、`url`、`udid`、`name`、`pid`、`processRunning`、`startedAt`、`ping`、`runnerInfo`）を出します。ランナーが `/ping` に応答すれば `0`、runner.json がないか応答しなければ `3`、トークンが拒否されたら（`401`）`4` です。
+- `relay stop` は、runner.json の `relay start` に SIGTERM を送り、終了を待ちます。フォアグラウンドの Ctrl-C と同じ経路で、ランナーの `/shutdown`、relay が boot したシミュレータの shutdown、runner.json の削除を行います。`stopped` と表示して `0` で終わります（60 秒以内に終わらなければ `1`）。`relay start` がもう動いていない場合（強制終了された場合など）は、runner.json の URL とトークンで `POST /shutdown` を送り、runner.json を削除します。何も動いていなければ `not running` と表示して `0` です。フォアグラウンドの `relay start` も同じように止められます。
+- runner.json には `relay start` の PID と起動時刻（秒単位）を記録します。`relay stop` は、その PID のプロセスの起動時刻が一致し、実行ファイルが `relay` で最初の引数が `start` の場合だけシグナルを送ります。`relay start` の終了後にその PID が別のプロセスに再利用されても、そのプロセスには何も送りません。
 
 手動で起動する場合（リポジトリのルートで）:
 
@@ -303,9 +336,11 @@ curl -s -H "$AUTH" -X POST $R/shutdown
 
 ## CLI から操作する
 
-`relay` には、エンドポイントを 1 つずつ呼ぶサブコマンドがあります。トークンを自分で扱わずに、人もスクリプトもエージェントも同じ形で操作できます。`relay <command> --help` で各コマンドの使い方を表示します。
+`relay` には、エンドポイントを 1 つずつ呼ぶサブコマンドがあります。ランナーは `relay start --background`（または別のターミナルの `relay start`）で起動しておき、使い終わったら `relay stop` で止めます。トークンを自分で扱わずに、人もスクリプトもエージェントも同じ形で操作できます。`relay <command> --help` で各コマンドの使い方を表示します。
 
 ```sh
+relay start --background                       # ready: <URL> が出たら戻る（「バックグラウンドで動かす」）
+relay status                                   # 生きていれば終了コード 0、いなければ 3
 relay health                                   # curl -s -H "$AUTH" $R/health
 relay launch dev.yuta24.devicerelay.RelayRunnerHost
 relay find --type textField                    # POST /find {"element":{"type":"textField"}}
@@ -323,7 +358,8 @@ relay source --format text --bundle-id com.apple.Preferences
 relay button home
 relay orientation landscapeLeft
 relay terminate com.apple.Preferences
-relay shutdown
+relay shutdown                                 # ランナーだけを止める（relay start はそれを見て終了）
+relay stop                                     # relay start ごと止める（boot したシミュレータの shutdown も）
 ```
 
 （`make install` した `relay` をどのディレクトリからでも使えます。リポジトリ内では `xcrun swift run relay …` でも動きます。）
@@ -340,6 +376,8 @@ relay shutdown
 | `key` / `button` / `orientation` | `POST /key` / `/button` / `/orientation` | 名前（`key` は `--bundle-id` も可） |
 | `launch` / `terminate` | `POST /launch` / `/terminate` | `<bundle-id>` |
 | `shutdown` | `POST /shutdown` | – |
+| `status` | `GET /ping` と runner.json | `--json`。終了コードは「バックグラウンドで動かす」 |
+| `stop` | `relay start` への SIGTERM（なければ `POST /shutdown`） | – |
 
 - セレクタは `--id`（= `identifier`）・`--label`・`--type`・`--value` を 1 つ以上と、任意の `--index <n>` です（「要素セレクタ」と同じ完全一致・AND）。`--type` の名前、キー名、ボタン名、向きの名前、数値の範囲は送る前に確認し、間違っていれば終了コード 1 で何も送りません。
 - `-` で始まる文字列を入力するときは `relay type -- --text` のように `--` を挟みます。
@@ -351,7 +389,7 @@ relay shutdown
 | --- | --- |
 | `0` | 成功（2xx） |
 | `1` | 引数の誤り、runner.json が読めない、スクリーンショットを保存できないなど、ローカルの失敗 |
-| `3` | ランナーに届かない（runner.json がない、接続できない・タイムアウト）。`relay start` が動いているか確認してください |
+| `3` | ランナーに届かない（runner.json がない、接続できない・タイムアウト）。`relay status` で確認し、動いていなければ `relay start --background` で起動してください |
 | `4` | `401`。runner.json のトークンが動いているランナーのものではない（古いファイル、別のランナー） |
 | `5` | `409`（busy）。再試行してよい |
 | `6` | `422`。XCUI で失敗（フォーカスがない、要素が見つからない・1 つに決まらないなど） |
@@ -369,7 +407,7 @@ URL とトークンは `runner.json` から読みます。トークンはコマ�
 
 1 と 2 で指定したファイルがなければ、3・4 に進まずに終了コード 3 で終わります（意図しない別の端末を操作しないため）。
 
-`relay start` は、どのディレクトリで実行しても `~/.relay/runner.json`（パーミッション 0600）だけに書き出します。カレントディレクトリ（対象アプリのリポジトリなど）には `.relay/` を作らないので、3 で見つかるのは、自分で置いた `.relay/runner.json` か、以前の版の `relay start` が書いたものだけです。停止時には、まだ自分のトークンが書かれている場合だけ削除します。複数の `relay start` を同時に動かすこと（`--port` を分けて）はできますが、`~/.relay/runner.json` は最後に起動したものになり、前のランナーには `relay health` などのコマンドが届かなくなります（前のランナーのトークンはファイルに残りません）。
+`relay start` は、どのディレクトリで実行しても `~/.relay/runner.json`（パーミッション 0600）だけに書き出します。カレントディレクトリ（対象アプリのリポジトリなど）には `.relay/` を作らないので、3 で見つかるのは、自分で置いた `.relay/runner.json` か、以前の版の `relay start` が書いたものだけです。停止時には、まだ自分のトークンが書かれている場合だけ削除します（`relay stop` が片付けるときも同じです）。複数の `relay start` を同時に動かすこと（`--port` を分けて）はできますが、`~/.relay/runner.json` は最後に起動したものになり、前のランナーには `relay health` などのコマンドが届かなくなります（前のランナーのトークンはファイルに残りません）。
 
 ## 前面アプリ
 

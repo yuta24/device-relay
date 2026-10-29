@@ -7,9 +7,20 @@ let arguments = Array(CommandLine.arguments.dropFirst())
 do {
     switch try Arguments.parse(arguments) {
     case .start(let options):
+        if options.background {
+            exit(BackgroundStart.run(options))
+        }
+        if BackgroundStart.isDetachedChild {
+            StartCancellation.install()
+        }
         let setup = try StartSetup.prepare(options)
+        if StartCancellation.isRequested {
+            setup.finish()
+            exit(1)
+        }
         let launcher = RunnerLauncher(options: setup.options, udid: setup.device.udid, isSimulator: setup.device.kind == .simulator,
-                                      rootURL: setup.root, buildURL: RunnerProject.buildDirectory(root: setup.root))
+                                      rootURL: setup.root, buildURL: RunnerProject.buildDirectory(root: setup.root),
+                                      deviceName: setup.device.name)
         launcher.onReady = { setup.saveTeam() }
         let status: Int32
         do {
@@ -40,6 +51,10 @@ do {
         try Bench.run(options)
     case .runner(let options):
         exit(RunnerControl.run(options))
+    case .status(let options):
+        exit(RunnerStatus.run(options))
+    case .stop(let options):
+        exit(RunnerStop.run(options))
     case .help:
         print(Arguments.usage)
     case .commandHelp(let name):
