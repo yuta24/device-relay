@@ -45,22 +45,27 @@ enum BackgroundStart {
         return line
     }
 
-    /// Why a new runner must not start, given the runner in runner.json and its `/ping` answer; nil when
-    /// nothing answered there. Any answer means something listens at that URL: a runner whose token is not
-    /// the one in runner.json (401) would make the new runner's port clash all the same.
-    static func conflict(with existing: RunnerInfo, ping: RunnerPing, owner: Int32?) -> String? {
-        switch ping {
+    /// Why a new runner on `port` must not start, given the runner in runner.json and its `/ping` answer;
+    /// nil when that runner listens on another port (the new one then replaces it in runner.json, as when
+    /// several are started in the foreground) or nothing answered there. On the same port, any answer means
+    /// something listens there and the new runner could not: a runner whose token is not the one in
+    /// runner.json answers 401. A URL without a port is taken to be on the same one.
+    static func conflict(with existing: RunnerInfo, port: Int, ping: @autoclosure () -> RunnerPing, owner: @autoclosure () -> Int32?) -> String? {
+        if let existingPort = URL(string: existing.url)?.port, existingPort != port {
+            return nil
+        }
+        switch ping() {
         case .unreachable:
             return nil
         case .alive:
-            let process = owner.map { ", relay start pid \($0)" } ?? ""
-            return "a runner is already running at \(existing.url) (\(existing.name ?? existing.udid)\(process)); "
-                + "stop it with relay stop, or use it as it is"
+            let process = owner().map { ", relay start pid \($0)" } ?? ""
+            return "a runner is already running at \(existing.url) (\(existing.name ?? existing.udid)\(process)), the port relay start would use; "
+                + "stop it with relay stop, use it as it is, or start another on another port with --port"
         case .status(let status):
             let what = status == 401
                 ? "answered 401 to the token in runner.json: another runner than the one runner.json names is probably running there"
                 : "answered HTTP \(status) to /ping: something else is listening there"
-            return "\(existing.url) \(what); stop it (relay stop, or the relay start that launched it), "
+            return "\(existing.url) \(what), on the port relay start would use; stop it (relay stop, or the relay start that launched it), "
                 + "or start on another port with --port"
         }
     }
@@ -68,7 +73,8 @@ enum BackgroundStart {
     static func run(_ options: StartOptions, home: URL = UserHome.url) -> Int32 {
         let infoURL = RunnerLocator.userURL(home: home)
         if let existing = try? RunnerInfo.read(from: infoURL),
-           let conflict = conflict(with: existing, ping: RunnerPing.check(existing), owner: RelayProcess.runningRelayStart(existing)) {
+           let conflict = conflict(with: existing, port: options.port, ping: RunnerPing.check(existing),
+                                   owner: RelayProcess.runningRelayStart(existing)) {
             return fail(conflict, code: .usage)
         }
 
