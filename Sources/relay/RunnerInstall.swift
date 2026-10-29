@@ -84,6 +84,13 @@ struct CheckoutRunnerSource: RunnerSource {
             try manager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
             try manager.copyItem(at: root.appendingPathComponent(path), to: destination)
         }
+        // The agent skill, for relay skill install (a checkout from before the skill has none).
+        let skill = root.appendingPathComponent(AgentSkill.path, isDirectory: true)
+        if manager.fileExists(atPath: skill.path) {
+            let destination = directory.appendingPathComponent(AgentSkill.path, isDirectory: true)
+            try manager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try manager.copyItem(at: skill, to: destination)
+        }
         // Per-user Xcode state does not belong in the copy.
         let userData = directory.appendingPathComponent(RunnerProject.projectPath).appendingPathComponent("xcuserdata")
         try? manager.removeItem(at: userData)
@@ -208,6 +215,9 @@ enum InstallCommand {
         let root = RunnerProject.installedRoot(home: home)
         output("installed the runner to \(root.path) (relay \(record.relayVersion)"
             + "\(record.commit.map { ", commit \($0.prefix(12))" } ?? ""), from \(record.source))")
+        if AgentSkill.contains(AgentSkill.installedSource(home: home)) {
+            output("the \(AgentSkill.name) agent skill is in \(AgentSkill.installedSource(home: home).path); relay skill install adds it to a project")
+        }
 
         guard options.build else { return RunnerExitCode.success.rawValue }
         let derivedData = RunnerProject.buildDirectory(root: root, home: home).appendingPathComponent("DerivedData-sim", isDirectory: true)

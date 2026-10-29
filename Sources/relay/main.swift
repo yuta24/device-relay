@@ -45,6 +45,8 @@ do {
         exit(ConfigCommand.run(options))
     case .install(let options):
         exit(try InstallCommand.run(options))
+    case .skill(let options):
+        exit(try SkillCommand.run(options))
     case .version:
         print("relay \(RelayVersion.current)")
     case .bench(let options):

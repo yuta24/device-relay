@@ -111,6 +111,10 @@ enum Doctor {
                                    fix: "run relay install (or pass --project <path to device-relay>, or set \(RunnerProject.environmentKey))"))
         }
         checks.append(installCheck(project: project, home: home, staleness: staleness))
+        let currentDirectory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        checks += SkillInstaller.doctorChecks(home: home, currentDirectory: currentDirectory, commands: commands) {
+            try? RunnerProject.resolve(explicitPath: nil, currentDirectory: currentDirectory, home: home, includeInstalled: false).root
+        }
         return checks
     }
 

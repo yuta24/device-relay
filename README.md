@@ -29,8 +29,9 @@ Package.swift / Sources/relay      ホスト CLI (relay start / status / stop / 
 Tests/relayTests                   CLI のユニットテスト (Swift Testing)
 Runner/RelayRunner.xcodeproj       RelayRunnerHost (文字入力を試すためのホストアプリ) + RelayRunnerUITests (常駐ランナー)
 Makefile                           make install / make uninstall (relay を ~/.local/bin にリンク)
+skills/device-relay/               コーディングエージェント向けのスキル (SKILL.md と reference.md)
 
-~/.relay/runner/                   relay install がコピーした Runner プロジェクトと install.json
+~/.relay/runner/                   relay install がコピーした Runner プロジェクト、エージェントスキル (skills/device-relay) と install.json
 ~/.relay/build/                    DerivedData (Runner プロジェクトごと)
 ~/.relay/logs/                     ビルドとランナーのログ、relay start --background の出力 (start-*.log)
 ~/.relay/runner.json               起動中のランナーの URL・トークン・端末名と、relay start の PID・起動時刻 (0600)
@@ -81,7 +82,7 @@ xcrun swift run relay doctor
 `relay` 本体（CLI）と、端末で動かす Runner（Xcode プロジェクト）は別に用意します。`relay install` は Runner プロジェクトを `~/.relay/runner/` にコピーし、relay のバージョンと元リポジトリのコミットを `~/.relay/runner/install.json` に記録します。
 
 - コピー元は `--project <path>` > `$RELAY_HOME` > カレントディレクトリとその親 > `relay` の実行ファイルの場所（シンボリックリンクを解決）とその親、の順に探した device-relay のチェックアウトです。`make install` したリンクからは元のチェックアウトが見つかります。（取り出し元は差し替えられるようにしてあり、将来 GitHub Release からのダウンロードにする予定です。）
-- コピーするのは `Runner/` と、プロジェクトが参照している CLI 側の共有ソース（`Sources/relay/RunnerAuth.swift` など、`project.pbxproj` の `../Sources/...` の参照）です。リポジトリと同じ配置（`~/.relay/runner/Runner/RelayRunner.xcodeproj`）にします。
+- コピーするのは `Runner/` と、プロジェクトが参照している CLI 側の共有ソース（`Sources/relay/RunnerAuth.swift` など、`project.pbxproj` の `../Sources/...` の参照）、それにエージェントスキル（`skills/device-relay`。「エージェントスキル」を参照）です。リポジトリと同じ配置（`~/.relay/runner/Runner/RelayRunner.xcodeproj`、`~/.relay/runner/skills/device-relay`）にします。
 - 再実行すると上書き更新します。一時ディレクトリにコピーしてから入れ替えるので、途中で失敗しても前の Runner は残ります。入れ替えたときは、古いソースのビルド成果物（`~/.relay/build/installed`）を削除します。
 - `relay install --build` は、コピーの後にシミュレータ用の `build-for-testing`（`generic/platform=iOS Simulator`）を行い、初回の `relay start` でビルドを省きます。ビルドログは `relay start` と同じく `~/.relay/logs/build-<時刻>.log` に保存し、失敗したときはそのパスを示します（コピーした Runner は残ります）。`--verbose` を付けると xcodebuild の出力をそのまま表示します。
 - `relay uninstall`（= `relay install --remove`）は `~/.relay/runner` とそのビルド成果物を削除します。`config.json`、`runner.json`、ログは残します。
@@ -145,6 +146,7 @@ relay config unset teamID         # 忘れて、次回はキーチェーンか�
 - 実機: OS のバージョン（17 以上）、接続状態、ペアリング、デベロッパモード（`devicectl list devices`）、DDI のマウント状態（`ddiServicesAvailable`）、ロック状態（`devicectl device info lockState` の `passcodeRequired`）。UI オートメーションの有効状態は Mac から読めないので、常に ! で確認を促します
 - シミュレータ: ランタイムが入っているか、起動状態
 - 署名: 証明書と Team ID（実機なら見つからなければ ✗、シミュレータなら !）
+- エージェントスキル: カレントディレクトリの git のルートの `.claude/skills/device-relay` と `~/.claude/skills/device-relay` の状態（`relay skill status` と同じ判定。古い・relay が入れたものでなければ !。入っていなくても問題にはしません）
 
 `relay start` も、ビルドの前に同じ端末のチェックを行い、✗（接続されていない、ペアリングされていない、デベロッパモードが無効、iOS 17 未満、シミュレータのランタイムがない）があればビルドせずに終了します。! の項目（ロック中、DDI 未マウント）は表示だけして続けます。
 
@@ -408,6 +410,28 @@ URL とトークンは `runner.json` から読みます。トークンはコマ�
 1 と 2 で指定したファイルがなければ、3・4 に進まずに終了コード 3 で終わります（意図しない別の端末を操作しないため）。
 
 `relay start` は、どのディレクトリで実行しても `~/.relay/runner.json`（パーミッション 0600）だけに書き出します。カレントディレクトリ（対象アプリのリポジトリなど）には `.relay/` を作らないので、3 で見つかるのは、自分で置いた `.relay/runner.json` か、以前の版の `relay start` が書いたものだけです。停止時には、まだ自分のトークンが書かれている場合だけ削除します（`relay stop` が片付けるときも同じです）。複数の `relay start` を同時に動かすこと（`--port` を分けて）はできますが、`~/.relay/runner.json` は最後に起動したものになり、前のランナーには `relay health` などのコマンドが届かなくなります（前のランナーのトークンはファイルに残りません）。
+
+## エージェントスキル
+
+`skills/device-relay/` は、コーディングエージェント（Claude Code など）が対象アプリのリポジトリで作業しながら relay でアプリの動作を確かめるためのスキルです。`SKILL.md` に基本の流れ（`relay status` → `relay start --background` → `relay launch` → スクリーンショットと要素の観察 → 操作 → 確認 → `relay stop`）、要素セレクタを優先する操作のコツ、終了コードごとの対処、安全上の注意をまとめ、オプションやトラブルシューティングの詳細は `reference.md` に分けています。
+
+使う前に、このリポジトリで `make install` と `relay install` を済ませ、`relay doctor` で確認しておきます（「クイックスタート」）。`relay install` は Runner と一緒にスキルも `~/.relay/runner/skills/device-relay` にコピーし、`relay skill install` はそこから対象アプリのリポジトリなどへ入れます。
+
+```sh
+cd /path/to/app
+relay skill install            # <git のルート>/.claude/skills/device-relay にコピー（チームでコミットできる）
+relay skill install --global   # ~/.claude/skills/device-relay（どのリポジトリでも使う）
+relay skill install --dir <skills dir>   # <skills dir>/device-relay
+relay skill status             # 取り出し元と、プロジェクト・グローバルのインストール先、バージョンのずれ（!）
+relay skill uninstall          # relay が入れたものだけを削除（--global / --dir も同じ）
+```
+
+- 既定の入れ先は、カレントディレクトリの git のルート（git の外ならカレントディレクトリ）の `.claude/skills/device-relay` です。コピーなので、そのままコミットしてチームで共有できます。どのコマンドも入れ先（削除先）のパスを必ず表示します。
+- 取り出し元は `~/.relay/runner/skills/device-relay`（`relay install` したもの）、なければ `relay install` と同じ探し方で見つけた device-relay のチェックアウト（`$RELAY_HOME`、カレントディレクトリとその親、`relay` の実行ファイルのチェックアウト）の `skills/device-relay` です。
+- コピーには、SKILL.md を変えずに隠しファイル `.relay-skill.json` を置き、relay のバージョン、コミット、取り出し元、日時を記録します。この記録があるもの（または relay のスキルを指すリンク）は relay が入れたものとみなし、再実行で上書き更新します。それ以外のものが入れ先にあれば、`--force` なしでは上書きしません。`uninstall` は relay が入れたものだけを削除し、それ以外は残してエラーにします。
+- `--link` はコピーの代わりにシンボリックリンクを作ります。スキルを編集する開発用で、取り出し元はチェックアウトを優先します（チェックアウトの変更がそのまま反映されます）。リンクはこの Mac の絶対パスを指すので、コミットして共有するには向きません。
+- `relay skill status` は、記録したバージョンが `relay` のバージョンと違う場合や、取り出し元より古い（バージョンかコミットが違う）場合に ! を付けます。relay を更新したら `relay install` の後に `relay skill install`（`--global` などで入れたなら同じオプション）をやり直してください。
+- スキルは、ランナーが動いていれば（`relay status` が 0）それを使い、止めません。自分で `relay start --background` したときだけ、終わりに `relay stop` します。端末は、実機を指定されない限り `relay devices` で選んだシミュレータを `--device` / `--udid` で明示します。
 
 ## 前面アプリ
 

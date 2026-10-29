@@ -99,6 +99,7 @@ extension Arguments {
 
     /// What a parse error prints: the command's synopsis for a runner command, the whole usage otherwise.
     static func errorUsage(for name: String?) -> String {
+        if name == "skill" { return SkillCommand.errorUsage }
         guard let name, let command = runnerUsages[name] ?? lifecycleUsages[name] else { return usage }
         return "Usage:\n  \(command.synopsis)\nRun relay \(name) --help for details."
     }
