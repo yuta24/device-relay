@@ -13,6 +13,19 @@ struct ShellError: Error, CustomStringConvertible {
 }
 
 enum Shell {
+    /// The processes `run` is waiting for, so `terminateRunning()` can stop a build when a detached
+    /// `relay start` is told to stop (see `StartCancellation`).
+    private static var running: [ObjectIdentifier: Process] = [:]
+    private static let runningLock = NSLock()
+
+    /// Sends SIGTERM to every process `run` is waiting for; `run` then throws `ShellError`.
+    static func terminateRunning() {
+        runningLock.lock()
+        let processes = Array(running.values)
+        runningLock.unlock()
+        processes.filter(\.isRunning).forEach { $0.terminate() }
+    }
+
     /// Runs `xcrun <args>` to completion. stdout and stderr are merged and appended to `log` when given.
     @discardableResult
     static func xcrun(_ args: [String], log: FileHandle? = nil, echo: Bool = false) throws -> String {
@@ -46,6 +59,14 @@ enum Shell {
         }
 
         try process.run()
+        runningLock.lock()
+        running[ObjectIdentifier(process)] = process
+        runningLock.unlock()
+        defer {
+            runningLock.lock()
+            running[ObjectIdentifier(process)] = nil
+            runningLock.unlock()
+        }
         process.waitUntilExit()
         pipe.fileHandleForReading.readabilityHandler = nil
         let remaining = pipe.fileHandleForReading.readDataToEndOfFile()

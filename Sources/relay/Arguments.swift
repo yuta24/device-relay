@@ -4,6 +4,8 @@ enum Command: Equatable {
     case start(StartOptions)
     case bench(BenchOptions)
     case runner(RunnerControlOptions)
+    case status(RunnerStatusOptions)
+    case stop(RunnerStopOptions)
     case devices(json: Bool)
     case doctor(DoctorOptions)
     case config(ConfigOptions)
@@ -28,6 +30,23 @@ struct StartOptions: Equatable {
     var readyTimeout: TimeInterval = 180
     /// Also probe the runner's Wi-Fi (and other interface) addresses, not only the CoreDevice tunnel.
     var allowWiFi = false
+    /// `--background`: run `relay start` detached and return once the runner is ready (see `BackgroundStart`).
+    var background = false
+
+    /// The arguments of the same `relay start` without `--background`, for the detached process.
+    var foregroundArguments: [String] {
+        var arguments = ["start"]
+        if let udid { arguments += ["--udid", udid] }
+        if let device { arguments += ["--device", device] }
+        if let project { arguments += ["--project", project] }
+        arguments += ["--port", "\(port)"]
+        if let teamID { arguments += ["--team-id", teamID] }
+        if rebuild { arguments.append("--rebuild") }
+        if verbose { arguments.append("--verbose") }
+        arguments += ["--ready-timeout", "\(readyTimeout)"]
+        if allowWiFi { arguments.append("--allow-wifi") }
+        return arguments
+    }
 }
 
 struct BenchOptions: Equatable {
@@ -97,6 +116,7 @@ enum Arguments {
                 case "--rebuild": options.rebuild = true
                 case "--verbose": options.verbose = true
                 case "--allow-wifi": options.allowWiFi = true
+                case "--background": options.background = true
                 default: throw ArgumentError(description: "unknown option: \(option)")
                 }
             }
@@ -104,6 +124,19 @@ enum Arguments {
                 throw ArgumentError(description: "start takes either --udid or --device, not both")
             }
             return .start(options)
+        case "status", "stop":
+            var json = false
+            var runnerPath: String?
+            while !rest.isEmpty {
+                let option = rest.removeFirst()
+                switch option {
+                case "--json" where subcommand == "status": json = true
+                case "--runner": runnerPath = try value(for: option)
+                case "-h", "--help": return .commandHelp(subcommand)
+                default: throw ArgumentError(description: "unknown option: \(option)")
+                }
+            }
+            return subcommand == "status" ? .status(RunnerStatusOptions(json: json, runnerPath: runnerPath)) : .stop(RunnerStopOptions(runnerPath: runnerPath))
         case "devices":
             var json = false
             while !rest.isEmpty {
@@ -181,7 +214,7 @@ enum Arguments {
             }
             return .bench(options)
         case "-h", "--help", "help":
-            if let name = rest.first, runnerUsages[name] != nil {
+            if let name = rest.first, runnerUsages[name] != nil || lifecycleUsages[name] != nil {
                 return .commandHelp(name)
             }
             return .help
@@ -225,7 +258,9 @@ enum Arguments {
     static let usage = """
     Usage:
       relay start [--udid <UDID> | --device <NAME>] [--team-id <TEAM_ID>] [--project <PATH>] [--port 8100] [--rebuild] [--verbose]
-                  [--ready-timeout 180] [--allow-wifi]
+                  [--ready-timeout 180] [--allow-wifi] [--background]
+      relay status [--json] [--runner <PATH>]
+      relay stop [--runner <PATH>]
       relay install [--project <PATH>] [--build [--verbose]] | relay install --remove | relay uninstall
       relay devices [--json]
       relay doctor [--udid <UDID> | --device <NAME>] [--project <PATH>]
@@ -244,6 +279,14 @@ enum Arguments {
              the relay executable. Builds and logs go to ~/.relay/build and ~/.relay/logs.
              Devices are reached over the CoreDevice tunnel only; --allow-wifi also tries the device's
              Wi-Fi addresses, where the token travels as plain HTTP.
+             --background runs it detached from the terminal (log: ~/.relay/logs/start-*.log) and exits once
+             the runner is ready, printing ready: <url>; relay stop stops it. Agents and CI should use
+             relay start --background, then the runner commands, then relay stop.
+    status   Shows the runner in runner.json (URL, device, relay start pid, start time) and whether /ping
+             answers. Exits 0 if it does, 3 if there is no runner or it does not answer, 4 if it answers 401
+             (the token in runner.json is not that runner's).
+    stop     Stops relay start (SIGTERM, like Ctrl-C), which shuts the runner down, shuts down a simulator
+             it booted, and removes runner.json. Prints "not running" (exit 0) if nothing runs.
     install  Copies the runner project from the device-relay checkout (--project, $RELAY_HOME, or the one the
              relay executable was built in) to ~/.relay/runner, replacing a previous copy, and records the
              relay version. --build also builds it for simulators (log: ~/.relay/logs/build-*.log;

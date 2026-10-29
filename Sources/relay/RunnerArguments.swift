@@ -90,13 +90,16 @@ extension Arguments {
 
     /// The usage of a runner command, or the whole usage for anything else.
     static func usage(for name: String?) -> String {
+        if let name, let command = lifecycleUsages[name] {
+            return "Usage:\n  \(command.synopsis)\n\n\(command.details)"
+        }
         guard let name, let command = runnerUsages[name] else { return usage }
         return "Usage:\n  \(command.synopsis)\n\n\(command.details)\n\n\(runnerCommonUsage)"
     }
 
     /// What a parse error prints: the command's synopsis for a runner command, the whole usage otherwise.
     static func errorUsage(for name: String?) -> String {
-        guard let name, let command = runnerUsages[name] else { return usage }
+        guard let name, let command = runnerUsages[name] ?? lifecycleUsages[name] else { return usage }
         return "Usage:\n  \(command.synopsis)\nRun relay \(name) --help for details."
     }
 
@@ -152,6 +155,27 @@ extension Arguments {
         "launch": ("relay launch <bundle-id>", "Launches the app, or brings it to the foreground."),
         "terminate": ("relay terminate <bundle-id>", "Terminates the app."),
         "shutdown": ("relay shutdown", "Stops the runner; relay start then exits.")
+    ]
+
+    /// `relay status` and `relay stop`, which manage the runner rather than send it a command.
+    static let lifecycleUsages: [String: (synopsis: String, details: String)] = [
+        "status": (
+            "relay status [--json] [--runner <path>]",
+            """
+            Shows the runner in runner.json: URL, device, the relay start that owns it (pid, whether it still runs,
+            start time), and the /ping result (busy included). --json prints one JSON object.
+            Exit status: 0 the runner answers /ping, 3 no runner.json or no answer, 4 the token was rejected (401).
+            """
+        ),
+        "stop": (
+            "relay stop [--runner <path>]",
+            """
+            Sends SIGTERM to the relay start in runner.json (like Ctrl-C: it shuts the runner down, shuts down a
+            simulator it booted, and removes runner.json) and waits for it to exit. Without that process, it sends
+            /shutdown to the runner and removes the stale runner.json. Prints "stopped", or "not running" if nothing
+            runs; both exit 0. Exits 1 if relay start does not exit within 60 seconds.
+            """
+        )
     ]
 
     static let runnerCommandOrder = [
