@@ -1,0 +1,167 @@
+import Foundation
+
+struct DoctorOptions: Equatable {
+    var udid: String?
+    var device: String?
+    var project: String?
+}
+
+/// `relay doctor`: checks the host (Xcode, the runner project, signing) and the device `relay start`
+/// would use, without building or launching anything. Exits 1 when something is ✗.
+enum Doctor {
+    static func run(
+        _ options: DoctorOptions,
+        commands: HostCommands = .live,
+        configURL: URL = RelayConfig.defaultURL(),
+        resolveProject: (String?) throws -> (root: URL, source: RunnerProject.Source) = { try RunnerProject.resolve(explicitPath: $0) },
+        home: URL = UserHome.url,
+        staleness: (URL, RunnerProject.Source) -> String? = { RunnerInstaller.staleness(root: $0, source: $1) },
+        output: (String) -> Void = { print($0) }
+    ) -> Int32 {
+        var checks: [Check] = []
+        func section(_ title: String, _ sectionChecks: [Check]) {
+            output(title)
+            sectionChecks.forEach { output($0.formatted()) }
+            checks += sectionChecks
+        }
+
+        section("Host", hostChecks(commands: commands, resolveProject: { try resolveProject(options.project) }, home: home, staleness: staleness))
+
+        var deviceChecks: [Check] = []
+        var target: Device?
+        do {
+            let (devices, warnings) = try DeviceList.load(commands)
+            let active = devices.filter(\.isActive)
+            let connected = active.filter { $0.kind == .device }.count
+            deviceChecks.append(.ok("devices", "\(connected) connected device(s), \(active.count - connected) booted simulator(s), "
+                + "\(devices.filter { $0.kind == .simulator && $0.isAvailable }.count) iOS simulator(s)"))
+            deviceChecks += warnings.map { .warning("devicectl", $0, fix: "check that Xcode 15 or later is selected (xcode-select -p)") }
+            do {
+                let device = try DeviceSelector.select(from: devices, udid: options.udid, name: options.device)
+                target = device
+                let how = options.udid != nil ? "--udid" : options.device != nil ? "--device" : "relay start without --udid would use it"
+                deviceChecks.append(.ok("target", "\(device.summary) (\(how))"))
+            } catch {
+                // The candidates follow on the next lines; the table below lists them.
+                let firstLine = String(describing: error).split(separator: "\n").first.map { String($0.hasSuffix(":") ? $0.dropLast() : $0) } ?? ""
+                // Without --udid/--device nothing is wrong yet: relay start can still be told which one to use.
+                deviceChecks.append(options.udid == nil && options.device == nil
+                    ? .warning("target", firstLine, fix: "pass --udid or --device to relay start (relay devices lists them)")
+                    : .problem("target", firstLine, fix: "pick one from relay devices and pass its --udid"))
+            }
+            section("Devices", deviceChecks)
+            let listed = devices.filter { $0.kind == .device || $0.isActive }
+            if !listed.isEmpty {
+                output(DeviceList.table(listed).split(separator: "\n").map { "    " + $0 }.joined(separator: "\n"))
+            }
+        } catch {
+            section("Devices", [.problem("devices", "\(error)", fix: "check that Xcode is installed and selected (xcode-select -p)")])
+        }
+
+        if let target {
+            let locked = target.kind == .device ? DeviceChecks.lockState(udid: target.udid, commands: commands) : nil
+            var targetChecks = DeviceChecks.checks(for: target, locked: locked, includeHints: true)
+            targetChecks.append(signingCheck(for: target, commands: commands, configURL: configURL))
+            section("Target: \(target.name)", targetChecks)
+        } else {
+            section("Signing", [signingCheck(for: nil, commands: commands, configURL: configURL)])
+        }
+
+        let problems = checks.filter { $0.status == .problem }.count
+        let warnings = checks.filter { $0.status == .warning }.count
+        output("")
+        output(problems == 0
+            ? "No problems found\(warnings > 0 ? " (\(warnings) note(s) marked !)" : "")."
+            : "\(problems) problem(s) found; fix the ✗ items above.")
+        return problems == 0 ? RunnerExitCode.success.rawValue : RunnerExitCode.usage.rawValue
+    }
+
+    static func hostChecks(
+        commands: HostCommands,
+        resolveProject: () throws -> (root: URL, source: RunnerProject.Source),
+        home: URL,
+        staleness: (URL, RunnerProject.Source) -> String?
+    ) -> [Check] {
+        var checks: [Check] = [.ok("relay", RelayVersion.current)]
+        let developerDirectory = (try? commands.run("/usr/bin/xcode-select", ["-p"]))?.trimmingCharacters(in: .whitespacesAndNewlines)
+        do {
+            let lines = try commands.xcrun(["xcodebuild", "-version"]).split(whereSeparator: \.isNewline).map(String.init)
+            let version = lines.first { $0.hasPrefix("Xcode ") } ?? lines.first ?? "?"
+            let build = lines.first { $0.hasPrefix("Build version ") }.map { " (\($0.dropFirst("Build version ".count)))" } ?? ""
+            checks.append(.ok("Xcode", "\(version)\(build)\(developerDirectory.map { ", \($0)" } ?? "")"))
+        } catch {
+            checks.append(.problem("Xcode", "xcodebuild is not available\(developerDirectory.map { " (developer directory: \($0))" } ?? "")",
+                                   fix: "install Xcode and select it: sudo xcode-select -s /Applications/Xcode.app"))
+        }
+        if let version = try? commands.xcrun(["--version"]).trimmingCharacters(in: .whitespacesAndNewlines) {
+            checks.append(.ok("xcrun", version))
+        } else {
+            checks.append(.problem("xcrun", "not working", fix: "install Xcode and select it: sudo xcode-select -s /Applications/Xcode.app"))
+        }
+        if let path = try? commands.xcrun(["--find", "devicectl"]).trimmingCharacters(in: .whitespacesAndNewlines) {
+            checks.append(.ok("devicectl", path))
+        } else {
+            checks.append(.problem("devicectl", "not found", fix: "relay needs Xcode 15 or later for devicectl"))
+        }
+        let project = try? resolveProject()
+        if let project {
+            checks.append(.ok("runner project", "\(project.root.path) (from \(project.source.label))"))
+        } else {
+            checks.append(.problem("runner project", "\(RunnerProject.projectPath) not found",
+                                   fix: "run relay install (or pass --project <path to device-relay>, or set \(RunnerProject.environmentKey))"))
+        }
+        checks.append(installCheck(project: project, home: home, staleness: staleness))
+        return checks
+    }
+
+    /// The copy in `~/.relay/runner`: its record, and whether it matches this relay.
+    static func installCheck(project: (root: URL, source: RunnerProject.Source)?, home: URL, staleness: (URL, RunnerProject.Source) -> String?) -> Check {
+        let installed = RunnerProject.installedRoot(home: home)
+        guard RunnerProject.contains(installed) else {
+            return .warning("runner install", "not installed\(project.map { "; using \($0.root.path)" } ?? "")",
+                            fix: "run relay install so relay start works without the checkout")
+        }
+        let record = RunnerInstallRecord.read(root: installed)
+        let detail = record.map { record in
+            "relay \(record.relayVersion)\(record.commit.map { ", commit \($0.prefix(12))" } ?? ""), from \(record.source), \(record.installedAt)"
+        } ?? "\(installed.path) (no \(RunnerInstallRecord.fileName))"
+        if let reason = staleness(installed, .installed) {
+            return .warning("runner install", reason, fix: "run relay install again to update \(installed.path)")
+        }
+        if let project, project.source != .installed {
+            return .ok("runner install", "\(detail) (not used: \(project.source.label) wins)")
+        }
+        return .ok("runner install", detail)
+    }
+
+    /// The Team ID `relay start` would sign with. Needed for devices only, so a missing one is ✗ only then.
+    static func signingCheck(for target: Device?, commands: HostCommands, configURL: URL) -> Check {
+        let needed = target?.kind == .device
+        // A Team ID in config.json is enough for relay start, even when the keychain cannot be read.
+        if let teamID = (try? RelayConfig.read(from: configURL))?.teamID {
+            return .ok("signing", "team \(teamID) (from \(TeamIDResolver.Source.config.rawValue))")
+        }
+        let identities: [SigningIdentity]
+        do {
+            identities = try SigningIdentities.load(commands)
+        } catch {
+            return needed
+                ? .problem("signing", "cannot read the keychain: \(error)", fix: "pass --team-id <TEAM_ID> to relay start")
+                : .warning("signing", "cannot read the keychain: \(error)", fix: "needed for devices only; pass --team-id <TEAM_ID> to relay start")
+        }
+        let certificates = "\(identities.count) Apple Development certificate(s)"
+        do {
+            let team = try TeamIDResolver.resolve(explicit: nil, config: RelayConfig()) { identities }
+            return .ok("signing", "team \(team.teamID) (from \(team.source.rawValue)); \(certificates)")
+        } catch {
+            let teams = TeamIDResolver.teamIDs(in: identities)
+            let detail = teams.count > 1 ? "\(certificates) of \(teams.count) teams (\(teams.joined(separator: ", ")))" : certificates
+            let fix = teams.count > 1
+                ? "pass --team-id <TEAM_ID> to relay start once, or relay config set teamID <TEAM_ID>"
+                : "sign in to your Apple Account in Xcode > Settings > Accounts and create an Apple Development certificate"
+            return needed
+                ? .problem("signing", detail, fix: fix)
+                : .warning("signing", "no Team ID: \(detail)", fix: "needed for devices only; \(fix)")
+        }
+    }
+}

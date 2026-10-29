@@ -5,14 +5,34 @@ import Testing
 
 struct ArgumentsTests {
     @Test func parsesStartOptions() throws {
-        let command = try Arguments.parse(["start", "--udid", "ABC", "--port", "9000", "--team-id", "TEAM", "--rebuild"])
-        var expected = StartOptions(udid: "ABC", port: 9000, teamID: "TEAM")
+        let command = try Arguments.parse(["start", "--udid", "ABC", "--port", "9000", "--team-id", "ABCDE12345", "--rebuild"])
+        var expected = StartOptions(udid: "ABC", port: 9000, teamID: "ABCDE12345")
         expected.rebuild = true
         #expect(command == .start(expected))
     }
 
-    @Test func startRequiresUDID() {
-        #expect(throws: ArgumentError.self) { try Arguments.parse(["start"]) }
+    @Test func startPicksTheDeviceWithoutUDID() throws {
+        #expect(try Arguments.parse(["start"]) == .start(StartOptions()))
+        #expect(try Arguments.parse(["start", "--device", "iPhone 17", "--project", "../relay"])
+            == .start(StartOptions(device: "iPhone 17", project: "../relay")))
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["start", "--udid", "A", "--device", "B"]) }
+    }
+
+    @Test func rejectsMalformedTeamID() {
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["start", "--team-id", "TEAM"]) }
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["start", "--team-id", "abcde12345"]) }
+    }
+
+    @Test func parsesSetupCommands() throws {
+        #expect(try Arguments.parse(["devices"]) == .devices(json: false))
+        #expect(try Arguments.parse(["devices", "--json"]) == .devices(json: true))
+        #expect(try Arguments.parse(["doctor", "--device", "iPad"]) == .doctor(DoctorOptions(device: "iPad")))
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["doctor", "--udid", "A", "--device", "B"]) }
+        #expect(try Arguments.parse(["config"]) == .config(ConfigOptions(action: .show)))
+        #expect(try Arguments.parse(["config", "set", "teamID", "ABCDE12345"]) == .config(ConfigOptions(action: .set("teamID", "ABCDE12345"))))
+        #expect(try Arguments.parse(["config", "unset", "teamID"]) == .config(ConfigOptions(action: .unset("teamID"))))
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["config", "get", "team"]) }
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["config", "set", "teamID"]) }
     }
 
     @Test func rejectsInvalidPort() {

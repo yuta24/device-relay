@@ -7,7 +7,35 @@ let arguments = Array(CommandLine.arguments.dropFirst())
 do {
     switch try Arguments.parse(arguments) {
     case .start(let options):
-        exit(try RunnerLauncher(options: options).run())
+        let setup = try StartSetup.prepare(options)
+        let launcher = RunnerLauncher(options: setup.options, udid: setup.device.udid, isSimulator: setup.device.kind == .simulator,
+                                      rootURL: setup.root, buildURL: RunnerProject.buildDirectory(root: setup.root))
+        launcher.onReady = { setup.saveTeam() }
+        let status: Int32
+        do {
+            status = try launcher.run()
+        } catch {
+            setup.finish()
+            throw error
+        }
+        setup.finish()
+        exit(status)
+    case .devices(let json):
+        let (devices, warnings) = try DeviceList.load()
+        warnings.forEach { FileHandle.standardError.write(Data("relay: \($0)\n".utf8)) }
+        if json {
+            FileHandle.standardOutput.write(try DeviceList.json(devices) + Data("\n".utf8))
+        } else {
+            print(devices.isEmpty ? "no devices or iOS simulators found" : DeviceList.table(devices))
+        }
+    case .doctor(let options):
+        exit(Doctor.run(options))
+    case .config(let options):
+        exit(ConfigCommand.run(options))
+    case .install(let options):
+        exit(try InstallCommand.run(options))
+    case .version:
+        print("relay \(RelayVersion.current)")
     case .bench(let options):
         try Bench.run(options)
     case .runner(let options):
@@ -17,6 +45,13 @@ do {
     case .commandHelp(let name):
         print(Arguments.usage(for: name))
     }
+} catch let error as SetupError {
+    FileHandle.standardError.write(Data("relay: \(error)\n".utf8))
+    exit(1)
+} catch let error as ShellError {
+    // A failed xcodebuild or simctl: the usage text would bury its output.
+    FileHandle.standardError.write(Data("relay: \(error)\n".utf8))
+    exit(1)
 } catch {
     FileHandle.standardError.write(Data("relay: \(error)\n\n\(Arguments.errorUsage(for: arguments.first))\n".utf8))
     exit(1)

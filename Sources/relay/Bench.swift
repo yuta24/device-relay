@@ -37,11 +37,12 @@ enum Bench {
         }
     }
 
-    /// `--token`, or the token `relay start` saved in `.relay/runner.json`.
-    static func token(_ options: BenchOptions, infoURL: URL = RunnerInfo.defaultURL()) throws -> String {
+    /// `--token`, or the token `relay start` saved in the runner.json the runner commands find (`RunnerLocator`).
+    static func token(_ options: BenchOptions, infoURL: URL? = nil) throws -> String {
         if let token = options.token {
             return token
         }
+        let infoURL = infoURL ?? (try? RunnerLocator.locate(explicitPath: nil)) ?? RunnerLocator.userURL()
         guard let info = try? RunnerInfo.read(from: infoURL) else {
             throw ArgumentError(description: "no runner token: pass --token or start the runner with relay start (reads \(infoURL.path))")
         }

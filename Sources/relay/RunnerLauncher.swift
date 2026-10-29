@@ -43,15 +43,23 @@ struct LivenessMonitor {
 
 /// Builds, launches, and locates the resident XCTest runner.
 final class RunnerLauncher {
-    static let projectPath = "Runner/RelayRunner.xcodeproj"
     static let scheme = "RelayRunner"
     static let readyMarker = "RELAY_RUNNER_READY"
 
     private let options: StartOptions
+    private let udid: String
+    private let isSimulator: Bool
+    /// The runner root (see `RunnerProject`).
     private let rootURL: URL
+    /// `DerivedData-sim` / `DerivedData-device` go here (`RunnerProject.buildDirectory`).
+    private let buildURL: URL
+    /// `~/.relay`: logs and runner.json. Nothing goes to the current directory, which is usually the
+    /// app's repository.
     private let stateURL: URL
     /// The copy of `runner.json` for runner commands run in other directories (see `RunnerLocator`).
     private let userInfoURL: URL?
+    /// Called once the runner answers and runner.json is written, before `ready:` is printed.
+    var onReady: (() -> Void)?
     /// Generated per launch. The runner gets only its hash, through the environment (never the command
     /// line), so the token itself never reaches xcodebuild or the xcresult bundle.
     private let token = RunnerAuth.generateToken()
@@ -64,22 +72,24 @@ final class RunnerLauncher {
 
     init(
         options: StartOptions,
-        rootURL: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
+        udid: String,
+        isSimulator: Bool,
+        rootURL: URL,
+        buildURL: URL,
+        stateURL: URL = RunnerLocator.userURL().deletingLastPathComponent(),
         userInfoURL: URL? = RunnerLocator.userURL()
     ) {
         self.options = options
+        self.udid = udid
+        self.isSimulator = isSimulator
         self.rootURL = rootURL
-        self.stateURL = rootURL.appendingPathComponent(".relay", isDirectory: true)
+        self.buildURL = buildURL
+        self.stateURL = stateURL
         self.userInfoURL = userInfoURL
     }
 
     func run() throws -> Int32 {
-        guard FileManager.default.fileExists(atPath: rootURL.appendingPathComponent(Self.projectPath).path) else {
-            throw ArgumentError(description: "\(Self.projectPath) not found; run relay from the device-relay repository root")
-        }
-
-        let isSimulator = try Self.isSimulator(udid: options.udid)
-        let derivedData = stateURL.appendingPathComponent(isSimulator ? "DerivedData-sim" : "DerivedData-device", isDirectory: true)
+        let derivedData = buildURL.appendingPathComponent(isSimulator ? "DerivedData-sim" : "DerivedData-device", isDirectory: true)
         let logsURL = stateURL.appendingPathComponent("logs", isDirectory: true)
         try FileManager.default.createDirectory(at: logsURL, withIntermediateDirectories: true)
         let stamp = Self.timestamp()
@@ -95,14 +105,20 @@ final class RunnerLauncher {
             FileManager.default.createFile(atPath: buildLogURL.path, contents: nil)
             let buildLog = try FileHandle(forWritingTo: buildLogURL)
             defer { try? buildLog.close() }
-            try Shell.xcrun(buildArguments(derivedData: derivedData), log: buildLog, echo: options.verbose)
+            let buildArguments = Self.buildArguments(
+                projectURL: rootURL.appendingPathComponent(RunnerProject.projectPath),
+                destination: "id=\(udid)",
+                derivedData: derivedData,
+                teamID: options.teamID
+            )
+            try Shell.xcrun(buildArguments, log: buildLog, echo: options.verbose)
             guard let built = Self.findXCTestRun(in: derivedData) else {
                 throw ArgumentError(description: "build succeeded but no .xctestrun was found under \(derivedData.path)")
             }
             xctestrun = built
         }
 
-        info("launching runner on \(options.udid) (log: \(runnerLogURL.path))")
+        info("launching runner on \(udid) (log: \(runnerLogURL.path))")
         let process = try launch(xctestrun: xctestrun, logURL: runnerLogURL)
         installSignalHandlers()
 
@@ -111,12 +127,12 @@ final class RunnerLauncher {
         var lastTunnelLookup = Date.distantPast
         while process.isRunning, Date() < deadline, currentRunnerURL() == nil, currentStartupFailure() == nil {
             if !isSimulator, Date().timeIntervalSince(lastTunnelLookup) > 5 {
-                tunnelAddress = Self.tunnelAddress(udid: options.udid)
+                tunnelAddress = Self.tunnelAddress(udid: udid)
                 lastTunnelLookup = Date()
             }
             let hosts = Self.candidateHosts(
                 isSimulator: isSimulator,
-                udid: options.udid,
+                udid: udid,
                 tunnelAddress: tunnelAddress,
                 markerAddresses: currentMarkerAddresses(),
                 allowWiFi: options.allowWiFi
@@ -149,7 +165,7 @@ final class RunnerLauncher {
 
         let infoURL = stateURL.appendingPathComponent(RunnerInfo.fileName)
         if let url = currentRunnerURL() {
-            let runnerInfo = RunnerInfo(url: url.absoluteString, token: token, udid: options.udid)
+            let runnerInfo = RunnerInfo(url: url.absoluteString, token: token, udid: udid)
             do {
                 // The token goes only to the 0600 file: stdout often ends up in CI logs and terminal scrollback.
                 try runnerInfo.write(to: infoURL)
@@ -168,6 +184,7 @@ final class RunnerLauncher {
                     info("cannot save \(userInfoURL.path): \(error)")
                 }
             }
+            onReady?()
             print("ready: \(url.absoluteString)")
             print("token: \(infoURL.path)")
             info("press Ctrl-C to stop the runner")
@@ -220,15 +237,15 @@ final class RunnerLauncher {
 
     // MARK: - Process
 
-    private func buildArguments(derivedData: URL) -> [String] {
+    static func buildArguments(projectURL: URL, destination: String, derivedData: URL, teamID: String?) -> [String] {
         var args = [
             "xcodebuild", "build-for-testing",
-            "-project", rootURL.appendingPathComponent(Self.projectPath).path,
-            "-scheme", Self.scheme,
-            "-destination", "id=\(options.udid)",
+            "-project", projectURL.path,
+            "-scheme", scheme,
+            "-destination", destination,
             "-derivedDataPath", derivedData.path
         ]
-        if let teamID = options.teamID {
+        if let teamID {
             args += ["-allowProvisioningUpdates", "RELAY_DEVELOPMENT_TEAM=\(teamID)"]
         }
         return args
@@ -243,7 +260,7 @@ final class RunnerLauncher {
         process.arguments = [
             "xcodebuild", "test-without-building",
             "-xctestrun", xctestrun.path,
-            "-destination", "id=\(options.udid)"
+            "-destination", "id=\(udid)"
         ]
         // xcodebuild forwards TEST_RUNNER_-prefixed variables to the test process without the prefix.
         var environment = ProcessInfo.processInfo.environment
@@ -476,18 +493,14 @@ final class RunnerLauncher {
         return findTunnelAddress(inDevicectlJSON: data)
     }
 
-    private static func isSimulator(udid: String) throws -> Bool {
-        let output = try Shell.xcrun(["simctl", "list", "devices", "-j"])
-        return output.contains("\"\(udid)\"")
-    }
-
     private static func findXCTestRun(in derivedData: URL) -> URL? {
         let products = derivedData.appendingPathComponent("Build/Products", isDirectory: true)
         let files = (try? FileManager.default.contentsOfDirectory(at: products, includingPropertiesForKeys: nil)) ?? []
         return files.filter { $0.pathExtension == "xctestrun" }.sorted { $0.path < $1.path }.first
     }
 
-    private static func timestamp() -> String {
+    /// The `<stamp>` of `build-<stamp>.log` and `runner-<stamp>.log` in `~/.relay/logs`.
+    static func timestamp() -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyyMMdd-HHmmss"
         return formatter.string(from: Date())
