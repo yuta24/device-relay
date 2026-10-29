@@ -4,13 +4,12 @@ import Foundation
 /// and token from. The token is never taken from the command line, where `ps` would show it.
 ///
 /// Order: `--runner <path>`, then `$RELAY_RUNNER`, then `.relay/runner.json` in the current directory or
-/// any parent, then `~/.relay/runner.json`. `relay start` runs in the device-relay repository but the
-/// runner is usually driven from the app's repository, so it also writes the copy in the home directory.
+/// any parent, then `~/.relay/runner.json`, which is where `relay start` writes it, wherever it runs.
 enum RunnerLocator {
     static let environmentKey = "RELAY_RUNNER"
 
-    /// The copy `relay start` writes for commands run outside the device-relay repository.
-    static func userURL(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> URL {
+    /// The file `relay start` writes.
+    static func userURL(home: URL = UserHome.url) -> URL {
         RunnerInfo.defaultURL(rootURL: home)
     }
 
@@ -20,7 +19,7 @@ enum RunnerLocator {
         explicitPath: String?,
         environment: [String: String] = ProcessInfo.processInfo.environment,
         currentDirectory: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
-        home: URL = FileManager.default.homeDirectoryForCurrentUser
+        home: URL = UserHome.url
     ) throws -> URL {
         let given: (source: String, path: String)?
         if let explicitPath {

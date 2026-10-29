@@ -25,74 +25,170 @@ WebDriverAgent と同じ「常駐 XCTest ランナー」方式を使います。
 - `relay` CLI（SwiftPM）は、ビルド、ランナーの起動、到達可能なアドレスの探索、Ctrl-C での後片付けをまとめて行います。
 
 ```
-Package.swift / Sources/relay      ホスト CLI (relay start / relay bench / ランナー操作のサブコマンド)
+Package.swift / Sources/relay      ホスト CLI (relay start / install / devices / doctor / ランナー操作のサブコマンドなど)
 Tests/relayTests                   CLI のユニットテスト (Swift Testing)
 Runner/RelayRunner.xcodeproj       RelayRunnerHost (文字入力を試すためのホストアプリ) + RelayRunnerUITests (常駐ランナー)
-.relay/                            DerivedData、ログ、runner.json (git 管理外)
+Makefile                           make install / make uninstall (relay を ~/.local/bin にリンク)
+
+~/.relay/runner/                   relay install がコピーした Runner プロジェクトと install.json
+~/.relay/build/                    DerivedData (Runner プロジェクトごと)
+~/.relay/logs/                     ビルドとランナーのログ
+~/.relay/runner.json               起動中のランナーの URL とトークン (0600)
+~/.relay/config.json               relay config の設定 (teamID)
 ```
+
+ビルド成果物やログは `~/.relay` に置き、`relay` を実行したディレクトリ（対象アプリのリポジトリなど）には何も作りません。
 
 ## 要件
 
-- macOS 上の Xcode（Xcode 27 で動作確認）
+- macOS 上の Xcode（Xcode 27 で動作確認。`devicectl` を使うので Xcode 15 以上）
 - **iOS 17.0 以上**（CoreDevice トンネルを前提とします。デプロイメントターゲットは 17.0）
 - 実機の場合
-  - Apple Developer の Team ID（署名に使います）
-  - 端末側で「デベロッパモード」が有効になっていること
+  - Apple Development 証明書（Xcode > Settings > Accounts でサインインして作成）。Team ID は証明書から自動で検出します
+  - 端末側で「デベロッパモード」と「UI オートメーション」が有効になっていること
   - Mac とペアリング済みで、USB または同じネットワーク経由で CoreDevice 接続できること
 
-> **ツールチェーンに関する注意**: `swiftly` などで入れた別の Swift ツールチェーンが PATH の先頭にあると、Xcode SDK と食い違って `unknown argument: '-target-arch-variant'` のようなエラーになることがあります。その場合は `xcrun swift build` / `xcrun swift test` / `xcrun swift run` を使い、Xcode のツールチェーンでビルドしてください。
+> **ツールチェーンに関する注意**: `swiftly` などで入れた別の Swift ツールチェーンが PATH の先頭にあると、Xcode SDK と食い違って `unknown argument: '-target-arch-variant'` のようなエラーになることがあります。その場合は `xcrun swift build` / `xcrun swift test` / `xcrun swift run` を使い、Xcode のツールチェーンでビルドしてください（Makefile も `xcrun swift` を使います）。
 
 ## クイックスタート
 
-コマンドはすべてリポジトリのルートで実行します（`relay start` は `Runner/RelayRunner.xcodeproj` を相対パスで探します）。
+```sh
+# device-relay のリポジトリで（1 回だけ）
+make install          # xcrun swift build -c release して ~/.local/bin/relay にリンク（PREFIX=... で変更可）
+relay install         # Runner プロジェクトを ~/.relay/runner にコピー（--build でシミュレータ用に事前ビルド）
+
+# 以降はどのディレクトリからでも（対象アプリのリポジトリなど）
+relay doctor          # Xcode・Runner・署名・端末を確認
+relay start           # 端末を自動で選んでランナーを起動
+```
+
+- `make install` は `.build/release/relay` へのシンボリックリンクを `$(PREFIX)/bin/relay`（既定 `~/.local/bin/relay`）に作ります。`~/.local/bin` が PATH になければ追加してください。`make uninstall` はそのリンクがこのチェックアウトを指している場合だけ削除します。リポジトリを更新したら `make install` と `relay install` をやり直します。
+- 開発中はリポジトリ内で `xcrun swift run relay …` でも動きます。リポジトリ内ではカレントディレクトリのチェックアウトの Runner を使うので、`relay install` 済みでもインストールしたコピーではなく手元の変更がビルドされます。
 
 ```sh
 xcrun swift build
 xcrun swift test
+xcrun swift run relay doctor
 ```
+
+### Runner の用意（relay install）
+
+`relay` 本体（CLI）と、端末で動かす Runner（Xcode プロジェクト）は別に用意します。`relay install` は Runner プロジェクトを `~/.relay/runner/` にコピーし、relay のバージョンと元リポジトリのコミットを `~/.relay/runner/install.json` に記録します。
+
+- コピー元は `--project <path>` > `$RELAY_HOME` > カレントディレクトリとその親 > `relay` の実行ファイルの場所（シンボリックリンクを解決）とその親、の順に探した device-relay のチェックアウトです。`make install` したリンクからは元のチェックアウトが見つかります。（取り出し元は差し替えられるようにしてあり、将来 GitHub Release からのダウンロードにする予定です。）
+- コピーするのは `Runner/` と、プロジェクトが参照している CLI 側の共有ソース（`Sources/relay/RunnerAuth.swift` など、`project.pbxproj` の `../Sources/...` の参照）です。リポジトリと同じ配置（`~/.relay/runner/Runner/RelayRunner.xcodeproj`）にします。
+- 再実行すると上書き更新します。一時ディレクトリにコピーしてから入れ替えるので、途中で失敗しても前の Runner は残ります。入れ替えたときは、古いソースのビルド成果物（`~/.relay/build/installed`）を削除します。
+- `relay install --build` は、コピーの後にシミュレータ用の `build-for-testing`（`generic/platform=iOS Simulator`）を行い、初回の `relay start` でビルドを省きます。ビルドログは `relay start` と同じく `~/.relay/logs/build-<時刻>.log` に保存し、失敗したときはそのパスを示します（コピーした Runner は残ります）。`--verbose` を付けると xcodebuild の出力をそのまま表示します。
+- `relay uninstall`（= `relay install --remove`）は `~/.relay/runner` とそのビルド成果物を削除します。`config.json`、`runner.json`、ログは残します。
+- `relay start` / `relay doctor` は、記録したバージョンが `relay` のバージョンと違う場合や、元のチェックアウトのコミットが記録と違う場合（`git pull` の後など）に「relay install を再実行して」と知らせます。止めはしません。
+
+`relay start` が使う Runner プロジェクトは、次の順に探します。
+
+1. `--project <path>`（チェックアウトのルート、`Runner/`、`.xcodeproj` のどれでも可）
+2. `$RELAY_HOME`（同上）
+3. カレントディレクトリとその親にある device-relay のチェックアウト（開発時用）
+4. `~/.relay/runner`（`relay install` したもの）
+5. `relay` の実行ファイルの場所（シンボリックリンクを解決したもの）とその親にあるチェックアウト
+
+対象アプリのリポジトリなど、チェックアウトの外から実行すると 4 の `~/.relay/runner` を使います。device-relay のリポジトリ内で実行すると 3 のチェックアウトを使うので、`relay install` 済みでも、編集中（未コミットを含む）の Runner がそのままビルドされます。
+
+1 と 2 で指定した場所にプロジェクトがなければ、ほかを探さずにエラーにします。どこにも見つからなければ、`relay install` などの設定方法を示して終了します。DerivedData は Runner プロジェクトごとに `~/.relay/build/installed`（インストールしたもの）か `~/.relay/build/<ディレクトリ名>-<パスのハッシュ>` に分けるので、別のソースでビルドした `.xctestrun` を使い回すことはありません。
+
+### 端末の選択（relay devices）
+
+`relay devices` は、`xcrun devicectl list devices` の実機と `xcrun simctl list devices` の iOS シミュレータを一覧表示します（名前、UDID、種類、OS、状態）。`--json` で JSON の配列を出します。
+
+```
+NAME           UDID                                  KIND       OS          STATE
+Test Phone     00000000-0000000000000000             device     iOS 26.7.1  connected
+iPhone 17 Pro  11111111-1111-1111-1111-111111111111  simulator  iOS 27.0    booted
+iPhone 17      22222222-2222-2222-2222-222222222222  simulator  iOS 27.0    shutdown
+```
+
+`relay start` と `relay doctor` は、端末を次のように決めます。どれを使うかは必ず `relay: using …` として表示します。
+
+1. `--udid <UDID>`
+2. `--device <名前>`: 名前の完全一致（大文字小文字は無視）。同じ名前が複数あり（ランタイム違いのシミュレータなど）、そのうち接続中・起動中のものが 1 つだけならそれを、そうでなければ候補つきでエラーにします
+3. どちらもなければ、接続中の実機が 1 台だけならそれ、実機がなく起動中のシミュレータが 1 台だけならそれ。複数・0 台なら候補一覧つきでエラーにします
+
+停止中のシミュレータを `--udid` / `--device` で指定した場合は、`relay start` が `simctl boot` して起動を待ちます。relay が boot したシミュレータは、`relay start` の終了時（Ctrl-C を含む）に shutdown します。もともと起動していたシミュレータはそのままにします。（ビルド中に Ctrl-C した場合など、relay がすぐに終わる場合は boot したままになることがあります。）
+
+### Team ID（実機の署名）
+
+実機では、署名に使う Team ID を次の順に決めます。シミュレータでは不要です。
+
+1. `--team-id <TEAM_ID>`
+2. `~/.relay/config.json` の `teamID`
+3. キーチェーンの Apple Development 証明書（`security find-identity -v -p codesigning` の有効な ID と、その証明書のサブジェクトの OU）。証明書の名前の括弧内の ID は個人の ID で、Team ID ではありません。チームが 1 つならそれを使い、複数ならエラーで候補を示します
+
+1 か 3 で決めた Team ID は、ランナーが起動できた（`ready:` が出た）ところで `~/.relay/config.json` に保存し、次回からはそれを使います。ビルドや起動に失敗した Team ID は保存しないので、打ち間違えた `--team-id` が残ることはありません。変えるときは `--team-id` を付けて起動するか（保存し直します）、`relay config` を使います。
+
+```sh
+relay config                      # 設定の一覧
+relay config get teamID
+relay config set teamID <TEAM_ID>
+relay config unset teamID         # 忘れて、次回はキーチェーンから検出し直す
+```
+
+### 環境の確認（relay doctor）
+
+`relay doctor [--udid <UDID> | --device <名前>] [--project <path>]` は、ビルドや起動をせずに次を確認し、各項目を ✓（問題なし）/ ✗（このままでは動かない）/ !（注意）で表示します。✗ と ! には直し方を 1 行添えます。✗ があれば終了コード 1（ローカルの失敗）、なければ 0 です。
+
+- relay のバージョン、Xcode（`xcodebuild -version` と `xcode-select -p`）、xcrun、devicectl
+- Runner プロジェクトの解決結果と、`relay install` の状態（記録したバージョン・コミット・コピー元、ずれていれば !）
+- 端末一覧と、`relay start` が使う端末（`--udid` / `--device` がなければ自動選択の結果）
+- 実機: OS のバージョン（17 以上）、接続状態、ペアリング、デベロッパモード（`devicectl list devices`）、DDI のマウント状態（`ddiServicesAvailable`）、ロック状態（`devicectl device info lockState` の `passcodeRequired`）。UI オートメーションの有効状態は Mac から読めないので、常に ! で確認を促します
+- シミュレータ: ランタイムが入っているか、起動状態
+- 署名: 証明書と Team ID（実機なら見つからなければ ✗、シミュレータなら !）
+
+`relay start` も、ビルドの前に同じ端末のチェックを行い、✗（接続されていない、ペアリングされていない、デベロッパモードが無効、iOS 17 未満、シミュレータのランタイムがない）があればビルドせずに終了します。! の項目（ロック中、DDI 未マウント）は表示だけして続けます。
 
 ### シミュレータ
 
 ```sh
-xcrun simctl boot <SIM_UDID>   # 起動していなければ
-xcrun swift run relay start --udid <SIM_UDID>
-# relay: building runner (log: .relay/logs/build-*.log)   ← 初回か --rebuild 指定時だけ
-# relay: launching runner on <SIM_UDID> (log: .relay/logs/runner-*.log)
+relay start --device "iPhone 17 Pro"   # 停止中なら boot し、終了時に shutdown
+# relay: runner project: ~/.relay/runner (from relay install)
+# relay: using iPhone 17 Pro (iPhone 17 Pro, iOS 27.0, simulator, shutdown) <SIM_UDID> (--device)
+# relay: booting simulator iPhone 17 Pro (<SIM_UDID>); it is shut down when relay exits
+# relay: building runner (log: ~/.relay/logs/build-*.log)   ← 初回か --rebuild 指定時だけ
+# relay: launching runner on <SIM_UDID> (log: ~/.relay/logs/runner-*.log)
 # relay: runner listening; device addresses: ...
 # ready: http://127.0.0.1:8100/
-# token: /path/to/device-relay/.relay/runner.json
+# token: ~/.relay/runner.json
 ```
 
-ready になると、URL とアクセストークンが `.relay/runner.json` と `~/.relay/runner.json`（パーミッション 0600）に書き出されます。別のターミナルから（`relay health` などのサブコマンドは「CLI から操作する」を参照）:
+ready になると、URL とアクセストークンが `~/.relay/runner.json`（パーミッション 0600）に書き出されます。別のターミナルから（`relay health` などのサブコマンドは「CLI から操作する」を参照）:
 
 ```sh
-TOKEN=$(jq -r .token .relay/runner.json)
+TOKEN=$(jq -r .token ~/.relay/runner.json)
 curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8100/health
-xcrun swift run relay bench --url http://127.0.0.1:8100 --count 5 --tap 200,120   # トークンは runner.json から読む
+relay bench --url http://127.0.0.1:8100 --count 5 --tap 200,120   # トークンは runner.json から読む
 ```
 
-Ctrl-C を押すと `relay` が `/shutdown` を送り、`.relay/runner.json` を削除します。ランナーがテストメソッドから抜けて `** TEST EXECUTE SUCCEEDED **` で終了し、`relay` も終了します（10 秒以内に終わらなければ xcodebuild を terminate します）。ランナーが ready になる前に Ctrl-C を押した場合は、`/shutdown` を送る先がないので xcodebuild をすぐに terminate します。
+Ctrl-C を押すと `relay` が `/shutdown` を送り、`runner.json` を削除します。ランナーがテストメソッドから抜けて `** TEST EXECUTE SUCCEEDED **` で終了し、`relay` も終了します（10 秒以内に終わらなければ xcodebuild を terminate します）。ランナーが ready になる前に Ctrl-C を押した場合は、`/shutdown` を送る先がないので xcodebuild をすぐに terminate します。
 
-ready の後も、`relay start` は 3 秒ごとに `/ping` を送ってランナーの生存を確認します（`200` だけが生存扱い）。`/ping` はコマンドの実行中でも busy ゲートを通らずに即答するので、生存確認が利用者のリクエストと重なって `409` を起こすことはありません。ready の判定（起動直後の探索）には、XCUI が動くことを確かめるため `/health` を使います。3 回続けて応答がなければ（`200` 以外が 3 回続けば）、ランナーが落ちたとみなしてエラーを表示し、xcodebuild を止めて `.relay/runner.json` を削除し、終了コード 1 で終わります。`--rebuild` なしで `/ping` のない古いランナーを使った場合は、`/ping` が `404` になるので警告を出し、以後は `/health` で確認します（このときは `409` も生存扱いで、利用者のリクエストが `409` になることがあります）。`.relay/runner.json` を書き出せなかった場合も、ランナーを止めてから終了コード 1 で終わります。
+ready の後も、`relay start` は 3 秒ごとに `/ping` を送ってランナーの生存を確認します（`200` だけが生存扱い）。`/ping` はコマンドの実行中でも busy ゲートを通らずに即答するので、生存確認が利用者のリクエストと重なって `409` を起こすことはありません。ready の判定（起動直後の探索）には、XCUI が動くことを確かめるため `/health` を使います。3 回続けて応答がなければ（`200` 以外が 3 回続けば）、ランナーが落ちたとみなしてエラーを表示し、xcodebuild を止めて `runner.json` を削除し、終了コード 1 で終わります。`--rebuild` なしで `/ping` のない古いランナーを使った場合は、`/ping` が `404` になるので警告を出し、以後は `/health` で確認します（このときは `409` も生存扱いで、利用者のリクエストが `409` になることがあります）。`runner.json` を書き出せなかった場合も、ランナーを止めてから終了コード 1 で終わります。
 
 オプション:
 
 | オプション | 説明 |
 | --- | --- |
+| `--udid <UDID>` / `--device <名前>` | 使う端末（「端末の選択」）。省略すると自動で選びます。同時には指定できません |
+| `--project <path>` | Runner プロジェクトの場所（「Runner の用意」）。`$RELAY_HOME` より優先します |
 | `--port 8100` | 端末側の待ち受けポート。xcodebuild には `TEST_RUNNER_RELAY_RUNNER_PORT` として渡され、ランナーからは `RELAY_RUNNER_PORT` として見えます |
-| `--team-id <TEAM_ID>` | 実機向けの署名チーム。`-allowProvisioningUpdates RELAY_DEVELOPMENT_TEAM=<TEAM_ID>` を付けてビルドします |
-| `--rebuild` | `.relay/DerivedData-*` に既存の `.xctestrun` があっても再ビルドします |
+| `--team-id <TEAM_ID>` | 実機向けの署名チーム（「Team ID」。省略時は自動検出）。`-allowProvisioningUpdates RELAY_DEVELOPMENT_TEAM=<TEAM_ID>` を付けてビルドし、ランナーが起動できたら `~/.relay/config.json` に保存します |
+| `--rebuild` | `~/.relay/build/…/DerivedData-*` に既存の `.xctestrun` があっても再ビルドします |
 | `--verbose` | xcodebuild の出力をそのまま表示します |
 | `--allow-wifi` | 実機で、CoreDevice トンネルに加えて Wi-Fi などのアドレスも探索します。トークンが同じネットワークに平文で流れるので、既定では無効です |
 | `--ready-timeout 180` | `/health` が応答するまで待つ秒数。xcodebuild の出力に `Failed to initialize for UI testing` やテストの失敗が出た場合は、待たずにエラー内容と対処のヒントを表示して非ゼロで終了します |
 
-手動で起動する場合:
+手動で起動する場合（リポジトリのルートで）:
 
 ```sh
 xcodebuild build-for-testing -project Runner/RelayRunner.xcodeproj -scheme RelayRunner \
-  -destination 'id=<SIM_UDID>' -derivedDataPath .relay/DerivedData-sim
+  -destination 'id=<SIM_UDID>' -derivedDataPath /tmp/relay-DerivedData-sim
 TEST_RUNNER_RELAY_RUNNER_PORT=8100 xcodebuild test-without-building \
-  -xctestrun .relay/DerivedData-sim/Build/Products/*.xctestrun -destination 'id=<SIM_UDID>'
+  -xctestrun /tmp/relay-DerivedData-sim/Build/Products/*.xctestrun -destination 'id=<SIM_UDID>'
 ```
 
 xcodebuild の出力に `RELAY_RUNNER_READY port=8100 addresses=en0=…,utun3=…` が出たら待ち受け開始です。`TEST_RUNNER_RELAY_RUNNER_TOKEN_SHA256` を渡さずに起動した場合は、ランナーがトークンを生成して `relay-runner: RELAY_RUNNER_TOKEN_SHA256 is not set; generated token: <token>` と 1 回だけ出力します。認証なしでは待ち受けません。自分で決めたトークンを使う場合は、そのトークンの SHA-256（hex 64 文字、例: `printf %s "$TOKEN" | shasum -a 256`）を渡します。64 文字の hex でない値を渡すと、ランナーは待ち受けずに失敗します。
@@ -100,17 +196,23 @@ xcodebuild の出力に `RELAY_RUNNER_READY port=8100 addresses=en0=…,utun3=�
 ### 実機
 
 1. 端末で デベロッパモード を有効にします（設定 > プライバシーとセキュリティ > デベロッパモード。有効にすると再起動します）。
-2. USB で接続して Mac とペアリングし、`xcrun devicectl list devices` に表示されることを確認します。
+2. USB で接続して Mac とペアリングし（端末で「このコンピュータを信頼」）、`relay devices` に `connected` で表示されることを確認します。
 3. Xcode の Window > Devices and Simulators で端末を選び、接続済み（準備完了）の状態にします。初回はここで開発用ディスクイメージ（DDI）が端末に適用されるので、完了するまで待ちます。
-4. 端末の 設定 > デベロッパ >「UI オートメーションを有効にする」をオンにします。オフのままだと、ランナーが `Failed to initialize for UI testing`（`Timed out while enabling automation mode.`）で起動に失敗します。
-5. ランナーをビルドして起動します。
+4. 端末の 設定 > デベロッパ >「UI オートメーションを有効にする」をオンにします。オフのままだと、ランナーが `Failed to initialize for UI testing`（`Timed out while enabling automation mode.`）で起動に失敗します（Mac からは状態を読めないので、`relay doctor` は確認を促すだけです）。
+5. `relay doctor` で ✗ がないことを確認します（ペアリング、デベロッパモード、DDI、ロック、署名の Team ID）。
+6. ランナーをビルドして起動します。接続中の実機が 1 台だけなら `--udid` も `--team-id` も要りません（Team ID はキーチェーンから検出し、起動できたら保存します）。
 
    ```sh
-   xcrun swift run relay start --udid <DEVICE_UDID> --team-id <TEAM_ID>
+   relay start
+   # relay: using <端末名> (iPhone 14 Pro, iOS 26.7.1, device, connected) <DEVICE_UDID> (selected automatically)
+   # relay: signing team: <TEAM_ID> (from keychain)
+   # ...
+   # relay: saved the team to ~/.relay/config.json; relay config unset teamID forgets it   ← ランナーが起動できたとき
+   # ready: http://<アドレス>:8100/
    ```
 
-6. 無料の Personal Team などで署名した場合、初回の起動時に「信頼されていないデベロッパ」と表示されることがあります。端末の 設定 > 一般 > VPNとデバイス管理 で開発元の証明書を信頼してから、もう一度 `relay start` を実行してください。
-7. 初回は「ローカルネットワーク上のデバイスの検索および接続」の許可ダイアログが出ることがあります。許可しないと Wi-Fi 経由（`--allow-wifi`）では届きません。
+7. 無料の Personal Team などで署名した場合、初回の起動時に「信頼されていないデベロッパ」と表示されることがあります。端末の 設定 > 一般 > VPNとデバイス管理 で開発元の証明書を信頼してから、もう一度 `relay start` を実行してください。
+8. 初回は「ローカルネットワーク上のデバイスの検索および接続」の許可ダイアログが出ることがあります。許可しないと Wi-Fi 経由（`--allow-wifi`）では届きません。
 
 `relay start` は、次の順に `/health` を投げて最初に応答したアドレスを `ready:` として表示します。
 
@@ -176,7 +278,7 @@ xcodebuild の出力に `RELAY_RUNNER_READY port=8100 addresses=en0=…,utun3=�
 
 ```sh
 R=http://127.0.0.1:8100
-AUTH="Authorization: Bearer $(jq -r .token .relay/runner.json)"
+AUTH="Authorization: Bearer $(jq -r .token ~/.relay/runner.json)"
 curl -s -H "$AUTH" $R/ping
 curl -s -H "$AUTH" $R/health
 curl -s -H "$AUTH" -o shot.png $R/screenshot
@@ -224,7 +326,7 @@ relay terminate com.apple.Preferences
 relay shutdown
 ```
 
-（リポジトリ内では `xcrun swift run relay …`、他のディレクトリからは `.build/debug/relay` などビルド済みのバイナリを PATH に置いて使います。）
+（`make install` した `relay` をどのディレクトリからでも使えます。リポジトリ内では `xcrun swift run relay …` でも動きます。）
 
 | コマンド | エンドポイント | 主なオプション |
 | --- | --- | --- |
@@ -267,7 +369,7 @@ URL とトークンは `runner.json` から読みます。トークンはコマ�
 
 1 と 2 で指定したファイルがなければ、3・4 に進まずに終了コード 3 で終わります（意図しない別の端末を操作しないため）。
 
-`relay start` は device-relay のリポジトリで動かしますが、操作は対象アプリのリポジトリなど別のディレクトリから行うことが多いので、`relay start` は `.relay/runner.json` に加えて `~/.relay/runner.json`（同じ内容、パーミッション 0600）も書き出します。親ディレクトリの探索だけでは、device-relay の外からは見つからないためです。停止時には、まだ自分のトークンが書かれている場合だけ削除します。複数の `relay start` を同時に動かすと `~/.relay/runner.json` は最後に起動したものになるので、その場合は `--runner` か `RELAY_RUNNER` で各 `.relay/runner.json` を指定してください。
+`relay start` は、どのディレクトリで実行しても `~/.relay/runner.json`（パーミッション 0600）だけに書き出します。カレントディレクトリ（対象アプリのリポジトリなど）には `.relay/` を作らないので、3 で見つかるのは、自分で置いた `.relay/runner.json` か、以前の版の `relay start` が書いたものだけです。停止時には、まだ自分のトークンが書かれている場合だけ削除します。複数の `relay start` を同時に動かすこと（`--port` を分けて）はできますが、`~/.relay/runner.json` は最後に起動したものになり、前のランナーには `relay health` などのコマンドが届かなくなります（前のランナーのトークンはファイルに残りません）。
 
 ## 前面アプリ
 
@@ -487,8 +589,8 @@ iOS 27 では UIScene のライフサイクルを採用していないアプリ�
 - `relay start` は起動ごとに 32 バイトのランダムなトークン（`SecRandomCopyBytes`、hex 64 文字）を生成します。ランナーにはトークンそのものではなく、その SHA-256 だけを xcodebuild の環境変数 `TEST_RUNNER_RELAY_RUNNER_TOKEN_SHA256` で渡します（コマンドライン引数には載せません）。ランナーは提示されたトークンの SHA-256 を、保持しているハッシュと定数時間で比較します。
 - ランナーは全エンドポイント（`/ping`、`/health`、`/shutdown` を含む）で `Authorization: Bearer <token>` を要求し、ない場合や一致しない場合は `401` を返します。比較は定数時間で行います。判定は HTTP キュー上で、リクエストヘッダーを読み終えた時点（ボディを読む前）に行い、`409` の busy 判定や `/ping` の応答よりも先です。未認証のリクエストからは busy 状態も処理時間もわからず、ボディを溜め込ませることもできません。
 - 認証の前に処理するのはリクエストヘッダーの解析だけで、ヘッダーは 64 KB まで、リクエスト全体が届くまでは 30 秒までに制限しています。
-- ready になると `relay start` は `{"url","token","udid"}` を `.relay/runner.json` と `~/.relay/runner.json` にパーミッション 0600 で書き出し、stdout には `ready: <url>` とファイルの場所（`token: <path>`）だけを出します。トークンそのものは stdout に出しません（CI のログやターミナルの履歴に残りやすいため）。停止時にファイルを削除します。
-- `relay bench` は `--token` を受け付け、省略時は `.relay/runner.json` から読みます。`relay start` 内部の `/health` 探索、`/ping` の生存確認、`/shutdown` もトークンを付けます。
+- ready になると `relay start` は `{"url","token","udid"}` を `~/.relay/runner.json` にパーミッション 0600 で書き出し、stdout には `ready: <url>` とファイルの場所（`token: <path>`）だけを出します。トークンそのものは stdout に出しません（CI のログやターミナルの履歴に残りやすいため）。停止時にファイルを削除します。
+- `relay bench` は `--token` を受け付け、省略時はランナー操作のコマンドと同じ探し方で見つけた `runner.json` から読みます。`relay start` 内部の `/health` 探索、`/ping` の生存確認、`/shutdown` もトークンを付けます。
 - ランナーのログ（`relay-runner GET /health -> 200 1ms`、busy で弾いた `relay-runner GET /screenshot -> 409` など）には、メソッドとパスしか出しません。`/ping` は数秒おきに届くのでログに出しません。
 - 脅威モデル: 同じネットワーク（Wi-Fi など）にいる第三者が、タップ、アプリの起動、スクリーンショットの取得をできないようにするためのものです。ランナーはすべてのインターフェースで待ち受けますが、トークンがなければ何もできません。通信は平文の HTTP です。既定では、`relay` は CoreDevice トンネル（USB などの Mac と端末の間の経路）にしかトークンを送りません。`--allow-wifi` を付けると、Wi-Fi 上にもトークンと画面が平文で流れ、同じネットワークで盗聴できる相手には守れません。
 - xcodebuild は `TEST_RUNNER_` 環境変数を xcresult（`~/Library/Developer/Xcode/DerivedData/RelayRunner-*/Logs/Test/*.xcresult`）に記録します。ここに残るのはトークンの SHA-256 だけで、トークンは 256 ビットのランダム値なので、ハッシュから求めることはできず、ハッシュ自体をトークンとして送っても `401` になります。
@@ -554,7 +656,7 @@ iPhone 17 Pro シミュレータ（iOS 27.0、Apple Silicon Mac、`127.0.0.1`）
 
 コマンドは 1 つずつ実行します。実行中（タッチの完了待ちなどを含む）に別のリクエストが来ると、ランナーは HTTP キュー上で即座に `409 {"ok":false,"error":"busy"}` を返し、メインスレッドには入れません（実行中のコマンドの後ろに並ばせることはしません）。`/shutdown` だけは実行中でも受け付けてすぐ `200` を返し、実行中のコマンドが終わった時点でランナーが止まります。シミュレータで 3 秒の `/swipe` 中に `/health`・`/screenshot`・`/tap` を送ると、それぞれ 1–5 ms で 409 が返り、swipe 自体は 200 で完了しました。
 
-409 が起きるのは、ゲートを通るリクエスト（`/ping` と `/shutdown` 以外のすべて。`/health` も含みます）が、別のゲートを通るリクエストの実行中に届いたときだけです。1 本のクライアントが応答を待ってから次を送る使い方では、自分のリクエスト同士は重なりません。ランナーは 409 を返すたびに `relay-runner GET /screenshot -> 409` の形でログに出します（`.relay/logs/runner-*.log`）。
+409 が起きるのは、ゲートを通るリクエスト（`/ping` と `/shutdown` 以外のすべて。`/health` も含みます）が、別のゲートを通るリクエストの実行中に届いたときだけです。1 本のクライアントが応答を待ってから次を送る使い方では、自分のリクエスト同士は重なりません。ランナーは 409 を返すたびに `relay-runner GET /screenshot -> 409` の形でログに出します（`~/.relay/logs/runner-*.log`）。
 
 ### 生存確認（/ping）
 
@@ -581,4 +683,4 @@ iPhone 17 Pro シミュレータ（iOS 27.0、Apple Silicon Mac、`127.0.0.1`）
 - **実機の `home`**: 実機では `XCUIDevice.press(.home)` が成功を返すのに何も起きません（iOS 26.7.1 + Xcode 27 で確認）。testmanagerd が `Failed to load displays from CADisplay` で画面を取得できず、ボタンのイベントを画面に結びつかないキーボードから送るため、SpringBoard が無視します。そのため実機の `/button home` は、ホームインジケーターのジェスチャー（画面下端から上への素早いスワイプ）で代用します。`private` 経路では 0.12 秒のスワイプ（約 0.35 秒で応答）、`private` が使えない場合は XCUI のドラッグ（最初に 0.02 秒押す必要があります。約 1.8 秒）です。ホームボタンのない端末が前提で、ホームボタンのある端末では同じジェスチャーでコントロールセンターが開きます。シミュレータでは `press(.home)` が効くので、そのまま使います。
 - **要素セレクタ**: 完全一致だけです（「要素セレクタ」）。キーボードやシートに隠れている要素も frame が画面内なら `offscreen` にならず、隠している側がタップされます（`isHittable` は見ていません）。`timeout` は 1 回のスナップショットを中断できず、別プロセスのシート（設定の Apple Account のサインイン画面など）が出ている間は、XCTest のスナップショットが `Timed out while evaluating UI query` で失敗するまで約 3 分戻らないことがありました（`/source` も同じです）。その間は busy ゲートを持ったままなので、ほかのリクエストは `409` になります。また `/launch` の直後は前面アプリの取得が切り替え前のアプリを返すことがあるので、確実に対象を決めたい場合は `bundleId` を指定してください。
 - **usbmux 非対応**: 実機への接続には CoreDevice トンネル（または `--allow-wifi` で Wi-Fi）が必要です。
-- **通信は平文**: 認証はトークンだけで、TLS はありません（「認証」の脅威モデルを参照）。`relay` を `kill -9` などで強制終了した場合は `.relay/runner.json` と `~/.relay/runner.json` が残ります（サブコマンドは接続できずに終了コード 3、別のランナーが同じポートにいれば 4 になります）。
+- **通信は平文**: 認証はトークンだけで、TLS はありません（「認証」の脅威モデルを参照）。`relay` を `kill -9` などで強制終了した場合は `~/.relay/runner.json` が残ります（サブコマンドは接続できずに終了コード 3、別のランナーが同じポートにいれば 4 になります）。

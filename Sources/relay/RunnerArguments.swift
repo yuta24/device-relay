@@ -164,7 +164,7 @@ extension Arguments {
       match exactly (the attributes relay source reports), plus --index <n> to pick one of several matches.
     Runner commands read the runner URL and token from runner.json, never from the command line:
       --runner <path>, else $RELAY_RUNNER, else .relay/runner.json in the current directory or a parent,
-      else ~/.relay/runner.json (relay start writes its .relay/runner.json and this copy).
+      else ~/.relay/runner.json (where relay start writes it).
     The runner's JSON is printed to stdout on success and to stderr on failure.
     Exit status: 0 ok, 1 usage or local error, 3 runner unavailable (no runner.json or no connection),
       4 unauthorized (401), 5 busy (409; retry), 6 action failed (422), 7 bad request (other 4xx), 8 runner error.

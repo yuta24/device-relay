@@ -1,13 +1,14 @@
 import Foundation
 
 struct ShellError: Error, CustomStringConvertible {
+    var tool = "xcrun"
     let args: [String]
     let status: Int32
     let output: String
 
     var description: String {
         let tail = output.split(whereSeparator: \.isNewline).suffix(20).joined(separator: "\n")
-        return "xcrun \(args.joined(separator: " ")) failed (\(status))\(tail.isEmpty ? "" : "\n\(tail)")"
+        return "\(tool) \(args.joined(separator: " ")) failed (\(status))\(tail.isEmpty ? "" : "\n\(tail)")"
     }
 }
 
@@ -15,8 +16,14 @@ enum Shell {
     /// Runs `xcrun <args>` to completion. stdout and stderr are merged and appended to `log` when given.
     @discardableResult
     static func xcrun(_ args: [String], log: FileHandle? = nil, echo: Bool = false) throws -> String {
+        try run("/usr/bin/xcrun", args, log: log, echo: echo)
+    }
+
+    /// Runs `executable <args>` to completion, like `xcrun(_:log:echo:)`.
+    @discardableResult
+    static func run(_ executable: String, _ args: [String], log: FileHandle? = nil, echo: Bool = false) throws -> String {
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
+        process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = args
         process.standardInput = FileHandle.nullDevice
 
@@ -49,7 +56,7 @@ enum Shell {
         log?.write(remaining)
 
         guard process.terminationStatus == 0 else {
-            throw ShellError(args: args, status: process.terminationStatus, output: text)
+            throw ShellError(tool: URL(fileURLWithPath: executable).lastPathComponent, args: args, status: process.terminationStatus, output: text)
         }
         return text
     }
