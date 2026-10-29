@@ -10,6 +10,7 @@ enum Command: Equatable {
     case doctor(DoctorOptions)
     case config(ConfigOptions)
     case install(InstallOptions)
+    case skill(SkillOptions)
     case version
     case help
     /// `relay <command> --help`.
@@ -180,6 +181,8 @@ enum Arguments {
                 throw ArgumentError(description: "install --remove takes no other options")
             }
             return .install(options)
+        case "skill":
+            return .skill(try parseSkill(rest))
         case "--version", "version":
             return .version
         case "bench":
@@ -262,6 +265,7 @@ enum Arguments {
       relay status [--json] [--runner <PATH>]
       relay stop [--runner <PATH>]
       relay install [--project <PATH>] [--build [--verbose]] | relay install --remove | relay uninstall
+      relay skill install [--global | --dir <skills dir>] [--link] [--force] | relay skill uninstall | relay skill status
       relay devices [--json]
       relay doctor [--udid <UDID> | --device <NAME>] [--project <PATH>]
       relay config [get <key> | set <key> <value> | unset <key>]
@@ -286,14 +290,16 @@ enum Arguments {
              answers. Exits 0 if it does, 3 if there is no runner or it does not answer.
     stop     Stops relay start (SIGTERM, like Ctrl-C), which shuts the runner down, shuts down a simulator
              it booted, and removes runner.json. Prints "not running" (exit 0) if nothing runs.
-    install  Copies the runner project from the device-relay checkout (--project, $RELAY_HOME, or the one the
-             relay executable was built in) to ~/.relay/runner, replacing a previous copy, and records the
-             relay version. --build also builds it for simulators (log: ~/.relay/logs/build-*.log;
+    install  Copies the runner project and the agent skill from the device-relay checkout (--project,
+             $RELAY_HOME, or the one the relay executable was built in) to ~/.relay/runner, replacing a
+             previous copy, and records the relay version. --build also builds it for simulators (log: ~/.relay/logs/build-*.log;
              --verbose also shows xcodebuild's output). --remove (or relay uninstall) deletes
              ~/.relay/runner and its builds; config.json and runner.json stay.
+    skill    Installs the device-relay agent skill into .claude/skills of the current git repository
+             (--global: ~/.claude/skills; relay skill --help for details).
     devices  Lists devices (devicectl) and iOS simulators (simctl): name, UDID, kind, OS, and state.
-    doctor   Checks Xcode, the runner project, signing, and the device relay start would use, marking each
-             ✓ / ✗ / ! with a fix. Exits 1 if anything is ✗.
+    doctor   Checks Xcode, the runner project, the agent skill, signing, and the device relay start would
+             use, marking each ✓ / ✗ / ! with a fix. Exits 1 if anything is ✗.
     config   Shows or changes ~/.relay/config.json (key: teamID).
     bench    Measures round-trip latency of /health, /screenshot, and optionally /tap.
              --mode forces the runner's touch path (private event synthesis or public XCUI).
