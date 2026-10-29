@@ -131,6 +131,7 @@ struct StartSetup {
         configURL: URL = RelayConfig.defaultURL(),
         resolveProject: (String?) throws -> (root: URL, source: RunnerProject.Source) = { try RunnerProject.resolve(explicitPath: $0) },
         staleness: (URL, RunnerProject.Source) -> String? = { RunnerInstaller.staleness(root: $0, source: $1) },
+        isCancelled: () -> Bool = { StartCancellation.isRequested },
         info: (String) -> Void = StartSetup.info
     ) throws -> StartSetup {
         let project = try resolveProject(options.project)
@@ -177,7 +178,16 @@ struct StartSetup {
         var setup = StartSetup(options: resolved, root: project.root, device: device, teamConfig: teamConfig)
         if device.kind == .simulator, !device.isBooted {
             info("booting simulator \(device.name) (\(device.udid)); it is shut down when relay exits")
-            _ = try commands.xcrun(["simctl", "boot", device.udid])
+            do {
+                _ = try commands.xcrun(["simctl", "boot", device.udid])
+            } catch {
+                // Stopping simctl does not stop the boot it asked for.
+                if isCancelled() {
+                    setup.bootedSimulator = device.udid
+                    setup.finish(commands: commands, info: info)
+                }
+                throw error
+            }
             setup.bootedSimulator = device.udid
             do {
                 // Blocks until the simulator has finished booting.

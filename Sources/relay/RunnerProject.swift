@@ -41,8 +41,8 @@ enum RunnerProject {
     /// directory per checkout path, so builds of different sources never reuse each other's `.xctestrun`.
     static func buildDirectory(root: URL, home: URL = UserHome.url) -> URL {
         let builds = home.appendingPathComponent(".relay/build", isDirectory: true)
-        let root = root.standardizedFileURL
-        if root.path == installedRoot(home: home).standardizedFileURL.path {
+        let root = root.canonicalFileURL
+        if root.path == installedRoot(home: home).canonicalFileURL.path {
             return builds.appendingPathComponent("installed", isDirectory: true)
         }
         let key = RunnerAuth.tokenHash(root.path).prefix(12)
@@ -55,7 +55,7 @@ enum RunnerProject {
     static func resolve(
         explicitPath: String?,
         environment: [String: String] = ProcessInfo.processInfo.environment,
-        currentDirectory: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
+        currentDirectory: URL = WorkingDirectory.url,
         executableURL: URL? = Bundle.main.executableURL,
         home: URL = UserHome.url,
         includeInstalled: Bool = true
@@ -85,7 +85,7 @@ enum RunnerProject {
 
         let installed = installedRoot(home: home)
         // Skip the installed copy when looking for a checkout from inside it.
-        let isCheckout = { (root: URL) in contains(root) && root.standardizedFileURL.path != installed.standardizedFileURL.path }
+        let isCheckout = { (root: URL) in contains(root) && root.canonicalFileURL.path != installed.canonicalFileURL.path }
         if let root = ancestors(of: currentDirectory).first(where: isCheckout) {
             return (root, .currentDirectory)
         }

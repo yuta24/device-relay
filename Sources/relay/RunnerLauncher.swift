@@ -97,16 +97,14 @@ final class RunnerLauncher {
         let logsURL = stateURL.appendingPathComponent("logs", isDirectory: true)
         try FileManager.default.createDirectory(at: logsURL, withIntermediateDirectories: true)
         let stamp = Self.timestamp()
-        let buildLogURL = logsURL.appendingPathComponent("build-\(stamp).log")
-        let runnerLogURL = logsURL.appendingPathComponent("runner-\(stamp).log")
 
         let xctestrun: URL
         if !options.rebuild, let existing = Self.findXCTestRun(in: derivedData) {
             xctestrun = existing
             info("reusing \(existing.lastPathComponent)")
         } else {
+            let buildLogURL = try Self.createLog("build", in: logsURL, stamp: stamp, port: options.port)
             info("building runner (log: \(buildLogURL.path))")
-            FileManager.default.createFile(atPath: buildLogURL.path, contents: nil)
             let buildLog = try FileHandle(forWritingTo: buildLogURL)
             defer { try? buildLog.close() }
             let buildArguments = Self.buildArguments(
@@ -126,6 +124,7 @@ final class RunnerLauncher {
             info("stopped before launching the runner")
             return 1
         }
+        let runnerLogURL = try Self.createLog("runner", in: logsURL, stamp: stamp, port: options.port)
         info("launching runner on \(udid) (log: \(runnerLogURL.path))")
         let process = try launch(xctestrun: xctestrun, logURL: runnerLogURL)
         installSignalHandlers()
@@ -266,7 +265,6 @@ final class RunnerLauncher {
     }
 
     private func launch(xctestrun: URL, logURL: URL) throws -> Process {
-        FileManager.default.createFile(atPath: logURL.path, contents: nil)
         let log = try FileHandle(forWritingTo: logURL)
 
         let process = Process()
@@ -343,6 +341,7 @@ final class RunnerLauncher {
             source.resume()
             signalSources.append(source)
         }
+        StartCancellation.handOver()
     }
 
     private var signalSources: [DispatchSourceSignal] = []
@@ -513,7 +512,29 @@ final class RunnerLauncher {
         return files.filter { $0.pathExtension == "xctestrun" }.sorted { $0.path < $1.path }.first
     }
 
-    /// The `<stamp>` of `build-<stamp>.log` and `runner-<stamp>.log` in `~/.relay/logs`.
+    /// Creates the empty log `<kind>-<stamp>-<port>.log` in `directory` (`<kind>-<stamp>.log` without a port)
+    /// and returns it. A name that is taken gets `-2`, `-3`, ...: a log is only ever written by the relay
+    /// that created it. Two starts in the same second differ by port (one start per port, see `StartLock`),
+    /// and a restart on the same port within that second gets the next number.
+    static func createLog(_ kind: String, in directory: URL, stamp: String, port: Int?) throws -> URL {
+        let base = "\(kind)-\(stamp)\(port.map { "-\($0)" } ?? "")"
+        var attempt = 1
+        while true {
+            let url = directory.appendingPathComponent(attempt == 1 ? "\(base).log" : "\(base)-\(attempt).log")
+            let fd = open(url.path, O_WRONLY | O_CREAT | O_EXCL, 0o644)
+            if fd >= 0 {
+                close(fd)
+                return url
+            }
+            let error = errno
+            guard error == EEXIST else {
+                throw ArgumentError(description: "cannot create \(url.path): \(String(cString: strerror(error)))")
+            }
+            attempt += 1
+        }
+    }
+
+    /// The `<stamp>` of the logs in `~/.relay/logs` (`createLog`).
     static func timestamp() -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyyMMdd-HHmmss"

@@ -33,7 +33,7 @@ skills/device-relay/               コーディングエージェント向けの
 
 ~/.relay/runner/                   relay install がコピーした Runner プロジェクト、エージェントスキル (skills/device-relay) と install.json
 ~/.relay/build/                    DerivedData (Runner プロジェクトごと)
-~/.relay/logs/                     ビルドとランナーのログ、relay start --background の出力 (start-*.log)
+~/.relay/logs/                     ビルドとランナーのログ、relay start --background の出力 (start-<時刻>-<port>.log)
 ~/.relay/runner.json               起動中のランナーの URL・トークン・端末名と、relay start の PID・起動時刻 (0600)
 ~/.relay/config.json               relay config の設定 (teamID)
 ```
@@ -84,7 +84,7 @@ xcrun swift run relay doctor
 - コピー元は `--project <path>` > `$RELAY_HOME` > カレントディレクトリとその親 > `relay` の実行ファイルの場所（シンボリックリンクを解決）とその親、の順に探した device-relay のチェックアウトです。`make install` したリンクからは元のチェックアウトが見つかります。（取り出し元は差し替えられるようにしてあり、将来 GitHub Release からのダウンロードにする予定です。）
 - コピーするのは `Runner/` と、プロジェクトが参照している CLI 側の共有ソース（`Sources/relay/RunnerAuth.swift` など、`project.pbxproj` の `../Sources/...` の参照）、それにエージェントスキル（`skills/device-relay`。「エージェントスキル」を参照）です。リポジトリと同じ配置（`~/.relay/runner/Runner/RelayRunner.xcodeproj`、`~/.relay/runner/skills/device-relay`）にします。
 - 再実行すると上書き更新します。一時ディレクトリにコピーしてから入れ替えるので、途中で失敗しても前の Runner は残ります。入れ替えたときは、古いソースのビルド成果物（`~/.relay/build/installed`）を削除します。
-- `relay install --build` は、コピーの後にシミュレータ用の `build-for-testing`（`generic/platform=iOS Simulator`）を行い、初回の `relay start` でビルドを省きます。ビルドログは `relay start` と同じく `~/.relay/logs/build-<時刻>.log` に保存し、失敗したときはそのパスを示します（コピーした Runner は残ります）。`--verbose` を付けると xcodebuild の出力をそのまま表示します。
+- `relay install --build` は、コピーの後にシミュレータ用の `build-for-testing`（`generic/platform=iOS Simulator`）を行い、初回の `relay start` でビルドを省きます。ビルドログは `relay start` と同じく `~/.relay/logs/` の `build-<時刻>.log`（ポートはないので付けません）に保存し、失敗したときはそのパスを示します（コピーした Runner は残ります）。`--verbose` を付けると xcodebuild の出力をそのまま表示します。
 - `relay uninstall`（= `relay install --remove`）は `~/.relay/runner` とそのビルド成果物を削除します。`config.json`、`runner.json`、ログは残します。
 - `relay start` / `relay doctor` は、記録したバージョンが `relay` のバージョンと違う場合や、元のチェックアウトのコミットが記録と違う場合（`git pull` の後など）に「relay install を再実行して」と知らせます。止めはしません。
 
@@ -117,7 +117,7 @@ iPhone 17      22222222-2222-2222-2222-222222222222  simulator  iOS 27.0    shut
 2. `--device <名前>`: 名前の完全一致（大文字小文字は無視）。同じ名前が複数あり（ランタイム違いのシミュレータなど）、そのうち接続中・起動中のものが 1 つだけならそれを、そうでなければ候補つきでエラーにします
 3. どちらもなければ、接続中の実機が 1 台だけならそれ、実機がなく起動中のシミュレータが 1 台だけならそれ。複数・0 台なら候補一覧つきでエラーにします
 
-停止中のシミュレータを `--udid` / `--device` で指定した場合は、`relay start` が `simctl boot` して起動を待ちます。relay が boot したシミュレータは、`relay start` の終了時（Ctrl-C を含む）に shutdown します。もともと起動していたシミュレータはそのままにします。（ビルド中に Ctrl-C した場合など、relay がすぐに終わる場合は boot したままになることがあります。）
+停止中のシミュレータを `--udid` / `--device` で指定した場合は、`relay start` が `simctl boot` して起動を待ちます。relay が boot したシミュレータは、`relay start` の終了時（Ctrl-C を含む）に shutdown します。boot やビルドの途中（ランナーの起動前）に Ctrl-C（または SIGTERM）した場合も、実行中の simctl や xcodebuild を止めてから shutdown します。もともと起動していたシミュレータはそのままにします。
 
 ### Team ID（実機の署名）
 
@@ -157,8 +157,8 @@ relay start --device "iPhone 17 Pro"   # 停止中なら boot し、終了時に
 # relay: runner project: ~/.relay/runner (from relay install)
 # relay: using iPhone 17 Pro (iPhone 17 Pro, iOS 27.0, simulator, shutdown) <SIM_UDID> (--device)
 # relay: booting simulator iPhone 17 Pro (<SIM_UDID>); it is shut down when relay exits
-# relay: building runner (log: ~/.relay/logs/build-*.log)   ← 初回か --rebuild 指定時だけ
-# relay: launching runner on <SIM_UDID> (log: ~/.relay/logs/runner-*.log)
+# relay: building runner (log: ~/.relay/logs/build-<時刻>-8100.log)   ← 初回か --rebuild 指定時だけ
+# relay: launching runner on <SIM_UDID> (log: ~/.relay/logs/runner-<時刻>-8100.log)
 # relay: runner listening; device addresses: ...
 # ready: http://127.0.0.1:8100/
 # token: ~/.relay/runner.json
@@ -172,7 +172,7 @@ curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8100/health
 relay bench --url http://127.0.0.1:8100 --count 5 --tap 200,120   # トークンは runner.json から読む
 ```
 
-Ctrl-C を押す（または別のターミナルで `relay stop` を実行する）と `relay` が `/shutdown` を送り、`runner.json` を削除します。ランナーがテストメソッドから抜けて `** TEST EXECUTE SUCCEEDED **` で終了し、`relay` も終了します（10 秒以内に終わらなければ xcodebuild を terminate します）。ランナーが ready になる前に Ctrl-C を押した場合は、`/shutdown` を送る先がないので xcodebuild をすぐに terminate します。
+Ctrl-C を押す（または別のターミナルで `relay stop` を実行する）と `relay` が `/shutdown` を送り、`runner.json` を削除します。ランナーがテストメソッドから抜けて `** TEST EXECUTE SUCCEEDED **` で終了し、`relay` も終了します（10 秒以内に終わらなければ xcodebuild を terminate します）。ランナーが ready になる前に Ctrl-C を押した場合は、`/shutdown` を送る先がないので xcodebuild をすぐに terminate します。ランナーの起動前（シミュレータの boot やビルドの途中）なら、そのビルドの xcodebuild を止め、relay が boot したシミュレータを shutdown して、`relay: stopped before launching the runner` と表示して終了コード 1 で終わります。
 
 ready の後も、`relay start` は 3 秒ごとに `/ping` を送ってランナーの生存を確認します（`200` だけが生存扱い）。`/ping` はコマンドの実行中でも busy ゲートを通らずに即答するので、生存確認が利用者のリクエストと重なって `409` を起こすことはありません。ready の判定（起動直後の探索）には、XCUI が動くことを確かめるため `/health` を使います。3 回続けて応答がなければ（`200` 以外が 3 回続けば）、ランナーが落ちたとみなしてエラーを表示し、xcodebuild を止めて `runner.json` を削除し、終了コード 1 で終わります。`--rebuild` なしで `/ping` のない古いランナーを使った場合は、`/ping` が `404` になるので警告を出し、以後は `/health` で確認します（このときは `409` も生存扱いで、利用者のリクエストが `409` になることがあります）。`runner.json` を書き出せなかった場合も、ランナーを止めてから終了コード 1 で終わります。
 
@@ -196,22 +196,23 @@ ready の後も、`relay start` は 3 秒ごとに `/ping` を送ってランナ
 
 ```sh
 relay start --background --device "iPhone 17 Pro"
-# relay: started relay start in the background (pid 12345, log: ~/.relay/logs/start-<時刻>.log)
+# relay: started relay start in the background (pid 12345, log: ~/.relay/logs/start-<時刻>-8100.log)
 # relay: using iPhone 17 Pro (...) <SIM_UDID> (--device)
 # relay: building runner (log: ...)            ← 進行状況（ログの relay: の行）は標準エラーに出ます
 # relay: launching runner on <SIM_UDID> (log: ...)
 # ready: http://127.0.0.1:8100/                ← ここから標準出力
 # device: iPhone 17 Pro (<SIM_UDID>)
 # pid: 12345
-# log: ~/.relay/logs/start-<時刻>.log
+# log: ~/.relay/logs/start-<時刻>-8100.log
 # token: ~/.relay/runner.json
 relay status          # URL・端末・PID・起動時刻・/ping の結果
 relay tap --id relay.input
 relay stop            # stopped
 ```
 
-- `relay start --background [start の他のオプション]` は、同じオプションの `relay start`（`--background` なし）を新しいセッションとして起動します（端末を閉じても止まりません）。その stdin は `/dev/null`、stdout と stderr は `~/.relay/logs/start-<時刻>.log` です。親（実行したコマンド）はそのログを読み、`ready:` が出たら上のように URL・端末・PID・ログのパスを表示して終了コード 0 で終わります。
+- `relay start --background [start の他のオプション]` は、同じオプションの `relay start`（`--background` なし）を新しいセッションとして起動します（端末を閉じても止まりません）。その stdin は `/dev/null`、stdout と stderr は `~/.relay/logs/start-<時刻>-<port>.log` です。ログは親（実行したコマンド）が新しく作ってから子に渡すので、同じ秒に別のポートで起動しても、同じポートですぐに起動し直しても、ほかの `relay start` のログと混ざりません（同じ名前があれば `-2`、`-3` … を付けます。`build-`・`runner-` のログも同じ名前の付け方です）。親はそのログを読み、`ready:` が出たら上のように URL・端末・PID・ログのパスを表示して終了コード 0 で終わります。
 - ready にならなかった場合は、子の `relay start` を止め（SIGTERM。ビルド中なら xcodebuild を止め、relay が boot したシミュレータは shutdown します。60 秒以内に終わらなければ子と、子が起動したプロセスを強制終了します）、ログの末尾と原因を表示して終了します。終了コードは、子が ready の前に終了した場合（ビルドの失敗、端末が見つからない、`Failed to initialize for UI testing` など）は `1`、時間切れは `3`（ランナーに届かない）です。時間切れは、ランナーの起動（ビルドの完了）から `--ready-timeout` + 15 秒、起動まで（シミュレータの boot とビルド）は 30 分です。待っている間に Ctrl-C を押した場合も子を止めて `1` で終わります。
+- 同じポートで動かせる `relay start` は 1 つだけです。`relay start`（フォアグラウンドのものと、`--background` が起動したもの）は、端末を選ぶ前から終了するまで（ランナーが動いている間も）`~/.relay/locks/start-<port>.lock` をロック（`flock`）します。そのポートでほかの `relay start` が起動中か実行中なら、boot もビルドもせずにエラー（終了コード `1`）にします。`--background` はロックを取ってから下の runner.json の確認を行い、起動した `relay start` にロックを引き継ぐので、ほぼ同時に 2 つ起動しても進むのは片方だけです。ロックはプロセスが終われば（強制終了でも）外れるので、ロックファイルが残っていても次の起動を妨げません。
 - 起動の前に `~/.relay/runner.json` を確認します。その URL のポートが新しく使うポート（`--port`、既定は `8100`）と違えば、衝突しないのでそのまま起動し、runner.json は後から起動したランナーで上書きされます（フォアグラウンドで複数起動するときと同じです）。ポートが同じ（または URL からポートが取れない）ときは、その URL へ `/ping` を送り、何かが HTTP で応答したら、新しいランナーはそのポートで待ち受けられないので起動せずにエラー（終了コード `1`）にします。`200` なら、ランナーが動いているので `relay stop` で止めるか、そのまま使うか、`--port` で別のポートに起動するように案内します。`401` なら、runner.json に書かれたものとは別のランナー（別のトークン）がその URL で動いている可能性があり、`404` などそれ以外の応答なら別の何かがそのポートで待ち受けています。どちらの場合も、それを止める（`relay stop`、またはそのランナーを起動した `relay start`）か、`--port` で別のポートを使うように案内します。ポートが同じでも、応答がない（接続できない・タイムアウトした）ときと、runner.json がないときは起動に進みます。
 - `relay status [--json]` は、runner.json（「接続先（runner.json）の探し方」と同じ順に探します。`--runner <path>` も可）の URL・端末名と UDID・`relay start` の PID とそれがまだ動いているか・起動時刻・`/ping` の結果（`busy` を含む）を表示します。`--json` では 1 つの JSON オブジェクト（`alive`、`url`、`udid`、`name`、`pid`、`processRunning`、`startedAt`、`ping`、`runnerInfo`）を出します。ランナーが `/ping` に応答すれば `0`、runner.json がないか応答しなければ `3`、トークンが拒否されたら（`401`）`4` です。
 - `relay stop` は、runner.json の `relay start` に SIGTERM を送り、終了を待ちます。フォアグラウンドの Ctrl-C と同じ経路で、ランナーの `/shutdown`、relay が boot したシミュレータの shutdown、runner.json の削除を行います。`stopped` と表示して `0` で終わります（60 秒以内に終わらなければ `1`）。`relay start` がもう動いていない場合（強制終了された場合など）は、runner.json の URL とトークンで `POST /shutdown` を送り、runner.json を削除します。何も動いていなければ `not running` と表示して `0` です。フォアグラウンドの `relay start` も同じように止められます。
@@ -426,7 +427,7 @@ relay skill status             # 取り出し元と、プロジェクト・グ�
 relay skill uninstall          # relay が入れたものだけを削除（--global / --dir も同じ）
 ```
 
-- 既定の入れ先は、カレントディレクトリの git のルート（git の外ならカレントディレクトリ）の `.claude/skills/device-relay` です。コピーなので、そのままコミットしてチームで共有できます。どのコマンドも入れ先（削除先）のパスを必ず表示します。
+- 既定の入れ先は、カレントディレクトリの git のルート（git の外ならカレントディレクトリ）の `.claude/skills/device-relay` です。コピーなので、そのままコミットしてチームで共有できます。どのコマンドも入れ先（削除先）のパスを必ず表示します。relay が表示・比較するパスは、存在する部分のシンボリックリンクを解決した形にそろえます（macOS では `/private/tmp/...` も `/tmp/...` になります）。
 - 取り出し元は `~/.relay/runner/skills/device-relay`（`relay install` したもの）、なければ `relay install` と同じ探し方で見つけた device-relay のチェックアウト（`$RELAY_HOME`、カレントディレクトリとその親、`relay` の実行ファイルのチェックアウト）の `skills/device-relay` です。
 - コピーには、SKILL.md を変えずに隠しファイル `.relay-skill.json` を置き、relay のバージョン、コミット、取り出し元、日時を記録します。この記録があるもの（または relay のスキルを指すリンク）は relay が入れたものとみなし、再実行で上書き更新します。それ以外のものが入れ先にあれば、`--force` なしでは上書きしません。`uninstall` は relay が入れたものだけを削除し、それ以外は残してエラーにします。
 - `--link` はコピーの代わりにシンボリックリンクを作ります。スキルを編集する開発用で、取り出し元はチェックアウトを優先します（チェックアウトの変更がそのまま反映されます）。リンクはこの Mac の絶対パスを指すので、コミットして共有するには向きません。

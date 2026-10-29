@@ -155,12 +155,23 @@ struct BackgroundStartTests {
         #expect(!progress.launched)
         #expect(BackgroundStart.handle(line: "relay: launching runner on SIM (log: /x/runner.log)", progress: &progress) != nil)
         #expect(progress.launched)
+        #expect(progress.udid == "SIM")
         // xcodebuild output and the Ctrl-C hint stay in the log.
         #expect(BackgroundStart.handle(line: "** TEST EXECUTE FAILED **", progress: &progress) == nil)
         #expect(BackgroundStart.handle(line: "relay: press Ctrl-C to stop the runner", progress: &progress) == nil)
         #expect(progress.readyURL == nil)
         #expect(BackgroundStart.handle(line: "ready: http://127.0.0.1:8100/", progress: &progress) == nil)
         #expect(progress.readyURL == "http://127.0.0.1:8100/")
+    }
+
+    @Test func namesTheDeviceOnlyFromItsOwnRunnerInfo() {
+        let mine = RunnerInfo(url: "http://127.0.0.1:8100/", token: "t", udid: "SIM-A", name: "iPhone A", pid: 100)
+        #expect(BackgroundStart.device(runnerInfo: mine, pid: 100, udid: "SIM-A") == "iPhone A (SIM-A)")
+        // A start on another port in the same second wrote runner.json after this one.
+        let other = RunnerInfo(url: "http://127.0.0.1:8101/", token: "u", udid: "SIM-B", name: "iPhone B", pid: 200)
+        #expect(BackgroundStart.device(runnerInfo: other, pid: 100, udid: "SIM-A") == "SIM-A")
+        #expect(BackgroundStart.device(runnerInfo: nil, pid: 100, udid: "SIM-A") == "SIM-A")
+        #expect(BackgroundStart.device(runnerInfo: nil, pid: 100, udid: nil) == nil)
     }
 
     @Test func startsOnlyWhenNothingAnswersAtTheRunnerURL() throws {
@@ -287,5 +298,100 @@ struct RunnerStatusTests {
         let ping = try #require(aliveObject["ping"] as? [String: Any])
         #expect(ping["busy"] as? Bool == false)
         #expect(ping["busyForMs"] is NSNull)
+    }
+}
+
+struct StartLockTests {
+    private func temporaryHome() throws -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).resolvingSymlinksInPath()
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
+    @Test func oneStartPerPort() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let lock = try StartLock.acquire(port: 8100, home: home)
+        #expect(StartLock.url(port: 8100, home: home).path == home.path + "/.relay/locks/start-8100.lock")
+
+        // flock is per open file, so a second acquire in this process is refused like one in another process.
+        #expect {
+            try StartLock.acquire(port: 8100, home: home)
+        } throws: { error in
+            let message = String(describing: error)
+            return error is SetupError && message.contains("(pid \(getpid())) is starting or running a runner on port 8100")
+                && message.contains("--port")
+        }
+        // Another port is another lock.
+        let other = try StartLock.acquire(port: 8101, home: home)
+        other.release()
+
+        lock.release()
+        try StartLock.acquire(port: 8100, home: home).release()
+    }
+
+    @Test func aLeftoverLockFileDoesNotBlock() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let url = StartLock.url(port: 8100, home: home)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        // Left by a relay start that was killed; the kernel released its lock.
+        try "99999999\n".write(to: url, atomically: true, encoding: .utf8)
+
+        let lock = try StartLock.acquire(port: 8100, home: home)
+        defer { lock.release() }
+        #expect(try String(contentsOf: url, encoding: .utf8) == "\(getpid())\n")
+    }
+
+    @Test func theDetachedStartKeepsTheLockItInherits() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let lock = try StartLock.acquire(port: 8100, home: home)
+        defer { lock.release() }
+        let environment = [StartLock.inheritedEnvironmentKey: "\(lock.fileDescriptor)"]
+
+        #expect(StartLock.inherited(port: 8100, home: home, environment: environment)?.fileDescriptor == lock.fileDescriptor)
+        #expect(fcntl(lock.fileDescriptor, F_GETFD) & FD_CLOEXEC != 0)
+        // Not the lock for another port, and not a descriptor of the file that does not hold the lock.
+        try StartLock.acquire(port: 8101, home: home).release()
+        #expect(StartLock.inherited(port: 8101, home: home, environment: environment) == nil)
+        let unlocked = open(StartLock.url(port: 8100, home: home).path, O_RDONLY)
+        defer { close(unlocked) }
+        #expect(StartLock.inherited(port: 8100, home: home, environment: [StartLock.inheritedEnvironmentKey: "\(unlocked)"]) == nil)
+        #expect(StartLock.inherited(port: 8100, home: home, environment: [:]) == nil)
+    }
+
+    @Test func theMessageLeavesOutAnUnknownOwner() {
+        #expect(StartLock.heldMessage(port: 8100, owner: nil).hasPrefix("another relay start is starting or running a runner on port 8100, "))
+    }
+}
+
+struct StartLogTests {
+    @Test func logsAreNamedByPortAndNeverShared() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).resolvingSymlinksInPath()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let stamp = "20261029-120000"
+
+        // Two starts in the same second, on different ports.
+        let a = try RunnerLauncher.createLog("start", in: directory, stamp: stamp, port: 8100)
+        let b = try RunnerLauncher.createLog("start", in: directory, stamp: stamp, port: 8101)
+        #expect(a.lastPathComponent == "start-20261029-120000-8100.log")
+        #expect(b.lastPathComponent == "start-20261029-120000-8101.log")
+        #expect(try Data(contentsOf: a).isEmpty)
+
+        // A restart on the same port in the same second does not read or truncate the previous log.
+        try Data("ready: http://127.0.0.1:8100/\n".utf8).write(to: a)
+        let again = try RunnerLauncher.createLog("start", in: directory, stamp: stamp, port: 8100)
+        #expect(again.lastPathComponent == "start-20261029-120000-8100-2.log")
+        #expect(try Data(contentsOf: again).isEmpty)
+        #expect(try String(contentsOf: a, encoding: .utf8) == "ready: http://127.0.0.1:8100/\n")
+        #expect(try RunnerLauncher.createLog("start", in: directory, stamp: stamp, port: 8100).lastPathComponent == "start-20261029-120000-8100-3.log")
+
+        // relay install --build has no port.
+        #expect(try RunnerLauncher.createLog("build", in: directory, stamp: stamp, port: nil).lastPathComponent == "build-20261029-120000.log")
+        #expect(throws: ArgumentError.self) {
+            try RunnerLauncher.createLog("start", in: directory.appendingPathComponent("missing"), stamp: stamp, port: 8100)
+        }
     }
 }

@@ -36,7 +36,9 @@ struct RunnerInstallRecord: Codable, Equatable {
         if relayVersion != currentVersion {
             return "the runner was installed by relay \(relayVersion), but this is relay \(currentVersion)"
         }
-        if let checkout, checkout.path == source, let current = checkout.commit, let commit, current != commit {
+        // A path recorded by an older relay may not be canonical.
+        let installedFrom = source.hasPrefix("/") ? URL(fileURLWithPath: source).canonicalFileURL.path : source
+        if let checkout, checkout.path == installedFrom, let current = checkout.commit, let commit, current != commit {
             return "the runner was installed from commit \(commit.prefix(12)), but \(source) is now at \(current.prefix(12))"
         }
         return nil
@@ -60,7 +62,7 @@ struct CheckoutRunnerSource: RunnerSource {
     var root: URL
     var commands: HostCommands = .live
 
-    var location: String { root.standardizedFileURL.path }
+    var location: String { root.canonicalFileURL.path }
 
     var commit: String? {
         Self.commit(of: root, commands: commands)
@@ -128,7 +130,7 @@ enum RunnerInstaller {
         let manager = FileManager.default
         let target = RunnerProject.installedRoot(home: home)
         let parent = target.deletingLastPathComponent()
-        guard source.location != target.standardizedFileURL.path else {
+        guard source.location != target.canonicalFileURL.path else {
             throw SetupError(description: "cannot install the runner from \(target.path) itself; pass --project <path to device-relay>")
         }
         try manager.createDirectory(at: parent, withIntermediateDirectories: true)
@@ -181,7 +183,7 @@ enum RunnerInstaller {
         guard let record = RunnerInstallRecord.read(root: root) else {
             return "\(root.path) has no \(RunnerInstallRecord.fileName)"
         }
-        let checkout = findCheckout().map { ($0.standardizedFileURL.path, CheckoutRunnerSource.commit(of: $0, commands: commands)) }
+        let checkout = findCheckout().map { ($0.canonicalFileURL.path, CheckoutRunnerSource.commit(of: $0, commands: commands)) }
         return record.staleness(checkout: checkout)
     }
 }
@@ -224,9 +226,8 @@ enum InstallCommand {
         // Named like relay start's build logs, in the same directory.
         let logsURL = home.appendingPathComponent(".relay/logs", isDirectory: true)
         try FileManager.default.createDirectory(at: logsURL, withIntermediateDirectories: true)
-        let buildLogURL = logsURL.appendingPathComponent("build-\(RunnerLauncher.timestamp()).log")
+        let buildLogURL = try RunnerLauncher.createLog("build", in: logsURL, stamp: RunnerLauncher.timestamp(), port: nil)
         output("building the runner for simulators into \(derivedData.path) (log: \(buildLogURL.path))")
-        FileManager.default.createFile(atPath: buildLogURL.path, contents: nil)
         let buildLog = try FileHandle(forWritingTo: buildLogURL)
         defer { try? buildLog.close() }
         let arguments = RunnerLauncher.buildArguments(

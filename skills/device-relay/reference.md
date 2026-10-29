@@ -34,16 +34,16 @@
 
 詳しくは README の「バックグラウンドで動かす」。
 
-**`relay start --background`**: 同じオプションの `relay start` を新しいセッションとして起動し（端末を閉じても止まらない。stdin は `/dev/null`、出力は `~/.relay/logs/start-<時刻>.log`）、そのログを読んで待ちます。
+**`relay start --background`**: 同じオプションの `relay start` を新しいセッションとして起動し（端末を閉じても止まらない。stdin は `/dev/null`、出力は `~/.relay/logs/start-<時刻>-<port>.log`）、そのログを読んで待ちます。
 
 ```
-relay: started relay start in the background (pid <PID>, log: /Users/<you>/.relay/logs/start-<時刻>.log)   ← stderr（進行状況の relay: 行）
+relay: started relay start in the background (pid <PID>, log: /Users/<you>/.relay/logs/start-<時刻>-<port>.log)   ← stderr（進行状況の relay: 行）
 relay: building runner (log: ...)
 relay: launching runner on <UDID> (log: ...)
 ready: http://127.0.0.1:8100/                                                                   ← ここから stdout
 device: <端末名> (<UDID>)
 pid: <PID>
-log: /Users/<you>/.relay/logs/start-<時刻>.log
+log: /Users/<you>/.relay/logs/start-<時刻>-<port>.log
 token: /Users/<you>/.relay/runner.json
 ```
 

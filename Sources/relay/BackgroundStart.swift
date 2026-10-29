@@ -5,13 +5,12 @@ import Foundation
 /// runner is ready, so a script or an agent gets its prompt back with the runner running.
 ///
 /// The detached process is a new session (no controlling terminal, so closing the terminal does not
-/// stop it) with stdin from /dev/null and stdout/stderr to `~/.relay/logs/start-<time>.log`. This process
-/// reads that log: `ready: <url>` is success; the detached process exiting first, or no `ready:` in
-/// time, is failure, and then the detached process is stopped like `relay stop` does, so neither it nor
-/// its xcodebuild is left running.
+/// stop it) with stdin from /dev/null and stdout/stderr to `~/.relay/logs/start-<time>-<port>.log`, which
+/// this process creates (`RunnerLauncher.createLog`), so only its own child writes there. It reads that
+/// log: `ready: <url>` is success; the detached process exiting first, or no `ready:` in time, is failure,
+/// and then the detached process is stopped like `relay stop` does, so neither it nor its xcodebuild is
+/// left running.
 enum BackgroundStart {
-    /// Set for the detached `relay start`, which then stops a build when told to (`StartCancellation`).
-    static let detachedEnvironmentKey = "RELAY_START_DETACHED"
     /// Time to boot a simulator and build the runner before it is launched; `--ready-timeout` then applies.
     static let launchTimeout: TimeInterval = 1800
     /// The detached `relay start` reports a startup failure itself; this is on top of `--ready-timeout`.
@@ -19,15 +18,13 @@ enum BackgroundStart {
     /// How long the detached process gets to stop the runner and shut down a simulator after SIGTERM.
     static let stopTimeout: TimeInterval = 60
 
-    static var isDetachedChild: Bool {
-        ProcessInfo.processInfo.environment[detachedEnvironmentKey] == "1"
-    }
-
     /// What the log of the detached `relay start` says so far.
     struct Progress: Equatable {
         var readyURL: String?
         /// The runner was launched (the build is done), so `--ready-timeout` starts.
         var launched = false
+        /// The device it was launched on, from the same line.
+        var udid: String?
     }
 
     /// Updates `progress` with one line of the log and returns the line to show while waiting, if any.
@@ -39,6 +36,7 @@ enum BackgroundStart {
         }
         if line.hasPrefix("relay: launching runner on ") {
             progress.launched = true
+            progress.udid = line.dropFirst("relay: launching runner on ".count).split(separator: " ").first.map(String.init)
         }
         // The detached process cannot be stopped with Ctrl-C.
         guard line.hasPrefix("relay: "), !line.contains("press Ctrl-C") else { return nil }
@@ -71,6 +69,14 @@ enum BackgroundStart {
     }
 
     static func run(_ options: StartOptions, home: URL = UserHome.url) -> Int32 {
+        // Taken before the check, so a second start at the same moment cannot pass it too, and handed to the
+        // detached relay start, which holds it while its runner runs (see StartLock).
+        let lock: StartLock
+        do {
+            lock = try StartLock.acquire(port: options.port, home: home)
+        } catch {
+            return fail("\(error)", code: .usage)
+        }
         let infoURL = RunnerLocator.userURL(home: home)
         if let existing = try? RunnerInfo.read(from: infoURL),
            let conflict = conflict(with: existing, port: options.port, ping: RunnerPing.check(existing),
@@ -79,11 +85,12 @@ enum BackgroundStart {
         }
 
         let logsURL = infoURL.deletingLastPathComponent().appendingPathComponent("logs", isDirectory: true)
-        let logURL = logsURL.appendingPathComponent("start-\(RunnerLauncher.timestamp()).log")
+        let logURL: URL
         let pid: pid_t
         do {
             try FileManager.default.createDirectory(at: logsURL, withIntermediateDirectories: true)
-            pid = try spawnDetached(arguments: options.foregroundArguments, logURL: logURL)
+            logURL = try RunnerLauncher.createLog("start", in: logsURL, stamp: RunnerLauncher.timestamp(), port: options.port)
+            pid = try spawnDetached(arguments: options.foregroundArguments, logURL: logURL, lock: lock)
         } catch {
             return fail("cannot start relay start in the background: \(error)", code: .usage)
         }
@@ -116,7 +123,7 @@ enum BackgroundStart {
                 launchedAt = Date()
             }
             if let url = progress.readyURL {
-                return ready(url: url, pid: pid, logURL: logURL, infoURL: infoURL)
+                return ready(url: url, pid: pid, udid: progress.udid, logURL: logURL, infoURL: infoURL)
             }
             if let status = exitStatus ?? reap(pid) {
                 // Read what it wrote just before exiting, which may be `ready:` after all.
@@ -153,21 +160,37 @@ enum BackgroundStart {
         }
     }
 
-    private static func ready(url: String, pid: pid_t, logURL: URL, infoURL: URL) -> Int32 {
+    private static func ready(url: String, pid: pid_t, udid: String?, logURL: URL, infoURL: URL) -> Int32 {
+        let runnerInfo = try? RunnerInfo.read(from: infoURL)
         print("ready: \(url)")
-        if let runnerInfo = try? RunnerInfo.read(from: infoURL) {
-            print("device: \(runnerInfo.name.map { "\($0) (\(runnerInfo.udid))" } ?? runnerInfo.udid)")
+        if let device = device(runnerInfo: runnerInfo, pid: pid, udid: udid) {
+            print("device: \(device)")
         }
         print("pid: \(pid)")
         print("log: \(logURL.path)")
         print("token: \(infoURL.path)")
+        if let other = runnerInfo?.pid, other != pid {
+            info("\(infoURL.path) now names the runner of relay start pid \(other), started at about the same time on another port; "
+                + "runner commands go to that one")
+        }
         info("the runner keeps running after this terminal closes; relay status shows it, relay stop stops it")
         return RunnerExitCode.success.rawValue
     }
 
+    /// The `device:` line for the detached `relay start` `pid`. runner.json names the device only while it
+    /// is that process's: another start on another port may have written it since. Otherwise it is the
+    /// UDID from the log.
+    static func device(runnerInfo: RunnerInfo?, pid: pid_t, udid: String?) -> String? {
+        if let runnerInfo, runnerInfo.pid == pid {
+            return runnerInfo.name.map { "\($0) (\(runnerInfo.udid))" } ?? runnerInfo.udid
+        }
+        return udid
+    }
+
     /// Runs this executable with `arguments` as a new session, with stdin from /dev/null and stdout and
-    /// stderr appended to `logURL`. Signals ignored here (SIGINT while waiting) are reset in the child.
-    static func spawnDetached(arguments: [String], logURL: URL) throws -> pid_t {
+    /// stderr appended to `logURL`, which must exist. Signals ignored here (SIGINT while waiting) are reset in the child.
+    /// The child inherits `lock` and finds it through `StartLock.inheritedEnvironmentKey`.
+    static func spawnDetached(arguments: [String], logURL: URL, lock: StartLock? = nil) throws -> pid_t {
         let executable = RelayProcess.currentExecutable
         var attributes: posix_spawnattr_t?
         posix_spawnattr_init(&attributes)
@@ -187,11 +210,14 @@ enum BackgroundStart {
         posix_spawn_file_actions_init(&actions)
         defer { posix_spawn_file_actions_destroy(&actions) }
         posix_spawn_file_actions_addopen(&actions, 0, "/dev/null", O_RDONLY, 0)
-        posix_spawn_file_actions_addopen(&actions, 1, logURL.path, O_WRONLY | O_CREAT | O_APPEND, 0o644)
+        posix_spawn_file_actions_addopen(&actions, 1, logURL.path, O_WRONLY | O_APPEND, 0)
         posix_spawn_file_actions_adddup2(&actions, 1, 2)
+        if let lock {
+            posix_spawn_file_actions_addinherit_np(&actions, lock.fileDescriptor)
+        }
 
         var environment = ProcessInfo.processInfo.environment
-        environment[detachedEnvironmentKey] = "1"
+        environment[StartLock.inheritedEnvironmentKey] = lock.map { "\($0.fileDescriptor)" }
         let argv = ([executable] + arguments).map { strdup($0) } + [nil]
         let envp = environment.map { strdup("\($0.key)=\($0.value)") } + [nil]
         defer {
@@ -334,12 +360,10 @@ private struct ProcessTree {
     }
 }
 
-/// Lets a detached `relay start` stop cleanly when it gets SIGTERM (from `relay stop`, or from the waiting
+/// Lets `relay start` stop cleanly when it gets Ctrl-C or SIGTERM (from `relay stop`, or from the waiting
 /// `relay start --background` on failure) before the runner is launched: it ends the running simctl or
 /// xcodebuild, and `relay start` then exits through its usual error path, which shuts down a simulator it
-/// booted. After the launch, `RunnerLauncher`'s own signal handling takes over.
-///
-/// A foreground `relay start` does not install this, so Ctrl-C during a build behaves as before.
+/// booted. Once the runner is launched, `RunnerLauncher`'s own signal handling takes over (`handOver()`).
 enum StartCancellation {
     private static let lock = NSLock()
     private static var requested = false
@@ -365,5 +389,14 @@ enum StartCancellation {
             source.resume()
             sources.append(source)
         }
+    }
+
+    /// Stops handling the signals, which stay ignored, once `RunnerLauncher` handles them itself.
+    static func handOver() {
+        lock.lock()
+        let installed = sources
+        sources = []
+        lock.unlock()
+        installed.forEach { $0.cancel() }
     }
 }
