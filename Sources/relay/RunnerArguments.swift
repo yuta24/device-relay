@@ -5,8 +5,8 @@ import Foundation
 extension Arguments {
     /// Options of each runner command; every one also takes `--runner`. `-o` is short for `--output`.
     static let runnerOptions: [String: Set<String>] = [
-        "screenshot": ["--output", "--format", "--quality"],
-        "source": ["--format", "--max-depth", "--bundle-id"],
+        "screenshot": ["--output", "--format", "--quality", "--max-size", "--scale"],
+        "source": ["--format", "--max-depth", "--filter", "--bundle-id"],
         "find": selectorOptions.union(["--limit", "--timeout", "--bundle-id"]),
         "tap": selectorOptions.union(["--mode", "--timeout", "--bundle-id"]),
         "press": selectorOptions.union(["--duration", "--mode", "--timeout", "--bundle-id"]),
@@ -110,15 +110,23 @@ extension Arguments {
         "health": ("relay health", "Device, screen size in points, orientation, touch path, and foreground app."),
         "foreground": ("relay foreground", "The foreground app's bundle ID and pid."),
         "screenshot": (
-            "relay screenshot [-o <file>|-] [--format png|jpeg] [--quality 0.05-1.0]",
+            "relay screenshot [-o <file>|-] [--format png|jpeg] [--quality 0.05-1.0] [--max-size <px>] [--scale <px/pt>]",
             """
             Saves a screenshot and prints its absolute path. Without -o it goes to $TMPDIR/relay/screenshot-<time>.png;
             -o - writes the image to stdout instead. A .jpg/.jpeg file or --quality selects jpeg (quality 0.7 by default).
+            The runner shrinks the image to --max-size pixels on the longer edge and to --scale pixels per point
+            (--scale 1: one pixel per point); it never enlarges it. Shrunk, relay also prints the image size, the
+            screen in points, and the pixels per point to stderr. Taps always take points: divide pixels by the scale.
             """
         ),
         "source": (
-            "relay source [--format json|text] [--max-depth <n>] [--bundle-id <id>]",
-            "Prints the element tree of the foreground app (or --bundle-id). --max-depth 0 is the root only."
+            "relay source [--format json|text|compact] [--filter interactive] [--max-depth <n>] [--bundle-id <id>]",
+            """
+            Prints the element tree of the foreground app (or --bundle-id). --max-depth 0 is the root only.
+            --format compact prints one line per element (type, label, id, value, placeholder, frame).
+            --filter interactive lists only the enabled controls on screen that a selector can name (buttons, cells,
+            text fields, switches, ...; not keyboard keys), as a flat list of elements (json) or lines (compact).
+            """
         ),
         "find": (
             "relay find <selector> [--limit 20] [--timeout <s>] [--bundle-id <id>]",
@@ -215,6 +223,12 @@ private struct RunnerArgumentValues {
             var screenshot = RunnerScreenshot(output: try string("--output"))
             screenshot.format = try oneOf("--format", ["png", "jpeg"])
             screenshot.quality = try number("--quality", "a number in 0.05...1.0") { RunnerRequestValues.jpegQualityRange.contains($0) }
+            let minSize = RunnerRequestValues.minScreenshotMaxSize
+            screenshot.maxSize = try integer("--max-size", "an integer of at least \(minSize) (pixels)") { $0 >= minSize }
+            let scales = RunnerRequestValues.screenshotScaleRange
+            screenshot.scale = try number("--scale", "a number in \(scales.lowerBound)...\(scales.upperBound) (pixels per point)") {
+                scales.contains($0)
+            }
             if screenshot.format == nil, let output = screenshot.output,
                ["jpg", "jpeg"].contains(URL(fileURLWithPath: output).pathExtension.lowercased()) {
                 screenshot.format = "jpeg"
@@ -235,7 +249,12 @@ private struct RunnerArgumentValues {
                 }
                 maxDepth = depth
             }
-            return .source(format: try oneOf("--format", ["json", "text"]), maxDepth: maxDepth, bundleID: try string("--bundle-id"))
+            let format = try oneOf("--format", RunnerElementTree.formats)
+            let filter = try oneOf("--filter", [RunnerElementTree.Filter.interactive.rawValue])
+            if filter != nil, format == "text" {
+                throw ArgumentError(description: "--filter applies to --format json and compact, not text")
+            }
+            return .source(format: format, maxDepth: maxDepth, filter: filter, bundleID: try string("--bundle-id"))
         case "find":
             _ = try positional(0, "an element selector, not arguments")
             guard let selector = try selector() else {

@@ -3,6 +3,8 @@ import Foundation
 struct RunnerResponse {
     let status: Int
     let body: Data
+    /// As URLSession reports them; the case of the names may differ from what the runner sent.
+    var headers: [String: String] = [:]
 }
 
 /// Small synchronous HTTP client for the on-device runner.
@@ -47,8 +49,12 @@ struct RunnerClient {
             if let error {
                 result = .failure(error)
             } else {
-                let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-                result = .success(RunnerResponse(status: status, body: data ?? Data()))
+                let http = response as? HTTPURLResponse
+                var headers: [String: String] = [:]
+                for case let (name as String, value as String) in http?.allHeaderFields ?? [:] {
+                    headers[name] = value
+                }
+                result = .success(RunnerResponse(status: http?.statusCode ?? 0, body: data ?? Data(), headers: headers))
             }
             semaphore.signal()
         }.resume()

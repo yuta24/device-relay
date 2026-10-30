@@ -13,6 +13,8 @@ struct RunnerHTTPResponse {
     var status: Int
     var contentType: String
     var body: Data
+    /// Sent after the standard headers, such as the image size of `/screenshot`.
+    var headers: [String: String] = [:]
 
     static func json(_ object: [String: Any], status: Int = 200) -> RunnerHTTPResponse {
         let data = (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])) ?? Data("{}".utf8)
@@ -193,6 +195,9 @@ private final class RunnerHTTPConnection {
         head += "Content-Type: \(response.contentType)\r\n"
         head += "Content-Length: \(response.body.count)\r\n"
         head += "Cache-Control: no-store\r\n"
+        for (name, value) in response.headers.sorted(by: { $0.key < $1.key }) {
+            head += "\(name): \(value)\r\n"
+        }
         head += "Connection: \(keepAlive ? "keep-alive" : "close")\r\n\r\n"
         var data = Data(head.utf8)
         data.append(response.body)

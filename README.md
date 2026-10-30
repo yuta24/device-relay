@@ -287,8 +287,8 @@ xcodebuild の出力に `RELAY_RUNNER_READY port=8100 addresses=en0=…,utun3=�
 | `GET /ping` | – | 生存確認。busy ゲートもメインスレッドも通らずに即答します（`{"ok":true,"busy":<bool>,"busyForMs":<ms or null>}`）。詳しくは「生存確認（/ping）」 |
 | `GET /health` | – | 端末情報、表示の向きでの画面サイズ（points / scale）、`orientation`、`touchSynthesis`、`foreground` |
 | `GET /foreground` | – | 前面アプリの `bundleId` と `pid`、取得経路 `source`（`private` / `fallback`）。詳しくは「前面アプリ」 |
-| `GET /screenshot` | `?format=png\|jpeg&quality=0.05–1.0`（既定は png、jpeg の既定 quality は 0.7。範囲外・数値以外の quality と、png への quality の指定は 400） | 画面全体のスクリーンショット（表示の向きに正規化済み） |
-| `GET /source` | `?format=json\|text&maxDepth=<n>&bundleId=`（既定は json、bundleId の既定は前面アプリ） | XCUI の要素ツリー。json は要素ごとの属性と frame、text は `debugDescription`。詳しくは「要素ツリー（/source）」 |
+| `GET /screenshot` | `?format=png\|jpeg&quality=0.05–1.0&maxSize=<px>&scale=<px/pt>`（既定は png、jpeg の既定 quality は 0.7。範囲外・数値以外の quality と、png への quality の指定は 400。`maxSize`・`scale` は省略時は縮小なし） | 画面全体のスクリーンショット（表示の向きに正規化済み）。`maxSize`・`scale` で端末側で縮小します。画像と座標の関係を `X-Relay-*` ヘッダーで返します。詳しくは「スクリーンショットの縮小」 |
+| `GET /source` | `?format=json\|text\|compact&filter=interactive&maxDepth=<n>&bundleId=`（既定は json、bundleId の既定は前面アプリ） | XCUI の要素ツリー。json は要素ごとの属性と frame、text は `debugDescription`、compact は 1 行 1 要素。`filter=interactive` で操作できる要素だけに絞ります。詳しくは「要素ツリー（/source）」 |
 | `POST /tap` | `{"x":200,"y":120}`、または `{"element":{"identifier":"relay.input"}}` | タップ。`element` で要素を指定すると、その frame の中心をタップします（「要素セレクタ」） |
 | `POST /press` | `{"x":200,"y":120,"duration":1.0}`、または `{"element":{…},"duration":1.0}` | 長押し |
 | `POST /find` | `{"element":{"type":"button"},"limit":20,"bundleId":"…","timeout":0}`（`limit`・`bundleId`・`timeout` は省略可） | セレクタに一致する要素の一覧（type / identifier / label / value / frame / enabled）。ツリー全体を読まずに要素を探せます（「要素セレクタ」） |
@@ -334,9 +334,11 @@ curl -s -H "$AUTH" $R/ping
 curl -s -H "$AUTH" $R/health
 curl -s -H "$AUTH" -o shot.png $R/screenshot
 curl -s -H "$AUTH" -o shot.jpg "$R/screenshot?format=jpeg&quality=0.5"
+curl -s -H "$AUTH" -D - -o small.png "$R/screenshot?scale=1"   # 402x874 px（1 px = 1 pt）。ヘッダーに X-Relay-*
 curl -s -H "$AUTH" $R/foreground
 curl -s -H "$AUTH" "$R/source?maxDepth=3" | jq .tree
 curl -s -H "$AUTH" "$R/source?format=text&bundleId=com.apple.Preferences" | head
+curl -s -H "$AUTH" "$R/source?format=compact&filter=interactive"
 curl -s -H "$AUTH" -X POST $R/launch      -H 'Content-Type: application/json' -d '{"bundleId":"com.apple.Preferences"}'
 curl -s -H "$AUTH" -X POST $R/tap         -H 'Content-Type: application/json' -d '{"x":200,"y":120}'
 curl -s -H "$AUTH" -X POST $R/press       -H 'Content-Type: application/json' -d '{"x":200,"y":400,"duration":1.0}'
@@ -371,8 +373,11 @@ printf '%s' "$PASSWORD" | relay type --stdin   # 文字列を標準入力から�
 relay key delete
 relay screenshot                               # 保存先の絶対パスを出力（既定は $TMPDIR/relay/screenshot-<時刻>.png）
 relay screenshot -o shot.jpg --quality 0.5     # 拡張子 .jpg / --quality で jpeg
+relay screenshot --scale 1                     # 端末側で 1 px = 1 pt に縮小（stderr に画像と画面の大きさ）
+relay screenshot --max-size 1024 --format jpeg # 長辺 1024 px に縮小
 relay source --max-depth 3 | jq .tree
 relay source --format text --bundle-id com.apple.Preferences
+relay source --format compact --filter interactive   # 操作できる要素だけを 1 行 1 要素で
 relay button home
 relay orientation landscapeLeft
 relay terminate com.apple.Preferences
@@ -385,8 +390,8 @@ relay stop                                     # relay start ごと止める（b
 | コマンド | エンドポイント | 主なオプション |
 | --- | --- | --- |
 | `ping` / `health` / `foreground` | `GET /ping` / `/health` / `/foreground` | – |
-| `screenshot` | `GET /screenshot` | `-o <file>`（`-` で stdout）、`--format png\|jpeg`、`--quality 0.05–1.0` |
-| `source` | `GET /source` | `--format json\|text`、`--max-depth <n>`、`--bundle-id <id>` |
+| `screenshot` | `GET /screenshot` | `-o <file>`（`-` で stdout）、`--format png\|jpeg`、`--quality 0.05–1.0`、`--max-size <px>`、`--scale <px/pt>` |
+| `source` | `GET /source` | `--format json\|text\|compact`、`--filter interactive`、`--max-depth <n>`、`--bundle-id <id>` |
 | `find` | `POST /find` | セレクタ、`--limit <n>`、`--timeout <s>`、`--bundle-id <id>` |
 | `tap` / `press` | `POST /tap` / `/press` | `<x> <y>` かセレクタ、`--mode private\|xcui`、`--timeout`・`--bundle-id`（セレクタのみ）、`--duration`（press のみ） |
 | `swipe` | `POST /swipe` | `<x1> <y1> <x2> <y2>`、`--duration`、`--hold`、`--mode` |
@@ -400,7 +405,7 @@ relay stop                                     # relay start ごと止める（b
 - セレクタは `--id`（= `identifier`）・`--label`・`--type`・`--value` を 1 つ以上と、任意の `--index <n>` です（「要素セレクタ」と同じ完全一致・AND）。`--type` の名前、キー名、ボタン名、向きの名前、数値の範囲は送る前に確認し、間違っていれば終了コード 1 で何も送りません。
 - `-` で始まる文字列を入力するときは `relay type -- --text` のように `--` を挟みます。
 - パスワードなど、`ps` やシェルの履歴に残したくない文字列は `relay type --stdin` で標準入力から渡します。末尾の改行 1 つ（`\n` か `\r\n`。`echo` が付けるもの）だけを除き、それ以外はそのまま入力します。`--key` と併用でき、`<text>` と同時に指定すると終了コード 1 で何も送りません。標準入力が空でも `--key` があればキーだけを送ります。
-- 成功時はランナーの JSON をそのまま stdout に出します（`source --format text` はテキスト）。`screenshot` だけは画像をファイルに保存し、その絶対パスを 1 行出します。既定の保存先を `$TMPDIR` にしたのは、操作する側（対象アプリのリポジトリ）の作業ツリーを汚さないためです。
+- 成功時はランナーの JSON をそのまま stdout に出します（`source --format text` / `compact` はテキスト）。`screenshot` だけは画像をファイルに保存し、その絶対パスを 1 行出します。既定の保存先を `$TMPDIR` にしたのは、操作する側（対象アプリのリポジトリ）の作業ツリーを汚さないためです。`--max-size` / `--scale` で縮小したときは、stdout は同じくパス 1 行のままで、stderr に `relay: image 471x1024 px, screen 402x874 pt, 1.172 px/pt (tap in points: px / 1.172)` のように画像と画面の大きさを出します（「スクリーンショットの縮小」）。
 - 失敗時はランナーの JSON を stderr に出し、ステータスごとに次の終了コードで終わります。`relay:` で始まる行は人向けのヒントです。
 
 | 終了コード | 意味 |
@@ -557,10 +562,51 @@ iOS 27 では UIScene のライフサイクルを採用していないアプリ�
  "type":"button","value":null}
 ```
 
-- `maxDepth=<n>` で深さを制限します（`0` はルートだけ）。ただし XCTest は常にツリー全体を取得するので、短くなるのは応答の大きさだけで、時間はほとんど変わりません。
-- `format=text` は従来の `debugDescription` のテキストです。
+- `maxDepth=<n>` で深さを制限します（`0` はルートだけ）。ただし XCTest は常にツリー全体を取得するので、短くなるのは応答の大きさだけで、時間はほとんど変わりません。`format=compact` と `filter` にも効きます（深さで切ったツリーを絞ります）。
+- `format=text` は従来の `debugDescription` のテキストです。`filter` とは組み合わせられません（`400`）。
 - 既定を JSON にしたのは、プログラムから扱う用途が主で、計測ではテキストより速かったためです（`debugDescription` はツリーの取得に加えて文字列の整形に時間がかかります）。テキストは人が読むとき用に残しています。
 - 横向きでも `frame` は表示の向きの座標です（シミュレータの landscapeLeft / landscapeRight と実機の landscapeLeft で、`relay.input2` の frame の中心を `/tap` するとその欄にフォーカスが移ることを確認しました）。
+
+### 1 行 1 要素の形式（format=compact）
+
+`format=compact` は、要素を 1 行ずつ、深さに応じて 2 文字ずつ字下げしたテキストで返します。`debugDescription`（`format=text`）と違って JSON と同じスナップショットから作るので、JSON と同じくらい速く、大きさは JSON の 3 分の 1 ほどです。
+
+```
+application label="Settings" frame=0,0,402,874
+  window frame=0,0,402,874
+    ...
+                  button label="General" id="com.apple.settings.general" frame=16,293,370,52
+```
+
+- 1 行は、`type`、空でない `label`・`id`（identifier）・`value`・`placeholder`（値は JSON の文字列。改行や `"` を含んでも 1 行に収まります）、`frame=x,y,width,height`（表示の向きのポイントを整数に丸めたもの）、立っているフラグ（`selected`、`focused`＝キーボードのフォーカス、`disabled`、`truncated`）の順です。名前はセレクタのオプション（`--type`・`--label`・`--id`・`--value`）に合わせています。
+
+### 操作できる要素だけに絞る（filter=interactive）
+
+`filter=interactive` は、ツリー全体の代わりに、エージェントが操作に使える要素だけを文書順の平らな一覧で返します。`format=json` なら `elements` の配列、`format=compact` なら 1 行 1 要素（字下げなし）です。
+
+```json
+{"bundleId":"com.apple.Preferences","count":12,"elements":[
+ {"frame":{"height":52,"width":370,"x":16,"y":293.333},"identifier":"com.apple.settings.general","label":"General",
+  "placeholder":null,"selected":false,"type":"button","value":null}, …],"filter":"interactive","ok":true}
+```
+
+```
+button label="General" id="com.apple.settings.general" frame=16,293,370,52
+searchField label="Search" placeholder="Search" frame=28,808,346,28
+```
+
+残す要素:
+
+- 型が操作の対象になるもの: `button`、`cell`、`link`、`icon`（ホーム画面）、`tab`、`switch`、`toggle`、`slider`、`stepper`、`pickerWheel`、`textField`、`secureTextField`、`searchField`、`textView` など。`table` や `segmentedControl` などの入れ物は、中のボタンやセルが残るので外します。キーボードとそのキーは外します（文字入力は `/type`・`/key` で行います）
+- identifier・label・placeholder のどれかを持つもの（セレクタで指定できるもの）。テキスト入力欄は何もなくても残します（`--type textField --index <n>` で指定できるため）
+- 有効（`enabled`）で、frame が画面と重なり、タップ位置（`/tap` の要素指定と同じ、画面と重なる部分の中心）がキーボードの下にも、後に続くコントロールの下にもないもの
+- 名前のないコントロール（label のないセルなど）は、その中のラベル付きの `staticText` を代わりに残します（中に名前付きのコントロールがあればそちらを残します）。テキストをタップするとそのコントロールに当たります
+
+各要素は、セレクタに使う `type`・`identifier`・`label`・`value` と、`placeholder`、`frame`、`selected` を持ちます（子要素はありません）。`relay tap --type button --label General` や `--id` のように、そのままセレクタに使えます。
+
+- 絞り込みはランナー（端末側）で行います。スナップショットの取得はどちらでも同じ時間がかかりますが、ランナーで絞れば JSON に変換して送るのが短い一覧だけで済み、curl などほかのクライアントからも使えます。判定は SwiftPM のテストで確かめられるよう、CLI と共有するソース（`Sources/relay/RunnerElementTree.swift`）に置いています。
+- XCUI のスナップショットはヒット可能か（`isHittable`）を持たず、要素ごとに問い合わせると遅いので、重なりは近似で判定します。後に続く（＝手前に描かれる）コントロールがタップ位置を覆っていれば外します（iOS 27 の設定アプリでは、下部の検索バーに中心が隠れた最後のセルと、検索欄の中で重なった 2 つの Dictate ボタンの片方が外れます）。コントロールでないシートや覆いの下にある要素は外れません。
+- 一覧から外れても、セレクタは全体のツリーから探します。`--label General` だけでは同じラベルの `staticText` にも一致して `ambiguous` になることがあるので、一覧の `type` も付けるか `--id` を使います。
 
 取得時間（`curl` で 7 回の p50。シミュレータは iPhone 17 Pro / iOS 27.0、実機は iPhone 14 Pro / iOS 26.7.1。括弧内は応答の大きさ）:
 
@@ -573,6 +619,16 @@ iOS 27 では UIScene のライフサイクルを採用していないアプリ�
 | 実機: RelayRunnerHost（キーボード表示中） | 140 ms（16 KB） | 238 ms（6 KB） | 132 ms（2.7 KB） |
 | 実機: 計算機 | 89 ms（10 KB） | 187 ms（4 KB） | 122 ms（1.6 KB） |
 | 実機: ホーム画面（SpringBoard） | 194 ms（70 KB） | 589 ms（25 KB） | 182 ms（9 KB） |
+
+`format=compact` と `filter=interactive`（同じシミュレータ。curl で 7–9 回の p50。括弧内は要素数と応答の大きさ）:
+
+| 対象 | json | text | compact | json `filter=interactive` | compact `filter=interactive` |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 設定（トップ） | 50 ms（167 要素、37 KB） | 210 ms（17 KB） | 50 ms（167 行、11 KB） | 48 ms（12 要素、2.3 KB） | 48 ms（12 行、1.0 KB） |
+| ホーム画面（SpringBoard） | 87 ms（80 KB） | 412 ms（28 KB） | 83 ms（17 KB） | 83 ms（27 要素、4.6 KB） | 83 ms（1.6 KB） |
+| RelayRunnerHost（入力欄にフォーカス） | 24 ms（14 KB） | 93 ms（5.6 KB） | 22 ms（3.3 KB） | 24 ms（3 要素、0.6 KB） | 25 ms（0.2 KB） |
+
+時間はほぼスナップショットの取得で決まり、絞り込みや形式では変わりません（text だけは `debugDescription` の整形のぶん遅くなります）。
 
 ## 要素セレクタ
 
@@ -660,7 +716,44 @@ iOS 27 では UIScene のライフサイクルを採用していないアプリ�
 - 表示の向きは、端末の向き（`XCUIDevice.orientation`）と一致するとは限りません。横向きの iPhone でもホーム画面は縦のままですし、iPhone のアプリは `portraitUpsideDown` に回転しません。そのため、端末の向きではなく、リクエストのたびに前面アプリの向きを読み直します。`/orientation` を使わずに端末を手で回した場合や、アプリを切り替えた場合にも追従します。
 - 向きの取得には非公開の `-[XCUIApplication interfaceOrientation]` を使います（SpringBoard 経由で呼んでも前面アプリの向きが返り、約 1 ms）。使えない場合は、スクリーンショットの `UIImage.imageOrientation` で代用します（約 90 ms）。
 - `/screenshot` の画素も表示の向きにそろえます。横向きなら幅 > 高さになり、`width = screen.width × scale`、`height = screen.height × scale` です。ただし iPhone 14 Pro 実機では、XCUI のスクリーンショット自体が 1178×2556 px で、393 pt × 3 = 1179 より短辺が 1 px 足りません（向きの正規化を入れる前から同じです）。XCUI のスクリーンショットは画素が常に縦向きで、回転は向きのメタデータとしてだけ付いているので、縦向き以外では描き直します。そのぶん時間が増えます（p50 で、シミュレータは png +50 ms・jpeg +7 ms、実機は png +30 ms・jpeg はほぼ変わらず）。
+- `maxSize` / `scale` で縮小した画像では、画素 = ポイント × `X-Relay-Image-Scale` です（下の「スクリーンショットの縮小」）。タップなどの座標は、縮小してもポイントのままです。
 - タッチ: `xcui` 経路では、XCTest が SpringBoard 基準の座標を表示の向きで解釈します。`private` 経路の合成イベントは `XCSynthesizedEventRecord` の向きの指定では座標が変換されない（縦向きの画面座標として扱われる）ため、ランナーが表示の向きの座標を縦向きの画面座標に変換し、`portrait` として送ります。どちらの経路でも同じ座標が同じ位置に当たります。
+
+### スクリーンショットの縮小
+
+`GET /screenshot` は、フル解像度（iPhone 17 Pro の縦向きで 1206×2622 px）のほかに、端末側で縮小した画像を返せます。エージェントに画像を渡すとき（転送量と画像のトークン）を減らすためのものです。
+
+| クエリ | CLI | 内容 |
+| --- | --- | --- |
+| `maxSize=<px>` | `--max-size <px>` | 長辺をこの画素数以下にします（16 以上の整数） |
+| `scale=<px/pt>` | `--scale <px/pt>` | 1 ポイントあたりの画素数をこの値以下にします（0.1–10。`/health` の `screen.scale` と同じ単位）。`scale=1` なら画像の画素とタップのポイントが一致します |
+
+- 両方を指定すると、小さくなる方に合わせます（`--scale 1 --max-size 1024` なら、iPhone は 402×874、長辺が 1024 pt を超える iPad では 1024 px）。縦横比は保ち、拡大はしません（元の大きさ以上の指定や、端末の scale 以上の `scale` では縮小しません）。範囲外・数値以外は `400` です。
+- 縮小は、表示の向きへの正規化と同じ 1 回の描画で行います（向きのメタデータつきの画像を、縮小後の大きさのキャンバスに描きます）。正規化の後に縮小すると、フル解像度で描き直してからもう一度描くことになり、縮小を先にしても向きを直す描画は別に要るので、1 回にまとめるのがいちばん速く、エンコーダーには小さな画像だけが渡ります。横向きでは正規化のための描き直しがもともと要るので、縮小した方がエンコードが軽いぶん速くなります。縦向きのフル解像度の png は XCUI の PNG をそのまま返す（描き直さない）ので、縦向きで縮小すると画像の展開と描画のぶん少し遅くなります（下の表）。
+- 応答には、画像と座標の対応を示すヘッダーを付けます（縮小しないときも付きます）。
+
+| ヘッダー | 内容 |
+| --- | --- |
+| `X-Relay-Image-Width` / `X-Relay-Image-Height` | 返した画像の画素数 |
+| `X-Relay-Screen-Width` / `X-Relay-Screen-Height` | 表示の向きでの画面の大きさ（ポイント）。`/health` の `screen.width` / `height` と同じ値 |
+| `X-Relay-Image-Scale` | 1 ポイントあたりの画素数（画像の幅 ÷ 画面の幅。小数点以下 3 桁）。フル解像度なら `/health` の `screen.scale`（実機では 1 px の差で 2.997 などになることがあります） |
+
+- 画像上の位置 (px) をタップの座標にするには `X-Relay-Image-Scale` で割ります（`maxSize=1024` の縦向きなら 471×1024 px、402×874 pt、`1.172`。画像の (120, 375) は (102, 320) pt）。`/tap` などの座標は、縮小した画像でも常にポイントです。
+- `relay screenshot --max-size` / `--scale` は、保存先のパスを stdout に 1 行出すのは変えずに（`-o -` なら画像だけを stdout に出します）、stderr に `relay: image 471x1024 px, screen 402x874 pt, 1.172 px/pt (tap in points: px / 1.172)` と出します。どちらも付けないときは、これまでどおりパスだけです。
+- 既定（どちらも付けない）は、これまでどおりフル解像度です。画素 = ポイント × `screen.scale` という関係や、細部を確かめたい人やスクリプトの使い方を変えないためです。エージェントスキルでは `--scale 1` を勧め、細部が要るときだけフル解像度を使うように案内しています。
+
+計測（iPhone 17 Pro シミュレータ、iOS 27.0。`curl` で 10 回の p50。縦は設定アプリのトップ、横は RelayRunnerHost の landscapeLeft）:
+
+| リクエスト | 縦: 画像 | 縦: 時間 | 縦: 大きさ | 横: 時間 | 横: 大きさ |
+| --- | --- | ---: | ---: | ---: | ---: |
+| png（既定） | 1206×2622 | 68 ms | 289 KB | 94 ms | 81 KB |
+| jpeg（q=0.7） | 1206×2622 | 82 ms | 207 KB | 83 ms | 104 KB |
+| png `maxSize=1024` | 471×1024 | 88 ms | 85 KB | 83 ms | 24 KB |
+| jpeg `maxSize=1024` | 471×1024 | 87 ms | 55 KB | 81 ms | 24 KB |
+| png `scale=1` | 402×874 | 87 ms | 69 KB | 82 ms | 19 KB |
+| jpeg `scale=1` | 402×874 | 86 ms | 43 KB | 83 ms | 19 KB |
+
+画像のトークン（画素数に比例）は、`scale=1` でフル解像度の 9 分の 1 です。RelayRunnerHost の `maxSize=1024` の画像で、入力欄の位置を 1.172 で割った座標をタップすると、その欄にフォーカスが移ることを確かめました（縦向きの Password 欄 (236, 229) px → (201, 195) pt、横向きの Second field 欄 (512, 102) px → (437, 87) pt）。
 
 ## 認証
 
@@ -685,6 +778,9 @@ iPhone 17 Pro シミュレータ（iOS 27.0、Apple Silicon Mac、`127.0.0.1`）
 | `GET /screenshot` (png、横・正規化あり) | 136 | 138 | 140 | 173 | 766 KB |
 | `GET /screenshot` (jpeg q=0.5、横・正規化あり) | 113 | 117 | 118 | 118 | 151 KB |
 | `POST /tap` (private) | 292 | 298 | 304 | 315 | – |
+
+`relay bench` は縮小したスクリーンショット（`png scale=1`、`jpeg 1024px`）も計測します。設定アプリのトップ（縦）で `relay bench --count 10` の p50 は、png 70 ms（289 KB）、jpeg q=0.5 87 ms（152 KB）、png scale=1 92 ms（69 KB）、jpeg 1024px 90 ms（55 KB）でした（縮小の計測は「スクリーンショットの縮小」）。
+
 | `POST /tap` (xcui) | 1598 | 1617 | 1634 | 1636 | – |
 
 要素指定のタップ（同じシミュレータ、RelayRunnerHost の縦向き・キーボード表示中、`relay.input2` を `curl` で 10 回。ms）:
@@ -753,12 +849,12 @@ iPhone 17 Pro シミュレータ（iOS 27.0、Apple Silicon Mac、`127.0.0.1`）
 - **`xcui` 経路は遅い**: XCUI はイベントを送る前後に対象アプリがアイドルになる（quiescence）のを待つため、タップ 1 回にシミュレータの Safari で約 1.6 秒、実機の計算機で約 1.2 秒（以前の計測では約 1.9 秒）かかります。
 - **`/type`・`/key`**: キーボードのフォーカスがある要素が必要です。対象は前面アプリで、`fallback`（非公開 API が使えない場合）では手で切り替えたアプリを判別できないので、`bundleId` を明示してください。`tab` と `escape` は iPhone で効かないため対応しておらず、400 になります（「文字入力と特殊キー」）。
 - **前面アプリの取得は非公開 API 依存**: `XCAXClient_iOS` などが変わると `fallback` に落ちます。`/health` も前面アプリを返すぶん遅くなりました（実機で p50 約 16 ms）。
-- **映像ストリームはまだない**: 画面はスクリーンショットのポーリングで取得します（シミュレータの縦向きで png 約 90 ms / jpeg 約 110 ms、横向きは正規化のぶん遅くなります）。
+- **映像ストリームはまだない**: 画面はスクリーンショットのポーリングで取得します（シミュレータの縦向きで png 約 90 ms / jpeg 約 110 ms、横向きは正規化のぶん遅くなります）。縮小（`maxSize` / `scale`）しても、XCUI の撮影自体（約 60 ms）は変わりません。
 - **ローカルネットワーク許可**: 実機では初回にローカルネットワークの許可ダイアログが出ることがあります。
 - **`/health` の画面サイズ**: xctrunner には起動画面の設定がないため、実機ではランナー内の `UIScreen` が 320×480 の互換モードになります。そのため `/health` は SpringBoard の frame から縦向きの画面サイズを、スクリーンショットのピクセル数から scale を求めます（初回だけ計測してキャッシュします）。向きはリクエストのたびに読み直して幅と高さに反映します。
 - **`portraitUpsideDown`**: iPhone のアプリの多くは上下逆さに回転しないので、`/orientation portraitUpsideDown` の後も `/health` の `orientation` は直前の向きのままになることがあります。表示が逆さになった場合の座標変換は実装していますが、検証していません。
 - **音量ボタン**: `volumeUp` / `volumeDown` は実機でのみ使えます（シミュレータでは 400）。
 - **実機の `home`**: 実機では `XCUIDevice.press(.home)` が成功を返すのに何も起きません（iOS 26.7.1 + Xcode 27 で確認）。testmanagerd が `Failed to load displays from CADisplay` で画面を取得できず、ボタンのイベントを画面に結びつかないキーボードから送るため、SpringBoard が無視します。そのため実機の `/button home` は、ホームインジケーターのジェスチャー（画面下端から上への素早いスワイプ）で代用します。`private` 経路では 0.12 秒のスワイプ（約 0.35 秒で応答）、`private` が使えない場合は XCUI のドラッグ（最初に 0.02 秒押す必要があります。約 1.8 秒）です。ホームボタンのない端末が前提で、ホームボタンのある端末では同じジェスチャーでコントロールセンターが開きます。シミュレータでは `press(.home)` が効くので、そのまま使います。
-- **要素セレクタ**: 完全一致だけです（「要素セレクタ」）。キーボードやシートに隠れている要素も frame が画面内なら `offscreen` にならず、隠している側がタップされます（`isHittable` は見ていません）。`timeout` は 1 回のスナップショットを中断できず、別プロセスのシート（設定の Apple Account のサインイン画面など）が出ている間は、XCTest のスナップショットが `Timed out while evaluating UI query` で失敗するまで約 3 分戻らないことがありました（`/source` も同じです）。その間は busy ゲートを持ったままなので、ほかのリクエストは `409` になります。また `/launch` の直後は前面アプリの取得が切り替え前のアプリを返すことがあるので、確実に対象を決めたい場合は `bundleId` を指定してください。
+- **要素セレクタ**: 完全一致だけです（「要素セレクタ」）。キーボードやシートに隠れている要素も frame が画面内なら `offscreen` にならず、隠している側がタップされます（`isHittable` は見ていません。`/source?filter=interactive` はキーボードと手前のコントロールに隠れた要素を外しますが、近似です）。`timeout` は 1 回のスナップショットを中断できず、別プロセスのシート（設定の Apple Account のサインイン画面など）が出ている間は、XCTest のスナップショットが `Timed out while evaluating UI query` で失敗するまで約 3 分戻らないことがありました（`/source` も同じです）。その間は busy ゲートを持ったままなので、ほかのリクエストは `409` になります。また `/launch` の直後は前面アプリの取得が切り替え前のアプリを返すことがあるので、確実に対象を決めたい場合は `bundleId` を指定してください。
 - **usbmux 非対応**: 実機への接続には CoreDevice トンネル（または `--allow-wifi` で Wi-Fi）が必要です。
 - **通信は平文**: 認証はトークンだけで、TLS はありません（「認証」の脅威モデルを参照）。`relay` を `kill -9` などで強制終了した場合は `~/.relay/runner.json` が残ります（サブコマンドは接続できずに終了コード 3、別のランナーが同じポートにいれば 4 になります）。

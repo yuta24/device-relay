@@ -300,21 +300,42 @@ final class RelayRunnerUITests: XCTestCase {
     private func source(query: [String: String]) throws -> RunnerHTTPResponse {
         let bundleID = query["bundleId"].flatMap { $0.isEmpty ? nil : $0 } ?? foregroundApplication().bundleID
         let application = XCUIApplication(bundleIdentifier: bundleID)
-        switch query["format"] ?? "json" {
-        case "json":
-            var maxDepth = Int.max
-            if let value = query["maxDepth"] {
-                guard let depth = RunnerElementTree.maxDepth(value) else { throw RunnerError.invalidField("maxDepth") }
-                maxDepth = depth
+        let format = query["format"] ?? "json"
+        guard RunnerElementTree.formats.contains(format) else { throw RunnerError.invalidField("format") }
+        let filter = try query["filter"].map { value in
+            guard let filter = RunnerElementTree.Filter(rawValue: value) else {
+                throw RunnerError.invalidField("filter: expected interactive")
             }
-            let tree = RunnerElementTree.json(try elementTree(application, bundleID: bundleID, maxDepth: maxDepth))
-            return .json(["ok": true, "bundleId": bundleID, "tree": tree])
-        case "text":
-            let source = application.debugDescription
-            return RunnerHTTPResponse(status: 200, contentType: "text/plain; charset=utf-8", body: Data(source.utf8))
-        default:
-            throw RunnerError.invalidField("format")
+            return filter
         }
+        if format == "text" {
+            guard filter == nil else { throw RunnerError.invalidField("filter: applies to format json and compact") }
+            return Self.text(application.debugDescription)
+        }
+
+        var maxDepth = Int.max
+        if let value = query["maxDepth"] {
+            guard let depth = RunnerElementTree.maxDepth(value) else { throw RunnerError.invalidField("maxDepth") }
+            maxDepth = depth
+        }
+        let root = try elementTree(application, bundleID: bundleID, maxDepth: maxDepth)
+        guard let filter else {
+            if format == "compact" {
+                return Self.text(RunnerElementTree.compactText(root))
+            }
+            return .json(["ok": true, "bundleId": bundleID, "tree": RunnerElementTree.json(root)])
+        }
+        // Filtering runs here, next to the snapshot, so only the short list is serialized and sent.
+        let screen = CGRect(origin: .zero, size: self.screen(in: interfaceOrientation()).size)
+        let elements = RunnerElementTree.interactiveElements(in: root, screen: screen)
+        if format == "compact" {
+            return Self.text(RunnerElementTree.compactText(elements))
+        }
+        return .json(RunnerElementTree.filteredJSON(elements, filter: filter, bundleID: bundleID))
+    }
+
+    private static func text(_ text: String) -> RunnerHTTPResponse {
+        RunnerHTTPResponse(status: 200, contentType: "text/plain; charset=utf-8", body: Data(text.utf8))
     }
 
     private func elementTree(_ application: XCUIApplication, bundleID: String, maxDepth: Int = .max) throws -> RunnerElementNode {
@@ -508,38 +529,66 @@ final class RelayRunnerUITests: XCTestCase {
     }
 
     private func screenshot(query: [String: String]) throws -> RunnerHTTPResponse {
-        let screenshot = XCUIScreen.main.screenshot()
-        // The pixels are always portrait, with the rotation only in the image orientation. Redraw them
-        // upright so pixel coordinates are points x scale in the displayed orientation.
-        let image = screenshot.image
-        let upright = image.imageOrientation == .up ? nil : Self.uprightRenderer(for: image)
-        switch query["format"] ?? "png" {
+        let format = query["format"] ?? "png"
+        var quality: Double?
+        switch format {
         case "png":
             guard query["quality"] == nil else { throw RunnerError.invalidField("quality") }
-            let data = upright?.pngData { _ in image.draw(at: .zero) } ?? screenshot.pngRepresentation
-            return RunnerHTTPResponse(status: 200, contentType: "image/png", body: data)
         case "jpeg", "jpg":
-            guard let quality = RunnerRequestValues.jpegQuality(query["quality"]) else {
+            guard let value = RunnerRequestValues.jpegQuality(query["quality"]) else {
                 throw RunnerError.invalidField("quality")
             }
-            let data = upright.map { $0.jpegData(withCompressionQuality: quality) { _ in image.draw(at: .zero) } }
+            quality = value
+        default:
+            throw RunnerError.invalidField("format")
+        }
+        let maxSize = try query["maxSize"].map { value in
+            guard let size = RunnerRequestValues.screenshotMaxSize(value) else {
+                throw RunnerError.invalidField("maxSize: expected an integer of at least \(RunnerRequestValues.minScreenshotMaxSize)")
+            }
+            return size
+        }
+        let scale = try query["scale"].map { value in
+            guard let scale = RunnerRequestValues.screenshotScale(value) else {
+                let range = RunnerRequestValues.screenshotScaleRange
+                throw RunnerError.invalidField("scale: expected a number in \(range.lowerBound)...\(range.upperBound)")
+            }
+            return scale
+        }
+
+        let screenshot = XCUIScreen.main.screenshot()
+        // The pixels are always portrait, with the rotation only in the image orientation. Redraw them
+        // upright so pixel coordinates are points x scale in the displayed orientation. Shrinking happens
+        // in the same draw: one pass over the full-size pixels, and the encoder sees only the small image.
+        let image = screenshot.image
+        let pixels = CGSize(width: image.size.width * image.scale, height: image.size.height * image.scale)
+        let screen = portraitScreen()
+        let size = RunnerRequestValues.screenshotSize(pixels: pixels, screenScale: screen.scale, maxSize: maxSize, scale: scale)
+        let renderer = image.imageOrientation == .up && size == pixels ? nil : Self.renderer(size: size)
+        let draw: (UIGraphicsImageRendererContext) -> Void = { _ in image.draw(in: CGRect(origin: .zero, size: size)) }
+        let points = pixels.width > pixels.height
+            ? CGSize(width: screen.size.height, height: screen.size.width)
+            : screen.size
+        let headers = RunnerRequestValues.screenshotHeaders(image: size, screen: points)
+        if let quality {
+            let data = renderer.map { $0.jpegData(withCompressionQuality: quality, actions: draw) }
                 ?? image.jpegData(compressionQuality: quality)
             guard let data else {
                 throw RunnerError.internalError("failed to encode JPEG")
             }
-            return RunnerHTTPResponse(status: 200, contentType: "image/jpeg", body: data)
-        default:
-            throw RunnerError.invalidField("format")
+            return RunnerHTTPResponse(status: 200, contentType: "image/jpeg", body: data, headers: headers)
         }
+        let data = renderer?.pngData(actions: draw) ?? screenshot.pngRepresentation
+        return RunnerHTTPResponse(status: 200, contentType: "image/png", body: data, headers: headers)
     }
 
-    private static func uprightRenderer(for image: UIImage) -> UIGraphicsImageRenderer {
+    /// Draws `size` pixels (scale 1, so points are pixels); 8-bit sRGB even on wide-color devices.
+    private static func renderer(size: CGSize) -> UIGraphicsImageRenderer {
         let format = UIGraphicsImageRendererFormat()
-        // Same pixel count as the source; 8-bit sRGB even on wide-color devices.
-        format.scale = image.scale
+        format.scale = 1
         format.opaque = true
         format.preferredRange = .standard
-        return UIGraphicsImageRenderer(size: image.size, format: format)
+        return UIGraphicsImageRenderer(size: size, format: format)
     }
 
     private func swipe(_ body: RunnerJSON, mode: TouchMode) throws -> TouchMode {
