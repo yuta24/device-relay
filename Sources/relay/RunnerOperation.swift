@@ -9,7 +9,7 @@ enum RunnerOperation: Equatable {
     case health
     case foreground
     case screenshot(RunnerScreenshot)
-    case source(format: String?, maxDepth: Int?, bundleID: String?)
+    case source(format: String?, maxDepth: Int?, filter: String?, bundleID: String?)
     case find(RunnerElementSelector, limit: Int?, timeout: TimeInterval?, bundleID: String?)
     case tap(RunnerTouch)
     case press(RunnerTouch)
@@ -30,10 +30,14 @@ enum RunnerOperation: Equatable {
         case .screenshot(let screenshot):
             return .get("/screenshot", query: [
                 ("format", screenshot.format),
-                ("quality", screenshot.quality.map { String($0) })
+                ("quality", screenshot.quality.map { String($0) }),
+                ("maxSize", screenshot.maxSize.map(String.init)),
+                ("scale", screenshot.scale.map { String($0) })
             ])
-        case .source(let format, let maxDepth, let bundleID):
-            return .get("/source", query: [("format", format), ("maxDepth", maxDepth.map(String.init)), ("bundleId", bundleID)])
+        case .source(let format, let maxDepth, let filter, let bundleID):
+            return .get("/source", query: [
+                ("format", format), ("maxDepth", maxDepth.map(String.init)), ("filter", filter), ("bundleId", bundleID)
+            ])
         case .find(let selector, let limit, let timeout, let bundleID):
             var body: [String: Any] = ["element": selector.json]
             body["limit"] = limit
@@ -120,10 +124,15 @@ struct RunnerScreenshot: Equatable {
     /// `png` or `jpeg`; nil is the runner's default (png).
     var format: String?
     var quality: Double?
+    /// The longest edge in pixels, and the pixels per point; the runner shrinks the image to fit both.
+    var maxSize: Int?
+    var scale: Double?
     /// Where to save the image: a path, `-` for stdout, or nil for a new file under the temporary directory.
     var output: String?
 
     var fileExtension: String { format == "jpeg" ? "jpg" : "png" }
+
+    var isResized: Bool { maxSize != nil || scale != nil }
 }
 
 extension RunnerElementSelector {

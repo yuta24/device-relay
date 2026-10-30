@@ -106,8 +106,8 @@ runner.json: /Users/<you>/.relay/runner.json
 
 | コマンド | 使い方 |
 | --- | --- |
-| `screenshot` | `relay screenshot [-o <file>\|-] [--format png\|jpeg] [--quality 0.05-1.0]`。保存先の絶対パスを 1 行出します（既定は `$TMPDIR/relay/screenshot-<時刻>.png`）。`.jpg` / `.jpeg` の拡張子か `--quality` で JPEG（既定の quality 0.7） |
-| `source` | `relay source [--format json\|text] [--max-depth <n>] [--bundle-id <id>]`。`--max-depth 0` はルートだけ |
+| `screenshot` | `relay screenshot [-o <file>\|-] [--format png\|jpeg] [--quality 0.05-1.0] [--max-size <px>] [--scale <px/pt>]`。保存先の絶対パスを 1 行出します（既定は `$TMPDIR/relay/screenshot-<時刻>.png`）。`.jpg` / `.jpeg` の拡張子か `--quality` で JPEG（既定の quality 0.7）。`--max-size` は長辺の画素数、`--scale` は 1 ポイントあたりの画素数の上限で、端末側で縮小します（両方なら小さい方。拡大はしない）。縮小したときは stderr に画像と画面の大きさと px/pt を出します（下の「座標と向き」） |
+| `source` | `relay source [--format json\|text\|compact] [--filter interactive] [--max-depth <n>] [--bundle-id <id>]`。`--max-depth 0` はルートだけ。`compact` は 1 行 1 要素、`--filter interactive` は操作できる要素だけ（下の「要素ツリーの形式」） |
 | `find` | `relay find <selector> [--limit 20] [--timeout <s>] [--bundle-id <id>]`。`--limit` は 1–100、`--timeout` は最大 10 秒 |
 | `tap` | `relay tap (<x> <y> \| <selector>) [--mode private\|xcui] [--timeout <s>] [--bundle-id <id>]`。`--timeout`・`--bundle-id` はセレクタのときだけ |
 | `press` | `relay press (<x> <y> \| <selector>) [--duration 1.0] [--mode private\|xcui] [--timeout <s>] [--bundle-id <id>]` |
@@ -122,6 +122,30 @@ runner.json: /Users/<you>/.relay/runner.json
 
 - `--type` の名前、キー名、ボタン名、向き、数値の範囲は送る前に確認され、間違っていれば終了コード 1 で何も送りません（例: `relay key tab` → `unsupported key 'tab'`）。
 - `--mode` は通常指定しません（既定の `private` が速い。`xcui` はアプリのアイドルを待つので 1 回 1–2 秒）。
+
+## 要素ツリーの形式
+
+| コマンド | 出力 | 設定のトップでの大きさ |
+| --- | --- | --- |
+| `relay source --format compact --filter interactive` | 操作できる要素だけ、1 行 1 要素（ふだんはこれ） | 12 行、約 1 KB |
+| `relay source --filter interactive` | 同じ要素の JSON（`elements` の配列） | 約 2.3 KB |
+| `relay source --format compact` | 全要素、1 行 1 要素、字下げで親子関係 | 167 行、約 11 KB |
+| `relay source` | 全要素の JSON ツリー（`placeholder`、`enabled`、`hasKeyboardFocus` なども） | 約 37 KB |
+| `relay source --format text` | XCUI の `debugDescription`（遅い。人が読む用） | 約 17 KB |
+
+compact の 1 行: `type`、空でない `label="…"`・`id="…"`（identifier）・`value="…"`・`placeholder="…"`（JSON の文字列）、`frame=x,y,width,height`（ポイント、整数に丸め）、フラグ（`selected`、`focused`＝キーボードのフォーカス、`disabled`、`truncated`）。
+
+```
+textField id="relay.input" placeholder="Type here" frame=16,86,370,34 focused
+button label="General" id="com.apple.settings.general" frame=16,293,370,52
+```
+
+`--filter interactive` に残るもの・外れるもの:
+
+- 残る: ボタン、セル、リンク、ホーム画面のアイコン、タブ、スイッチ、スライダー、ステッパー、ピッカー、入力欄（`textField`・`secureTextField`・`searchField`・`textView`）などで、identifier・label・placeholder のどれかを持つもの（入力欄は何もなくても残る）。名前のないセルは、中のラベル付きテキストが代わりに残る（テキストをタップするとセルに当たる）
+- 外れる: 無効（`enabled: false`）、画面の外、キーボードとそのキー、タップ位置がキーボードや手前のコントロール（下部の検索バーなど）に隠れたもの、見出しや本文のテキスト、画像、入れ物（`table` など）
+- 隠れているかの判定は近似です。コントロールでないシートの下にある要素は残るので、スクリーンショットで見えていることを確かめます。
+- セレクタは全体のツリーから探します。同じラベルの `staticText` があると `--label` だけでは `ambiguous` になるので、行の `type` も付けるか `--id` を使います。
 
 ## 要素セレクタ
 
@@ -154,7 +178,9 @@ stderr に JSON が出ます。
 ## 座標と向き
 
 - 座標は前面アプリの表示の向きでの、画面左上を原点とするポイント単位です。縦向きなら `relay health` の `screen` が例えば 402×874、横向きなら 874×402 になります。
-- スクリーンショットの画素は `screen.width × scale` × `screen.height × scale` です。画像上の位置から座標を出すときは scale で割ります。
+- フル解像度のスクリーンショットの画素は `screen.width × scale` × `screen.height × scale` です。画像上の位置から座標を出すときは scale で割ります。
+- `--scale 1` の画像は画素 = ポイントです（iPhone 17 Pro の縦向きで 402×874）。`--max-size` などで縮小した画像は、stderr の `relay: image 471x1024 px, screen 402x874 pt, 1.172 px/pt (tap in points: px / 1.172)` の px/pt で割ります（例: (120, 375) px → (102, 320) pt）。curl では応答ヘッダー `X-Relay-Image-Scale` などで同じ値が得られます。
+- タップやスワイプの座標は、どの画像を使っても常にポイントです。
 - `relay orientation` の後は `relay health` の `orientation` と `screen` を読み直します。iPhone のアプリの多くは `portraitUpsideDown` に回転しません。
 - 詳しくは README の「座標系と画面の向き」。
 

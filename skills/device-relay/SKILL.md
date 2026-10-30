@@ -22,8 +22,9 @@ relay status                                    # 0: 応答あり（それを使
 relay devices                                   # 端末の一覧（NAME、UDID、KIND、OS、STATE）
 relay start --background --device "<名前>"      # または --udid <UDID>（--os <version> で絞れる）。ready まで待ち、stdout に ready:/device:/pid:/log:/token: を出して 0
 relay launch <bundle-id>                        # 対象アプリを起動・前面化
-relay screenshot                                # 保存先の絶対パスが出る → そのファイルを画像として読む
-relay find --type button                        # 要素の一覧（JSON）。全体は relay source
+relay screenshot --scale 1                      # 保存先の絶対パスが出る → そのファイルを画像として読む（1 px = 1 pt）
+relay source --format compact --filter interactive   # 操作できる要素を 1 行 1 要素で
+relay find --type button                        # セレクタに一致する要素（JSON）
 relay tap --id <identifier>                     # 要素を指定して操作
 relay find --id <次の画面の要素> --timeout 5    # 結果を待ってから観察し直す
 relay stop                                      # 自分で起動したときだけ。stopped か not running で 0
@@ -40,10 +41,13 @@ relay stop                                      # 自分で起動したときだ
 
 ## 観察
 
-- `relay screenshot` は PNG を保存して絶対パスを 1 行出します。そのファイルを読んで画面を見ます。小さくしたいときは `-o <file>.jpg` か `--quality 0.5`（JPEG）。
-- `relay find <セレクタ>` は一致した要素の `type`・`identifier`・`label`・`value`・`frame`・`enabled`・`index` を返します。要素を探すにはこれがいちばん速く、一致がなくても終了コード 0（`"count":0`）です。
-- `relay source` は要素ツリー全体の JSON です（大きいので `jq` で絞るか `--max-depth <n>`）。人が読むなら `--format text`。どちらも `--bundle-id` がなければ前面アプリが対象です。
-- スクリーンショットは利用者に見えるもの、ツリーは指定できるものです。画面の理解にはスクリーンショット、セレクタを決めるには `find` / `source` と、両方を使います。
+- **ふだんは縮小したスクリーンショットと絞り込んだツリーを使います。** フル解像度の画像や全体のツリーは大きく（設定のトップで画像 1206×2622 px、ツリー 37 KB）、読むたびにコンテキストを使います。
+- `relay screenshot --scale 1` は、端末側で 1 ポイント = 1 画素に縮小した PNG を保存し、絶対パスを 1 行出します（iPhone で約 400×870 px）。そのファイルを読んで画面を見ます。画像の画素がそのままタップのポイントになります。stderr の `relay: image … px, screen … pt, … px/pt` で確かめられます。iPad など画面が大きいときは `--max-size 1024` も付けます（そのときは画素を stderr の px/pt で割るとポイント）。
+- 小さな文字や細部を確かめたいときだけ、フル解像度の `relay screenshot`（オプションなし）を使います。その画像の画素はポイント × scale（iPhone では 3）です。
+- `relay source --format compact --filter interactive` は、画面に見えていて有効な、操作できる要素（ボタン、セル、入力欄、スイッチなど）だけを 1 行 1 要素で出します（設定のトップで 12 行・約 1 KB）。行の `type`・`label`・`id`・`value` はそのままセレクタに使えます: `button label="General" id="com.apple.settings.general" frame=16,293,370,52` → `relay tap --id com.apple.settings.general` か `relay tap --type button --label General`。キーボードのキーは出ません（`relay type` / `relay key` を使う）。JSON がほしければ `--format compact` を外します。
+- 一覧にない要素（見出しや結果のテキスト、無効なボタン）を確かめたいときは、`relay find <セレクタ>` か、全体のツリー `relay source --format compact`（1 行 1 要素、字下げで親子関係）を使います。`relay source`（JSON）と `--format text` は大きいので、必要なときだけ（JSON は `jq` で絞るか `--max-depth <n>`）。どれも `--bundle-id` がなければ前面アプリが対象です。
+- `relay find <セレクタ>` は一致した要素の `type`・`identifier`・`label`・`value`・`frame`・`enabled`・`index` を返します。決まった要素を探すにはこれがいちばん速く、一致がなくても終了コード 0（`"count":0`）です。
+- スクリーンショットは利用者に見えるもの、ツリーは指定できるものです。画面の理解にはスクリーンショット、セレクタを決めるには絞り込んだツリーや `find` と、両方を使います。
 
 ## 操作
 
@@ -58,7 +62,7 @@ relay press --label "Photo" --type cell --duration 1.0
 
 - アプリが accessibilityIdentifier を付けていれば `--id`、なければ `--label` と `--type` を使います（セルは同じラベルの `button` と `staticText` の 2 つに見えることが多いので `--type` を足す）。
 - `ambiguous` で失敗したら、候補を読んで条件か `--index` を足します。
-- 座標（`relay tap <x> <y>`、`relay swipe <x1> <y1> <x2> <y2>`）は、表示の向きでの画面左上を原点とするポイント単位です。要素の `frame` や `relay health` の `screen.width` / `screen.height` から求め、スクリーンショットの画素から求めないでください（画素 = ポイント × scale）。座標は、スクロールなど要素で指定できない操作だけに使います（例: `relay swipe 200 700 200 200` で下から上へ）。
+- 座標（`relay tap <x> <y>`、`relay swipe <x1> <y1> <x2> <y2>`）は、表示の向きでの画面左上を原点とするポイント単位です。要素の `frame` や `relay health` の `screen.width` / `screen.height` から求めます。スクリーンショットから求めるときは、`--scale 1` の画像なら画素がそのままポイント、それ以外は画素を stderr の px/pt（フル解像度なら scale）で割ります。座標は、スクロールなど要素で指定できない操作だけに使います（例: `relay swipe 200 700 200 200` で下から上へ）。
 - 文字入力: 入力欄をタップしてから `relay type "text"`。確定は `--key return` を付けます。1 文字消すのは `relay key delete`。キーは `return`・`delete`・`space` だけです。`-` で始まる文字列は `relay type -- -text` のように `--` を挟みます。
 - **sleep せずに待つ。** 画面が変わる操作の後は、次の画面にある要素を `relay find <セレクタ> --timeout <秒>`（最大 10 秒。`count` を確認）で待つか、`tap` / `press` に `--timeout` を付けて要素が現れるのを待たせます。もっと長く待つときは短い timeout を繰り返します。
 - **画面が変わったら観察し直す。** frame、index、前面アプリは変わります。前の画面のセレクタや座標を確かめずに使い回さないでください。

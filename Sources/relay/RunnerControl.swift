@@ -90,6 +90,9 @@ enum RunnerControl {
             } catch {
                 return fail("cannot save the screenshot: \(error)", code: .usage)
             }
+            if screenshot.isResized, let summary = screenshotSummary(response.headers) {
+                FileHandle.standardError.write(Data("relay: \(summary)\n".utf8))
+            }
         } else {
             write(response.body, to: .standardOutput)
         }
@@ -105,6 +108,20 @@ enum RunnerControl {
         default:
             return nil
         }
+    }
+
+    /// How the image maps to tap coordinates, from the `/screenshot` headers: `image 471x1024 px, screen
+    /// 402x874 pt, 1.172 px/pt (tap in points: px / 1.172)`. Nil when a runner without them answered.
+    static func screenshotSummary(_ headers: [String: String]) -> String? {
+        // URLSession may change the case of header names.
+        func value(_ name: String) -> String? {
+            headers.first { $0.key.caseInsensitiveCompare(name) == .orderedSame }?.value
+        }
+        typealias Header = RunnerRequestValues.ScreenshotHeader
+        guard let imageWidth = value(Header.imageWidth), let imageHeight = value(Header.imageHeight),
+              let screenWidth = value(Header.screenWidth), let screenHeight = value(Header.screenHeight),
+              let scale = value(Header.scale) else { return nil }
+        return "image \(imageWidth)x\(imageHeight) px, screen \(screenWidth)x\(screenHeight) pt, \(scale) px/pt (tap in points: px / \(scale))"
     }
 
     /// Writes the image and returns its absolute path, or writes it to stdout for `-o -` and returns nil.

@@ -10,7 +10,9 @@ enum Bench {
         var cases: [(name: String, request: () throws -> RunnerResponse)] = [
             ("GET /health", { try client.get("/health") }),
             ("GET /screenshot (png)", { try client.get("/screenshot") }),
-            ("GET /screenshot (jpeg q=0.5)", { try client.get("/screenshot?format=jpeg&quality=0.5") })
+            ("GET /screenshot (jpeg q=0.5)", { try client.get("/screenshot?format=jpeg&quality=0.5") }),
+            ("GET /screenshot (png scale=1)", { try client.get("/screenshot?scale=1") }),
+            ("GET /screenshot (jpeg 1024px)", { try client.get("/screenshot?format=jpeg&maxSize=1024") })
         ]
         if let tap = options.tap {
             var body: [String: Any] = ["x": tap.x, "y": tap.y]

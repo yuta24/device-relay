@@ -623,6 +623,153 @@ struct RunnerElementTreeTests {
         let data = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
         #expect(String(decoding: data, as: UTF8.self) == #"{"x":201,"y":213.167}"#)
     }
+
+    private let screen = CGRect(x: 0, y: 0, width: 402, height: 874)
+
+    private func element(
+        _ type: String, identifier: String = "", label: String = "", placeholder: String? = nil,
+        frame: CGRect = CGRect(x: 16, y: 100, width: 370, height: 44), enabled: Bool = true,
+        children: [RunnerElementNode] = []
+    ) -> RunnerElementNode {
+        var element = node(type, children: children)
+        element.identifier = identifier
+        element.label = label
+        element.placeholder = placeholder
+        element.frame = frame
+        element.enabled = enabled
+        return element
+    }
+
+    private func filtered(_ children: [RunnerElementNode]) -> [String] {
+        let root = element("application", label: "App", frame: screen, children: [element("window", frame: screen, children: children)])
+        return RunnerElementTree.interactiveElements(in: root, screen: screen).map { "\($0.type) \($0.label)\($0.identifier)" }
+    }
+
+    /// The frame of the nth row of a list, so elements don't overlap.
+    private func row(_ index: Int) -> CGRect {
+        CGRect(x: 16, y: 100 + 50 * CGFloat(index), width: 370, height: 44)
+    }
+
+    @Test func keepsNamedControls() {
+        #expect(filtered([
+            element("staticText", label: "Settings", frame: row(0)),
+            element("button", identifier: "com.apple.settings.general", label: "General", frame: row(1),
+                    children: [element("staticText", label: "General", frame: row(1))]),
+            element("switch", label: "Airplane Mode", frame: row(2)),
+            element("cell", identifier: "row.1", frame: row(3)),
+            element("image", label: "photo", frame: row(4)),
+            element("other", frame: row(5), children: [element("link", label: "Help", frame: row(5))])
+        ]) == ["button Generalcom.apple.settings.general", "switch Airplane Mode", "cell row.1", "link Help"])
+    }
+
+    @Test func keepsTextInputsWithoutNames() {
+        #expect(filtered([
+            element("textField", frame: row(0)),
+            element("searchField", placeholder: "Search", frame: row(1)),
+            element("button", frame: row(2))
+        ]) == ["textField ", "searchField "])
+    }
+
+    @Test func dropsDisabledAndOffscreenControls() {
+        #expect(filtered([
+            element("button", label: "Off", frame: row(0), enabled: false),
+            element("cell", label: "Below", frame: CGRect(x: 0, y: 900, width: 402, height: 44)),
+            element("cell", label: "Edge", frame: CGRect(x: 0, y: 850, width: 402, height: 44)),
+            element("button", label: "Empty", frame: CGRect(x: 10, y: 10, width: 0, height: 20))
+        ]) == ["cell Edge"])
+    }
+
+    /// The keys are left to relay type, and a control the keyboard covers can't be tapped.
+    @Test func dropsTheKeyboardAndWhatItCovers() {
+        let keyboard = CGRect(x: 0, y: 538, width: 402, height: 336)
+        #expect(filtered([
+            element("textField", identifier: "relay.input", frame: CGRect(x: 16, y: 86, width: 370, height: 34)),
+            element("button", label: "Submit", frame: CGRect(x: 16, y: 600, width: 370, height: 44)),
+            element("keyboard", frame: keyboard, children: [element("key", label: "q", frame: CGRect(x: 0, y: 550, width: 40, height: 40))])
+        ]) == ["textField relay.input"])
+    }
+
+    /// Settings on iOS 27: the search bar at the bottom covers the middle of the last cell, and the search
+    /// field holds two identical Dictate buttons.
+    @Test func dropsControlsALaterControlCovers() {
+        let dictate = CGRect(x: 342, y: 811, width: 17, height: 22)
+        #expect(filtered([
+            element("button", label: "StandBy", frame: CGRect(x: 16, y: 709, width: 370, height: 52)),
+            element("button", label: "Screen Time", frame: CGRect(x: 16, y: 796, width: 370, height: 52)),
+            element("other", frame: CGRect(x: 28, y: 798, width: 346, height: 48), children: [
+                element("searchField", label: "Search", frame: CGRect(x: 28, y: 808, width: 346, height: 28), children: [
+                    element("button", label: "Dictate", frame: dictate),
+                    element("button", label: "Dictate", frame: dictate)
+                ])
+            ])
+        ]) == ["button StandBy", "searchField Search", "button Dictate"])
+    }
+
+    /// A control's own contents and the controls before it are not on top of it.
+    @Test func keepsControlsUnderTheirContentsAndEarlierControls() {
+        #expect(filtered([
+            element("button", label: "Background", frame: row(0)),
+            element("cell", label: "Row", frame: row(0), children: [element("button", label: "Info", frame: row(0))])
+        ]) == ["cell Row", "button Info"])
+    }
+
+    /// Table cells often have no label of their own; their texts name them, and tapping a text hits the cell.
+    @Test func keepsTheTextsOfUnnamedControls() {
+        #expect(filtered([
+            element("cell", frame: row(0), children: [
+                element("staticText", label: "Wi-Fi", frame: CGRect(x: 30, y: 105, width: 100, height: 30)),
+                element("staticText", label: "Off", frame: CGRect(x: 300, y: 105, width: 50, height: 30)),
+                element("image", frame: CGRect(x: 360, y: 105, width: 10, height: 30))
+            ]),
+            element("cell", frame: row(1), enabled: false, children: [element("staticText", label: "Bluetooth", frame: row(1))]),
+            element("staticText", label: "Footer", frame: row(2)),
+            // Settings: cell > other > button "General" > staticText "General"; the button is enough.
+            element("cell", frame: row(3), children: [element("other", frame: row(3), children: [
+                element("button", identifier: "com.apple.settings.general", label: "General", frame: row(3),
+                        children: [element("staticText", label: "General", frame: row(3))])
+            ])])
+        ]) == ["staticText Wi-Fi", "staticText Off", "button Generalcom.apple.settings.general"])
+    }
+
+    @Test func buildsFilteredJSON() throws {
+        var field = element("textField", identifier: "relay.input", placeholder: "Type here",
+                            frame: CGRect(x: 16, y: 83.3333333, width: 370, height: 34))
+        field.value = "hello"
+        let object = RunnerElementTree.filteredJSON([field], filter: .interactive, bundleID: "com.example")
+        let data = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+        #expect(String(decoding: data, as: UTF8.self) == """
+            {"bundleId":"com.example","count":1,"elements":[{"frame":{"height":34,"width":370,"x":16,"y":83.333},\
+            "identifier":"relay.input","label":"","placeholder":"Type here","selected":false,"type":"textField","value":"hello"}],\
+            "filter":"interactive","ok":true}
+            """)
+    }
+
+    @Test func writesOneLinePerElement() {
+        var field = element("textField", identifier: "relay.input", label: "Name \"first\"\nline", frame: CGRect(x: 16, y: 83.6, width: 370, height: 34))
+        field.value = "a/b"
+        field.hasKeyboardFocus = true
+        var tab = element("button", label: "Home", enabled: false)
+        tab.selected = true
+        #expect(RunnerElementTree.compactText([field, tab]) == """
+            textField label="Name \\"first\\"\\nline" id="relay.input" value="a/b" frame=16,84,370,34 focused
+            button label="Home" frame=16,100,370,44 selected disabled
+
+            """)
+    }
+
+    @Test func indentsTheWholeTreeInCompactText() {
+        let root = element("application", label: "App", frame: screen, children: [
+            element("window", frame: screen, children: [element("button", label: "OK")]),
+            node("other", truncated: true)
+        ])
+        #expect(RunnerElementTree.compactText(root) == """
+            application label="App" frame=0,0,402,874
+              window frame=0,0,402,874
+                button label="OK" frame=16,100,370,44
+              other frame=0,0,0,0 truncated
+
+            """)
+    }
 }
 
 struct RunnerElementSelectorTests {
@@ -858,6 +1005,60 @@ struct RunnerRequestValuesTests {
             #expect(RunnerRequestValues.jpegQuality(value) == nil, "\(value)")
         }
     }
+
+    @Test func parsesScreenshotSizeQueries() {
+        #expect(RunnerRequestValues.screenshotMaxSize("1024") == 1024)
+        #expect(RunnerRequestValues.screenshotMaxSize("16") == 16)
+        for value in ["15", "0", "-1", "1.5", "", "abc"] {
+            #expect(RunnerRequestValues.screenshotMaxSize(value) == nil, "\(value)")
+        }
+        #expect(RunnerRequestValues.screenshotScale("1") == 1)
+        #expect(RunnerRequestValues.screenshotScale("0.1") == 0.1)
+        #expect(RunnerRequestValues.screenshotScale("10") == 10)
+        for value in ["0", "0.09", "10.5", "-1", "", "nan", "inf"] {
+            #expect(RunnerRequestValues.screenshotScale(value) == nil, "\(value)")
+        }
+    }
+
+    /// iPhone 17 Pro: 1206x2622 pixels, 402x874 points at 3x.
+    private let portrait = CGSize(width: 1206, height: 2622)
+
+    @Test func shrinksScreenshotsToTheLongerEdge() {
+        #expect(RunnerRequestValues.screenshotSize(pixels: portrait, screenScale: 3, maxSize: 1024, scale: nil)
+            == CGSize(width: 471, height: 1024))
+        // Landscape keeps the same pixels per point.
+        #expect(RunnerRequestValues.screenshotSize(pixels: CGSize(width: 2622, height: 1206), screenScale: 3, maxSize: 1024, scale: nil)
+            == CGSize(width: 1024, height: 471))
+    }
+
+    @Test func shrinksScreenshotsToPixelsPerPoint() {
+        #expect(RunnerRequestValues.screenshotSize(pixels: portrait, screenScale: 3, maxSize: nil, scale: 1)
+            == CGSize(width: 402, height: 874))
+        #expect(RunnerRequestValues.screenshotSize(pixels: portrait, screenScale: 3, maxSize: nil, scale: 1.5)
+            == CGSize(width: 603, height: 1311))
+        // Both: the smaller one wins.
+        #expect(RunnerRequestValues.screenshotSize(pixels: portrait, screenScale: 3, maxSize: 600, scale: 1)
+            == CGSize(width: 276, height: 600))
+        #expect(RunnerRequestValues.screenshotSize(pixels: portrait, screenScale: 3, maxSize: 2000, scale: 1)
+            == CGSize(width: 402, height: 874))
+    }
+
+    @Test func neverEnlargesScreenshots() {
+        for (maxSize, scale) in [(nil, nil), (2622, nil), (5000, nil), (nil, 3.0), (nil, 4.0), (4000, 5.0)] as [(Int?, Double?)] {
+            #expect(RunnerRequestValues.screenshotSize(pixels: portrait, screenScale: 3, maxSize: maxSize, scale: scale) == portrait,
+                    "\(String(describing: maxSize)) \(String(describing: scale))")
+        }
+    }
+
+    @Test func describesScreenshotsInHeaders() {
+        let headers = RunnerRequestValues.screenshotHeaders(image: CGSize(width: 471, height: 1024), screen: CGSize(width: 402, height: 874))
+        #expect(headers == [
+            "X-Relay-Image-Width": "471", "X-Relay-Image-Height": "1024",
+            "X-Relay-Screen-Width": "402", "X-Relay-Screen-Height": "874", "X-Relay-Image-Scale": "1.172"
+        ])
+        let full = RunnerRequestValues.screenshotHeaders(image: CGSize(width: 2622, height: 1206), screen: CGSize(width: 874, height: 402))
+        #expect(full["X-Relay-Image-Scale"] == "3")
+    }
 }
 
 struct CommandGateTests {
@@ -937,12 +1138,35 @@ struct RunnerArgumentsTests {
         #expect(throws: ArgumentError.self) { try Arguments.parse(["screenshot", "--format", "gif"]) }
     }
 
+    @Test func parsesScreenshotSize() throws {
+        #expect(try operation(["screenshot", "--max-size", "1024"]) == .screenshot(RunnerScreenshot(maxSize: 1024)))
+        #expect(try operation(["screenshot", "--scale", "1"]) == .screenshot(RunnerScreenshot(scale: 1)))
+        #expect(try operation(["screenshot", "--max-size", "1024", "--scale", "1", "-o", "a.jpg"])
+            == .screenshot(RunnerScreenshot(format: "jpeg", maxSize: 1024, scale: 1, output: "a.jpg")))
+        for invalid in [["--max-size", "15"], ["--max-size", "1.5"], ["--max-size", "abc"], ["--scale", "0"],
+                        ["--scale", "0.09"], ["--scale", "11"], ["--scale", "nan"], ["--max-size", "1024", "--max-size", "512"]] {
+            #expect(throws: ArgumentError.self, "\(invalid)") { try Arguments.parse(["screenshot"] + invalid) }
+        }
+    }
+
     @Test func parsesSource() throws {
-        #expect(try operation(["source"]) == .source(format: nil, maxDepth: nil, bundleID: nil))
+        #expect(try operation(["source"]) == .source(format: nil, maxDepth: nil, filter: nil, bundleID: nil))
         #expect(try operation(["source", "--format", "text", "--max-depth", "3", "--bundle-id", "com.apple.Preferences"])
-            == .source(format: "text", maxDepth: 3, bundleID: "com.apple.Preferences"))
+            == .source(format: "text", maxDepth: 3, filter: nil, bundleID: "com.apple.Preferences"))
         #expect(throws: ArgumentError.self) { try Arguments.parse(["source", "--max-depth", "-1"]) }
         #expect(throws: ArgumentError.self) { try Arguments.parse(["source", "--bundle-id", ""]) }
+    }
+
+    @Test func parsesSourceFilterAndCompactFormat() throws {
+        #expect(try operation(["source", "--filter", "interactive"])
+            == .source(format: nil, maxDepth: nil, filter: "interactive", bundleID: nil))
+        #expect(try operation(["source", "--format", "compact", "--filter", "interactive"])
+            == .source(format: "compact", maxDepth: nil, filter: "interactive", bundleID: nil))
+        #expect(try operation(["source", "--format", "compact"]) == .source(format: "compact", maxDepth: nil, filter: nil, bundleID: nil))
+        // debugDescription can't be filtered.
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["source", "--format", "text", "--filter", "interactive"]) }
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["source", "--filter", "buttons"]) }
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["source", "--format", "xml"]) }
     }
 
     @Test func parsesFindSelector() throws {
@@ -1058,10 +1282,14 @@ struct RunnerOperationTests {
         #expect(RunnerOperation.health.request.path == "/health")
         #expect(RunnerOperation.screenshot(RunnerScreenshot()).request.path == "/screenshot")
         #expect(RunnerOperation.screenshot(RunnerScreenshot(format: "jpeg", quality: 0.5)).request.path == "/screenshot?format=jpeg&quality=0.5")
-        let source = RunnerOperation.source(format: "text", maxDepth: 3, bundleID: "com.apple.Preferences").request
+        let source = RunnerOperation.source(format: "text", maxDepth: 3, filter: nil, bundleID: "com.apple.Preferences").request
         #expect(source.method == "GET")
         #expect(source.path == "/source?format=text&maxDepth=3&bundleId=com.apple.Preferences")
         #expect(source.body == nil)
+        #expect(RunnerOperation.source(format: "compact", maxDepth: nil, filter: "interactive", bundleID: nil).request.path
+            == "/source?format=compact&filter=interactive")
+        #expect(RunnerOperation.screenshot(RunnerScreenshot(format: "jpeg", maxSize: 1024, scale: 1)).request.path
+            == "/screenshot?format=jpeg&maxSize=1024&scale=1.0")
     }
 
     @Test func buildsTouchBodies() throws {
@@ -1201,5 +1429,16 @@ struct RunnerControlTests {
             == "/work/app/shots/a.png")
         #expect(RunnerControl.screenshotURL(RunnerScreenshot(output: "/abs/b.png"), currentDirectory: current, temporaryDirectory: temporary).path
             == "/abs/b.png")
+    }
+
+    @Test func summarizesScreenshotHeaders() {
+        let headers = RunnerRequestValues.screenshotHeaders(image: CGSize(width: 1024, height: 471), screen: CGSize(width: 874, height: 402))
+        #expect(RunnerControl.screenshotSummary(headers)
+            == "image 1024x471 px, screen 874x402 pt, 1.172 px/pt (tap in points: px / 1.172)")
+        // URLSession may hand the names back in another case.
+        let lowercased = Dictionary(uniqueKeysWithValues: headers.map { ($0.key.lowercased(), $0.value) })
+        #expect(RunnerControl.screenshotSummary(lowercased) == RunnerControl.screenshotSummary(headers))
+        // A runner from before the headers.
+        #expect(RunnerControl.screenshotSummary(["Content-Type": "image/png"]) == nil)
     }
 }
