@@ -209,7 +209,7 @@ relay find --id relay.submitted       # label が "submitted #1: hello"
 
 | 症状 | 原因と対処 | README |
 | --- | --- | --- |
-| 起動時に `Failed to initialize for UI testing`（`Timed out while enabling automation mode.`） | 実機では、automation mode の有効化で端末がパスコードの入力を求め、入力されないまま時間切れになったことが多い（「UI オートメーション」が無効な場合も同じエラーになる）。利用者に、端末にパスコード入力画面が出ていたら入力してもらうよう依頼してから、`relay start` し直す（許可はしばらく有効なので、直後の起動は通りやすい）。`reusing …` の後に note が出ていたら、その指示どおり作り直す（チェックアウトなら `relay start --rebuild`、`relay install` で入れた Runner なら `relay install` をやり直してから `relay start --rebuild`）。それでも続くなら 設定 > デベロッパ >「UI オートメーションを有効にする」がオンか確認してもらう。シミュレータでは一時的なことが多いので 1 回だけ起動し直す | 「実機」 |
+| 起動時に `Failed to initialize for UI testing`（`Timed out while enabling automation mode.`） | 実機では、automation mode の有効化で端末がパスコードの入力を求め、入力されないまま時間切れになったことが多い（「UI オートメーション」が無効な場合も同じエラーになる）。利用者に、端末にパスコード入力画面が出ていたら入力してもらうよう依頼してから、`relay start` し直す（許可はしばらく有効なので、直後の起動は通りやすい）。`reusing …` の後に note が出ていたら、その指示どおり作り直す（チェックアウトなら `relay start --rebuild`、`relay install` で入れた Runner（`~/.relay/runner`。`--project` や `$RELAY_HOME` で指定した場合も）なら `relay install` をやり直してから `relay start --rebuild`）。それでも続くなら 設定 > デベロッパ >「UI オートメーションを有効にする」がオンか確認してもらう。シミュレータでは一時的なことが多いので 1 回だけ起動し直す | 「実機」 |
 | 実機で「信頼されていないデベロッパ」 | Personal Team などの証明書。設定 > 一般 > VPNとデバイス管理 で信頼してもらってから起動し直す | 「実機」 |
 | `relay doctor` でロック中（`passcodeRequired`）、操作が効かない | 実機のロックを解除してもらう | 「環境の確認（relay doctor）」 |
 | `--allow-wifi` で届かない | 端末の「ローカルネットワーク」の許可ダイアログで許可してもらう | 「実機」「既知の制約」 |

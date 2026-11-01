@@ -53,8 +53,6 @@ final class RunnerLauncher {
     private let deviceName: String?
     /// The runner root (see `RunnerProject`).
     private let rootURL: URL
-    /// Where `rootURL` came from: an installed copy needs `relay install` before `--rebuild` picks up changes.
-    private let source: RunnerProject.Source
     /// `DerivedData-sim` / `DerivedData-device` go here (`RunnerProject.buildDirectory`).
     private let buildURL: URL
     /// `~/.relay`: logs and runner.json. Nothing goes to the current directory, which is usually the
@@ -79,7 +77,6 @@ final class RunnerLauncher {
         udid: String,
         isSimulator: Bool,
         rootURL: URL,
-        source: RunnerProject.Source,
         buildURL: URL,
         deviceName: String? = nil,
         stateURL: URL = RunnerLocator.userURL().deletingLastPathComponent(),
@@ -89,7 +86,6 @@ final class RunnerLauncher {
         self.udid = udid
         self.isSimulator = isSimulator
         self.rootURL = rootURL
-        self.source = source
         self.buildURL = buildURL
         self.deviceName = deviceName
         self.stateURL = stateURL
@@ -107,7 +103,7 @@ final class RunnerLauncher {
             xctestrun = existing
             info("reusing \(existing.lastPathComponent)")
             if let data = try? Data(contentsOf: existing), !Self.passesApplicationStateTimeout(xctestrun: data) {
-                info("note: \(Self.staleApplicationStateTimeoutNote(source: source))")
+                info("note: \(Self.staleApplicationStateTimeoutNote(root: rootURL))")
             }
         } else {
             let buildLogURL = try Self.createLog("build", in: logsURL, stamp: stamp, port: options.port)
@@ -450,10 +446,11 @@ final class RunnerLauncher {
     }
 
     /// The note for a reused `.xctestrun` without `applicationStateTimeoutArgument`. `--rebuild` builds the
-    /// installed copy as it is, so that copy needs `relay install` first to get the current scheme.
-    static func staleApplicationStateTimeoutNote(source: RunnerProject.Source) -> String {
+    /// installed copy as it is, so that copy needs `relay install` first to get the current scheme. Decided
+    /// by the root, not how it was found: `--project` or `$RELAY_HOME` can point at the installed copy too.
+    static func staleApplicationStateTimeoutNote(root: URL, home: URL = UserHome.url) -> String {
         let prefix = "this runner was built before relay waited longer for automation mode; "
-        if source == .installed {
+        if RunnerProject.isInstalledRoot(root, home: home) {
             return prefix + "run relay install again, then relay start --rebuild to update it"
         }
         return prefix + "relay start --rebuild to update it"

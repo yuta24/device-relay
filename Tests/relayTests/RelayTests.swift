@@ -243,14 +243,34 @@ struct RunnerLauncherTests {
         #expect(RunnerLauncher.startupFailureHints(for: failure, isSimulator: true).isEmpty)
     }
 
-    /// `--rebuild` alone keeps the installed copy's old scheme, so that copy needs relay install first.
-    @Test func staleBuildNoteDependsOnTheRunnerSource() {
-        let installed = RunnerLauncher.staleApplicationStateTimeoutNote(source: .installed)
-        #expect(installed.contains("run relay install again, then relay start --rebuild"))
-        for source in [RunnerProject.Source.option, .environment, .currentDirectory, .executable] {
-            let note = RunnerLauncher.staleApplicationStateTimeoutNote(source: source)
-            #expect(note.contains("relay start --rebuild"))
-            #expect(!note.contains("relay install"))
+    /// `--rebuild` alone keeps the installed copy's old scheme, so that copy needs relay install first,
+    /// also when `--project` or `$RELAY_HOME` names it rather than relay finding it on its own.
+    @Test func staleBuildNoteAsksForRelayInstallWhenTheRootIsTheInstalledCopy() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).resolvingSymlinksInPath()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let home = root.appendingPathComponent("home")
+        let installed = RunnerProject.installedRoot(home: home)
+        let checkout = root.appendingPathComponent("relay")
+        let current = root.appendingPathComponent("app")
+        for project in [installed, checkout, current] {
+            try FileManager.default.createDirectory(at: project.appendingPathComponent(RunnerProject.projectPath), withIntermediateDirectories: true)
+        }
+        func note(_ explicitPath: String?, environment: [String: String] = [:]) throws -> String {
+            let project = try RunnerProject.resolve(explicitPath: explicitPath, environment: environment, currentDirectory: current,
+                                                    executableURL: nil, home: home)
+            return RunnerLauncher.staleApplicationStateTimeoutNote(root: project.root, home: home)
+        }
+        let reinstall = "run relay install again, then relay start --rebuild"
+
+        #expect(try note(installed.path).contains(reinstall))
+        // Through /private (the temporary directory is a symlink) and with a trailing "/.": the same copy.
+        #expect(try note("/private" + installed.path + "/.").contains(reinstall))
+        #expect(try note(nil, environment: [RunnerProject.environmentKey: installed.path]).contains(reinstall))
+        #expect(RunnerLauncher.staleApplicationStateTimeoutNote(root: installed, home: home).contains(reinstall))
+
+        for other in [try note(checkout.path), try note(nil, environment: [RunnerProject.environmentKey: checkout.path]), try note(nil)] {
+            #expect(other.contains("relay start --rebuild"))
+            #expect(!other.contains("relay install"))
         }
     }
 

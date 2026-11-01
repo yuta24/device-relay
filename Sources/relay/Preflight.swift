@@ -118,7 +118,6 @@ enum DeviceChecks {
 struct StartSetup {
     var options: StartOptions
     var root: URL
-    var source: RunnerProject.Source
     var device: Device
     /// The simulator relay booted, which `finish()` shuts down again.
     var bootedSimulator: String?
@@ -177,7 +176,7 @@ struct StartSetup {
             }
         }
 
-        var setup = StartSetup(options: resolved, root: project.root, source: project.source, device: device, teamConfig: teamConfig)
+        var setup = StartSetup(options: resolved, root: project.root, device: device, teamConfig: teamConfig)
         if device.kind == .simulator, !device.isBooted {
             info("booting simulator \(device.name) (\(device.udid)); it is shut down when relay exits")
             do {

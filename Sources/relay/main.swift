@@ -19,7 +19,7 @@ do {
             exit(1)
         }
         let launcher = RunnerLauncher(options: setup.options, udid: setup.device.udid, isSimulator: setup.device.kind == .simulator,
-                                      rootURL: setup.root, source: setup.source, buildURL: RunnerProject.buildDirectory(root: setup.root),
+                                      rootURL: setup.root, buildURL: RunnerProject.buildDirectory(root: setup.root),
                                       deviceName: setup.device.name)
         launcher.onReady = { setup.saveTeam() }
         let status: Int32
