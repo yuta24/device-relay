@@ -53,6 +53,8 @@ final class RunnerLauncher {
     private let deviceName: String?
     /// The runner root (see `RunnerProject`).
     private let rootURL: URL
+    /// Where `rootURL` came from: an installed copy needs `relay install` before `--rebuild` picks up changes.
+    private let source: RunnerProject.Source
     /// `DerivedData-sim` / `DerivedData-device` go here (`RunnerProject.buildDirectory`).
     private let buildURL: URL
     /// `~/.relay`: logs and runner.json. Nothing goes to the current directory, which is usually the
@@ -77,6 +79,7 @@ final class RunnerLauncher {
         udid: String,
         isSimulator: Bool,
         rootURL: URL,
+        source: RunnerProject.Source,
         buildURL: URL,
         deviceName: String? = nil,
         stateURL: URL = RunnerLocator.userURL().deletingLastPathComponent(),
@@ -86,6 +89,7 @@ final class RunnerLauncher {
         self.udid = udid
         self.isSimulator = isSimulator
         self.rootURL = rootURL
+        self.source = source
         self.buildURL = buildURL
         self.deviceName = deviceName
         self.stateURL = stateURL
@@ -102,6 +106,9 @@ final class RunnerLauncher {
         if !options.rebuild, let existing = Self.findXCTestRun(in: derivedData) {
             xctestrun = existing
             info("reusing \(existing.lastPathComponent)")
+            if let data = try? Data(contentsOf: existing), !Self.passesApplicationStateTimeout(xctestrun: data) {
+                info("note: \(Self.staleApplicationStateTimeoutNote(source: source))")
+            }
         } else {
             let buildLogURL = try Self.createLog("build", in: logsURL, stamp: stamp, port: options.port)
             info("building runner (log: \(buildLogURL.path))")
@@ -163,7 +170,7 @@ final class RunnerLauncher {
 
         if currentRunnerURL() == nil, let failure = currentStartupFailure() {
             info("runner failed to start: \(failure.message)")
-            for hint in Self.startupFailureHints {
+            for hint in Self.startupFailureHints(for: failure, isSimulator: isSimulator) {
                 info("hint: \(hint)")
             }
             info("see \(runnerLogURL.path)")
@@ -427,10 +434,58 @@ final class RunnerLauncher {
             .filter { !$0.isEmpty }
     }
 
-    static let startupFailureHints = [
-        "on the device, turn on Settings > Developer > Enable UI Automation",
-        "unlock the device and keep it unlocked until the runner is ready"
-    ]
+    /// What to suggest after a startup failure. A device that cannot start UI testing most often waited for
+    /// its passcode while enabling automation mode, so that comes first. On a simulator the same failure is
+    /// usually transient. A test failure (`** TEST FAILED **`, ...) has no general fix: the log says why.
+    static func startupFailureHints(for failure: StartupFailure, isSimulator: Bool) -> [String] {
+        guard failure.isUITestingSetup else { return [] }
+        if isSimulator {
+            return ["this is usually transient on a simulator; run relay start again once"]
+        }
+        return [
+            "if the device asked for its passcode while enabling automation mode, enter it and run relay start again",
+            "on the device, turn on Settings > Developer > Enable UI Automation",
+            "unlock the device and keep it unlocked until the runner is ready"
+        ]
+    }
+
+    /// The note for a reused `.xctestrun` without `applicationStateTimeoutArgument`. `--rebuild` builds the
+    /// installed copy as it is, so that copy needs `relay install` first to get the current scheme.
+    static func staleApplicationStateTimeoutNote(source: RunnerProject.Source) -> String {
+        let prefix = "this runner was built before relay waited longer for automation mode; "
+        if source == .installed {
+            return prefix + "run relay install again, then relay start --rebuild to update it"
+        }
+        return prefix + "relay start --rebuild to update it"
+    }
+
+    /// The launch argument (set in the scheme's test action) that makes XCTest wait 120 s instead of 60 s
+    /// for testmanagerd to enable automation mode, which may wait for the passcode on the device. The runner
+    /// puts the 60 s default back once it is enabled.
+    static let applicationStateTimeoutArgument = "-XCUIApplicationStateTimeout"
+
+    /// Whether an `.xctestrun` passes `applicationStateTimeoutArgument` to the runner, i.e. was built from
+    /// a scheme that has it. Format 1 keeps test targets at the top level and format 2 under
+    /// `TestConfigurations[].TestTargets[]`, so any nested `CommandLineArguments` counts. False for a plist
+    /// that can't be read.
+    static func passesApplicationStateTimeout(xctestrun data: Data) -> Bool {
+        guard let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) else {
+            return false
+        }
+        func search(_ value: Any) -> Bool {
+            if let dictionary = value as? [String: Any] {
+                if let arguments = dictionary["CommandLineArguments"] as? [String], arguments.contains(applicationStateTimeoutArgument) {
+                    return true
+                }
+                return dictionary.values.contains(where: search)
+            }
+            if let array = value as? [Any] {
+                return array.contains(where: search)
+            }
+            return false
+        }
+        return search(plist)
+    }
 
     /// Detects xcodebuild output that means the runner will never become ready, e.g.
     /// `... Failed to initialize for UI testing: Error Domain=... "Timed out while enabling automation mode." ...`.

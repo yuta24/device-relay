@@ -94,7 +94,7 @@ relay press --label "Photo" --type cell --duration 1.0
 
 ## よくある失敗
 
-- `Failed to initialize for UI testing`（`Timed out while enabling automation mode.`）: 実機では 設定 > デベロッパ >「UI オートメーションを有効にする」をオンにしてもらう。シミュレータなら 1 回だけ起動し直す。
+- `Failed to initialize for UI testing`（`Timed out while enabling automation mode.`）: 実機では、有効化のときに端末がパスコードの入力を求めていることがある。利用者に、端末にパスコード入力画面が出ていたら入力してもらうよう依頼してから起動し直す（古いビルドの note が出ていたら、その指示どおり `--rebuild`、`relay install` で入れた Runner なら先に `relay install` をやり直す）。続くなら 設定 > デベロッパ >「UI オートメーションを有効にする」をオンにしてもらう。シミュレータなら 1 回だけ起動し直す。
 - 実機で「信頼されていないデベロッパ」: 設定 > 一般 > VPNとデバイス管理 で開発元を信頼してもらってから、起動し直す。
 - 実機がロックされている: 利用者にロックを解除してもらう。
 - ローカルネットワークの許可（実機で `--allow-wifi` のとき）: 端末のダイアログで許可してもらう。

@@ -19,6 +19,7 @@ final class RelayRunnerUITests: XCTestCase {
 
     func testRunServer() throws {
         continueAfterFailure = true
+        Self.restoreApplicationStateTimeout()
 
         let environment = ProcessInfo.processInfo.environment
         let port = UInt16(environment["RELAY_RUNNER_PORT"] ?? "") ?? 8100
@@ -809,6 +810,19 @@ final class RelayRunnerUITests: XCTestCase {
 
     private static func emit(_ line: String) {
         FileHandle.standardOutput.write(Data("\(line)\n".utf8))
+    }
+
+    /// XCTest's default wait for an app to reach a requested state, which `/launch` and `/terminate` use.
+    private static let defaultApplicationStateTimeout: Double = 60
+
+    /// The scheme passes `-XCUIApplicationStateTimeout 120` because XCTest waits that long, before any test
+    /// runs, for testmanagerd to enable automation mode, and a device may wait for its passcode before it does.
+    /// Once that is done, put the timeout back so a hung app launch doesn't hold a command for two minutes.
+    /// `_XCTSetApplicationStateTimeout` is private (XCUIAutomation.framework); without it, keep the longer one.
+    private static func restoreApplicationStateTimeout() {
+        guard let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "_XCTSetApplicationStateTimeout") else { return }
+        typealias SetTimeout = @convention(c) (Double) -> Void
+        unsafeBitCast(symbol, to: SetTimeout.self)(defaultApplicationStateTimeout)
     }
 }
 
