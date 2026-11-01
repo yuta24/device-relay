@@ -37,14 +37,19 @@ enum RunnerProject {
         home.appendingPathComponent(".relay", isDirectory: true).appendingPathComponent("runner", isDirectory: true)
     }
 
+    /// Whether `root` is the copy `relay install` made, however it was found (`--project` can name it too).
+    static func isInstalledRoot(_ root: URL, home: URL = UserHome.url) -> Bool {
+        root.canonicalFileURL.path == installedRoot(home: home).canonicalFileURL.path
+    }
+
     /// Where the runner at `root` is built: `~/.relay/build/installed` for the installed copy, else a
     /// directory per checkout path, so builds of different sources never reuse each other's `.xctestrun`.
     static func buildDirectory(root: URL, home: URL = UserHome.url) -> URL {
         let builds = home.appendingPathComponent(".relay/build", isDirectory: true)
-        let root = root.canonicalFileURL
-        if root.path == installedRoot(home: home).canonicalFileURL.path {
+        if isInstalledRoot(root, home: home) {
             return builds.appendingPathComponent("installed", isDirectory: true)
         }
+        let root = root.canonicalFileURL
         let key = RunnerAuth.tokenHash(root.path).prefix(12)
         return builds.appendingPathComponent("\(root.lastPathComponent)-\(key)", isDirectory: true)
     }

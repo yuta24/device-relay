@@ -184,6 +184,96 @@ struct RunnerLauncherTests {
         ))
     }
 
+    @Test func detectsTheApplicationStateTimeoutInXCTestRun() throws {
+        func xctestrun(_ plist: Any) throws -> Data {
+            try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+        }
+        let arguments = ["-XCUIApplicationStateTimeout", "120"]
+        // Format 1: test targets at the top level.
+        #expect(RunnerLauncher.passesApplicationStateTimeout(xctestrun: try xctestrun([
+            "__xctestrun_metadata__": ["FormatVersion": 1],
+            "RelayRunnerUITests": ["CommandLineArguments": arguments]
+        ])))
+        // Format 2: test targets under TestConfigurations.
+        #expect(RunnerLauncher.passesApplicationStateTimeout(xctestrun: try xctestrun([
+            "__xctestrun_metadata__": ["FormatVersion": 2],
+            "TestConfigurations": [["TestTargets": [["CommandLineArguments": arguments]]]]
+        ])))
+        // Built before the scheme passed it, or passed only to the target app.
+        #expect(!RunnerLauncher.passesApplicationStateTimeout(xctestrun: try xctestrun([
+            "RelayRunnerUITests": ["CommandLineArguments": [String](), "UITargetAppCommandLineArguments": arguments]
+        ])))
+        #expect(!RunnerLauncher.passesApplicationStateTimeout(xctestrun: Data("not a plist".utf8)))
+    }
+
+    /// XCTest waits `XCUIApplicationStateTimeout` (60 s by default) for automation mode, which a device may
+    /// not enable until someone enters its passcode. The scheme passes a longer one to the runner as two arguments, so it
+    /// reaches NSUserDefaults as a key and a value.
+    @Test func schemePassesTheApplicationStateTimeoutToTheRunner() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let scheme = try String(contentsOf: root.appendingPathComponent("Runner/RelayRunner.xcodeproj/xcshareddata/xcschemes/RelayRunner.xcscheme"), encoding: .utf8)
+        let testAction = try #require(scheme.range(of: "<TestAction").flatMap { start in
+            scheme.range(of: "</TestAction>", range: start.upperBound..<scheme.endIndex).map { scheme[start.lowerBound..<$0.upperBound] }
+        })
+        #expect(testAction.contains(#"shouldUseLaunchSchemeArgsEnv = "NO""#))
+        #expect(testAction.contains(#"argument = "\#(RunnerLauncher.applicationStateTimeoutArgument)""#))
+        #expect(testAction.contains(#"argument = "120""#))
+    }
+
+    /// Enabling automation mode may wait for the passcode on the device, so a timeout points there first.
+    @Test func startupFailureHintsAskForThePasscodeFirstOnADevice() {
+        let setup = StartupFailure(message: "Failed to initialize for UI testing: Timed out while enabling automation mode.", isUITestingSetup: true)
+        let hints = RunnerLauncher.startupFailureHints(for: setup, isSimulator: false)
+        #expect(hints.count == 3)
+        #expect(hints.first?.contains("passcode") == true)
+        #expect(hints.contains { $0.contains("Enable UI Automation") })
+        #expect(hints.contains { $0.contains("unlock") })
+    }
+
+    @Test func startupFailureHintsOnASimulatorSuggestOneRetry() {
+        let setup = StartupFailure(message: "Failed to initialize for UI testing: Timed out while enabling automation mode.", isUITestingSetup: true)
+        let hints = RunnerLauncher.startupFailureHints(for: setup, isSimulator: true)
+        #expect(hints == ["this is usually transient on a simulator; run relay start again once"])
+        #expect(!hints.contains { $0.contains("passcode") || $0.contains("Enable UI Automation") || $0.contains("unlock") })
+    }
+
+    @Test func startupFailureHintsAreEmptyForATestFailure() {
+        let failure = StartupFailure(message: "** TEST FAILED **", isUITestingSetup: false)
+        #expect(RunnerLauncher.startupFailureHints(for: failure, isSimulator: false).isEmpty)
+        #expect(RunnerLauncher.startupFailureHints(for: failure, isSimulator: true).isEmpty)
+    }
+
+    /// `--rebuild` alone keeps the installed copy's old scheme, so that copy needs relay install first,
+    /// also when `--project` or `$RELAY_HOME` names it rather than relay finding it on its own.
+    @Test func staleBuildNoteAsksForRelayInstallWhenTheRootIsTheInstalledCopy() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).resolvingSymlinksInPath()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let home = root.appendingPathComponent("home")
+        let installed = RunnerProject.installedRoot(home: home)
+        let checkout = root.appendingPathComponent("relay")
+        let current = root.appendingPathComponent("app")
+        for project in [installed, checkout, current] {
+            try FileManager.default.createDirectory(at: project.appendingPathComponent(RunnerProject.projectPath), withIntermediateDirectories: true)
+        }
+        func note(_ explicitPath: String?, environment: [String: String] = [:]) throws -> String {
+            let project = try RunnerProject.resolve(explicitPath: explicitPath, environment: environment, currentDirectory: current,
+                                                    executableURL: nil, home: home)
+            return RunnerLauncher.staleApplicationStateTimeoutNote(root: project.root, home: home)
+        }
+        let reinstall = "run relay install again, then relay start --rebuild"
+
+        #expect(try note(installed.path).contains(reinstall))
+        // Through /private (the temporary directory is a symlink) and with a trailing "/.": the same copy.
+        #expect(try note("/private" + installed.path + "/.").contains(reinstall))
+        #expect(try note(nil, environment: [RunnerProject.environmentKey: installed.path]).contains(reinstall))
+        #expect(RunnerLauncher.staleApplicationStateTimeoutNote(root: installed, home: home).contains(reinstall))
+
+        for other in [try note(checkout.path), try note(nil, environment: [RunnerProject.environmentKey: checkout.path]), try note(nil)] {
+            #expect(other.contains("relay start --rebuild"))
+            #expect(!other.contains("relay install"))
+        }
+    }
+
     @Test func detectsTestFailures() {
         #expect(RunnerLauncher.startupFailure(in: "** TEST EXECUTE FAILED **") == StartupFailure(message: "** TEST EXECUTE FAILED **", isUITestingSetup: false))
         #expect(RunnerLauncher.startupFailure(in: "** TEST FAILED **")?.isUITestingSetup == false)
