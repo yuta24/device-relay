@@ -15,15 +15,22 @@ NS_ASSUME_NONNULL_BEGIN
 /// Why the private path is unavailable, or nil when it is available.
 @property (class, nonatomic, readonly, nullable) NSString *unavailableReason;
 
+/// YES when the event record can be aimed at one display (`-initWithName:displayID:interfaceOrientation:`,
+/// Xcode 27.1 and later). Without it, events go to the main display.
+@property (class, nonatomic, readonly) BOOL supportsDisplayID;
+
 /// A single-finger touch: down at `points[0]` (offset 0), then a move to each following point at
 /// the matching entry of `offsets` (seconds from touch down), then lift up at `liftOffset`.
 /// `points` are screen points from the top-left corner of the native portrait screen; the synthesizer
 /// does not rotate them by `orientation`, so callers convert landscape points first.
-/// The completion may run on any thread.
+/// `displayID` (an `XCUIScreen` display ID) sends the touch to that display, in its own points; nil sends
+/// it to the main display. A display ID without `supportsDisplayID` is an error rather than a touch that
+/// silently lands on the main display. The completion may run on any thread.
 + (BOOL)synthesizeTouchWithPoints:(NSArray<NSValue *> *)points
                           offsets:(NSArray<NSNumber *> *)offsets
                        liftOffset:(NSTimeInterval)liftOffset
              interfaceOrientation:(UIInterfaceOrientation)orientation
+                        displayID:(nullable NSNumber *)displayID
                        completion:(void (^)(NSError *_Nullable error))completion
                             error:(NSError **)error;
 

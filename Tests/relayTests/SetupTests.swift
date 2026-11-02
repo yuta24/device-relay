@@ -162,7 +162,21 @@ struct DeviceListTests {
     @Test func namesRuntimesAndDeviceTypes() {
         #expect(DeviceList.osName(simulatorRuntime: "com.apple.CoreSimulator.SimRuntime.iOS-26-5") == "iOS 26.5")
         #expect(DeviceList.osName(simulatorRuntime: "com.apple.CoreSimulator.SimRuntime.xrOS-2-0") == "xrOS 2.0")
+        #expect(DeviceList.osName(simulatorRuntime: "com.apple.CoreSimulator.SimRuntime.iOS-26-7-1") == "iOS 26.7.1")
         #expect(DeviceList.modelName(simulatorDeviceType: "com.apple.CoreSimulator.SimDeviceType.iPad-Pro-11-inch-M5") == "iPad Pro 11 inch M5")
+    }
+
+    @Test func deviceTypeRuntimesEndTheVersionAtTheDeviceType() throws {
+        // iPhone Duo's runtime is made for its device type, which follows the version.
+        let os = DeviceList.osName(simulatorRuntime: "com.apple.CoreSimulator.SimRuntime.iOS-27-2-iPhone19-4")
+        #expect(os == "iOS 27.2")
+        let duo = Device(name: "iPhone Duo", udid: "S3", kind: .simulator, model: "iPhone Duo", os: os, state: "shutdown", isAvailable: true)
+        #expect(duo.osVersion == [27, 2])
+        #expect(duo.matches(os: "27.2") && duo.matches(os: "27") && !duo.matches(os: "27.0"))
+        let selection = try DeviceSelector.select(from: [duo], udid: nil, name: "iPhone Duo", os: "27.2")
+        #expect(selection.device.udid == "S3")
+        // A runtime without a number after the platform keeps its old name.
+        #expect(DeviceList.osName(simulatorRuntime: "com.apple.CoreSimulator.SimRuntime.iOS-beta") == "iOS beta")
     }
 
     @Test func loadsSimulatorsEvenWhenDevicectlFails() throws {

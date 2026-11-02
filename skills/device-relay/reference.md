@@ -13,7 +13,7 @@
 | `relay doctor [--udid <UDID> \| --device <名前>] [--simulator] [--os <version>] [--project <path>]` | Xcode、Runner、署名、端末（同じ指定の `relay start` が使うもの）を確認。✗ があれば 1 |
 | `relay ping` | `{"ok":true,"busy":<bool>,"busyForMs":<ms or null>}`。busy でも即答します |
 | `relay skill status` | このスキルの取り出し元とインストール先（プロジェクト・グローバル）、relay とのバージョンのずれ（!）。入れ直しは `relay skill install [--global \| --dir <skills dir>]`（利用者に確認してから）。詳しくは `relay skill --help` |
-| `relay health` | 端末情報、表示の向きでの画面サイズ（`screen.width` / `height` / `scale`）、`orientation`、`foreground` |
+| `relay health` | 端末情報、表示の向きでの画面サイズ（`screen.width` / `height` / `scale`）、`orientation`、`foreground`、表示の一覧 `displays` と前面アプリの表示 `display` |
 
 `relay start` の主なオプション（`--background` と組み合わせられます）:
 
@@ -245,7 +245,8 @@ stderr に JSON が出ます。
 - タップやスワイプの座標は、どの画像を使っても常にポイントです。
 - 座標は `0 ≤ x < screen.width`、`0 ≤ y < screen.height`（表示の向き）の中でなければなりません。外なら何も送らずに 400（終了コード 7）で、`invalid field: x, y: (500, 100) is outside the screen, which is 402x874 points in portrait (...)` のように画面の大きさと向きが出ます。`swipe` は始点（`from:`）と終点（`to:`）の両方を確かめます。端ぎりぎりではなく、数ポイント内側を使います。
 - `relay orientation` の後は `relay health` の `orientation` と `screen` を読み直します。iPhone のアプリの多くは `portraitUpsideDown` に回転しません。
-- 詳しくは device-relay の docs/screen.md の「座標系と画面の向き」。
+- 表示が複数ある端末（iPhone Duo。Xcode 27.1 以上、iOS 27.1 以上）では、`relay health` の `displays` に表示の一覧（外側が ID 1 で 466×678、内側が ID 3 で 669×951。縦向きのポイント）、`display` に前面アプリの表示の ID が出ます。`screen`、スクリーンショット（応答ヘッダー `X-Relay-Display`）、座標、要素の frame はその表示のものです。内側はふつう横向きで、`screen` は 951×669 です。折りたたみを変えたら `relay health` を読み直します（シミュレータが起動し直してランナーが止まることがあるので、先に `relay status`。止まっていれば `relay start` し直す）。Duo では `relay orientation` で画面は回転しません（外側は portrait、内側は landscapeRight のまま）。前面アプリの表示を判定できない（`display` が `null`、タッチとスクリーンショットは終了コード 6 で `cannot tell which display`）ときは、どちらの表示も暗いので利用者に確かめます。内側で SpringBoard や回転しないアプリが前面のとき、`--mode xcui` の座標タッチは `xcui touches can't reach` で断られるので、`--mode` を外して送り直します。
+- 詳しくは device-relay の docs/screen.md の「座標系と画面の向き」と「表示が複数ある端末（iPhone Duo）」。
 
 ## スクロールの例
 
