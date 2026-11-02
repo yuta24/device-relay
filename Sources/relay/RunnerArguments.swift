@@ -23,6 +23,9 @@ extension Arguments {
 
     static let buttons = ["home", "volumeUp", "volumeDown"]
     static let orientations = ["portrait", "portraitUpsideDown", "landscapeLeft", "landscapeRight"]
+    /// Other names `relay orientation` takes, and the orientation each sends. Resolved here, so the runner
+    /// (an older one included) only ever sees the four names above.
+    static let orientationAliases = ["landscape": "landscapeLeft"]
 
     /// Parses `relay <command> [arguments] [options]`. Every option but the `runnerFlags` takes a value,
     /// and options and arguments may come in any order; `--` ends the options, for text that starts with `-`.
@@ -144,7 +147,8 @@ extension Arguments {
             "relay tap (<x> <y> | <selector>) [--mode private|xcui] [--timeout <s>] [--bundle-id <id>]",
             """
             Taps a point (points in the displayed orientation) or the center of the element the selector picks.
-            --timeout (up to 10 seconds) and --bundle-id apply to a selector only.
+            --timeout (up to 10 seconds) and --bundle-id apply to a selector only. A point outside the screen
+            (0 <= x < width, 0 <= y < height as relay health reports it) is rejected with exit 7; nothing is sent.
             """
         ),
         "press": (
@@ -153,7 +157,10 @@ extension Arguments {
         ),
         "swipe": (
             "relay swipe <x1> <y1> <x2> <y2> [--duration 0.3] [--hold 0.05] [--mode private|xcui]",
-            "Holds at the first point for --hold seconds, then drags to the second over --duration seconds."
+            """
+            Holds at the first point for --hold seconds, then drags to the second over --duration seconds.
+            Both points must be on the screen, as for tap (exit 7 otherwise).
+            """
         ),
         "type": (
             "relay type [<text> | --stdin] [--key return|delete|space]... [--bundle-id <id>]",
@@ -165,7 +172,10 @@ extension Arguments {
         ),
         "key": ("relay key return|delete|space [--bundle-id <id>]", "Sends one special key to the element with keyboard focus."),
         "button": ("relay button home|volumeUp|volumeDown", "Presses a hardware button (the volume buttons on devices only)."),
-        "orientation": ("relay orientation portrait|portraitUpsideDown|landscapeLeft|landscapeRight", "Sets the device orientation."),
+        "orientation": (
+            "relay orientation portrait|portraitUpsideDown|landscapeLeft|landscapeRight|landscape",
+            "Sets the device orientation. landscape is short for landscapeLeft."
+        ),
         "launch": ("relay launch <bundle-id>", "Launches the app, or brings it to the foreground."),
         "terminate": ("relay terminate <bundle-id>", "Terminates the app."),
         "shutdown": ("relay shutdown", "Stops the runner; relay start then exits.")
@@ -369,7 +379,12 @@ private struct RunnerArgumentValues {
         case "button":
             return .button(try choice(try positional(1, "a button name")[0], "button", Arguments.buttons))
         case "orientation":
-            return .orientation(try choice(try positional(1, "an orientation")[0], "orientation", Arguments.orientations))
+            let name = try positional(1, "an orientation")[0]
+            let orientations = Arguments.orientations + Arguments.orientationAliases.keys.sorted()
+            if let alias = Arguments.orientationAliases[name] {
+                return .orientation(alias)
+            }
+            return .orientation(try choice(name, "orientation", orientations))
         case "launch":
             return .launch(bundleID: try positional(1, "<bundle-id>")[0])
         case "terminate":

@@ -253,6 +253,7 @@ struct RunnerStatusTests {
     @Test func exitCodes() {
         #expect(RunnerPing.alive(busy: true, busyForMs: 5).exitCode == .success)
         #expect(RunnerPing.unreachable("refused").exitCode == .unavailable)
+        #expect(RunnerPing.refusedByOS("Operation not permitted").exitCode == .unavailable)
         #expect(RunnerPing.status(401).exitCode == .unauthorized)
         #expect(RunnerPing.status(404).exitCode == .badRequest)
         #expect(RunnerPing.check(RunnerInfo(url: "not a url", token: "t", udid: "SIM")).exitCode == .unavailable)
@@ -281,6 +282,20 @@ struct RunnerStatusTests {
         ping:        no answer (refused)
         runner.json: /r.json
         """)
+    }
+
+    @Test func aConnectionTheOSRefusedSaysSo() throws {
+        let report = RunnerStatus.Report(infoURL: URL(fileURLWithPath: "/r.json"), info: RunnerInfo(url: "http://127.0.0.1:8100/", token: "t", udid: "SIM"),
+                                         processRunning: true, ping: .refusedByOS("Operation not permitted"))
+        #expect(RunnerStatus.text(report).contains(
+            "ping:        no answer: the OS refused the connection (Operation not permitted); relay may be in a sandbox that blocks localhost"))
+        let object = try #require(try JSONSerialization.jsonObject(with: RunnerStatus.json(report)) as? [String: Any])
+        let ping = try #require(object["ping"] as? [String: Any])
+        #expect(ping["refusedByOS"] as? Bool == true)
+        #expect(ping["error"] as? String == "Operation not permitted")
+        // Like no answer, it does not keep a new relay start from trying the port.
+        #expect(BackgroundStart.conflict(with: RunnerInfo(url: "http://127.0.0.1:8100/", token: "t", udid: "SIM"), port: 8100,
+                                         ping: .refusedByOS("Operation not permitted"), owner: nil) == nil)
     }
 
     @Test func json() throws {

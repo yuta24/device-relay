@@ -28,7 +28,7 @@ relay source --max-depth 3 | jq .tree
 relay source --format text --bundle-id com.apple.Preferences
 relay source --format compact --filter interactive   # 操作できる要素だけを 1 行 1 要素で
 relay button home
-relay orientation landscapeLeft
+relay orientation landscapeLeft                # landscape は landscapeLeft の別名
 relay terminate com.apple.Preferences
 relay shutdown                                 # ランナーだけを止める（relay start はそれを見て終了）
 relay stop                                     # relay start ごと止める（boot したシミュレータの shutdown も）
@@ -48,7 +48,7 @@ relay record stop                              # 録画を止め、MP4 の絶対
 | `tap` / `press` | `POST /tap` / `/press` | `<x> <y>` かセレクタ、`--mode private\|xcui`、`--timeout`・`--bundle-id`（セレクタのみ）、`--duration`（press のみ） |
 | `swipe` | `POST /swipe` | `<x1> <y1> <x2> <y2>`、`--duration`、`--hold`、`--mode` |
 | `type` | `POST /type` | `<text>` か `--stdin`、`--key <name>`（複数可、順に送る）、`--bundle-id` |
-| `key` / `button` / `orientation` | `POST /key` / `/button` / `/orientation` | 名前（`key` は `--bundle-id` も可） |
+| `key` / `button` / `orientation` | `POST /key` / `/button` / `/orientation` | 名前（`key` は `--bundle-id` も可。`orientation` は `landscape` を `landscapeLeft` として送る） |
 | `launch` / `terminate` | `POST /launch` / `/terminate` | `<bundle-id>` |
 | `shutdown` | `POST /shutdown` | – |
 | `status` | `GET /ping` と runner.json | `--json`。終了コードは「[バックグラウンドで動かす](setup.md#バックグラウンドで動かすrelay-start---background--status--stop)」 |
@@ -67,7 +67,7 @@ relay record stop                              # 録画を止め、MP4 の絶対
 | --- | --- |
 | `0` | 成功（2xx） |
 | `1` | 引数の誤り、runner.json が読めない、スクリーンショットを保存できないなど、ローカルの失敗 |
-| `3` | ランナーに届かない（runner.json がない、接続できない・タイムアウト）。`relay status` で確認し、動いていなければ `relay start --background` で起動してください |
+| `3` | ランナーに届かない（runner.json がない、接続できない・タイムアウト、接続が OS に拒否された）。`relay status` で確認し、動いていなければ `relay start --background` で起動してください。`the OS refused the connection (Operation not permitted)` と出たら、ランナーではなく relay の側がエージェントなどの sandbox の中にいて localhost に接続できません（「[エージェントの sandbox から使う](setup.md#エージェントの-sandbox-から使う)」）。起動し直しても直りません |
 | `4` | `401`。runner.json のトークンが動いているランナーのものではない（古いファイル、別のランナー） |
 | `5` | `409`（busy）。再試行してよい |
 | `6` | `422`。XCUI で失敗（フォーカスがない、要素が見つからない・1 つに決まらないなど） |

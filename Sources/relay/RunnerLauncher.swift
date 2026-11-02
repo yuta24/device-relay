@@ -129,7 +129,7 @@ final class RunnerLauncher {
         }
         let runnerLogURL = try Self.createLog("runner", in: logsURL, stamp: stamp, port: options.port)
         info("launching runner on \(udid) (log: \(runnerLogURL.path))")
-        let process = try launch(xctestrun: xctestrun, logURL: runnerLogURL)
+        let process = try launch(xctestrun: xctestrun, derivedData: derivedData, logURL: runnerLogURL)
         installSignalHandlers()
         if StartCancellation.isRequested {
             // SIGTERM arrived before the handlers above were installed.
@@ -267,16 +267,23 @@ final class RunnerLauncher {
         return args
     }
 
-    private func launch(xctestrun: URL, logURL: URL) throws -> Process {
+    /// `-derivedDataPath` is the build's: without it xcodebuild writes the test logs and the xcresult
+    /// bundle to `~/Library/Developer/Xcode/DerivedData/RelayRunner-*`, outside `~/.relay`.
+    static func testArguments(xctestrun: URL, udid: String, derivedData: URL) -> [String] {
+        [
+            "xcodebuild", "test-without-building",
+            "-xctestrun", xctestrun.path,
+            "-destination", "id=\(udid)",
+            "-derivedDataPath", derivedData.path
+        ]
+    }
+
+    private func launch(xctestrun: URL, derivedData: URL, logURL: URL) throws -> Process {
         let log = try FileHandle(forWritingTo: logURL)
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
-        process.arguments = [
-            "xcodebuild", "test-without-building",
-            "-xctestrun", xctestrun.path,
-            "-destination", "id=\(udid)"
-        ]
+        process.arguments = Self.testArguments(xctestrun: xctestrun, udid: udid, derivedData: derivedData)
         // xcodebuild forwards TEST_RUNNER_-prefixed variables to the test process without the prefix.
         var environment = ProcessInfo.processInfo.environment
         environment["TEST_RUNNER_RELAY_RUNNER_PORT"] = "\(options.port)"

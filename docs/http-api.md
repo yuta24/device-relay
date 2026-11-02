@@ -13,10 +13,10 @@
 | `GET /foreground` | – | 前面アプリの `bundleId` と `pid`、取得経路 `source`（`private` / `fallback`）。詳しくは「前面アプリ」 |
 | `GET /screenshot` | `?format=png\|jpeg&quality=0.05–1.0&maxSize=<px>&scale=<px/pt>`（既定は png、jpeg の既定 quality は 0.7。範囲外・数値以外の quality と、png への quality の指定は 400。`maxSize`・`scale` は省略時は縮小なし） | 画面全体のスクリーンショット（表示の向きに正規化済み）。`maxSize`・`scale` で端末側で縮小します。画像と座標の関係を `X-Relay-*` ヘッダーで返します。詳しくは「[スクリーンショットの縮小](screen.md#スクリーンショットの縮小)」 |
 | `GET /source` | `?format=json\|text\|compact&filter=interactive&maxDepth=<n>&bundleId=`（既定は json、bundleId の既定は前面アプリ） | XCUI の要素ツリー。json は要素ごとの属性と frame、text は `debugDescription`、compact は 1 行 1 要素。`filter=interactive` で操作できる要素だけに絞ります。詳しくは「[要素ツリー（/source）](elements.md#要素ツリーsource)」 |
-| `POST /tap` | `{"x":200,"y":120}`、または `{"element":{"identifier":"relay.input"}}` | タップ。`element` で要素を指定すると、その frame の中心をタップします（「[要素セレクタ](elements.md#要素セレクタ)」） |
+| `POST /tap` | `{"x":200,"y":120}`、または `{"element":{"identifier":"relay.input"}}` | タップ。`element` で要素を指定すると、その frame の中心をタップします（「[要素セレクタ](elements.md#要素セレクタ)」）。座標が画面の外なら `400`（下の「画面の外の座標」） |
 | `POST /press` | `{"x":200,"y":120,"duration":1.0}`、または `{"element":{…},"duration":1.0}` | 長押し |
 | `POST /find` | `{"element":{"type":"button"},"limit":20,"bundleId":"…","timeout":0}`（`limit`・`bundleId`・`timeout` は省略可） | セレクタに一致する要素の一覧（type / identifier / label / value / frame / enabled）。ツリー全体を読まずに要素を探せます（「[要素セレクタ](elements.md#要素セレクタ)」） |
-| `POST /swipe` | `{"from":{"x":200,"y":700},"to":{"x":200,"y":200},"duration":0.3,"hold":0.05}` | スワイプ（ドラッグ） |
+| `POST /swipe` | `{"from":{"x":200,"y":700},"to":{"x":200,"y":200},"duration":0.3,"hold":0.05}` | スワイプ（ドラッグ）。`from`・`to` のどちらかが画面の外なら `400` |
 | `POST /type` | `{"text":"hello","keys":["return"],"bundleId":"com.apple.Preferences"}`（`keys` と `bundleId` は省略可。`keys` があれば `text` は省略・空文字でも可。`text` が文字列以外なら `keys` があっても 400） | キーボードのフォーカスがある要素への文字入力。`text` の後に `keys` を順に送ります。対象の既定は前面アプリ |
 | `POST /key` | `{"key":"return","bundleId":"…"}`（bundleId は省略可） | 特殊キー（`return` / `delete` / `space`）を 1 つ送ります。それ以外のキー名は 400。詳しくは「文字入力と特殊キー」 |
 | `POST /button` | `{"name":"home"}`（`volumeUp` / `volumeDown` は実機のみ） | ハードウェアボタン。`home` は実機では画面下端からのスワイプで代用します（「[既知の制約](limitations.md)」を参照） |
@@ -24,6 +24,8 @@
 | `POST /launch` | `{"bundleId":"com.apple.Preferences"}` | アプリの起動・前面化（`activate()`） |
 | `POST /terminate` | `{"bundleId":"com.apple.Preferences"}` | アプリの終了 |
 | `POST /shutdown` | – | ランナーを停止（テストメソッドから抜ける） |
+
+**画面の外の座標**: `/tap`・`/press` の `x`・`y` と `/swipe` の `from`・`to` は、前面アプリの表示の向きでの画面（`/health` の `screen`）の中、つまり `0 ≤ x < screen.width` かつ `0 ≤ y < screen.height` でなければなりません（小数も可。`x = screen.width` は画面の外です）。外なら何も送らずに `400` と `{"ok":false,"error":"invalid field: x, y: (500, 100) is outside the screen, which is 402x874 points in portrait (0 <= x < 402, 0 <= y < 874; relay health shows the screen)"}` のように返します（`/swipe` では `from:` / `to:`）。以前は画面の外のタッチも `200` を返し、何も起きませんでした。`422`（XCUI で操作に失敗）ではなく `400` にしたのは、操作を試す前に値の範囲で判定でき、ほかの範囲外の値と同じ扱い（CLI では終了コード `7`）にするためです。画面は向きを変えると縦横が入れ替わるので、`relay orientation` の後は `/health` を読み直します。要素を指定したタップ（`element`）は、要素の frame の画面内の部分の中心に当たるので、この判定はありません（画面の外の要素は `422` の `offscreen`）。画面の大きさを SpringBoard から取れず `UIScreen` の値で代用している間（実機では 320×480 の互換モードの値になります）は、正しい座標を拒否しないよう判定を省きます。
 
 `/tap` `/press` `/swipe` は `"mode": "private" | "xcui"` を受け付けます（省略時は使えれば `private`）。応答の `mode` に実際に使った経路が入り、`/health` の `touchSynthesis` で端末側の既定経路がわかります。詳しくは「[タッチ合成の経路](design.md#タッチ合成の経路)」を参照してください。
 
@@ -40,7 +42,7 @@
 | コード | 意味 |
 | --- | --- |
 | `200` | 成功 |
-| `400` | リクエスト不正（JSON、必須フィールド、値の範囲、数値フィールドへの数値以外（真偽値を含む）、負の値・数値以外・矛盾する `Content-Length`） |
+| `400` | リクエスト不正（JSON、必須フィールド、値の範囲、画面の外の座標、数値フィールドへの数値以外（真偽値を含む）、負の値・数値以外・矛盾する `Content-Length`） |
 | `401` | `Authorization: Bearer <token>` がない、または一致しない（`{"ok":false,"error":"unauthorized"}`）。リクエストヘッダーの形式の判定（`400`・`413`・`431`・`501`）の次、ほかのどの判定よりも先に行います |
 | `404` / `405` | 未知のパス / メソッド違い |
 | `409` | 別のコマンドを実行中（`{"ok":false,"error":"busy"}`）。待たずにすぐ返ります。`/ping` と `/shutdown` 以外のすべてのエンドポイント（`/health` を含む）で起こります。詳しくは「同時リクエスト」 |
@@ -87,7 +89,7 @@ curl -s -H "$AUTH" -X POST $R/shutdown
 - `relay bench` は `--token` を受け付け、省略時はランナー操作のコマンドと同じ探し方で見つけた `runner.json` から読みます。`relay start` 内部の `/health` 探索、`/ping` の生存確認、`/shutdown` もトークンを付けます。
 - ランナーのログ（`relay-runner GET /health -> 200 1ms`、busy で弾いた `relay-runner GET /screenshot -> 409` など）には、メソッドとパスしか出しません。`/ping` は数秒おきに届くのでログに出しません。
 - 脅威モデル: 同じネットワーク（Wi-Fi など）にいる第三者が、タップ、アプリの起動、スクリーンショットの取得をできないようにするためのものです。ランナーはすべてのインターフェースで待ち受けますが、トークンがなければ何もできません。通信は平文の HTTP です。既定では、`relay` は CoreDevice トンネル（USB などの Mac と端末の間の経路）にしかトークンを送りません。`--allow-wifi` を付けると、Wi-Fi 上にもトークンと画面が平文で流れ、同じネットワークで盗聴できる相手には守れません。
-- xcodebuild は `TEST_RUNNER_` 環境変数を xcresult（`~/Library/Developer/Xcode/DerivedData/RelayRunner-*/Logs/Test/*.xcresult`）に記録します。ここに残るのはトークンの SHA-256 だけで、トークンは 256 ビットのランダム値なので、ハッシュから求めることはできず、ハッシュ自体をトークンとして送っても `401` になります。
+- xcodebuild は `TEST_RUNNER_` 環境変数を xcresult（`relay start` では `~/.relay/build/…/DerivedData-*/Logs/Test/*.xcresult`。以前の relay は `~/Library/Developer/Xcode/DerivedData/RelayRunner-*/Logs/Test/` に作っていました）に記録します。ここに残るのはトークンの SHA-256 だけで、トークンは 256 ビットのランダム値なので、ハッシュから求めることはできず、ハッシュ自体をトークンとして送っても `401` になります。
 
 ## 同時リクエスト
 
