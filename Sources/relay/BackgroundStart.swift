@@ -295,7 +295,7 @@ enum BackgroundStart {
 }
 
 /// Set from a signal handler, read by the waiting loop.
-private final class InterruptFlag: @unchecked Sendable {
+final class InterruptFlag: @unchecked Sendable {
     private let lock = NSLock()
     private var value = false
 
@@ -313,7 +313,7 @@ private final class InterruptFlag: @unchecked Sendable {
 }
 
 /// New lines of a file another process appends to.
-private struct LogReader {
+struct LogReader {
     let url: URL
     private var handle: FileHandle?
     private var lines = RunnerOutputLineBuffer()

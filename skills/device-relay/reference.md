@@ -1,6 +1,6 @@
 # device-relay リファレンス
 
-[SKILL.md](SKILL.md) の補足です。ここにないことは device-relay の README と docs/ の各文書（ファイル名と節の名前を「」で示します）か `relay --help` / `relay <command> --help` を見てください。`--help` はランナー操作のコマンド（`screenshot`・`tap` など）、`status`・`stop`、`relay skill` にあります。`start`・`doctor`・`devices`・`install` は `relay --help` の全体のヘルプに書かれています。
+[SKILL.md](SKILL.md) の補足です。ここにないことは device-relay の README と docs/ の各文書（ファイル名と節の名前を「」で示します）か `relay --help` / `relay <command> --help` を見てください。`--help` はランナー操作のコマンド（`screenshot`・`tap` など）、`status`・`stop`・`record`、`relay skill` にあります。`start`・`doctor`・`devices`・`install` は `relay --help` の全体のヘルプに書かれています。
 
 ## ランナーの起動・確認・停止
 
@@ -90,6 +90,19 @@ runner.json: /Users/<you>/.relay/runner.json
 | 1 | `relay start` が 60 秒以内に終わらなかった。`~/.relay/logs/start-*.log` を見て、利用者に知らせる |
 
 実機の準備（デベロッパモード、ペアリング、UI オートメーション、Team ID）は device-relay の docs/setup.md の「実機」「Team ID（実機の署名）」を参照してください。
+
+## 録画（relay record、シミュレータのみ）
+
+動作の証拠を残すときは `relay record start` → 操作 → `relay record stop` です。シミュレータのみ（ホストの `simctl io recordVideo`）で、実機は未対応です。詳しくは docs/cli.md の「録画（relay record、シミュレータのみ）」と `relay record --help`。
+
+| コマンド | 出力・終了コード |
+| --- | --- |
+| `relay record start [-o <file>] [--force] [--max-duration 600] [--runner <path>]` | 録画が始まったら保存先の絶対パスを stdout に出して 0。既定は `$TMPDIR/relay/relay-recording-<時刻>.mp4`、相対パスはカレントディレクトリ基準。1: 実機、boot していない、ディレクトリがない、ファイルがすでにある（`--force` で上書き。利用者のファイルなら上書きしてよいか確認）、すでに録画中、simctl が始まらない（stderr に simctl の出力）。3: ランナーがない・応答しない |
+| `relay record stop [--runner <path> \| --port <n>]` | 書き出しを待ち（最大 30 秒）、空でない MP4 の絶対パスを stdout に出して 0。録画していなければ `not recording` で 0。自動停止（`--max-duration`）した録画もここで取り出す。1: 書き出しが終わらない（もう一度 stop できる）、動画が空、runner.json がなく録画が複数ある（ポートごとの一覧から `--port <n>` で選ぶ） |
+| `relay record status [--json] [--runner <path> \| --port <n>]` | 録画中か（`yes` / `ended`）、保存先、経過時間。常に 0 |
+
+- 録画はターミナルから切り離して続くので、`record start` の後に別のコマンドを続けて実行できます。`relay stop` も録画を先に書き出します（パスは stderr）。
+- シミュレータが録画中に shutdown しても、`record stop` は shutdown までの動画を返します。
 
 ## 接続先（runner.json）
 

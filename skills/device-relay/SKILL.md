@@ -80,6 +80,14 @@ relay press --label "Photo" --type cell --duration 1.0
 
 書き方の詳細は [reference.md](reference.md#シナリオの実行relay-run実験的)。
 
+## 録画（シミュレータのみ）
+
+動作の証拠（プルリクエストに貼る動画など）を残すときは、`relay record start` → 操作 → `relay record stop` です。シミュレータのみで、実機ではまだ使えません（終了コード 1）。
+
+- `relay record start` は保存先の絶対パスを出して戻ります（既定は `$TMPDIR/relay/`、`-o <file>` で指定。ディレクトリは存在すること）。`relay record stop` は書き出しを待って同じパスを出します。そのファイルを利用者に伝えます。
+- 止め忘れても `--max-duration`（既定 600 秒）で止まり、`record stop` で取り出せます。自分で起動したランナーを `relay stop` で止めるときも、録画は先に書き出されます。
+- 録画中に別の `record start` は終了コード 1 です。`relay record status` で確かめます。詳しくは [reference.md](reference.md#録画relay-recordシミュレータのみ)。
+
 ## 終了コード
 
 | コード | 意味 | 対処 |

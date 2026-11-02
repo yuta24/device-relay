@@ -33,6 +33,8 @@ relay terminate com.apple.Preferences
 relay shutdown                                 # ランナーだけを止める（relay start はそれを見て終了）
 relay stop                                     # relay start ごと止める（boot したシミュレータの shutdown も）
 relay run about.relay                          # 1 行 1 手順のシナリオを順に実行（実験的。下の「シナリオの実行」）
+relay record start                             # シミュレータの画面の録画を始める（下の「録画」。シミュレータのみ）
+relay record stop                              # 録画を止め、MP4 の絶対パスを出力
 ```
 
 （`make install` した `relay` をどのディレクトリからでも使えます。リポジトリ内では `xcrun swift run relay …` でも動きます。）
@@ -52,6 +54,7 @@ relay run about.relay                          # 1 行 1 手順のシナリオ�
 | `status` | `GET /ping` と runner.json | `--json`。終了コードは「[バックグラウンドで動かす](setup.md#バックグラウンドで動かすrelay-start---background--status--stop)」 |
 | `stop` | `relay start` への SIGTERM（なければ `POST /shutdown`） | – |
 | `run`（実験的） | 手順ごとに上のエンドポイント | `<file>` か `-` か `--step <手順>`（複数可）、`--runner`、`--quiet`。「シナリオの実行（relay run、実験的）」 |
+| `record start` / `stop` / `status` | –（ホストの `simctl io recordVideo`） | `-o <file>`、`--force`、`--max-duration <s>`（start）、`--json`（status）、`--port <n>`（stop・status）、`--runner`。「録画（relay record、シミュレータのみ）」 |
 
 - セレクタは `--id`（= `identifier`）・`--label`・`--type`・`--value` を 1 つ以上と、任意の `--index <n>` です（「[要素セレクタ](elements.md#要素セレクタ)」と同じ完全一致・AND）。`--type` の名前、キー名、ボタン名、向きの名前、数値の範囲は送る前に確認し、間違っていれば終了コード 1 で何も送りません。
 - `relay find` は一致がなくても終了コード 0（`"count":0`）です。`--require` を付けると、一致する要素がないときに終了コード 6 で終わり、応答の JSON を stderr に、`relay: no element matched` を続けて出します（`--index` が範囲外のときも同じ）。`relay find <セレクタ> --timeout 5 --require` は「現れるまで待ち、現れなければ失敗する」確認になり、スクリプトは JSON を読まずに終了コードだけで判断できます。判定はホスト側で行い、ランナーへのリクエストは変わりません。
@@ -144,6 +147,34 @@ screenshot --output about.png --scale 1
 差は `relay` の起動と runner.json の読み込み（1 回約 15 ms）だけで、操作そのものの時間は変わりません。ふつうのシナリオでは数 % で、主な利点は、エージェントやスクリプトが 1 回の呼び出しで決まった手順を再生でき、途中で止まった位置が行番号でわかることです。なお `find --timeout` は要素が現れた時点で進むので、直後の `screenshot` が画面遷移のアニメーションの途中を写すことがあります。止まった画面がほしいときに限って、`sleep 0.5` などを挟みます。
 
 **スワイプの後は固定の待ちが要ります。** 慣性スクロール中に `tap` すると、タップはスクロールを止めるだけで、要素は押されません（`tap` は成功するので、次の `find` で止まります）。実機の設定アプリでは、スワイプ後 1 秒ではまだ数 pt 動いていて同じ失敗になり、`sleep 2` で通りました。スクロールが止まったことは要素では表せないので、ここは `sleep` を使います。
+
+## 録画（relay record、シミュレータのみ）
+
+`relay record` は、ランナーが動いているシミュレータの画面を MP4 に録画します。操作の前後を動画で残したいとき（プルリクエストに貼る動作の証拠など）に、`record start` → 操作 → `record stop` の順で使います。ランナーは使わず、ホストの `xcrun simctl io <UDID> recordVideo --codec h264 --force <file>` で録ります。**実機はまだ対応していません**（別の方式で試作中です）。
+
+```sh
+relay record start                    # 保存先の絶対パスを出して戻る（既定は $TMPDIR/relay/relay-recording-<時刻>.mp4）
+relay launch dev.yuta24.devicerelay.RelayRunnerHost
+relay tap --id relay.input --timeout 3
+relay type "hello" --key return
+relay record stop                     # 書き出しを待ち、MP4 の絶対パスを出す
+relay record start -o demo.mp4 --max-duration 120   # カレントディレクトリの demo.mp4 に、最長 120 秒
+relay record start -o demo.mp4 --force              # demo.mp4 がすでにあれば上書き（--force なしではエラー）
+relay record status [--json]          # 録画中か、保存先、経過時間
+relay record stop --port 8101         # runner.json によらず、そのポートのランナーの録画を止める
+```
+
+- **端末**: runner.json（「接続先（runner.json）の探し方」と同じ順。`--runner` も可）の UDID を `simctl list devices` と照らし、シミュレータでなければ `recording a device is not supported yet (simulators only)` で終了コード `1` です（何も起動しません）。シミュレータが boot していないときも `1` です（simctl は shutdown 中のシミュレータでも開始を報告し、空のファイルを作るため、先に確かめます）。runner.json がない・ランナーが応答しないときは、ランナー操作のコマンドと同じく `3`（`401` なら `4`）です。
+- **開始**: simctl を `relay start --background` と同じく新しいセッションとして切り離して起動します（stdin は `/dev/null`、出力は `~/.relay/logs/record-<時刻>-<port>.log`）。ターミナルを閉じても、そこで Ctrl-C を押しても録画は続きます。simctl が `Recording started` を出したら、保存先の絶対パスを stdout に 1 行出して `0` で戻ります。15 秒以内に出ない、または simctl が先に終了したときは、simctl の出力（ログの末尾）を添えて `1` で終わり、何も残しません。開始を待っている間の Ctrl-C も録画を止めて `1` です。
+- **保存先**: `-o` / `--output` がなければ `$TMPDIR/relay/relay-recording-<時刻>.mp4`（スクリーンショットと同じく、対象アプリの作業ツリーを汚さないため）。相対パスはカレントディレクトリが基準で、そのディレクトリがなければ `1` です（relay は作りません）。同じ名前のファイルがすでにあれば、`<path> already exists; pass --force to replace it, or give another --output` で `1` です（何も起動しません）。`--force` を付けたときだけ上書きします。既定の時刻入りの名前でも、衝突すれば同じ扱いです。判定は relay が simctl を起動する前に行い、simctl には常に `--force` を渡します（simctl に任せると、エラーは録画を始めようとした後に simctl のログの中に出るため。判定と書き込みの間にファイルが作られた場合は上書きされます）。
+- **1 つのランナーに 1 つ**: 録画の状態（simctl の PID と起動時刻、保存先、UDID、開始時刻、ポート、ログ）を `~/.relay/recording-<port>.json`（パーミッション 0600。runner.json と同じ書き方）に保存します。ポートは runner.json の URL のものです。録画中にもう一度 `record start` すると、`a recording is already running for the runner at … ; stop it with relay record stop …` で `1` です。simctl がもう動いていない状態ファイル（自動停止した、強制終了されたなど）は次の `record start` を妨げず、削除して新しく始めます（動画ファイルは残ります）。PID は起動時刻と実行ファイル名（simctl、recordVideo）も一致したときだけ録画中とみなすので、PID が再利用されても誤りません。
+- **自動停止**: `--max-duration <秒>`（既定 600 秒）で録画を止めます。止め忘れてディスクを使い続けないためです。simctl を起動した切り離しのプロセス（`relay record supervise`。内部用）が時間を数えて SIGINT を送ります。自動停止した後も状態ファイルは残り、`record stop` で `relay: the recording had already ended (reached --max-duration of …)` を stderr に、保存先を stdout に出します。
+- **停止**: `record stop` は simctl に SIGINT を送り、終了（MP4 の書き出し）を最大 30 秒待ち、ファイルが存在して空でないことを確かめてから、絶対パスを stdout に出して `0` で終わり、状態ファイルを削除します。録画していなければ `not recording` で `0` です（`relay stop` と同じ考え方）。30 秒以内に終わらなければ状態ファイルを残して `1`（もう一度 `record stop` できます）、動画が空・ないときは `1` です。`--runner` か `$RELAY_RUNNER` で指定した runner.json がなければ、ほかのコマンドと同じく `--runner … does not exist; is relay start running?` で `3` です。runner.json がなくなった後（ランナーが止まった後）でも、`--runner` も `$RELAY_RUNNER` もなければ、`~/.relay` に状態ファイルが 1 つだけならそれを止めます。複数あるときは、ポートごとに保存先と録画中か（`recording` / `ended`）を一覧にして `choose one with --port <n>` で `1` です。
+- **ポートで選ぶ**: `record stop` と `record status` は、`--port <n>` を付けると runner.json を探さずに、そのポートの状態ファイル（`~/.relay/recording-<n>.json`）を直接使います。runner.json がなくても、複数のランナーを別のポートで動かしていても使えます。そのポートに録画がなければ `not recording` で `0` です。`--runner` と同時には指定できません（`1`）。
+- **状態**: `record status` は、録画中か（`recording: yes (12s; stops by itself after 600s)`、自動停止などで終わっていれば `ended`）、保存先、UDID、simctl の PID、開始時刻、ログを出します。`--json` では 1 つの JSON オブジェクト（`recording`、`output`、`udid`、`port`、`pid`、`startedAt`、`elapsedSeconds`、`maxDuration`、`log`、`state`）、録画していなければ `{"recording":false}` です。終了コードは録画の有無によらず `0` です。
+- **後片付け**: `relay stop` は、ランナーを止める前に、そのランナー（runner.json のポート）の録画を止めて書き出し、`relay: saved the recording: <path>` を stderr に出します（stdout は今までどおり `stopped` / `not running`）。`relay start` も、Ctrl-C や SIGTERM で終わるとき、boot したシミュレータを shutdown する前に、自分のポートの録画を同じように書き出します。
+- **シミュレータが先に shutdown されたとき**: simctl は録画を続けたまま終わりません（自動停止までそのまま）。`record stop` は通常どおり SIGINT を送り、shutdown した時点までの動画を書き出して保存先を出し、`relay: the simulator … is no longer booted; the video ends where it shut down` を stderr に添えます。
+- 動画はシミュレータの画面の画素数（iPhone 17 Pro で 1206×2622）で、ランナーの座標（ポイント）とは倍率（scale）が違います。
 
 ## エージェントスキル
 
