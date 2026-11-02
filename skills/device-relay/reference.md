@@ -1,6 +1,6 @@
 # device-relay リファレンス
 
-[SKILL.md](SKILL.md) の補足です。ここにないことは device-relay の README（節の名前を「」で示します）か `relay --help` / `relay <command> --help` を見てください。`--help` はランナー操作のコマンド（`screenshot`・`tap` など）、`status`・`stop`、`relay skill` にあります。`start`・`doctor`・`devices`・`install` は `relay --help` の全体のヘルプに書かれています。
+[SKILL.md](SKILL.md) の補足です。ここにないことは device-relay の README と docs/ の各文書（ファイル名と節の名前を「」で示します）か `relay --help` / `relay <command> --help` を見てください。`--help` はランナー操作のコマンド（`screenshot`・`tap` など）、`status`・`stop`、`relay skill` にあります。`start`・`doctor`・`devices`・`install` は `relay --help` の全体のヘルプに書かれています。
 
 ## ランナーの起動・確認・停止
 
@@ -34,7 +34,7 @@
 
 ### start --background / status / stop
 
-詳しくは README の「バックグラウンドで動かす」。
+詳しくは device-relay の docs/setup.md の「バックグラウンドで動かす」。
 
 **`relay start --background`**: 同じオプションの `relay start` を新しいセッションとして起動し（端末を閉じても止まらない。stdin は `/dev/null`、出力は `~/.relay/logs/start-<時刻>-<port>.log`）、そのログを読んで待ちます。
 
@@ -89,7 +89,7 @@ runner.json: /Users/<you>/.relay/runner.json
 | `not running`、0 | 何も動いていない（runner.json がない、応答しない古い runner.json を削除した） |
 | 1 | `relay start` が 60 秒以内に終わらなかった。`~/.relay/logs/start-*.log` を見て、利用者に知らせる |
 
-実機の準備（デベロッパモード、ペアリング、UI オートメーション、Team ID）は README の「実機」「Team ID（実機の署名）」を参照してください。
+実機の準備（デベロッパモード、ペアリング、UI オートメーション、Team ID）は device-relay の docs/setup.md の「実機」「Team ID（実機の署名）」を参照してください。
 
 ## 接続先（runner.json）
 
@@ -201,7 +201,7 @@ stderr に JSON が出ます。
 - `--scale 1` の画像は画素 = ポイントです（iPhone 17 Pro の縦向きで 402×874）。`--max-size` などで縮小した画像は、stderr の `relay: image 471x1024 px, screen 402x874 pt, 1.172 px/pt (tap in points: px / 1.172)` の px/pt で割ります（例: (120, 375) px → (102, 320) pt）。curl では応答ヘッダー `X-Relay-Image-Scale` などで同じ値が得られます。
 - タップやスワイプの座標は、どの画像を使っても常にポイントです。
 - `relay orientation` の後は `relay health` の `orientation` と `screen` を読み直します。iPhone のアプリの多くは `portraitUpsideDown` に回転しません。
-- 詳しくは README の「座標系と画面の向き」。
+- 詳しくは device-relay の docs/screen.md の「座標系と画面の向き」。
 
 ## スクロールの例
 
@@ -215,7 +215,7 @@ relay find --label "Privacy" --type button
 
 ## 試し打ち用のアプリ
 
-ランナーと一緒に RelayRunnerHost（`dev.yuta24.devicerelay.RelayRunnerHost`）がインストールされます。対象アプリの代わりに操作を試せます。identifier: `relay.input` / `relay.input2`（入力欄）、`relay.password`（パスワード欄。`secureTextField`）、`relay.text`、`relay.passwordLength`、`relay.submitted`、`relay.events`（README の「検証用のホストアプリ」）。
+ランナーと一緒に RelayRunnerHost（`dev.yuta24.devicerelay.RelayRunnerHost`）がインストールされます。対象アプリの代わりに操作を試せます。identifier: `relay.input` / `relay.input2`（入力欄）、`relay.password`（パスワード欄。`secureTextField`）、`relay.text`、`relay.passwordLength`、`relay.submitted`、`relay.events`（device-relay の docs/development.md の「検証用のホストアプリ」）。
 
 ```sh
 relay launch dev.yuta24.devicerelay.RelayRunnerHost
@@ -226,19 +226,19 @@ relay find --id relay.submitted       # label が "submitted #1: hello"
 
 ## トラブルシューティング
 
-| 症状 | 原因と対処 | README |
+| 症状 | 原因と対処 | device-relay の文書 |
 | --- | --- | --- |
-| 起動時に `Failed to initialize for UI testing`（`Timed out while enabling automation mode.`） | 実機では、automation mode の有効化で端末がパスコードの入力を求め、入力されないまま時間切れになったことが多い（「UI オートメーション」が無効な場合も同じエラーになる）。利用者に、端末にパスコード入力画面が出ていたら入力してもらうよう依頼してから、`relay start` し直す（許可はしばらく有効なので、直後の起動は通りやすい）。`reusing …` の後に note が出ていたら、その指示どおり作り直す（チェックアウトなら `relay start --rebuild`、`relay install` で入れた Runner（`~/.relay/runner`。`--project` や `$RELAY_HOME` で指定した場合も）なら `relay install` をやり直してから `relay start --rebuild`）。それでも続くなら 設定 > デベロッパ >「UI オートメーションを有効にする」がオンか確認してもらう。シミュレータでは一時的なことが多いので 1 回だけ起動し直す | 「実機」 |
-| 実機で「信頼されていないデベロッパ」 | Personal Team などの証明書。設定 > 一般 > VPNとデバイス管理 で信頼してもらってから起動し直す | 「実機」 |
-| `relay doctor` でロック中（`passcodeRequired`）、操作が効かない | 実機のロックを解除してもらう | 「環境の確認（relay doctor）」 |
-| `--allow-wifi` で届かない | 端末の「ローカルネットワーク」の許可ダイアログで許可してもらう | 「実機」「既知の制約」 |
-| 実機が `connected` にならない、DDI が未マウント | USB で接続し、Xcode の Devices and Simulators で準備完了にしてもらう | 「実機」 |
-| 署名・Team ID のエラー（実機） | Xcode でサインインして Apple Development 証明書を作ってもらう。チームが複数なら `--team-id` | 「Team ID（実機の署名）」 |
-| `relay install を再実行して` と出る | `relay install` の後に relay が更新された。利用者に `relay install` を頼む（動作は止まらない） | 「Runner の用意（relay install）」 |
-| `unknown argument: '-target-arch-variant'`（relay のビルド時） | PATH の先頭に別の Swift がある。`make install` は `xcrun swift` を使うのでそちらで | 「要件」 |
-| 1 回の操作が数分戻らず、その間 busy が続く | 別プロセスのシート（Apple Account のサインインなど）が出ていてスナップショットが詰まっている。待つか、利用者に閉じてもらう | 「既知の制約」 |
-| 実機で `relay button home` が効かない | ホームボタンのある端末では、代用のスワイプでコントロールセンターが開く | 「既知の制約」 |
-| 終了コード 3 だが runner.json がある | `relay start` が強制終了され、ファイルだけ残っている（`relay status` の pid が `relay start not running`、ping が応答なし）。`relay stop` で片付けて（`not running`）から起動する | 「バックグラウンドで動かす」「既知の制約」 |
-| `relay start --background` が「a runner is already running」で 1 | `~/.relay/runner.json` のランナーが同じポートで応答している。`relay status` で確かめ、そのまま使う。自分で起動したものでなければ止めない | 「バックグラウンドで動かす」 |
+| 起動時に `Failed to initialize for UI testing`（`Timed out while enabling automation mode.`） | 実機では、automation mode の有効化で端末がパスコードの入力を求め、入力されないまま時間切れになったことが多い（「UI オートメーション」が無効な場合も同じエラーになる）。利用者に、端末にパスコード入力画面が出ていたら入力してもらうよう依頼してから、`relay start` し直す（許可はしばらく有効なので、直後の起動は通りやすい）。`reusing …` の後に note が出ていたら、その指示どおり作り直す（チェックアウトなら `relay start --rebuild`、`relay install` で入れた Runner（`~/.relay/runner`。`--project` や `$RELAY_HOME` で指定した場合も）なら `relay install` をやり直してから `relay start --rebuild`）。それでも続くなら 設定 > デベロッパ >「UI オートメーションを有効にする」がオンか確認してもらう。シミュレータでは一時的なことが多いので 1 回だけ起動し直す | docs/setup.md の「実機」 |
+| 実機で「信頼されていないデベロッパ」 | Personal Team などの証明書。設定 > 一般 > VPNとデバイス管理 で信頼してもらってから起動し直す | docs/setup.md の「実機」 |
+| `relay doctor` でロック中（`passcodeRequired`）、操作が効かない | 実機のロックを解除してもらう | docs/setup.md の「環境の確認（relay doctor）」 |
+| `--allow-wifi` で届かない | 端末の「ローカルネットワーク」の許可ダイアログで許可してもらう | docs/setup.md の「実機」、docs/limitations.md |
+| 実機が `connected` にならない、DDI が未マウント | USB で接続し、Xcode の Devices and Simulators で準備完了にしてもらう | docs/setup.md の「実機」 |
+| 署名・Team ID のエラー（実機） | Xcode でサインインして Apple Development 証明書を作ってもらう。チームが複数なら `--team-id` | docs/setup.md の「Team ID（実機の署名）」 |
+| `relay install を再実行して` と出る | `relay install` の後に relay が更新された。利用者に `relay install` を頼む（動作は止まらない） | docs/setup.md の「Runner の用意（relay install）」 |
+| `unknown argument: '-target-arch-variant'`（relay のビルド時） | PATH の先頭に別の Swift がある。`make install` は `xcrun swift` を使うのでそちらで | README の「要件」 |
+| 1 回の操作が数分戻らず、その間 busy が続く | 別プロセスのシート（Apple Account のサインインなど）が出ていてスナップショットが詰まっている。待つか、利用者に閉じてもらう | docs/limitations.md |
+| 実機で `relay button home` が効かない | ホームボタンのある端末では、代用のスワイプでコントロールセンターが開く | docs/limitations.md |
+| 終了コード 3 だが runner.json がある | `relay start` が強制終了され、ファイルだけ残っている（`relay status` の pid が `relay start not running`、ping が応答なし）。`relay stop` で片付けて（`not running`）から起動する | docs/setup.md の「バックグラウンドで動かす」、docs/limitations.md |
+| `relay start --background` が「a runner is already running」で 1 | `~/.relay/runner.json` のランナーが同じポートで応答している。`relay status` で確かめ、そのまま使う。自分で起動したものでなければ止めない | docs/setup.md の「バックグラウンドで動かす」 |
 
 起動に失敗したときのログは `~/.relay/logs/`（`start-*.log`、`build-*.log`、`runner-*.log`）にあります。`relay start --background` は失敗時に原因、ログの末尾、`start-*.log` のパスを stderr に出すので、まずそれを読み、足りなければそのファイルや、そこに書かれた `build-*.log` / `runner-*.log` を読みます。

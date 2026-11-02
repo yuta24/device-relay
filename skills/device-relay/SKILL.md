@@ -7,7 +7,7 @@ description: relay CLI（device-relay）で iOS のシミュレータや実機�
 
 `relay` は、常駐する XCTest ランナーを通じて Mac から iOS のシミュレータや実機を操作する CLI です。対象アプリの改修は要りません。どのディレクトリ（対象アプリのリポジトリなど）からでも使え、そこには何も作りません（ランナーの URL とトークンは `~/.relay/runner.json`、スクリーンショットは `$TMPDIR/relay/`）。
 
-オプションの詳細、要素ツリー、失敗の理由ごとの対処、トラブルシューティングは [reference.md](reference.md) にあります。全体の説明は device-relay の README です。
+オプションの詳細、要素ツリー、失敗の理由ごとの対処、トラブルシューティングは [reference.md](reference.md) にあります。全体の説明は device-relay の README と docs/ の各文書です。
 
 ## セットアップ（初回だけ）
 

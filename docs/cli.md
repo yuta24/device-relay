@@ -1,0 +1,168 @@
+# CLI
+
+`relay` のサブコマンドでランナーを操作する方法、シナリオの実行（実験的）、エージェントスキルについて説明します。全体の入口は [README](../README.md) です。
+
+## CLI から操作する
+
+`relay` には、エンドポイントを 1 つずつ呼ぶサブコマンドがあります。ランナーは `relay start --background`（または別のターミナルの `relay start`）で起動しておき、使い終わったら `relay stop` で止めます。トークンを自分で扱わずに、人もスクリプトもエージェントも同じ形で操作できます。`relay <command> --help` で各コマンドの使い方を表示します。
+
+```sh
+relay start --background                       # ready: <URL> が出たら戻る（「[バックグラウンドで動かす](setup.md#バックグラウンドで動かすrelay-start---background--status--stop)」）
+relay status                                   # 生きていれば終了コード 0、いなければ 3
+relay health                                   # curl -s -H "$AUTH" $R/health
+relay launch dev.yuta24.devicerelay.RelayRunnerHost
+relay find --type textField                    # POST /find {"element":{"type":"textField"}}
+relay find --id home.title --timeout 5 --require   # 現れるまで待ち、現れなければ終了コード 6
+relay tap --id relay.input                     # POST /tap {"element":{"identifier":"relay.input"}}
+relay tap 200 120 --mode xcui                  # POST /tap {"x":200,"y":120,"mode":"xcui"}
+relay press --label General --type button --duration 1.0
+relay swipe 200 700 200 200 --duration 0.3
+relay type "hello" --key return                # POST /type {"text":"hello","keys":["return"]}
+printf '%s' "$PASSWORD" | relay type --stdin   # 文字列を標準入力から読む（ps やシェルの履歴に残さない）
+relay key delete
+relay screenshot                               # 保存先の絶対パスを出力（既定は $TMPDIR/relay/screenshot-<時刻>.png）
+relay screenshot -o shot.jpg --quality 0.5     # 拡張子 .jpg / --quality で jpeg
+relay screenshot --scale 1                     # 端末側で 1 px = 1 pt に縮小（stderr に画像と画面の大きさ）
+relay screenshot --max-size 1024 --format jpeg # 長辺 1024 px に縮小
+relay source --max-depth 3 | jq .tree
+relay source --format text --bundle-id com.apple.Preferences
+relay source --format compact --filter interactive   # 操作できる要素だけを 1 行 1 要素で
+relay button home
+relay orientation landscapeLeft
+relay terminate com.apple.Preferences
+relay shutdown                                 # ランナーだけを止める（relay start はそれを見て終了）
+relay stop                                     # relay start ごと止める（boot したシミュレータの shutdown も）
+relay run about.relay                          # 1 行 1 手順のシナリオを順に実行（実験的。下の「シナリオの実行」）
+```
+
+（`make install` した `relay` をどのディレクトリからでも使えます。リポジトリ内では `xcrun swift run relay …` でも動きます。）
+
+| コマンド | エンドポイント | 主なオプション |
+| --- | --- | --- |
+| `ping` / `health` / `foreground` | `GET /ping` / `/health` / `/foreground` | – |
+| `screenshot` | `GET /screenshot` | `-o <file>`（`-` で stdout）、`--format png\|jpeg`、`--quality 0.05–1.0`、`--max-size <px>`、`--scale <px/pt>` |
+| `source` | `GET /source` | `--format json\|text\|compact`、`--filter interactive`、`--max-depth <n>`、`--bundle-id <id>` |
+| `find` | `POST /find` | セレクタ、`--limit <n>`、`--timeout <s>`、`--require`、`--bundle-id <id>` |
+| `tap` / `press` | `POST /tap` / `/press` | `<x> <y>` かセレクタ、`--mode private\|xcui`、`--timeout`・`--bundle-id`（セレクタのみ）、`--duration`（press のみ） |
+| `swipe` | `POST /swipe` | `<x1> <y1> <x2> <y2>`、`--duration`、`--hold`、`--mode` |
+| `type` | `POST /type` | `<text>` か `--stdin`、`--key <name>`（複数可、順に送る）、`--bundle-id` |
+| `key` / `button` / `orientation` | `POST /key` / `/button` / `/orientation` | 名前（`key` は `--bundle-id` も可） |
+| `launch` / `terminate` | `POST /launch` / `/terminate` | `<bundle-id>` |
+| `shutdown` | `POST /shutdown` | – |
+| `status` | `GET /ping` と runner.json | `--json`。終了コードは「[バックグラウンドで動かす](setup.md#バックグラウンドで動かすrelay-start---background--status--stop)」 |
+| `stop` | `relay start` への SIGTERM（なければ `POST /shutdown`） | – |
+| `run`（実験的） | 手順ごとに上のエンドポイント | `<file>` か `-` か `--step <手順>`（複数可）、`--runner`、`--quiet`。「シナリオの実行（relay run、実験的）」 |
+
+- セレクタは `--id`（= `identifier`）・`--label`・`--type`・`--value` を 1 つ以上と、任意の `--index <n>` です（「[要素セレクタ](elements.md#要素セレクタ)」と同じ完全一致・AND）。`--type` の名前、キー名、ボタン名、向きの名前、数値の範囲は送る前に確認し、間違っていれば終了コード 1 で何も送りません。
+- `relay find` は一致がなくても終了コード 0（`"count":0`）です。`--require` を付けると、一致する要素がないときに終了コード 6 で終わり、応答の JSON を stderr に、`relay: no element matched` を続けて出します（`--index` が範囲外のときも同じ）。`relay find <セレクタ> --timeout 5 --require` は「現れるまで待ち、現れなければ失敗する」確認になり、スクリプトは JSON を読まずに終了コードだけで判断できます。判定はホスト側で行い、ランナーへのリクエストは変わりません。
+- `-` で始まる文字列を入力するときは `relay type -- --text` のように `--` を挟みます。
+- パスワードなど、`ps` やシェルの履歴に残したくない文字列は `relay type --stdin` で標準入力から渡します。末尾の改行 1 つ（`\n` か `\r\n`。`echo` が付けるもの）だけを除き、それ以外はそのまま入力します。`--key` と併用でき、`<text>` と同時に指定すると終了コード 1 で何も送りません。標準入力が空でも `--key` があればキーだけを送ります。
+- 成功時はランナーの JSON をそのまま stdout に出します（`source --format text` / `compact` はテキスト）。`screenshot` だけは画像をファイルに保存し、その絶対パスを 1 行出します。既定の保存先を `$TMPDIR` にしたのは、操作する側（対象アプリのリポジトリ）の作業ツリーを汚さないためです。`--max-size` / `--scale` で縮小したときは、stdout は同じくパス 1 行のままで、stderr に `relay: image 471x1024 px, screen 402x874 pt, 1.172 px/pt (tap in points: px / 1.172)` のように画像と画面の大きさを出します（「[スクリーンショットの縮小](screen.md#スクリーンショットの縮小)」）。
+- 失敗時はランナーの JSON を stderr に出し、ステータスごとに次の終了コードで終わります。`relay:` で始まる行は人向けのヒントです。
+
+| 終了コード | 意味 |
+| --- | --- |
+| `0` | 成功（2xx） |
+| `1` | 引数の誤り、runner.json が読めない、スクリーンショットを保存できないなど、ローカルの失敗 |
+| `3` | ランナーに届かない（runner.json がない、接続できない・タイムアウト）。`relay status` で確認し、動いていなければ `relay start --background` で起動してください |
+| `4` | `401`。runner.json のトークンが動いているランナーのものではない（古いファイル、別のランナー） |
+| `5` | `409`（busy）。再試行してよい |
+| `6` | `422`。XCUI で失敗（フォーカスがない、要素が見つからない・1 つに決まらないなど） |
+| `7` | `400` とその他の 4xx |
+| `8` | 5xx などそれ以外 |
+
+### 接続先（runner.json）の探し方
+
+URL とトークンは `runner.json` から読みます。トークンはコマンドライン引数では受け取りません（`ps` やシェルの履歴に残るため）。次の順に探し、最初に見つかったものを使います。
+
+1. `--runner <path>`
+2. 環境変数 `RELAY_RUNNER`（runner.json のパス）
+3. カレントディレクトリから親へ順に `.relay/runner.json`
+4. `~/.relay/runner.json`
+
+1 と 2 で指定したファイルがなければ、3・4 に進まずに終了コード 3 で終わります（意図しない別の端末を操作しないため）。
+
+`relay start` は、どのディレクトリで実行しても `~/.relay/runner.json`（パーミッション 0600）だけに書き出します。カレントディレクトリ（対象アプリのリポジトリなど）には `.relay/` を作らないので、3 で見つかるのは、自分で置いた `.relay/runner.json` か、以前の版の `relay start` が書いたものだけです。停止時には、まだ自分のトークンが書かれている場合だけ削除します（`relay stop` が片付けるときも同じです）。複数の `relay start` を同時に動かすこと（`--port` を分けて）はできますが、`~/.relay/runner.json` は最後に起動したものになり、前のランナーには `relay health` などのコマンドが届かなくなります（前のランナーのトークンはファイルに残りません）。
+
+### シナリオの実行（relay run、実験的）
+
+> **実験的な機能です。** 手順の書き方、出力、終了コードの扱いは今後変わることがあります。
+
+`relay run` は、ランナー操作のコマンドを 1 行 1 手順で並べたもの（シナリオ）を、1 回の呼び出しで順に実行します。ログインのような決まった手順や、エージェントが一度探索して確かめた手順を再生するためのものです。
+
+```sh
+relay run about.relay                     # ファイルから
+relay run - < about.relay                 # 標準入力から
+relay run --step "launch com.apple.Preferences" --step "tap --label General --type button --timeout 5"
+relay run about.relay --runner path/to/runner.json --quiet
+relay run about.relay --check             # 検証だけ（runner.json を読まず、何も実行しない）
+```
+
+```
+# relay-run: 1
+# 設定 > 一般 > 情報 を開いて確かめる（about.relay）
+terminate com.apple.Preferences
+launch com.apple.Preferences
+tap --id com.apple.settings.general --timeout 5 --bundle-id com.apple.Preferences
+find --label About --type button --timeout 5 --require --bundle-id com.apple.Preferences
+tap --label About --type button --timeout 5 --bundle-id com.apple.Preferences
+find --label "iOS Version" --timeout 5 --require --bundle-id com.apple.Preferences
+screenshot --output about.png --scale 1
+```
+
+（「情報」の identifier は iOS のバージョンで違うので、ラベルと型で指定しています。「一般」が画面外にある端末では、`tap` の前に `swipe` と `sleep 2` が要ります（下の「スワイプの後は固定の待ちが要ります」）。）
+
+- **入力**は `<file>`、`-`（標準入力）、`--step <手順>`（複数可）のどれか 1 つです。2 つ以上や、どれもないときは使用法エラー（終了コード 1）です。ファイルと標準入力は UTF-8 で、先頭の BOM（U+FEFF）は取り除き、CRLF の改行も読めます。ファイルの相対パスと、手順の中の `--output` の相対パスは、どちらもカレントディレクトリが基準です。
+- **1 行 1 手順**で、`relay` を付けずにサブコマンドをそのまま書きます。空行と、`#` で始まる行（前の空白は無視）は飛ばします。行の途中の `#` はコメントではなく文字です。`--step` は 1 つが 1 手順で、改行を含められません。
+- **語の区切り**はシェルに似た最小限のものです。空白とタブで区切り、`'...'` は中身をそのまま、`"..."` は `\"` と `\\` だけを解釈し、引用符の外の `\` は次の 1 文字をそのまま使います。変数展開やグロブはありません。
+- **使える手順**: `ping` `health` `foreground` `screenshot` `source` `find` `tap` `press` `swipe` `type` `key` `button` `orientation` `launch` `terminate` と、疑似手順の `sleep <秒>`（0 < 秒 ≤ 60）。オプションと値の確認は単独のコマンドと同じです。
+- **使えない手順**: `start` `stop` `status` `install` `doctor` `devices` `skill` `bench` `config` `run` など、ランナーへの操作でないものと、`shutdown`（以降の手順が実行できないため。後片付けは `relay stop`）。手順の中の `--runner`（接続先は `relay run` に 1 回だけ指定）、`--help`、`type --stdin`（標準入力はシナリオのもの）も使えません。`screenshot` は `--output <file>` が必須です（stdout はほかの手順の出力に使うので、`-o -` も不可）。
+- **形式の版**: 最初の手順より前に `# relay-run: 1` と書くと、そのシナリオが形式 1 で書かれたことを示せます（任意。書かなければ今の形式として読みます）。形式が変わったとき、古いシナリオが黙って違う意味で動かないようにするためのものです。`1` 以外の値、値のないもの、最初の手順より後にあるものは、その行のエラーとして何も実行しません。コメント行の形なので、この行を知らない relay では読み飛ばされます。保存して使い回すシナリオには書いておくことをおすすめします。
+- **事前検証**: 実行の前に全手順を確かめ、1 つでも不正なら何も実行せずに、不正な行ごとに `relay: line <N>: <理由>` を出して終了コード 1 で終わります（`--step` では何番目かを行番号とします）。`--check` を付けると、この検証だけを行って終わります。runner.json を読まず何も実行しないので、ランナーが動いていなくても使えます。問題がなければ stderr に `relay: 7 steps checked; nothing was run` を出して終了コード 0（`--quiet` なら何も出しません）。エージェントが書いたシナリオを流す前の確認に使えます。
+- **実行**: runner.json は最初に 1 回だけ探して読み（「接続先（runner.json）の探し方」と同じ順。`--runner` は `relay run` に付けます）、手順は同じプロセスの中で順に送ります。手順ごとに `relay` を起動し直さないので、そのぶん速くなります。
+- **出力**: 各手順の stdout（`find` の JSON、`screenshot` の保存先など）は、単独で実行したときと同じものが stdout にそのまま出ます。stderr には手順ごとに `relay: [3/7] tap --id com.apple.settings.general --timeout 5 --bundle-id com.apple.Preferences ... ok (448 ms)` を、最後に `relay: 7 of 7 steps succeeded in 7672 ms` を出します（失敗したときは `relay: 3 of 7 steps succeeded in … ms; exit status 6`）。`--quiet`（`-q`）でこの 2 種類を消せます。進行行と失敗行では、`type` の文字列を `***` に伏せます（`relay: [4/9] type *** --key return ... ok`）。シナリオでは `--stdin` が使えず、パスワードを書くならシナリオに書くしかないためです。ファイル自体は利用者が管理してください。
+- **失敗**: 最初に失敗した手順で止めます。stderr には、その手順の通常のエラー（ランナーの JSON や `relay:` のヒント）に続いて `relay: step 4/7 (line 5) failed: find --label About --type button --timeout 5 --require --bundle-id com.apple.Preferences` を出し、その手順の終了コード（3・4・5・6・7・8、スクリーンショットを保存できなければ 1）で終わります。すべて成功すれば 0 です。失敗しても続ける `--continue-on-error` はありません。
+- **待ちは `find --timeout` / `--timeout` で。** 画面が変わる操作の後は、次の画面の要素を `find <セレクタ> --timeout <秒>` で待つか、`tap` / `press` の `--timeout` で要素が現れるのを待たせます。要素が現れた時点で次に進むので、固定の `sleep` より速く、遅い環境でも崩れにくくなります。`sleep` は、要素で表せない待ち（アニメーションの終わりなど）のための最後の手段です。
+- **確認は `find --require` で。** 手順は単独のコマンドと同じ意味なので、`find` は一致がなくても成功（`"count":0`）で、シナリオは先に進みます。`find <セレクタ> --timeout 5 --require` と書くと「現れるまで待ち、現れなければそこで止める」確認になります（終了コード 6）。観察のためだけの `find`（結果を後で読む）には `--require` を付けません。
+
+**AXe の `axe batch` との違い**: 1 行 1 手順で、`--step` を並べる・ファイル・標準入力から読めること、`sleep` の手順、最初の失敗で止まることは同じです。違いは次のとおりです。
+
+- 要素を待つのは、AXe の `--wait-timeout` ではなく、手順ごとの `find --timeout` / `tap --timeout` / `press --timeout`（最大 10 秒）です。
+- 途中に確認の手順を書けます。`find --timeout <秒> --require` は待ちと確認を兼ね、見つからなければそこで止まります。`source` / `screenshot` / `health` / `foreground` などの観察も手順にでき、結果は stdout に出ます。
+- 実行の前に全手順を確かめ、不正な行があれば何も実行しません。
+
+**所要時間（参考値）**: シミュレータ（iPhone 17 Pro / iOS 27.0、debug ビルド）で、同じ手順を `relay run` と、1 手順ずつ `relay` を呼ぶシェルのループとで比べました（各 3 回）。
+
+| シナリオ | `relay run` | 1 手順ずつ |
+| --- | --- | --- |
+| `ping` × 20 | 41–43 ms | 324–332 ms |
+| 設定 > 一般 > 情報（`launch`、`tap` × 2、`find` × 2、`health`、`foreground`、`screenshot` の 8 手順） | 1287–1301 ms | 1428–1457 ms |
+| 上の例（about.relay の 7 手順。`terminate` と `launch` で約 5.8 秒） | 6818–7027 ms | 7141–7220 ms |
+| 実機（iPhone 14 Pro / iOS 26.7.1）: `ping` × 20 | 67–73 ms | 360–370 ms |
+| 実機: 設定 > 一般 > 情報（`swipe` と `sleep 2` を含む 10 手順） | 7011–7050 ms | 7455–7513 ms |
+
+差は `relay` の起動と runner.json の読み込み（1 回約 15 ms）だけで、操作そのものの時間は変わりません。ふつうのシナリオでは数 % で、主な利点は、エージェントやスクリプトが 1 回の呼び出しで決まった手順を再生でき、途中で止まった位置が行番号でわかることです。なお `find --timeout` は要素が現れた時点で進むので、直後の `screenshot` が画面遷移のアニメーションの途中を写すことがあります。止まった画面がほしいときに限って、`sleep 0.5` などを挟みます。
+
+**スワイプの後は固定の待ちが要ります。** 慣性スクロール中に `tap` すると、タップはスクロールを止めるだけで、要素は押されません（`tap` は成功するので、次の `find` で止まります）。実機の設定アプリでは、スワイプ後 1 秒ではまだ数 pt 動いていて同じ失敗になり、`sleep 2` で通りました。スクロールが止まったことは要素では表せないので、ここは `sleep` を使います。
+
+## エージェントスキル
+
+`skills/device-relay/` は、コーディングエージェント（Claude Code など）が対象アプリのリポジトリで作業しながら relay でアプリの動作を確かめるためのスキルです。`SKILL.md` に基本の流れ（`relay status` → `relay start --background` → `relay launch` → スクリーンショットと要素の観察 → 操作 → 確認 → `relay stop`）、要素セレクタを優先する操作のコツ、終了コードごとの対処、安全上の注意をまとめ、オプションやトラブルシューティングの詳細は `reference.md` に分けています。
+
+使う前に、このリポジトリで `make install` と `relay install` を済ませ、`relay doctor` で確認しておきます（「[クイックスタート](../README.md#クイックスタート)」）。`relay install` は Runner と一緒にスキルも `~/.relay/runner/skills/device-relay` にコピーし、`relay skill install` はそこから対象アプリのリポジトリなどへ入れます。
+
+```sh
+cd /path/to/app
+relay skill install            # <git のルート>/.claude/skills/device-relay にコピー（チームでコミットできる）
+relay skill install --global   # ~/.claude/skills/device-relay（どのリポジトリでも使う）
+relay skill install --dir <skills dir>   # <skills dir>/device-relay
+relay skill status             # 取り出し元と、プロジェクト・グローバルのインストール先、バージョンのずれ（!）
+relay skill uninstall          # relay が入れたものだけを削除（--global / --dir も同じ）
+```
+
+- 既定の入れ先は、カレントディレクトリの git のルート（git の外ならカレントディレクトリ）の `.claude/skills/device-relay` です。コピーなので、そのままコミットしてチームで共有できます。どのコマンドも入れ先（削除先）のパスを必ず表示します。relay が表示・比較するパスは、存在する部分のシンボリックリンクを解決した形にそろえます（macOS では `/private/tmp/...` も `/tmp/...` になります）。
+- 取り出し元は `~/.relay/runner/skills/device-relay`（`relay install` したもの）、なければ `relay install` と同じ探し方で見つけた device-relay のチェックアウト（`$RELAY_HOME`、カレントディレクトリとその親、`relay` の実行ファイルのチェックアウト）の `skills/device-relay` です。
+- コピーには、SKILL.md を変えずに隠しファイル `.relay-skill.json` を置き、relay のバージョン、コミット、取り出し元、日時を記録します。この記録があるもの（または relay のスキルを指すリンク）は relay が入れたものとみなし、再実行で上書き更新します。それ以外のものが入れ先にあれば、`--force` なしでは上書きしません。`uninstall` は relay が入れたものだけを削除し、それ以外は残してエラーにします。
+- `--link` はコピーの代わりにシンボリックリンクを作ります。スキルを編集する開発用で、取り出し元はチェックアウトを優先します（チェックアウトの変更がそのまま反映されます）。リンクはこの Mac の絶対パスを指すので、コミットして共有するには向きません。
+- `relay skill status` は、記録したバージョンが `relay` のバージョンと違う場合や、取り出し元より古い（バージョンかコミットが違う）場合に ! を付けます。relay を更新したら `relay install` の後に `relay skill install`（`--global` などで入れたなら同じオプション）をやり直してください。
+- スキルは、ランナーが動いていれば（`relay status` が 0）それを使い、止めません。自分で `relay start --background` したときだけ、終わりに `relay stop` します。端末は、実機を指定されない限り `relay devices` で選んだシミュレータを `--device` / `--udid` で明示します。
