@@ -12,13 +12,26 @@ import Foundation
 /// macOS asks for camera access for this, on behalf of the app relay runs in (the terminal, for example):
 /// the detached `relay record supervise` counts as that app too, so `record start` asks before it starts it.
 enum DeviceCapture {
-    /// How long the capture devices take to show up after they are allowed (about 0.3 s, up to a few seconds
+    /// How long the capture devices take to show up after they are allowed (about 0.3 s, up to about 4.3 s
     /// in a new process).
     static let discoveryTimeout: TimeInterval = 10
+    /// How long the supervisor waits after its capture stops before it exits. A process that allows the
+    /// capture devices within about 2.5 s after another one stopped capturing never sees the screen (no
+    /// capture device at all, for as long as it runs; allowing again or exec does not help, a new process
+    /// does), so `record stop`, which waits for the supervisor, returns after that.
+    static let releaseDelay: TimeInterval = 3.5
     /// How long `record start` waits for an answer to the camera access dialog.
     static let accessTimeout: TimeInterval = 120
     /// The capture devices' model, as opposed to cameras plugged into the Mac.
     static let modelID = "iOS Device"
+    /// How long without a frame before the supervisor notes it. A still screen keeps sending frames (40 to 60
+    /// a second, at most about 0.08 s apart), so a gap this long means the capture stopped, a locked device
+    /// for example.
+    static let stallThreshold: TimeInterval = 5
+    /// The supervisor's notes in the log when frames stop and when they come again (`FrameWatch`), which
+    /// `record status` reads.
+    static let stallMarker = "relay: no frame for "
+    static let resumeMarker = "relay: frames came again "
 
     // MARK: - Pure helpers
 
@@ -72,10 +85,15 @@ enum DeviceCapture {
     }
 
     /// The capture device of the device named `name` (devicectl's name). The capture device's uniqueID is not
-    /// the UDID and cannot be derived from it, so the name is all there is; it compares exactly, as both come
-    /// from the device.
+    /// the UDID and cannot be derived from it, so the name is all there is. Both come from the device, so an
+    /// exact match comes first; without one, the names are compared again ignoring case, accents, and the
+    /// kind of apostrophe or quote (’ and ', for example), in case one side spells them differently.
     static func match(name: String, candidates: [Candidate]) -> Match {
-        let named = candidates.filter { $0.name == name }
+        var named = candidates.filter { $0.name == name }
+        if named.isEmpty {
+            let loose = loosened(name)
+            named = candidates.filter { loosened($0.name) == loose }
+        }
         switch named.count {
         case 0: return .notFound
         case 1: return .found(uniqueID: named[0].uniqueID)
@@ -83,11 +101,26 @@ enum DeviceCapture {
         }
     }
 
+    /// `name` for the second comparison of `match`: case and accents folded, and apostrophes and quotes made
+    /// the ASCII ones.
+    static func loosened(_ name: String) -> String {
+        let apostrophes: Set<Character> = ["\u{2018}", "\u{2019}", "\u{201A}", "\u{201B}", "\u{2032}", "\u{02BC}", "\u{FF07}", "`", "\u{00B4}"]
+        let quotes: Set<Character> = ["\u{201C}", "\u{201D}", "\u{201E}", "\u{201F}", "\u{2033}", "\u{FF02}"]
+        let plain = String(name.map { apostrophes.contains($0) ? "'" : quotes.contains($0) ? "\"" : $0 })
+        return plain.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+    }
+
     /// The error when the device's screen is not among the capture devices, with what was there.
     static func notFoundMessage(name: String, candidates: [Candidate]) -> String {
         let seen = candidates.isEmpty ? "no device screen is available" : "the screens available are \(candidates.map { "\"\($0.name)\"" }.joined(separator: ", "))"
         return "the screen of \(name) did not show up as a capture device within \(Int(discoveryTimeout))s (\(seen)); "
             + "connect it with a USB cable (not only Wi-Fi), unlock it, tap Trust if it asks to trust this computer, and try again"
+    }
+
+    /// Whether the supervisor's log says no device screen showed up at all, which a process that started just
+    /// after another capture stopped also sees; `record start` tries once more in a new process then.
+    static func noScreenShowedUp(inLog text: String) -> Bool {
+        text.split(separator: "\n").contains { $0.hasPrefix("relay: the screen of ") && $0.contains("(no device screen is available)") }
     }
 
     static func ambiguousMessage(name: String, count: Int) -> String {
@@ -151,6 +184,27 @@ enum DeviceCapture {
     }
 }
 
+/// Notes in the supervisor's log when frames stop coming and when they come again; the recording goes on
+/// either way (the video holds the last frame meanwhile).
+struct FrameWatch {
+    /// When the last frame before the gap came, while frames have stopped.
+    private(set) var stalledSince: Date?
+
+    /// The note to log, if any, given when the last frame came (nil before the first one).
+    mutating func check(lastFrame: Date?, now: Date, threshold: TimeInterval = DeviceCapture.stallThreshold) -> String? {
+        guard let lastFrame else { return nil }
+        if let since = stalledSince {
+            guard lastFrame > since else { return nil }
+            stalledSince = nil
+            return "frames came again after \(Int(lastFrame.timeIntervalSince(since).rounded()))s without one"
+        }
+        guard now.timeIntervalSince(lastFrame) >= threshold else { return nil }
+        stalledSince = lastFrame
+        return "no frame for \(Int(threshold))s (the device may be locked, or the capture stalled); still recording, "
+            + "and the video holds the last frame until frames come again"
+    }
+}
+
 /// Writes the frames of a capture session to the video. The writer starts with the first frame, so its size
 /// is the screen's and the video starts when the screen does.
 private final class DeviceFrameWriter: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, @unchecked Sendable {
@@ -161,6 +215,8 @@ private final class DeviceFrameWriter: NSObject, AVCaptureVideoDataOutputSampleB
     private(set) var frames = 0
     private(set) var size: (width: Int, height: Int)?
     private(set) var failure: String?
+    /// When the last frame came, written or not (`FrameWatch`).
+    private(set) var lastFrameAt: Date?
     private var finished = false
 
     init(url: URL) {
@@ -169,6 +225,7 @@ private final class DeviceFrameWriter: NSObject, AVCaptureVideoDataOutputSampleB
 
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
         guard !finished, failure == nil, let image = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        lastFrameAt = Date()
         if writer == nil {
             let width = CVPixelBufferGetWidth(image)
             let height = CVPixelBufferGetHeight(image)
@@ -299,8 +356,12 @@ enum DeviceRecordSupervisor {
         session.startRunning()
 
         let started = Date()
+        var watch = FrameWatch()
         while !stop.isSet, !ended.isSet, Date().timeIntervalSince(started) < maxDuration, queue.sync(execute: { writer.failure }) == nil {
             RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+            if let note = watch.check(lastFrame: queue.sync(execute: { writer.lastFrameAt }), now: Date()) {
+                log(note)
+            }
         }
         if let failure = queue.sync(execute: { writer.failure }) {
             log(failure)
@@ -314,6 +375,8 @@ enum DeviceRecordSupervisor {
         queue.sync { writer.finish { written.signal() } }
         let finishedInTime = written.wait(timeout: .now() + Recording.stopTimeout) == .success
         session.stopRunning()
+        // The next recording's process would not see the screen right away (`releaseDelay`).
+        Thread.sleep(forTimeInterval: DeviceCapture.releaseDelay)
         let (frames, size, status) = queue.sync { (writer.frames, writer.size, writer.writer?.status) }
         guard finishedInTime else {
             log("the video was not written within \(Int(Recording.stopTimeout))s")

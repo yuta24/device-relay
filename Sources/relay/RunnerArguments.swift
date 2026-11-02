@@ -218,14 +218,18 @@ extension Arguments {
             fails while it records, and the state of one that ended does not block the next.
             stop sends SIGINT to the recording (simctl, or relay record supervise for a device), waits up to 30
             seconds for the video to be written, checks that it is not empty, and prints its path; "not recording"
-            when there is none. relay stop and the exit of relay start finish a recording of their runner too.
+            when there is none. For a device it takes about 4 seconds: the capture must be stopped for a few
+            seconds before the next one sees the screen (start tries a new process once when it does not).
+            relay stop and the exit of relay start finish a recording of their runner too.
             A simulator shut down while recording ends the video there, and so does a device unplugged while
-            recording.
+            recording. A device that sends no frame for 5 seconds (locked, for example) keeps recording: the log
+            and status note it (the video holds the last frame), and the log notes when frames come again.
             stop and status use the recording of the runner in runner.json; --port <n> uses the one of that runner
             port directly (also without runner.json; not with --runner). A --runner or $RELAY_RUNNER that does not
             exist is exit 3, as for the other commands. Without them and without runner.json, the only recording
             is used, and several are listed by port to choose one with --port.
-            status shows whether it records, the video, and the elapsed time (--json: one object); it exits 0.
+            status shows whether it records, the video, the elapsed time, and a device's frames having stopped
+            (--json: one object); it exits 0.
             Exit status: 0 ok, 1 not a booted simulator, a device not connected with USB, no camera access, a
               missing directory, an existing file without --force, already recording, the recording failing to
               start (simctl, or no frame from the device), or an empty video, 3 no runner (no runner.json or no

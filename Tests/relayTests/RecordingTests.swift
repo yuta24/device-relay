@@ -327,6 +327,36 @@ struct RecordProgressTests {
         #expect(Recording.endReason(inLog: log) == "the device was disconnected; stopped the recording; wrote 120 frames (1000x2000) to /tmp/a.mp4")
     }
 
+    @Test func statusTellsWhileNoFrameComes() throws {
+        let stalled = """
+        relay: recording the device in pid 6160
+        Recording started
+        relay: no frame for 5s (the device may be locked, or the capture stalled); still recording, and the video holds the last frame until frames come again
+        """
+        let note = try #require(Recording.stall(inLog: stalled))
+        #expect(note.hasPrefix("no frame for 5s"))
+        let resumed = stalled + "\nrelay: frames came again after 12s without one\n"
+        #expect(Recording.stall(inLog: resumed) == nil)
+        #expect(Recording.stall(inLog: resumed + "relay: no frame for 5s (again)\n") == "no frame for 5s (again)")
+        #expect(Recording.stall(inLog: "relay: recording the device in pid 6160\nRecording started\n") == nil)
+        // Not why it ended.
+        #expect(Recording.endReason(inLog: resumed + "relay: stopping the recording\n") == "stopping the recording")
+
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        let state = RecordingState(pid: 6160, processStartedAt: start, supervisorPid: 6160, output: "/tmp/a.mp4",
+                                   udid: "00000000-0000000000000001", port: 8100, startedAt: start, maxDuration: 600,
+                                   log: "/tmp/record.log", kind: .device)
+        let text = Recording.statusText(state, recording: true, stall: note, stateURL: URL(fileURLWithPath: "/s.json"), now: state.startedAt)
+        #expect(text.contains("frames:    no frame for 5s"))
+        #expect(!Recording.statusText(state, recording: true, stateURL: URL(fileURLWithPath: "/s.json")).contains("frames:"))
+        let json = try #require(try JSONSerialization.jsonObject(with: Recording.statusJSON(state, recording: true, stall: note,
+                                                                                            stateURL: URL(fileURLWithPath: "/s.json"))) as? [String: Any])
+        #expect(json["stall"] as? String == note)
+        let fine = try #require(try JSONSerialization.jsonObject(with: Recording.statusJSON(state, recording: true,
+                                                                                            stateURL: URL(fileURLWithPath: "/s.json"))) as? [String: Any])
+        #expect(fine["stall"] == nil)
+    }
+
     @Test func errorsAreNotAStart() {
         var progress = Recording.Progress()
         for line in ["An error was encountered processing the command (domain=com.apple.CoreSimulator.SimError, code=405):",
@@ -467,12 +497,81 @@ struct DeviceCaptureTests {
         ]
         #expect(DeviceCapture.match(name: "Test Phone", candidates: candidates) == .found(uniqueID: "AAAAAAAA-0000-0000-0000-000000000001"))
         #expect(DeviceCapture.match(name: "Test Pad", candidates: candidates) == .found(uniqueID: "AAAAAAAA-0000-0000-0000-000000000002"))
-        // Exactly: both names come from the device.
-        #expect(DeviceCapture.match(name: "test phone", candidates: candidates) == .notFound)
+        #expect(DeviceCapture.match(name: "Test Pod", candidates: candidates) == .notFound)
         #expect(DeviceCapture.match(name: "Test Phone", candidates: []) == .notFound)
         let twins = candidates + [DeviceCapture.Candidate(uniqueID: "AAAAAAAA-0000-0000-0000-000000000003", name: "Test Phone")]
         #expect(DeviceCapture.match(name: "Test Phone", candidates: twins) == .ambiguous(count: 2))
         #expect(DeviceCapture.ambiguousMessage(name: "Test Phone", count: 2).hasPrefix("2 connected devices are named \"Test Phone\""))
+    }
+
+    @Test func theKindOfApostropheDoesNotMatter() {
+        let curly = [DeviceCapture.Candidate(uniqueID: "A1", name: "Kim\u{2019}s iPhone")]
+        #expect(DeviceCapture.match(name: "Kim's iPhone", candidates: curly) == .found(uniqueID: "A1"))
+        let straight = [DeviceCapture.Candidate(uniqueID: "A2", name: "Kim's iPhone")]
+        #expect(DeviceCapture.match(name: "Kim\u{2019}s iPhone", candidates: straight) == .found(uniqueID: "A2"))
+        let quoted = [DeviceCapture.Candidate(uniqueID: "A3", name: "\u{201C}Lab\u{201D} Phone")]
+        #expect(DeviceCapture.match(name: "\"Lab\" Phone", candidates: quoted) == .found(uniqueID: "A3"))
+    }
+
+    @Test func caseAndAccentsDoNotMatter() {
+        let candidates = [DeviceCapture.Candidate(uniqueID: "A1", name: "Zoë's iPhone")]
+        #expect(DeviceCapture.match(name: "zoë's iphone", candidates: candidates) == .found(uniqueID: "A1"))
+        #expect(DeviceCapture.match(name: "Zoe's iPhone", candidates: candidates) == .found(uniqueID: "A1"))
+        #expect(DeviceCapture.match(name: "ZOE\u{2019}S IPHONE", candidates: candidates) == .found(uniqueID: "A1"))
+        #expect(DeviceCapture.match(name: "Zoe's iPad", candidates: candidates) == .notFound)
+    }
+
+    @Test func anExactMatchComesFirst() {
+        let candidates = [
+            DeviceCapture.Candidate(uniqueID: "A1", name: "Test Phone"),
+            DeviceCapture.Candidate(uniqueID: "A2", name: "test phone")
+        ]
+        #expect(DeviceCapture.match(name: "Test Phone", candidates: candidates) == .found(uniqueID: "A1"))
+        #expect(DeviceCapture.match(name: "test phone", candidates: candidates) == .found(uniqueID: "A2"))
+        // Without an exact match both are as close.
+        #expect(DeviceCapture.match(name: "TEST PHONE", candidates: candidates) == .ambiguous(count: 2))
+        let apostrophes = [
+            DeviceCapture.Candidate(uniqueID: "B1", name: "Kim\u{2019}s iPhone"),
+            DeviceCapture.Candidate(uniqueID: "B2", name: "kim's iphone")
+        ]
+        #expect(DeviceCapture.match(name: "Kim's iPhone", candidates: apostrophes) == .ambiguous(count: 2))
+    }
+
+    @Test func aGapInTheFramesIsNotedOnceUntilTheyComeAgain() throws {
+        var watch = FrameWatch()
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        // Nothing before the first frame: record start waits for that.
+        #expect(watch.check(lastFrame: nil, now: start.addingTimeInterval(60)) == nil)
+        #expect(watch.check(lastFrame: start, now: start.addingTimeInterval(4.9)) == nil)
+        let note = watch.check(lastFrame: start, now: start.addingTimeInterval(5))
+        let stalled = try #require(note)
+        #expect(stalled.hasPrefix("no frame for 5s (the device may be locked, or the capture stalled); still recording"))
+        // What record status looks for in the log.
+        #expect("relay: \(stalled)".hasPrefix(DeviceCapture.stallMarker))
+        #expect(watch.stalledSince == start)
+        // Once.
+        #expect(watch.check(lastFrame: start, now: start.addingTimeInterval(30)) == nil)
+        let resumed = watch.check(lastFrame: start.addingTimeInterval(12.4), now: start.addingTimeInterval(12.5))
+        #expect(resumed == "frames came again after 12s without one")
+        #expect("relay: \(resumed ?? "")".hasPrefix(DeviceCapture.resumeMarker))
+        #expect(watch.stalledSince == nil)
+        // And again for the next gap.
+        #expect(watch.check(lastFrame: start.addingTimeInterval(12.4), now: start.addingTimeInterval(17.5)) != nil)
+    }
+
+    @Test func aNewProcessIsTriedOnlyWhenNoScreenShowedUp() {
+        let none = "relay: recording the device in pid 6160\nrelay: " + DeviceCapture.notFoundMessage(name: "Test Phone", candidates: []) + "\n"
+        #expect(DeviceCapture.noScreenShowedUp(inLog: none))
+        // Another device's screen did: the name is wrong, and a new process would not see it either.
+        let others = "relay: " + DeviceCapture.notFoundMessage(name: "Test Phone", candidates: [DeviceCapture.Candidate(uniqueID: "A", name: "Test Pad")])
+        #expect(!DeviceCapture.noScreenShowedUp(inLog: others))
+        #expect(!DeviceCapture.noScreenShowedUp(inLog: "relay: " + DeviceCapture.ambiguousMessage(name: "Test Phone", count: 2)))
+        #expect(!DeviceCapture.noScreenShowedUp(inLog: "relay: recording the device in pid 6160\nRecording started\n"))
+        // The end is the second supervisor's.
+        let retried = none + "relay: recording the device in pid 6170\nRecording started\nrelay: reached --max-duration of 5s; stopped the recording\n"
+        #expect(Recording.endReason(inLog: retried) == "reached --max-duration of 5s; stopped the recording")
+        // The wait after a capture covers the window in which a new process would not see the screen.
+        #expect(DeviceCapture.releaseDelay >= 3)
     }
 
     @Test func notFoundSaysWhatToDo() {

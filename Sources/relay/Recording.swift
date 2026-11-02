@@ -85,7 +85,8 @@ enum Recording {
     static let devicePidMarker = "relay: recording the device in pid "
     /// How long `record start` waits for `startedMarker`.
     static let startTimeout: TimeInterval = 15
-    /// The same for a device, whose screen takes a few seconds to show up as a capture device.
+    /// The same for a device, whose screen takes a few seconds to show up as a capture device; for each of
+    /// the processes, when `record start` tries a second one.
     static let deviceStartTimeout: TimeInterval = 25
     /// How long simctl gets to write the video after SIGINT (a few seconds for minutes of video).
     static let stopTimeout: TimeInterval = 30
@@ -236,11 +237,24 @@ enum Recording {
         return isRecordingProcess(process, startedAt: state.processStartedAt, device: state.isDevice)
     }
 
-    /// The supervisor's `relay:` lines after the pid (why the recording ended, and how simctl exited), from the log text.
+    /// The supervisor's `relay:` lines after the pid (why the recording ended, and how simctl exited), from the
+    /// log text; not the notes on frames stopping (`stall`), and only the last supervisor's, when `record start`
+    /// tried a second one.
     static func endReason(inLog text: String) -> String? {
-        let lines = text.split(separator: "\n").filter { $0.hasPrefix("relay: ") && !$0.hasPrefix(pidMarker) && !$0.hasPrefix(devicePidMarker) }
+        let all = text.split(separator: "\n")
+        let last = all.lastIndex { $0.hasPrefix(pidMarker) || $0.hasPrefix(devicePidMarker) }.map { all.index(after: $0) } ?? all.startIndex
+        let skipped = [DeviceCapture.stallMarker, DeviceCapture.resumeMarker]
+        let lines = all[last...].filter { line in line.hasPrefix("relay: ") && !skipped.contains { line.hasPrefix($0) } }
             .map { String($0.dropFirst("relay: ".count)) }
         return lines.isEmpty ? nil : lines.joined(separator: "; ")
+    }
+
+    /// The supervisor's note that no frame comes from the device (`FrameWatch`), from the log text, unless
+    /// frames came again after it.
+    static func stall(inLog text: String) -> String? {
+        let last = text.split(separator: "\n").last { $0.hasPrefix(DeviceCapture.stallMarker) || $0.hasPrefix(DeviceCapture.resumeMarker) }
+        guard let last, last.hasPrefix(DeviceCapture.stallMarker) else { return nil }
+        return String(last.dropFirst("relay: ".count))
     }
 
     static func alreadyRecordingMessage(_ state: RecordingState, url: String) -> String {
@@ -368,15 +382,13 @@ enum Recording {
 
         let logsURL = home.appendingPathComponent(".relay/logs", isDirectory: true)
         let logURL: URL
-        let supervisor: pid_t
+        var supervisor: pid_t
+        let arguments = superviseArguments(udid: info.udid, output: outputURL.path, maxDuration: maxDuration,
+                                           deviceName: isDevice ? recorded.name : nil)
         do {
             try FileManager.default.createDirectory(at: logsURL, withIntermediateDirectories: true)
             logURL = try RunnerLauncher.createLog("record", in: logsURL, stamp: RunnerLauncher.timestamp(), port: port)
-            supervisor = try BackgroundStart.spawnDetached(
-                arguments: superviseArguments(udid: info.udid, output: outputURL.path, maxDuration: maxDuration,
-                                              deviceName: isDevice ? recorded.name : nil),
-                logURL: logURL
-            )
+            supervisor = try BackgroundStart.spawnDetached(arguments: arguments, logURL: logURL)
         } catch {
             return fail("cannot start the recording: \(error)", code: .usage)
         }
@@ -396,7 +408,8 @@ enum Recording {
         var progress = Progress()
         let timeout = isDevice ? deviceStartTimeout : startTimeout
         let recorder = isDevice ? "relay record supervise" : "simctl"
-        let deadline = Date().addingTimeInterval(timeout)
+        var deadline = Date().addingTimeInterval(timeout)
+        var retried = false
         while true {
             for line in reader.readLines() {
                 handle(line: line, progress: &progress)
@@ -420,6 +433,21 @@ enum Recording {
             }
             var status: Int32 = 0
             if waitpid(supervisor, &status, WNOHANG) == supervisor {
+                if isDevice, !retried, !interrupted.isSet,
+                   DeviceCapture.noScreenShowedUp(inLog: (try? String(contentsOf: logURL, encoding: .utf8)) ?? "") {
+                    // A capture that stopped just before (another recording, QuickTime Player) can hide the screen
+                    // from that process for good; a new one sees it.
+                    retried = true
+                    note("the screen of \(recorded.name) did not show up; trying once more in a new process")
+                    do {
+                        supervisor = try BackgroundStart.spawnDetached(arguments: arguments, logURL: logURL)
+                    } catch {
+                        return fail("cannot start the recording: \(error)", code: .usage)
+                    }
+                    progress = Progress()
+                    deadline = Date().addingTimeInterval(timeout)
+                    continue
+                }
                 return failed("\(recorder) exited (\(BackgroundStart.describe(status))) before the recording started", logURL: logURL, recorder: recorder)
             }
             if interrupted.isSet || Date() >= deadline {
@@ -524,16 +552,19 @@ enum Recording {
             return RunnerExitCode.success.rawValue
         }
         let recording = isRecording(found.state)
+        let stalled = recording && found.state.isDevice ? stall(inLog: (try? String(contentsOfFile: found.state.log, encoding: .utf8)) ?? "") : nil
         if json {
-            FileHandle.standardOutput.write(statusJSON(found.state, recording: recording, stateURL: found.url) + Data("\n".utf8))
+            FileHandle.standardOutput.write(statusJSON(found.state, recording: recording, stall: stalled, stateURL: found.url) + Data("\n".utf8))
         } else {
-            print(statusText(found.state, recording: recording, stateURL: found.url))
+            print(statusText(found.state, recording: recording, stall: stalled, stateURL: found.url))
         }
         return RunnerExitCode.success.rawValue
     }
 
-    static func statusText(_ state: RecordingState, recording: Bool, stateURL: URL, now: Date = Date(), timeZone: TimeZone = .current) -> String {
-        let rows: [(String, String)] = [
+    /// `stall`: the supervisor's note that no frame comes from the device, while it does not.
+    static func statusText(_ state: RecordingState, recording: Bool, stall: String? = nil, stateURL: URL, now: Date = Date(),
+                           timeZone: TimeZone = .current) -> String {
+        var rows: [(String, String)] = [
             ("recording", recording
                 ? "yes (\(elapsed(state, now: now))s; stops by itself after \(Int(state.maxDuration))s)"
                 : "ended (relay record stop prints the video's path)"),
@@ -544,12 +575,15 @@ enum Recording {
             ("log", state.log),
             ("state", stateURL.path)
         ]
+        if let stall {
+            rows.insert(("frames", stall), at: 1)
+        }
         let width = rows.map(\.0.count).max() ?? 0
         return rows.map { "\($0.0):\(String(repeating: " ", count: width - $0.0.count + 1))\($0.1)" }.joined(separator: "\n")
     }
 
-    static func statusJSON(_ state: RecordingState, recording: Bool, stateURL: URL, now: Date = Date()) -> Data {
-        let object: [String: Any] = [
+    static func statusJSON(_ state: RecordingState, recording: Bool, stall: String? = nil, stateURL: URL, now: Date = Date()) -> Data {
+        var object: [String: Any] = [
             "kind": (state.kind ?? .simulator).rawValue,
             "recording": recording,
             "output": state.output,
@@ -562,6 +596,9 @@ enum Recording {
             "log": state.log,
             "state": stateURL.path
         ]
+        if let stall {
+            object["stall"] = stall
+        }
         return (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])) ?? Data("{}".utf8)
     }
 
