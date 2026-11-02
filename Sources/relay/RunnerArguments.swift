@@ -17,7 +17,8 @@ extension Arguments {
     static let selectorOptions: Set<String> = ["--id", "--label", "--type", "--value", "--index"]
     /// Options without a value.
     static let runnerFlags: [String: Set<String>] = [
-        "type": ["--stdin"]
+        "type": ["--stdin"],
+        "find": ["--require"]
     ]
 
     static let buttons = ["home", "volumeUp", "volumeDown"]
@@ -69,7 +70,8 @@ extension Arguments {
             parser.standardInputText = try text(fromStandardInput: standardInput())
         }
         let operation = try parser.operation()
-        return .runner(RunnerControlOptions(operation: operation, runnerPath: try parser.string("--runner")))
+        return .runner(RunnerControlOptions(operation: operation, runnerPath: try parser.string("--runner"),
+                                            requireMatch: givenFlags.contains("--require")))
     }
 
     /// Text piped to `relay type --stdin`, without one trailing line break (`\n` or `\r\n`) such as
@@ -129,10 +131,13 @@ extension Arguments {
             """
         ),
         "find": (
-            "relay find <selector> [--limit 20] [--timeout <s>] [--bundle-id <id>]",
+            "relay find <selector> [--limit 20] [--timeout <s>] [--require] [--bundle-id <id>]",
             """
             Lists the elements that match every given condition exactly (at most --limit, 1-100). --timeout waits
             up to 10 seconds for a match. An element's index works as --index of tap and press.
+            No match is exit 0 ("count":0); with --require it is exit 6, the answer going to stderr with
+            relay: no element matched (also when --index is out of range), so find --timeout <s> --require
+            waits for an element and fails if it does not appear.
             """
         ),
         "tap": (
@@ -166,7 +171,8 @@ extension Arguments {
         "shutdown": ("relay shutdown", "Stops the runner; relay start then exits.")
     ]
 
-    /// `relay status` and `relay stop`, which manage the runner rather than send it a command.
+    /// `relay status`, `relay stop`, and `relay run`, which manage the runner or run several commands rather
+    /// than send it one.
     static let lifecycleUsages: [String: (synopsis: String, details: String)] = [
         "status": (
             "relay status [--json] [--runner <path>]",
@@ -183,6 +189,32 @@ extension Arguments {
             simulator it booted, and removes runner.json) and waits for it to exit. Without that process, it sends
             /shutdown to the runner and removes the stale runner.json. Prints "stopped", or "not running" if nothing
             runs; both exit 0. Exits 1 if relay start does not exit within 60 seconds.
+            """
+        ),
+        "run": (
+            "relay run (<file> | - | --step <step>...) [--check] [--runner <path>] [--quiet]",
+            """
+            Experimental: the format and behavior may change. Runs a scenario: runner commands, one per line,
+            written as after relay (tap --label General --type button --timeout 5), read from <file>, from
+            standard input (-), or from each --step. Blank lines and lines starting with # are skipped (a # later
+            in a line is text). Words split like a shell: spaces, '...', "...", and \\ (no variables or globs).
+            Steps: \(Scenario.stepCommands.joined(separator: " "))
+            sleep <s> waits a fixed time (0 < s <= \(Int(Scenario.maxSleep))); prefer find --timeout or tap --timeout,
+            which wait only as long as needed; find --require also stops the run (exit 6) when nothing matches,
+            while find without it succeeds either way, as it does alone. screenshot needs --output <file>;
+            type --stdin, --runner, and --help cannot be in a step.
+            A line # relay-run: 1 before the first step states the format the scenario is written for; another
+            version is refused, so a scenario never runs with a meaning it was not written for.
+            Every step is checked first: each bad one prints relay: line <n>: <reason> and nothing runs (exit 1;
+            the n of a --step is its position). --check stops there: it reads no runner.json and runs nothing,
+            and prints relay: <n> steps checked; nothing was run (exit 0; --quiet: nothing).
+            Otherwise runner.json is read once (--runner, else $RELAY_RUNNER, ...) and the steps run in this
+            process. Each step's output goes to stdout as the command alone prints it; stderr gets
+            relay: [i/n] <step> ... ok (<ms> ms) per step and a total at the end (--quiet: neither);
+            these lines show the text of type steps as ***.
+            The first step that fails stops the run: stderr gets its error and relay: step i/n (line n) failed:
+            <step>, and relay run exits with that step's status (3 unavailable, 4 unauthorized, 5 busy, 6 action
+            failed, 7 bad request, 8 runner error, 1 a screenshot not saved); 0 when every step succeeds.
             """
         )
     ]

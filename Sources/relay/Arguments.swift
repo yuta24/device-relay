@@ -4,6 +4,8 @@ enum Command: Equatable {
     case start(StartOptions)
     case bench(BenchOptions)
     case runner(RunnerControlOptions)
+    /// `relay run` (experimental).
+    case run(ScenarioOptions)
     case status(RunnerStatusOptions)
     case stop(RunnerStopOptions)
     case devices(json: Bool, os: String?)
@@ -146,6 +148,8 @@ enum Arguments {
                 }
             }
             return subcommand == "status" ? .status(RunnerStatusOptions(json: json, runnerPath: runnerPath)) : .stop(RunnerStopOptions(runnerPath: runnerPath))
+        case "run":
+            return try parseRun(rest)
         case "devices":
             var json = false
             var os: String?
@@ -241,6 +245,46 @@ enum Arguments {
         }
     }
 
+    /// `relay run (<file> | - | --step <step>...) [--check] [--runner <path>] [--quiet]`: exactly one source of steps.
+    static func parseRun(_ raw: [String]) throws -> Command {
+        var rest = raw
+        var files: [String] = []
+        var steps: [String] = []
+        var runnerPath: String?
+        var quiet = false
+        var check = false
+        while !rest.isEmpty {
+            let argument = rest.removeFirst()
+            switch argument {
+            case "--step", "--runner":
+                // A step may start with -, so only a missing value is rejected here.
+                guard !rest.isEmpty else { throw ArgumentError(description: "\(argument) requires a value") }
+                let value = rest.removeFirst()
+                if argument == "--step" {
+                    steps.append(value)
+                } else {
+                    guard runnerPath == nil else { throw ArgumentError(description: "--runner is given more than once") }
+                    runnerPath = value
+                }
+            case "--quiet", "-q": quiet = true
+            case "--check": check = true
+            case "-h", "--help": return .commandHelp("run")
+            case "-": files.append(argument)
+            default:
+                guard !argument.hasPrefix("-") else { throw ArgumentError(description: "unknown option for run: \(argument)") }
+                files.append(argument)
+            }
+        }
+        let source: ScenarioOptions.Source
+        switch (files.count, steps.isEmpty) {
+        case (0, false): source = .steps(steps)
+        case (1, true): source = files[0] == "-" ? .standardInput : .file(files[0])
+        case (0, true): throw ArgumentError(description: "run requires <file>, - (standard input), or --step <step>")
+        default: throw ArgumentError(description: "run takes one of <file>, -, or --step <step>...")
+        }
+        return .run(ScenarioOptions(source: source, runnerPath: runnerPath, quiet: quiet, check: check))
+    }
+
     /// `relay config` arguments: `get <key>`, `set <key> <value>`, `unset <key>`, or nothing.
     static func parseConfig(_ raw: [String]) throws -> ConfigOptions {
         func key(_ value: String) throws -> String {
@@ -277,18 +321,34 @@ enum Arguments {
         return value
     }
 
+    /// The synopses at the top of the usage of the commands other than the runner commands, in order, each
+    /// with the command names it shows. The usage is built from it, and so is `commandNames`, so a command
+    /// added here is known everywhere.
+    static let commandSynopses: [(names: [String], synopsis: String)] = [
+        (["start"], """
+        relay start [--udid <UDID> | --device <NAME>] [--simulator] [--os <VERSION>] [--team-id <TEAM_ID>] [--project <PATH>] [--port 8100] [--rebuild] [--verbose]
+                    [--ready-timeout 180] [--allow-wifi] [--background]
+        """),
+        (["status"], "relay status [--json] [--runner <PATH>]"),
+        (["stop"], "relay stop [--runner <PATH>]"),
+        (["install", "uninstall"], "relay install [--project <PATH>] [--build [--verbose]] | relay install --remove | relay uninstall"),
+        (["skill"], "relay skill install [--global | --dir <skills dir>] [--link] [--force] | relay skill uninstall | relay skill status"),
+        (["devices"], "relay devices [--json] [--os <VERSION>]"),
+        (["doctor"], "relay doctor [--udid <UDID> | --device <NAME>] [--simulator] [--os <VERSION>] [--project <PATH>]"),
+        (["config"], "relay config [get <key> | set <key> <value> | unset <key>]"),
+        (["bench"], "relay bench --url <RUNNER_URL> [--count 10] [--tap x,y] [--mode private|xcui] [--token <TOKEN>]"),
+        (["run"], "relay run (<file> | - | --step <step>...) [--check] [--runner <PATH>] [--quiet]   (experimental)")
+    ]
+
+    /// Every command name of relay: the commands of `commandSynopses`, the runner commands, and the
+    /// lifecycle commands (status, stop, run).
+    static var commandNames: Set<String> {
+        Set(commandSynopses.flatMap(\.names)).union(runnerUsages.keys).union(lifecycleUsages.keys)
+    }
+
     static let usage = """
     Usage:
-      relay start [--udid <UDID> | --device <NAME>] [--simulator] [--os <VERSION>] [--team-id <TEAM_ID>] [--project <PATH>] [--port 8100] [--rebuild] [--verbose]
-                  [--ready-timeout 180] [--allow-wifi] [--background]
-      relay status [--json] [--runner <PATH>]
-      relay stop [--runner <PATH>]
-      relay install [--project <PATH>] [--build [--verbose]] | relay install --remove | relay uninstall
-      relay skill install [--global | --dir <skills dir>] [--link] [--force] | relay skill uninstall | relay skill status
-      relay devices [--json] [--os <VERSION>]
-      relay doctor [--udid <UDID> | --device <NAME>] [--simulator] [--os <VERSION>] [--project <PATH>]
-      relay config [get <key> | set <key> <value> | unset <key>]
-      relay bench --url <RUNNER_URL> [--count 10] [--tap x,y] [--mode private|xcui] [--token <TOKEN>]
+    \(commandSynopses.map { $0.synopsis.split(separator: "\n").map { "  " + $0 }.joined(separator: "\n") }.joined(separator: "\n"))
 
     start    Builds the RelayRunner XCTest runner if needed, launches it on the device or simulator,
              and prints the runner URL once it answers /health. The URL and a per-launch access token
@@ -329,6 +389,9 @@ enum Arguments {
     bench    Measures round-trip latency of /health, /screenshot, and optionally /tap.
              --mode forces the runner's touch path (private event synthesis or public XCUI).
              --token defaults to the token in the runner.json the runner commands use.
+    run      Experimental; the format may change. Runs runner commands, one per line (without relay), in order
+             in one process, after checking them all; stops at the first that fails and exits with its status.
+             relay run --help for details.
 
     Runner commands (operate the runner relay start launched; relay <command> --help for details):
     \(runnerCommandOrder.map { "  " + runnerUsages[$0]!.synopsis }.joined(separator: "\n"))
