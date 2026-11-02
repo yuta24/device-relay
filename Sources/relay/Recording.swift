@@ -372,6 +372,8 @@ enum Recording {
         let found: (url: URL, state: RecordingState)?
         do {
             found = try locateState(runnerPath: runnerPath, port: port, home: home)
+        } catch let error as RunnerUnavailableError {
+            return fail(error.description, code: .unavailable)
         } catch {
             return fail("\(error)", code: .usage)
         }
@@ -442,6 +444,8 @@ enum Recording {
         let found: (url: URL, state: RecordingState)?
         do {
             found = try locateState(runnerPath: runnerPath, port: port, home: home)
+        } catch let error as RunnerUnavailableError {
+            return fail(error.description, code: .unavailable)
         } catch {
             return fail("\(error)", code: .usage)
         }
@@ -509,13 +513,25 @@ enum Recording {
         }
     }
 
-    private static func stateURLOfRunner(runnerPath: String?, home: URL) throws -> URL? {
+    /// The state file of the runner in runner.json. A runner.json given with `--runner` or `$RELAY_RUNNER` must
+    /// exist, as for the other commands (`RunnerUnavailableError`, exit 3); one that was searched for and not
+    /// found falls back to the state files in `~/.relay`.
+    static func stateURLOfRunner(
+        runnerPath: String?,
+        home: URL,
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        currentDirectory: URL = WorkingDirectory.url
+    ) throws -> URL? {
         do {
-            let info = try RunnerInfo.read(from: try RunnerLocator.locate(explicitPath: runnerPath, home: home))
+            let info = try RunnerInfo.read(from: try RunnerLocator.locate(
+                explicitPath: runnerPath, environment: environment, currentDirectory: currentDirectory, home: home
+            ))
             return stateURL(port: port(of: info), home: home)
-        } catch is RunnerUnavailableError {
-            let explicit = runnerPath != nil || !(ProcessInfo.processInfo.environment[RunnerLocator.environmentKey] ?? "").isEmpty
-            let candidates = explicit ? [] : stateURLs(home: home)
+        } catch let error as RunnerUnavailableError {
+            if runnerPath != nil || !(environment[RunnerLocator.environmentKey] ?? "").isEmpty {
+                throw error
+            }
+            let candidates = stateURLs(home: home)
             guard candidates.count <= 1 else {
                 throw ArgumentError(description: severalRecordingsMessage(candidates.compactMap { url in
                     let state = try? RecordingState.read(from: url)

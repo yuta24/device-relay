@@ -280,3 +280,72 @@ struct RecordProgressTests {
         #expect(Recording.target(udid: "DEVICE-UDID", simulators: []) == .notSimulator)
     }
 }
+
+struct RecordStateLookupTests {
+    /// A scratch home and an empty current directory, so no real runner.json is found.
+    func scratch() throws -> (home: URL, current: URL, cleanUp: () -> Void) {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("relay-record-lookup-\(UUID().uuidString)").canonicalFileURL
+        let home = root.appendingPathComponent("home", isDirectory: true)
+        let current = root.appendingPathComponent("work", isDirectory: true)
+        try FileManager.default.createDirectory(at: current, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: home.appendingPathComponent(".relay"), withIntermediateDirectories: true)
+        return (home, current, { try? FileManager.default.removeItem(at: root) })
+    }
+
+    func writeState(port: Int, home: URL) throws -> URL {
+        let url = Recording.stateURL(port: port, home: home)
+        try RecordingState(pid: 1, processStartedAt: Date(timeIntervalSince1970: 0), supervisorPid: 1, output: "/tmp/\(port).mp4",
+                           udid: "SIM", port: port, startedAt: Date(timeIntervalSince1970: 0), maxDuration: 600, log: "/tmp/r.log")
+            .write(to: url)
+        return url
+    }
+
+    @Test func missingRunnerGivenWithTheOptionIsUnavailable() throws {
+        let (home, current, cleanUp) = try scratch()
+        defer { cleanUp() }
+        // A state file must not be picked instead.
+        _ = try writeState(port: 8100, home: home)
+        let error = #expect(throws: RunnerUnavailableError.self) {
+            try Recording.stateURLOfRunner(runnerPath: "missing.json", home: home, environment: [:], currentDirectory: current)
+        }
+        #expect(error?.description == "--runner \(current.path)/missing.json does not exist; is relay start running?")
+    }
+
+    @Test func missingRunnerGivenWithTheEnvironmentIsUnavailable() throws {
+        let (home, current, cleanUp) = try scratch()
+        defer { cleanUp() }
+        _ = try writeState(port: 8100, home: home)
+        let error = #expect(throws: RunnerUnavailableError.self) {
+            try Recording.stateURLOfRunner(runnerPath: nil, home: home, environment: ["RELAY_RUNNER": "/nowhere/runner.json"],
+                                           currentDirectory: current)
+        }
+        #expect(error?.description == "$RELAY_RUNNER /nowhere/runner.json does not exist; is relay start running?")
+    }
+
+    @Test func givenRunnerNamesItsPort() throws {
+        let (home, current, cleanUp) = try scratch()
+        defer { cleanUp() }
+        let runner = current.appendingPathComponent("r.json")
+        try RunnerInfo(url: "http://127.0.0.1:8123/", token: "t", udid: "SIM").write(to: runner)
+        #expect(try Recording.stateURLOfRunner(runnerPath: "r.json", home: home, environment: [:], currentDirectory: current)
+            == Recording.stateURL(port: 8123, home: home))
+    }
+
+    @Test func searchedRunnerFallsBackToTheStateFiles() throws {
+        let (home, current, cleanUp) = try scratch()
+        defer { cleanUp() }
+        // None: not recording.
+        #expect(try Recording.stateURLOfRunner(runnerPath: nil, home: home, environment: [:], currentDirectory: current) == nil)
+        // One: that one. An empty $RELAY_RUNNER is not given.
+        let first = try writeState(port: 8100, home: home)
+        #expect(try Recording.stateURLOfRunner(runnerPath: nil, home: home, environment: ["RELAY_RUNNER": ""], currentDirectory: current)
+            == first)
+        // Several: listed by port.
+        _ = try writeState(port: 8101, home: home)
+        let error = #expect(throws: ArgumentError.self) {
+            try Recording.stateURLOfRunner(runnerPath: nil, home: home, environment: [:], currentDirectory: current)
+        }
+        #expect(error?.description.contains("--port 8101: /tmp/8101.mp4 (ended)") == true)
+        #expect(error?.description.hasSuffix("choose one with --port <n>") == true)
+    }
+}

@@ -214,12 +214,14 @@ extension Arguments {
             empty, and prints its path; "not recording" when there is none. relay stop and the exit of relay start
             finish a recording of their runner too. A simulator shut down while recording ends the video there.
             stop and status use the recording of the runner in runner.json; --port <n> uses the one of that runner
-            port directly (also without runner.json; not with --runner). Without runner.json, the only recording
+            port directly (also without runner.json; not with --runner). A --runner or $RELAY_RUNNER that does not
+            exist is exit 3, as for the other commands. Without them and without runner.json, the only recording
             is used, and several are listed by port to choose one with --port.
             status shows whether it records, the video, and the elapsed time (--json: one object); it exits 0.
             Exit status: 0 ok, 1 not a booted simulator, a missing directory, an existing file without --force,
               already recording, simctl failing,
-              or an empty video, 3 no runner (no runner.json or no answer), 4 the token was rejected (401).
+              or an empty video, 3 no runner (no runner.json or no answer; for stop and status, a --runner or
+              $RELAY_RUNNER that does not exist), 4 the token was rejected (401).
             """
         ),
         "run": (
