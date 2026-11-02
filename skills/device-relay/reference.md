@@ -91,18 +91,21 @@ runner.json: /Users/<you>/.relay/runner.json
 
 実機の準備（デベロッパモード、ペアリング、UI オートメーション、Team ID）は device-relay の docs/setup.md の「実機」「Team ID（実機の署名）」を参照してください。
 
-## 録画（relay record、シミュレータのみ）
+## 録画（relay record）
 
-動作の証拠を残すときは `relay record start` → 操作 → `relay record stop` です。シミュレータのみ（ホストの `simctl io recordVideo`）で、実機は未対応です。詳しくは docs/cli.md の「録画（relay record、シミュレータのみ）」と `relay record --help`。
+動作の証拠を残すときは `relay record start` → 操作 → `relay record stop` です。シミュレータ（ホストの `simctl io recordVideo`）と、USB で接続した実機（Mac のキャプチャデバイスとして、QuickTime と同じ仕組み）で使えます。実機は relay を動かすアプリ（ターミナルなど）に macOS のカメラの許可が要り、初回の `record start` がダイアログで求めます。詳しくは docs/cli.md の「録画（relay record）」と `relay record --help`。
 
 | コマンド | 出力・終了コード |
 | --- | --- |
-| `relay record start [-o <file>] [--force] [--max-duration 600] [--runner <path>]` | 録画が始まったら保存先の絶対パスを stdout に出して 0。既定は `$TMPDIR/relay/relay-recording-<時刻>.mp4`、相対パスはカレントディレクトリ基準。1: 実機、boot していない、ディレクトリがない、ファイルがすでにある（`--force` で上書き。利用者のファイルなら上書きしてよいか確認）、すでに録画中、simctl が始まらない（stderr に simctl の出力）。3: ランナーがない・応答しない |
+| `relay record start [-o <file>] [--force] [--max-duration 600] [--runner <path>]` | 録画が始まったら保存先の絶対パスを stdout に出して 0。既定は `$TMPDIR/relay/relay-recording-<時刻>.mp4`、相対パスはカレントディレクトリ基準。1: シミュレータが boot していない、実機が USB で接続されていない（Wi-Fi だけ・未接続）、カメラの許可がない（利用者に システム設定 > プライバシーとセキュリティ > カメラ で許可してもらう）、端末の画面がキャプチャデバイスとして現れない（USB 接続・ロック解除・「信頼」を利用者に頼む）、同じ名前の実機が複数つながっている、ディレクトリがない、ファイルがすでにある（`--force` で上書き。利用者のファイルなら上書きしてよいか確認）、すでに録画中、録画が始まらない（stderr に simctl か録画プロセスの出力）。3: ランナーがない・応答しない |
 | `relay record stop [--runner <path> \| --port <n>]` | 書き出しを待ち（最大 30 秒）、空でない MP4 の絶対パスを stdout に出して 0。録画していなければ `not recording` で 0。自動停止（`--max-duration`）した録画もここで取り出す。1: 書き出しが終わらない（もう一度 stop できる）、動画が空、runner.json がなく録画が複数ある（ポートごとの一覧から `--port <n>` で選ぶ） |
-| `relay record status [--json] [--runner <path> \| --port <n>]` | 録画中か（`yes` / `ended`）、保存先、経過時間。常に 0 |
+| `relay record status [--json] [--runner <path> \| --port <n>]` | 録画中か（`yes` / `ended`）、保存先、経過時間。実機のフレームが 5 秒以上来ていなければ `frames:` の行（`--json` では `stall`）。常に 0 |
 
 - 録画はターミナルから切り離して続くので、`record start` の後に別のコマンドを続けて実行できます。`relay stop` も録画を先に書き出します（パスは stderr）。
-- シミュレータが録画中に shutdown しても、`record stop` は shutdown までの動画を返します。
+- シミュレータが録画中に shutdown しても、実機が録画中に外されても、`record stop` はそこまでの動画を返します。
+- 実機の `record stop` は 4 秒ほどかかります（直後の `record start` が画面を見つけられるように待つため）。別の録画が止まった直後の `record start` は、新しいプロセスでもう一度試すので 20 秒ほどかかることがあります。
+- 実機が録画中にロックされるなどしてフレームが止まっても、録画は続きます（動画は最後のフレームのまま）。`record status` に `frames: no frame for 5s …` が出ていたら、利用者にロックの解除を頼みます。
+- 実機の動画は `-o` が `.mov` のときだけ QuickTime ムービー、それ以外は MP4（どちらも H.264、音声なし）です。
 
 ## 接続先（runner.json）
 

@@ -133,7 +133,7 @@ struct DeviceListTests {
         #expect(devices.count == 2)
         #expect(devices[0] == Device(
             name: "Test Phone", udid: deviceUDID, kind: .device, model: "iPhone 14 Pro", os: "iOS 26.7.1", state: "connected",
-            isAvailable: true, pairingState: "paired", developerModeEnabled: true, ddiServicesAvailable: true
+            isAvailable: true, pairingState: "paired", developerModeEnabled: true, ddiServicesAvailable: true, transport: "wired"
         ))
         // Deprecated fields only, and not connected.
         #expect(devices[1] == Device(

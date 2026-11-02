@@ -91,7 +91,7 @@ relay screenshot --scale 1                            # 1 px = 1 pt に縮小し
 | `relay launch` / `relay terminate` | アプリを起動（前面化）する / 終了する |
 | `relay button` / `relay orientation` | ハードウェアボタンを押す / 端末の向きを変える |
 | `relay run`（実験的） | 1 行 1 手順のシナリオを順に実行する |
-| `relay record start` / `relay record stop` | シミュレータの画面を MP4 に録画する / 止めて保存先を出力する（シミュレータのみ） |
+| `relay record start` / `relay record stop` | シミュレータか実機（USB 接続）の画面を MP4 に録画する / 止めて保存先を出力する（実機は初回にカメラの許可が要る） |
 | `relay skill install` | コーディングエージェント向けのスキルを対象アプリのリポジトリなどに入れる |
 | `relay config` | 設定（Team ID）を表示・変更する |
 
@@ -107,7 +107,7 @@ relay screenshot --scale 1                            # 1 px = 1 pt に縮小し
 | 文書 | 内容 |
 | --- | --- |
 | [docs/setup.md](docs/setup.md) | Runner の用意（`relay install`）、端末の選択、Team ID、環境の確認（`relay doctor`）、シミュレータ、バックグラウンドでの起動、実機 |
-| [docs/cli.md](docs/cli.md) | CLI のサブコマンドと終了コード、接続先（runner.json）の探し方、シナリオの実行（`relay run`、実験的）、録画（`relay record`、シミュレータのみ）、エージェントスキル |
+| [docs/cli.md](docs/cli.md) | CLI のサブコマンドと終了コード、接続先（runner.json）の探し方、シナリオの実行（`relay run`、実験的）、録画（`relay record`。シミュレータと USB 接続の実機）、エージェントスキル |
 | [docs/http-api.md](docs/http-api.md) | HTTP API のエンドポイントとステータスコード、認証、同時リクエストと生存確認（`/ping`）、前面アプリ、文字入力と特殊キー |
 | [docs/elements.md](docs/elements.md) | 要素ツリー（`/source`、compact、interactive）、要素セレクタ、待機（timeout） |
 | [docs/screen.md](docs/screen.md) | 座標系と画面の向き、スクリーンショットの縮小 |

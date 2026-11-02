@@ -1,16 +1,18 @@
 import Darwin
 import Foundation
 
-/// `relay record start|stop|status`: records the screen of the simulator the runner runs on, with
-/// `simctl io <udid> recordVideo`. Devices are not supported yet.
+/// `relay record start|stop|status`: records the screen of the simulator or device the runner runs on, with
+/// `simctl io <udid> recordVideo` for a simulator and as a capture device for a device plugged in with USB
+/// (`DeviceCapture`).
 struct RecordOptions: Equatable {
     enum Action: Equatable {
         /// `--output`, resolved later (`Recording.outputURL`). `force`: replace an existing file.
         case start(output: String?, maxDuration: TimeInterval, force: Bool = false)
         case stop
         case status(json: Bool)
-        /// The detached process `record start` runs (`RecordSupervisor`); not in the usage.
-        case supervise(udid: String, output: String, maxDuration: TimeInterval)
+        /// The detached process `record start` runs (`RecordSupervisor`); not in the usage. `deviceName`: a
+        /// device's, whose screen it records itself (`DeviceRecordSupervisor`); nil for a simulator.
+        case supervise(udid: String, output: String, maxDuration: TimeInterval, deviceName: String? = nil)
     }
 
     var action: Action
@@ -23,7 +25,8 @@ struct RecordOptions: Equatable {
 /// What `record start` keeps in `~/.relay/recording-<port>.json` (mode 0600, like runner.json) while it
 /// records, one per runner port: `record stop`, `record status`, and the cleanup of `relay stop` read it.
 struct RecordingState: Codable, Equatable {
-    /// The `simctl io … recordVideo` process, which `record stop` sends SIGINT to.
+    /// The process that records, which `record stop` sends SIGINT to: `simctl io … recordVideo` for a
+    /// simulator, the supervisor itself for a device.
     var pid: Int32
     /// When that process started. With `pid` and its name, it tells the process apart from one that reuses
     /// the pid after it exited (see `Recording.isRecordingProcess`).
@@ -39,6 +42,12 @@ struct RecordingState: Codable, Equatable {
     var maxDuration: TimeInterval
     /// The log with simctl's output and the supervisor's `relay:` lines.
     var log: String
+    /// nil in the state files of versions that recorded simulators only.
+    var kind: Device.Kind?
+
+    var isDevice: Bool { kind == .device }
+    /// What records, for messages.
+    var recorder: String { isDevice ? "relay record supervise" : "simctl" }
 
     func write(to url: URL) throws {
         let encoder = JSONEncoder()
@@ -72,8 +81,13 @@ enum Recording {
     static let startedMarker = "Recording started"
     /// The supervisor's line with the simctl pid.
     static let pidMarker = "relay: recording with simctl pid "
+    /// The supervisor's line with its own pid, when it records a device.
+    static let devicePidMarker = "relay: recording the device in pid "
     /// How long `record start` waits for `startedMarker`.
     static let startTimeout: TimeInterval = 15
+    /// The same for a device, whose screen takes a few seconds to show up as a capture device; for each of
+    /// the processes, when `record start` tries a second one.
+    static let deviceStartTimeout: TimeInterval = 25
     /// How long simctl gets to write the video after SIGINT (a few seconds for minutes of video).
     static let stopTimeout: TimeInterval = 30
     /// When a runner URL has no port, as `relay start`'s default.
@@ -86,8 +100,9 @@ enum Recording {
     }
 
     /// The arguments of the detached supervisor, which `Arguments.parse` reads back.
-    static func superviseArguments(udid: String, output: String, maxDuration: TimeInterval) -> [String] {
+    static func superviseArguments(udid: String, output: String, maxDuration: TimeInterval, deviceName: String? = nil) -> [String] {
         ["record", "supervise", "--udid", udid, "--output", output, "--max-duration", "\(maxDuration)"]
+            + (deviceName.map { ["--device-name", $0] } ?? [])
     }
 
     /// `--output` resolved against the current directory, or `$TMPDIR/relay/relay-recording-<time>.mp4`,
@@ -175,54 +190,75 @@ enum Recording {
         URL(string: info.url)?.port ?? defaultPort
     }
 
-    /// The device runner.json names, as the simulator list sees it.
+    /// The device runner.json names, as the simulator and device lists see it.
     enum Target: Equatable {
         case simulator(Device)
-        /// Not in the simulator list: a device (or a simulator deleted since).
-        case notSimulator
+        case device(Device)
+        /// In neither list (a simulator deleted since, or a device devicectl no longer lists).
+        case notFound
     }
 
-    static func target(udid: String, simulators: [Device]) -> Target {
-        simulators.first { $0.kind == .simulator && $0.udid == udid }.map(Target.simulator) ?? .notSimulator
+    static func target(udid: String, devices: [Device]) -> Target {
+        guard let device = devices.first(where: { $0.udid.caseInsensitiveCompare(udid) == .orderedSame }) else { return .notFound }
+        return device.kind == .simulator ? .simulator(device) : .device(device)
     }
 
     /// What the log of `record supervise` says so far.
     struct Progress: Equatable {
-        var simctlPid: Int32?
-        /// simctl printed `Recording started`.
+        /// The process that records: simctl, or the supervisor for a device.
+        var recorderPid: Int32?
+        /// simctl (or the supervisor, at the first frame of a device) printed `Recording started`.
         var started = false
     }
 
     static func handle(line: String, progress: inout Progress) {
-        if line.hasPrefix(pidMarker) {
-            progress.simctlPid = Int32(line.dropFirst(pidMarker.count).trimmingCharacters(in: .whitespaces))
+        if let marker = [pidMarker, devicePidMarker].first(where: line.hasPrefix) {
+            progress.recorderPid = Int32(line.dropFirst(marker.count).trimmingCharacters(in: .whitespaces))
         } else if line.trimmingCharacters(in: .whitespaces) == startedMarker {
             progress.started = true
         }
     }
 
-    /// Whether `snapshot` is the simctl that recorded `pid` and `startedAt` in the state: the start time
-    /// matches to the second, the executable is simctl, and it runs recordVideo.
-    static func isRecordingProcess(_ snapshot: RelayProcess.Snapshot, startedAt: Date) -> Bool {
-        abs(snapshot.startedAt.timeIntervalSince1970.rounded(.down) - startedAt.timeIntervalSince1970.rounded(.down)) < 1
-            && URL(fileURLWithPath: snapshot.executable).lastPathComponent == "simctl"
-            && snapshot.arguments.contains("recordVideo")
+    /// Whether `snapshot` is the process that recorded `pid` and `startedAt` in the state: the start time
+    /// matches to the second, and it is simctl running recordVideo, or (`device`) relay running record supervise.
+    static func isRecordingProcess(
+        _ snapshot: RelayProcess.Snapshot, startedAt: Date, device: Bool = false, relayName: String = RelayProcess.currentExecutableName
+    ) -> Bool {
+        let name = URL(fileURLWithPath: snapshot.executable).lastPathComponent
+        let isRecorder = device
+            ? name == relayName && snapshot.arguments.dropFirst().prefix(2) == ["record", "supervise"]
+            : name == "simctl" && snapshot.arguments.contains("recordVideo")
+        return isRecorder
+            && abs(snapshot.startedAt.timeIntervalSince1970.rounded(.down) - startedAt.timeIntervalSince1970.rounded(.down)) < 1
     }
 
     static func isRecording(_ state: RecordingState, snapshot: (Int32) -> RelayProcess.Snapshot? = RelayProcess.snapshot(pid:)) -> Bool {
         guard let process = snapshot(state.pid) else { return false }
-        return isRecordingProcess(process, startedAt: state.processStartedAt)
+        return isRecordingProcess(process, startedAt: state.processStartedAt, device: state.isDevice)
     }
 
-    /// The supervisor's `relay:` lines after the pid (why the recording ended, and how simctl exited), from the log text.
+    /// The supervisor's `relay:` lines after the pid (why the recording ended, and how simctl exited), from the
+    /// log text; not the notes on frames stopping (`stall`), and only the last supervisor's, when `record start`
+    /// tried a second one.
     static func endReason(inLog text: String) -> String? {
-        let lines = text.split(separator: "\n").filter { $0.hasPrefix("relay: ") && !$0.hasPrefix(pidMarker) }
+        let all = text.split(separator: "\n")
+        let last = all.lastIndex { $0.hasPrefix(pidMarker) || $0.hasPrefix(devicePidMarker) }.map { all.index(after: $0) } ?? all.startIndex
+        let skipped = [DeviceCapture.stallMarker, DeviceCapture.resumeMarker]
+        let lines = all[last...].filter { line in line.hasPrefix("relay: ") && !skipped.contains { line.hasPrefix($0) } }
             .map { String($0.dropFirst("relay: ".count)) }
         return lines.isEmpty ? nil : lines.joined(separator: "; ")
     }
 
+    /// The supervisor's note that no frame comes from the device (`FrameWatch`), from the log text, unless
+    /// frames came again after it.
+    static func stall(inLog text: String) -> String? {
+        let last = text.split(separator: "\n").last { $0.hasPrefix(DeviceCapture.stallMarker) || $0.hasPrefix(DeviceCapture.resumeMarker) }
+        guard let last, last.hasPrefix(DeviceCapture.stallMarker) else { return nil }
+        return String(last.dropFirst("relay: ".count))
+    }
+
     static func alreadyRecordingMessage(_ state: RecordingState, url: String) -> String {
-        "a recording is already running for the runner at \(url) (\(state.output), simctl pid \(state.pid)); "
+        "a recording is already running for the runner at \(url) (\(state.output), \(state.recorder) pid \(state.pid)); "
             + "stop it with relay record stop, or check it with relay record status"
     }
 
@@ -240,7 +276,10 @@ enum Recording {
             return stop(runnerPath: options.runnerPath, port: options.port)
         case .status(let json):
             return status(json: json, runnerPath: options.runnerPath, port: options.port)
-        case .supervise(let udid, let output, let maxDuration):
+        case .supervise(let udid, let output, let maxDuration, let deviceName):
+            if let deviceName {
+                return DeviceRecordSupervisor.run(name: deviceName, output: output, maxDuration: maxDuration)
+            }
             return RecordSupervisor.run(udid: udid, output: output, maxDuration: maxDuration)
         }
     }
@@ -266,14 +305,32 @@ enum Recording {
         } catch {
             return fail("cannot list the simulators: \(error)", code: .usage)
         }
-        guard case .simulator(let simulator) = target(udid: info.udid, simulators: simulators) else {
-            return fail("the runner runs on \(info.name.map { "\($0) (\(info.udid))" } ?? info.udid), which is not a simulator; "
-                + "recording a device is not supported yet (simulators only)", code: .usage)
-        }
-        // simctl also "records" a shut-down simulator, into an empty file.
-        guard simulator.isBooted else {
-            return fail("the simulator \(simulator.name) (\(simulator.udid)) is \(simulator.state); recording needs it booted",
-                        code: .usage)
+        let recorded: Device
+        switch target(udid: info.udid, devices: simulators) {
+        case .simulator(let simulator):
+            // simctl also "records" a shut-down simulator, into an empty file.
+            guard simulator.isBooted else {
+                return fail("the simulator \(simulator.name) (\(simulator.udid)) is \(simulator.state); recording needs it booted",
+                            code: .usage)
+            }
+            recorded = simulator
+        case .device, .notFound:
+            // devicectl only when it is not a simulator, which keeps recording a simulator as quick as it was.
+            let devices: [Device]
+            do {
+                devices = try DeviceList.parseDevicectl(HostCommands.live.devicectlJSON(["list", "devices"]))
+            } catch {
+                return fail("the runner runs on \(info.name.map { "\($0) (\(info.udid))" } ?? info.udid), which is not a simulator, "
+                    + "and devicectl cannot list the devices: \(error)", code: .usage)
+            }
+            guard case .device(let device) = target(udid: info.udid, devices: devices) else {
+                return fail("the runner runs on \(info.name.map { "\($0) (\(info.udid))" } ?? info.udid), which is neither a simulator "
+                    + "nor a device devicectl lists (relay devices shows them)", code: .usage)
+            }
+            if let problem = DeviceCapture.connectionProblem(device) {
+                return fail(problem, code: .usage)
+            }
+            recorded = device
         }
 
         let outputURL = outputURL(output)
@@ -306,15 +363,32 @@ enum Recording {
             note("removed the state of a recording that has ended (\(existing.output) stays)")
         }
 
+        // Asked here, where the dialog belongs to what the user runs; the detached supervisor gets the same answer.
+        let isDevice = recorded.kind == .device
+        if isDevice {
+            if DeviceCapture.access == .notDetermined {
+                note("recording a device needs camera access; allow it in the dialog macOS shows for the app relay runs in")
+                switch DeviceCapture.requestAccess() {
+                case .some(true): break
+                case .some(false): return fail(DeviceCapture.accessProblem(.denied) ?? "camera access was denied", code: .usage)
+                case .none: return fail("no answer to the camera access dialog within \(Int(DeviceCapture.accessTimeout))s; "
+                    + "allow the app relay runs in, in System Settings > Privacy & Security > Camera, and try again", code: .usage)
+                }
+            }
+            if let problem = DeviceCapture.accessProblem(DeviceCapture.access) {
+                return fail(problem, code: .usage)
+            }
+        }
+
         let logsURL = home.appendingPathComponent(".relay/logs", isDirectory: true)
         let logURL: URL
-        let supervisor: pid_t
+        var supervisor: pid_t
+        let arguments = superviseArguments(udid: info.udid, output: outputURL.path, maxDuration: maxDuration,
+                                           deviceName: isDevice ? recorded.name : nil)
         do {
             try FileManager.default.createDirectory(at: logsURL, withIntermediateDirectories: true)
             logURL = try RunnerLauncher.createLog("record", in: logsURL, stamp: RunnerLauncher.timestamp(), port: port)
-            supervisor = try BackgroundStart.spawnDetached(
-                arguments: superviseArguments(udid: info.udid, output: outputURL.path, maxDuration: maxDuration), logURL: logURL
-            )
+            supervisor = try BackgroundStart.spawnDetached(arguments: arguments, logURL: logURL)
         } catch {
             return fail("cannot start the recording: \(error)", code: .usage)
         }
@@ -332,16 +406,19 @@ enum Recording {
 
         var reader = LogReader(url: logURL)
         var progress = Progress()
-        let deadline = Date().addingTimeInterval(startTimeout)
+        let timeout = isDevice ? deviceStartTimeout : startTimeout
+        let recorder = isDevice ? "relay record supervise" : "simctl"
+        var deadline = Date().addingTimeInterval(timeout)
+        var retried = false
         while true {
             for line in reader.readLines() {
                 handle(line: line, progress: &progress)
             }
-            if progress.started, let pid = progress.simctlPid, let processStartedAt = RelayProcess.startTime(pid: pid) {
+            if progress.started, let pid = progress.recorderPid, let processStartedAt = RelayProcess.startTime(pid: pid) {
                 let state = RecordingState(
                     pid: pid, processStartedAt: processStartedAt, supervisorPid: supervisor, output: outputURL.path,
                     udid: info.udid, port: port, startedAt: Date(timeIntervalSince1970: Date().timeIntervalSince1970.rounded(.down)),
-                    maxDuration: maxDuration, log: logURL.path
+                    maxDuration: maxDuration, log: logURL.path, kind: recorded.kind
                 )
                 do {
                     try state.write(to: stateURL)
@@ -350,19 +427,36 @@ enum Recording {
                     return fail("cannot save the recording state: \(error); stopped the recording", code: .usage)
                 }
                 print(outputURL.path)
-                note("recording \(simulator.name) (\(info.udid)) for at most \(Int(maxDuration))s; relay record stop finishes the video "
+                note("recording \(recorded.name) (\(info.udid)) for at most \(Int(maxDuration))s; relay record stop finishes the video "
                     + "(log: \(logURL.path))")
                 return RunnerExitCode.success.rawValue
             }
             var status: Int32 = 0
             if waitpid(supervisor, &status, WNOHANG) == supervisor {
-                return failed("simctl exited (\(BackgroundStart.describe(status))) before the recording started", logURL: logURL)
+                if isDevice, !retried, !interrupted.isSet,
+                   DeviceCapture.noScreenShowedUp(inLog: (try? String(contentsOf: logURL, encoding: .utf8)) ?? "") {
+                    // A capture that stopped just before (another recording, QuickTime Player) can hide the screen
+                    // from that process for good; a new one sees it.
+                    retried = true
+                    note("the screen of \(recorded.name) did not show up; trying once more in a new process")
+                    do {
+                        supervisor = try BackgroundStart.spawnDetached(arguments: arguments, logURL: logURL)
+                    } catch {
+                        return fail("cannot start the recording: \(error)", code: .usage)
+                    }
+                    progress = Progress()
+                    deadline = Date().addingTimeInterval(timeout)
+                    continue
+                }
+                return failed("\(recorder) exited (\(BackgroundStart.describe(status))) before the recording started", logURL: logURL, recorder: recorder)
             }
             if interrupted.isSet || Date() >= deadline {
                 kill(supervisor, SIGTERM)
                 waitpid(supervisor, &status, 0)
-                let reason = interrupted.isSet ? "interrupted" : "simctl did not report \(startedMarker) within \(Int(startTimeout))s"
-                return failed("\(reason); stopped the recording", logURL: logURL)
+                let reason = interrupted.isSet ? "interrupted"
+                    : isDevice ? "no frame came from the screen of \(recorded.name) within \(Int(timeout))s"
+                    : "simctl did not report \(startedMarker) within \(Int(timeout))s"
+                return failed("\(reason); stopped the recording", logURL: logURL, recorder: recorder)
             }
             Thread.sleep(forTimeInterval: 0.1)
         }
@@ -395,15 +489,15 @@ enum Recording {
         case failed(String, RunnerExitCode)
     }
 
-    /// Stops the recording if simctl still runs, waits for the video, and removes the state. The state stays
-    /// only when simctl does not exit in time, so `record stop` can be run again.
+    /// Stops the recording if simctl (or the supervisor of a device) still runs, waits for the video, and removes
+    /// the state. The state stays only when it does not exit in time, so `record stop` can be run again.
     static func finish(_ state: RecordingState, stateURL: URL) -> Outcome {
         if isRecording(state) {
             kill(state.pid, SIGINT)
             let deadline = Date().addingTimeInterval(stopTimeout)
             while isRecording(state) {
                 guard Date() < deadline else {
-                    return .failed("simctl (pid \(state.pid)) did not finish writing \(state.output) within \(Int(stopTimeout))s; "
+                    return .failed("\(state.recorder) (pid \(state.pid)) did not finish writing \(state.output) within \(Int(stopTimeout))s; "
                         + "run relay record stop again, or see \(state.log)", .usage)
                 }
                 Thread.sleep(forTimeInterval: 0.2)
@@ -415,7 +509,7 @@ enum Recording {
             note("the recording had already ended")
         }
         unlink(stateURL.path)
-        if isShutDown(udid: state.udid) {
+        if !state.isDevice, isShutDown(udid: state.udid) {
             note("the simulator \(state.udid) is no longer booted; the video ends where it shut down")
         }
         let size = (try? FileManager.default.attributesOfItem(atPath: state.output)[.size] as? NSNumber)?.intValue ?? 0
@@ -458,32 +552,39 @@ enum Recording {
             return RunnerExitCode.success.rawValue
         }
         let recording = isRecording(found.state)
+        let stalled = recording && found.state.isDevice ? stall(inLog: (try? String(contentsOfFile: found.state.log, encoding: .utf8)) ?? "") : nil
         if json {
-            FileHandle.standardOutput.write(statusJSON(found.state, recording: recording, stateURL: found.url) + Data("\n".utf8))
+            FileHandle.standardOutput.write(statusJSON(found.state, recording: recording, stall: stalled, stateURL: found.url) + Data("\n".utf8))
         } else {
-            print(statusText(found.state, recording: recording, stateURL: found.url))
+            print(statusText(found.state, recording: recording, stall: stalled, stateURL: found.url))
         }
         return RunnerExitCode.success.rawValue
     }
 
-    static func statusText(_ state: RecordingState, recording: Bool, stateURL: URL, now: Date = Date(), timeZone: TimeZone = .current) -> String {
-        let rows: [(String, String)] = [
+    /// `stall`: the supervisor's note that no frame comes from the device, while it does not.
+    static func statusText(_ state: RecordingState, recording: Bool, stall: String? = nil, stateURL: URL, now: Date = Date(),
+                           timeZone: TimeZone = .current) -> String {
+        var rows: [(String, String)] = [
             ("recording", recording
                 ? "yes (\(elapsed(state, now: now))s; stops by itself after \(Int(state.maxDuration))s)"
                 : "ended (relay record stop prints the video's path)"),
             ("output", state.output),
             ("device", state.udid),
-            ("pid", "\(state.pid) (simctl\(recording ? "" : ", exited"))"),
+            ("pid", "\(state.pid) (\(state.recorder)\(recording ? "" : ", exited"))"),
             ("started", RunnerStatus.formatted(state.startedAt, timeZone: timeZone)),
             ("log", state.log),
             ("state", stateURL.path)
         ]
+        if let stall {
+            rows.insert(("frames", stall), at: 1)
+        }
         let width = rows.map(\.0.count).max() ?? 0
         return rows.map { "\($0.0):\(String(repeating: " ", count: width - $0.0.count + 1))\($0.1)" }.joined(separator: "\n")
     }
 
-    static func statusJSON(_ state: RecordingState, recording: Bool, stateURL: URL, now: Date = Date()) -> Data {
-        let object: [String: Any] = [
+    static func statusJSON(_ state: RecordingState, recording: Bool, stall: String? = nil, stateURL: URL, now: Date = Date()) -> Data {
+        var object: [String: Any] = [
+            "kind": (state.kind ?? .simulator).rawValue,
             "recording": recording,
             "output": state.output,
             "udid": state.udid,
@@ -495,6 +596,9 @@ enum Recording {
             "log": state.log,
             "state": stateURL.path
         ]
+        if let stall {
+            object["stall"] = stall
+        }
         return (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])) ?? Data("{}".utf8)
     }
 
@@ -553,14 +657,14 @@ enum Recording {
     private static func isShutDown(udid: String) -> Bool {
         guard let output = try? Shell.xcrun(["simctl", "list", "devices", "--json"]),
               let simulators = try? DeviceList.parseSimctl(Data(output.utf8)),
-              case .simulator(let simulator) = target(udid: udid, simulators: simulators) else { return false }
+              case .simulator(let simulator) = target(udid: udid, devices: simulators) else { return false }
         return !simulator.isBooted
     }
 
-    private static func failed(_ reason: String, logURL: URL) -> Int32 {
+    private static func failed(_ reason: String, logURL: URL, recorder: String) -> Int32 {
         let lines = (try? String(contentsOf: logURL, encoding: .utf8))?.split(separator: "\n") ?? []
         if !lines.isEmpty {
-            note("simctl's output (\(logURL.path)):")
+            note("\(recorder)'s output (\(logURL.path)):")
             FileHandle.standardError.write(Data((lines.suffix(BackgroundStart.tailLineCount).map { "  \($0)" }.joined(separator: "\n") + "\n").utf8))
         }
         return fail(reason, code: .usage)

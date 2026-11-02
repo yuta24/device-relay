@@ -2,7 +2,7 @@ import Foundation
 @testable import relay
 import Testing
 
-// relay record (simulators only). UDIDs, names, and paths are dummies.
+// relay record (simulators, and devices connected with USB). UDIDs, names, and paths are dummies.
 
 struct RecordArgumentsTests {
     @Test func startDefaults() throws {
@@ -64,9 +64,11 @@ struct RecordArgumentsTests {
         #expect(try Arguments.parse(["record", "start", "--help"]) == .commandHelp("record"))
         #expect(try Arguments.parse(["help", "record"]) == .commandHelp("record"))
         let usage = Arguments.usage(for: "record")
-        #expect(usage.contains("Simulators only"))
+        #expect(usage.contains("simulator or device"))
+        #expect(usage.contains("USB"))
+        #expect(usage.contains("Privacy & Security > Camera"))
         #expect(usage.contains("relay record start"))
-        #expect(Arguments.usage.contains("record   Simulators only"))
+        #expect(Arguments.usage.contains("record   Records the screen of the runner's simulator, or of its device connected with USB"))
         #expect(Arguments.errorUsage(for: "record").contains("Run relay record --help"))
         #expect(usage.contains("--force"))
         #expect(usage.contains("relay record stop [--runner <path> | --port <n>]"))
@@ -76,6 +78,14 @@ struct RecordArgumentsTests {
         let arguments = Recording.superviseArguments(udid: "SIM-UDID", output: "/tmp/a b.mp4", maxDuration: 42.5)
         #expect(try Arguments.parse(arguments)
             == .record(RecordOptions(action: .supervise(udid: "SIM-UDID", output: "/tmp/a b.mp4", maxDuration: 42.5))))
+        // A device's name, spaces and all, which the supervisor finds its screen by.
+        let device = Recording.superviseArguments(udid: "DEVICE-UDID", output: "/tmp/a.mp4", maxDuration: 600, deviceName: "Test Phone 2")
+        #expect(device.suffix(2) == ["--device-name", "Test Phone 2"])
+        #expect(try Arguments.parse(device) == .record(RecordOptions(
+            action: .supervise(udid: "DEVICE-UDID", output: "/tmp/a.mp4", maxDuration: 600, deviceName: "Test Phone 2")
+        )))
+        // Only the internal supervise takes it.
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["record", "start", "--device-name", "Test Phone"]) }
     }
 
     @Test func simctlArguments() {
@@ -209,6 +219,56 @@ struct RecordStateTests {
         #expect(!Recording.isRecording(recording) { _ in screenshot })
     }
 
+    @Test func recordingOnlyWhileTheSameDeviceSupervisorRuns() {
+        var recording = state()
+        recording.kind = .device
+        let supervisor = RelayProcess.Snapshot(
+            startedAt: Date(timeIntervalSince1970: 1_800_000_000.2), executable: "/Users/me/.local/bin/relay",
+            arguments: ["/Users/me/.local/bin/relay", "record", "supervise", "--udid", "DEVICE-UDID", "--output", recording.output,
+                        "--max-duration", "600.0", "--device-name", "Test Phone"]
+        )
+        let check = { (snapshot: RelayProcess.Snapshot) in
+            Recording.isRecordingProcess(snapshot, startedAt: recording.processStartedAt, device: true, relayName: "relay")
+        }
+        #expect(check(supervisor))
+        // Another relay command, another executable, or a later process with the pid.
+        var start = supervisor
+        start.arguments = ["relay", "record", "start"]
+        #expect(!check(start))
+        var other = supervisor
+        other.executable = "/usr/bin/yes"
+        #expect(!check(other))
+        var later = supervisor
+        later.startedAt = Date(timeIntervalSince1970: 1_800_000_100)
+        #expect(!check(later))
+        // A simulator's state does not take the supervisor for simctl, nor a device's simctl for its recorder.
+        #expect(!Recording.isRecordingProcess(supervisor, startedAt: recording.processStartedAt, device: false, relayName: "relay"))
+        #expect(!Recording.isRecording(recording) { _ in nil })
+    }
+
+    @Test func stateOfAnEarlierVersionIsASimulator() throws {
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent("relay-record-home-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: home) }
+        let url = Recording.stateURL(port: 8100, home: home)
+        try state().write(to: url)
+        // Written without "kind", as before devices were recorded.
+        let text = try String(contentsOf: url, encoding: .utf8)
+        #expect(!text.contains("kind"))
+        let read = try RecordingState.read(from: url)
+        #expect(read.kind == nil && !read.isDevice && read.recorder == "simctl")
+
+        var device = state()
+        device.kind = .device
+        try device.write(to: url)
+        #expect(try RecordingState.read(from: url) == device)
+        #expect(device.recorder == "relay record supervise")
+        #expect(Recording.alreadyRecordingMessage(device, url: "http://127.0.0.1:8100/").contains("relay record supervise pid 4242"))
+        let status = Recording.statusText(device, recording: true, stateURL: url, now: device.startedAt)
+        #expect(status.contains("pid:       4242 (relay record supervise)"))
+        let json = try #require(try JSONSerialization.jsonObject(with: Recording.statusJSON(device, recording: true, stateURL: url)) as? [String: Any])
+        #expect(json["kind"] as? String == "device")
+    }
+
     @Test func alreadyRecordingNamesTheRecordingAndTheWayOut() {
         let message = Recording.alreadyRecordingMessage(state(), url: "http://127.0.0.1:8100/")
         #expect(message.hasPrefix("a recording is already running for the runner at http://127.0.0.1:8100/"))
@@ -234,6 +294,7 @@ struct RecordStateTests {
         #expect(object["output"] as? String == recording.output)
         #expect(object["pid"] as? Int == 4242)
         #expect(object["port"] as? Int == 8100)
+        #expect(object["kind"] as? String == "simulator")
     }
 }
 
@@ -245,9 +306,55 @@ struct RecordProgressTests {
                      "Note: No display specified. Defaulting to display: DISPLAY-ID (screenID: 1, name: LCD)"] {
             Recording.handle(line: line, progress: &progress)
         }
-        #expect(progress == Recording.Progress(simctlPid: 5150, started: false))
+        #expect(progress == Recording.Progress(recorderPid: 5150, started: false))
         Recording.handle(line: "Recording started", progress: &progress)
-        #expect(progress == Recording.Progress(simctlPid: 5150, started: true))
+        #expect(progress == Recording.Progress(recorderPid: 5150, started: true))
+    }
+
+    @Test func aDeviceSupervisorReportsItsOwnPid() {
+        var progress = Recording.Progress()
+        Recording.handle(line: "relay: recording the device in pid 6160", progress: &progress)
+        #expect(progress == Recording.Progress(recorderPid: 6160, started: false))
+        // Written at the first frame.
+        Recording.handle(line: "Recording started", progress: &progress)
+        #expect(progress.started)
+        let log = """
+        relay: recording the device in pid 6160
+        Recording started
+        relay: the device was disconnected; stopped the recording
+        relay: wrote 120 frames (1000x2000) to /tmp/a.mp4
+        """
+        #expect(Recording.endReason(inLog: log) == "the device was disconnected; stopped the recording; wrote 120 frames (1000x2000) to /tmp/a.mp4")
+    }
+
+    @Test func statusTellsWhileNoFrameComes() throws {
+        let stalled = """
+        relay: recording the device in pid 6160
+        Recording started
+        relay: no frame for 5s (the device may be locked, or the capture stalled); still recording, and the video holds the last frame until frames come again
+        """
+        let note = try #require(Recording.stall(inLog: stalled))
+        #expect(note.hasPrefix("no frame for 5s"))
+        let resumed = stalled + "\nrelay: frames came again after 12s without one\n"
+        #expect(Recording.stall(inLog: resumed) == nil)
+        #expect(Recording.stall(inLog: resumed + "relay: no frame for 5s (again)\n") == "no frame for 5s (again)")
+        #expect(Recording.stall(inLog: "relay: recording the device in pid 6160\nRecording started\n") == nil)
+        // Not why it ended.
+        #expect(Recording.endReason(inLog: resumed + "relay: stopping the recording\n") == "stopping the recording")
+
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        let state = RecordingState(pid: 6160, processStartedAt: start, supervisorPid: 6160, output: "/tmp/a.mp4",
+                                   udid: "00000000-0000000000000001", port: 8100, startedAt: start, maxDuration: 600,
+                                   log: "/tmp/record.log", kind: .device)
+        let text = Recording.statusText(state, recording: true, stall: note, stateURL: URL(fileURLWithPath: "/s.json"), now: state.startedAt)
+        #expect(text.contains("frames:    no frame for 5s"))
+        #expect(!Recording.statusText(state, recording: true, stateURL: URL(fileURLWithPath: "/s.json")).contains("frames:"))
+        let json = try #require(try JSONSerialization.jsonObject(with: Recording.statusJSON(state, recording: true, stall: note,
+                                                                                            stateURL: URL(fileURLWithPath: "/s.json"))) as? [String: Any])
+        #expect(json["stall"] as? String == note)
+        let fine = try #require(try JSONSerialization.jsonObject(with: Recording.statusJSON(state, recording: true,
+                                                                                            stateURL: URL(fileURLWithPath: "/s.json"))) as? [String: Any])
+        #expect(fine["stall"] == nil)
     }
 
     @Test func errorsAreNotAStart() {
@@ -257,7 +364,7 @@ struct RecordProgressTests {
             Recording.handle(line: line, progress: &progress)
         }
         #expect(!progress.started)
-        #expect(progress.simctlPid == nil)
+        #expect(progress.recorderPid == nil)
     }
 
     @Test func endReasonIsWhatTheSupervisorSaid() {
@@ -273,11 +380,16 @@ struct RecordProgressTests {
         #expect(Recording.endReason(inLog: "relay: recording with simctl pid 1\nRecording started\n") == nil)
     }
 
-    @Test func onlySimulatorsAreRecorded() {
+    @Test func targetIsASimulatorOrADevice() {
         let simulator = Device(name: "iPhone", udid: "SIM-UDID", kind: .simulator, os: "iOS 27.0", state: "booted", isAvailable: true)
-        #expect(Recording.target(udid: "SIM-UDID", simulators: [simulator]) == .simulator(simulator))
-        #expect(Recording.target(udid: "DEVICE-UDID", simulators: [simulator]) == .notSimulator)
-        #expect(Recording.target(udid: "DEVICE-UDID", simulators: []) == .notSimulator)
+        let device = Device(name: "Test Phone", udid: "00000000-0000000000000001", kind: .device, os: "iOS 26.0", state: "connected",
+                            isAvailable: true, transport: "wired")
+        #expect(Recording.target(udid: "SIM-UDID", devices: [simulator, device]) == .simulator(simulator))
+        #expect(Recording.target(udid: "00000000-0000000000000001", devices: [simulator, device]) == .device(device))
+        // runner.json may spell the UDID in another case.
+        #expect(Recording.target(udid: "00000000-0000000000000001".lowercased(), devices: [device]) == .device(device))
+        #expect(Recording.target(udid: "DEVICE-UDID", devices: [simulator]) == .notFound)
+        #expect(Recording.target(udid: "DEVICE-UDID", devices: []) == .notFound)
     }
 }
 
@@ -347,5 +459,135 @@ struct RecordStateLookupTests {
         }
         #expect(error?.description.contains("--port 8101: /tmp/8101.mp4 (ended)") == true)
         #expect(error?.description.hasSuffix("choose one with --port <n>") == true)
+    }
+}
+
+struct DeviceCaptureTests {
+    func device(state: String = "connected", available: Bool = true, transport: String? = "wired") -> Device {
+        Device(name: "Test Phone", udid: "00000000-0000000000000001", kind: .device, os: "iOS 26.0", state: state,
+               isAvailable: available, transport: transport)
+    }
+
+    @Test func aDeviceMustBeConnectedWithUSB() throws {
+        #expect(DeviceCapture.connectionProblem(device()) == nil)
+        // devicectl may not report the transport; the capture device then tells.
+        #expect(DeviceCapture.connectionProblem(device(transport: nil)) == nil)
+        let wifi = try #require(DeviceCapture.connectionProblem(device(transport: "localNetwork")))
+        #expect(wifi.contains("over the network only (localNetwork)"))
+        #expect(wifi.contains("USB cable"))
+        let unplugged = try #require(DeviceCapture.connectionProblem(device(state: "unavailable", available: false, transport: nil)))
+        #expect(unplugged == "the device Test Phone (00000000-0000000000000001) is not connected (unavailable); "
+            + "recording a device needs it connected with a USB cable and unlocked")
+    }
+
+    @Test func cameraAccessIsNeeded() throws {
+        #expect(DeviceCapture.accessProblem(.authorized) == nil)
+        // Asked for before it counts.
+        #expect(DeviceCapture.accessProblem(.notDetermined) == nil)
+        let denied = try #require(DeviceCapture.accessProblem(.denied))
+        #expect(denied.contains("System Settings > Privacy & Security > Camera"))
+        #expect(denied.contains("restart it"))
+        #expect(try #require(DeviceCapture.accessProblem(.restricted)).contains("restricted"))
+    }
+
+    @Test func theScreenIsFoundByTheDeviceName() {
+        let candidates = [
+            DeviceCapture.Candidate(uniqueID: "AAAAAAAA-0000-0000-0000-000000000001", name: "Test Phone"),
+            DeviceCapture.Candidate(uniqueID: "AAAAAAAA-0000-0000-0000-000000000002", name: "Test Pad")
+        ]
+        #expect(DeviceCapture.match(name: "Test Phone", candidates: candidates) == .found(uniqueID: "AAAAAAAA-0000-0000-0000-000000000001"))
+        #expect(DeviceCapture.match(name: "Test Pad", candidates: candidates) == .found(uniqueID: "AAAAAAAA-0000-0000-0000-000000000002"))
+        #expect(DeviceCapture.match(name: "Test Pod", candidates: candidates) == .notFound)
+        #expect(DeviceCapture.match(name: "Test Phone", candidates: []) == .notFound)
+        let twins = candidates + [DeviceCapture.Candidate(uniqueID: "AAAAAAAA-0000-0000-0000-000000000003", name: "Test Phone")]
+        #expect(DeviceCapture.match(name: "Test Phone", candidates: twins) == .ambiguous(count: 2))
+        #expect(DeviceCapture.ambiguousMessage(name: "Test Phone", count: 2).hasPrefix("2 connected devices are named \"Test Phone\""))
+    }
+
+    @Test func theKindOfApostropheDoesNotMatter() {
+        let curly = [DeviceCapture.Candidate(uniqueID: "A1", name: "Kim\u{2019}s iPhone")]
+        #expect(DeviceCapture.match(name: "Kim's iPhone", candidates: curly) == .found(uniqueID: "A1"))
+        let straight = [DeviceCapture.Candidate(uniqueID: "A2", name: "Kim's iPhone")]
+        #expect(DeviceCapture.match(name: "Kim\u{2019}s iPhone", candidates: straight) == .found(uniqueID: "A2"))
+        let quoted = [DeviceCapture.Candidate(uniqueID: "A3", name: "\u{201C}Lab\u{201D} Phone")]
+        #expect(DeviceCapture.match(name: "\"Lab\" Phone", candidates: quoted) == .found(uniqueID: "A3"))
+    }
+
+    @Test func caseAndAccentsDoNotMatter() {
+        let candidates = [DeviceCapture.Candidate(uniqueID: "A1", name: "Zoë's iPhone")]
+        #expect(DeviceCapture.match(name: "zoë's iphone", candidates: candidates) == .found(uniqueID: "A1"))
+        #expect(DeviceCapture.match(name: "Zoe's iPhone", candidates: candidates) == .found(uniqueID: "A1"))
+        #expect(DeviceCapture.match(name: "ZOE\u{2019}S IPHONE", candidates: candidates) == .found(uniqueID: "A1"))
+        #expect(DeviceCapture.match(name: "Zoe's iPad", candidates: candidates) == .notFound)
+    }
+
+    @Test func anExactMatchComesFirst() {
+        let candidates = [
+            DeviceCapture.Candidate(uniqueID: "A1", name: "Test Phone"),
+            DeviceCapture.Candidate(uniqueID: "A2", name: "test phone")
+        ]
+        #expect(DeviceCapture.match(name: "Test Phone", candidates: candidates) == .found(uniqueID: "A1"))
+        #expect(DeviceCapture.match(name: "test phone", candidates: candidates) == .found(uniqueID: "A2"))
+        // Without an exact match both are as close.
+        #expect(DeviceCapture.match(name: "TEST PHONE", candidates: candidates) == .ambiguous(count: 2))
+        let apostrophes = [
+            DeviceCapture.Candidate(uniqueID: "B1", name: "Kim\u{2019}s iPhone"),
+            DeviceCapture.Candidate(uniqueID: "B2", name: "kim's iphone")
+        ]
+        #expect(DeviceCapture.match(name: "Kim's iPhone", candidates: apostrophes) == .ambiguous(count: 2))
+    }
+
+    @Test func aGapInTheFramesIsNotedOnceUntilTheyComeAgain() throws {
+        var watch = FrameWatch()
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        // Nothing before the first frame: record start waits for that.
+        #expect(watch.check(lastFrame: nil, now: start.addingTimeInterval(60)) == nil)
+        #expect(watch.check(lastFrame: start, now: start.addingTimeInterval(4.9)) == nil)
+        let note = watch.check(lastFrame: start, now: start.addingTimeInterval(5))
+        let stalled = try #require(note)
+        #expect(stalled.hasPrefix("no frame for 5s (the device may be locked, or the capture stalled); still recording"))
+        // What record status looks for in the log.
+        #expect("relay: \(stalled)".hasPrefix(DeviceCapture.stallMarker))
+        #expect(watch.stalledSince == start)
+        // Once.
+        #expect(watch.check(lastFrame: start, now: start.addingTimeInterval(30)) == nil)
+        let resumed = watch.check(lastFrame: start.addingTimeInterval(12.4), now: start.addingTimeInterval(12.5))
+        #expect(resumed == "frames came again after 12s without one")
+        #expect("relay: \(resumed ?? "")".hasPrefix(DeviceCapture.resumeMarker))
+        #expect(watch.stalledSince == nil)
+        // And again for the next gap.
+        #expect(watch.check(lastFrame: start.addingTimeInterval(12.4), now: start.addingTimeInterval(17.5)) != nil)
+    }
+
+    @Test func aNewProcessIsTriedOnlyWhenNoScreenShowedUp() {
+        let none = "relay: recording the device in pid 6160\nrelay: " + DeviceCapture.notFoundMessage(name: "Test Phone", candidates: []) + "\n"
+        #expect(DeviceCapture.noScreenShowedUp(inLog: none))
+        // Another device's screen did: the name is wrong, and a new process would not see it either.
+        let others = "relay: " + DeviceCapture.notFoundMessage(name: "Test Phone", candidates: [DeviceCapture.Candidate(uniqueID: "A", name: "Test Pad")])
+        #expect(!DeviceCapture.noScreenShowedUp(inLog: others))
+        #expect(!DeviceCapture.noScreenShowedUp(inLog: "relay: " + DeviceCapture.ambiguousMessage(name: "Test Phone", count: 2)))
+        #expect(!DeviceCapture.noScreenShowedUp(inLog: "relay: recording the device in pid 6160\nRecording started\n"))
+        // The end is the second supervisor's.
+        let retried = none + "relay: recording the device in pid 6170\nRecording started\nrelay: reached --max-duration of 5s; stopped the recording\n"
+        #expect(Recording.endReason(inLog: retried) == "reached --max-duration of 5s; stopped the recording")
+        // The wait after a capture covers the window in which a new process would not see the screen.
+        #expect(DeviceCapture.releaseDelay >= 3)
+    }
+
+    @Test func notFoundSaysWhatToDo() {
+        let none = DeviceCapture.notFoundMessage(name: "Test Phone", candidates: [])
+        #expect(none.contains("no device screen is available"))
+        #expect(none.contains("USB cable"))
+        #expect(none.contains("unlock it"))
+        #expect(none.contains("wait a minute"))
+        let others = DeviceCapture.notFoundMessage(name: "Test Phone", candidates: [DeviceCapture.Candidate(uniqueID: "A", name: "Test Pad")])
+        #expect(others.contains("the screens available are \"Test Pad\""))
+    }
+
+    @Test func movieOnlyForMov() {
+        #expect(DeviceCapture.fileType(forPath: "/tmp/a.mp4") == .mp4)
+        #expect(DeviceCapture.fileType(forPath: "/tmp/a") == .mp4)
+        #expect(DeviceCapture.fileType(forPath: "/tmp/a.MOV") == .mov)
+        #expect(DeviceCapture.fileType(forPath: "/tmp/a.m4v") == .m4v)
     }
 }

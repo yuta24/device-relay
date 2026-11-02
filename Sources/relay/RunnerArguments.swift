@@ -199,29 +199,42 @@ extension Arguments {
               relay record status [--json] [--runner <path> | --port <n>]
             """,
             """
-            Simulators only (recording a device is not supported yet). Records the screen of the simulator the
-            runner in runner.json runs on, to show what happened (a video for a pull request, for example):
-            relay record start, then the runner commands, then relay record stop.
-            start runs xcrun simctl io <udid> recordVideo --codec h264 --force <file> detached from the terminal
-            (log: ~/.relay/logs/record-*.log), waits until simctl reports that it records, and prints the video's
-            absolute path. Without -o it goes to $TMPDIR/relay/relay-recording-<time>.mp4; a relative -o is under
+            Records the screen of the simulator or device the runner in runner.json runs on, to show what
+            happened (a video for a pull request, for example): relay record start, then the runner commands,
+            then relay record stop.
+            start records detached from the terminal (log: ~/.relay/logs/record-*.log), waits until the
+            recording has started, and prints the video's absolute path. A simulator is recorded with
+            xcrun simctl io <udid> recordVideo --codec h264 --force <file>. A device must be connected with a USB
+            cable (not only Wi-Fi) and unlocked: its screen is recorded as a capture device, as QuickTime Player
+            does, into H.264 (an MP4, or a QuickTime movie if the file ends in .mov); start returns once the
+            first frame is written. This needs camera access for the app relay runs in (the terminal or the
+            IDE): the first start asks for it with a macOS dialog, and a denied one is allowed again in System
+            Settings > Privacy & Security > Camera.
+            Without -o the video goes to $TMPDIR/relay/relay-recording-<time>.mp4; a relative -o is under
             the current directory, whose directory must exist. An existing file is an error unless --force
-            replaces it (relay checks before starting; simctl always gets its own --force). The recording stops
-            by itself after --max-duration seconds (600 by default); relay record stop still prints its path.
+            replaces it (relay checks before starting). The recording stops by itself after --max-duration
+            seconds (600 by default); relay record stop still prints its path.
             One recording per runner: the state is ~/.relay/recording-<port>.json (mode 0600); a second start
             fails while it records, and the state of one that ended does not block the next.
-            stop sends SIGINT to simctl, waits up to 30 seconds for the video to be written, checks that it is not
-            empty, and prints its path; "not recording" when there is none. relay stop and the exit of relay start
-            finish a recording of their runner too. A simulator shut down while recording ends the video there.
+            stop sends SIGINT to the recording (simctl, or relay record supervise for a device), waits up to 30
+            seconds for the video to be written, checks that it is not empty, and prints its path; "not recording"
+            when there is none. For a device it takes about 4 seconds: the capture must be stopped for a few
+            seconds before the next one sees the screen (start tries a new process once when it does not).
+            relay stop and the exit of relay start finish a recording of their runner too.
+            A simulator shut down while recording ends the video there, and so does a device unplugged while
+            recording. A device that sends no frame for 5 seconds (locked, for example) keeps recording: the log
+            and status note it (the video holds the last frame), and the log notes when frames come again.
             stop and status use the recording of the runner in runner.json; --port <n> uses the one of that runner
             port directly (also without runner.json; not with --runner). A --runner or $RELAY_RUNNER that does not
             exist is exit 3, as for the other commands. Without them and without runner.json, the only recording
             is used, and several are listed by port to choose one with --port.
-            status shows whether it records, the video, and the elapsed time (--json: one object); it exits 0.
-            Exit status: 0 ok, 1 not a booted simulator, a missing directory, an existing file without --force,
-              already recording, simctl failing,
-              or an empty video, 3 no runner (no runner.json or no answer; for stop and status, a --runner or
-              $RELAY_RUNNER that does not exist), 4 the token was rejected (401).
+            status shows whether it records, the video, the elapsed time, and a device's frames having stopped
+            (--json: one object); it exits 0.
+            Exit status: 0 ok, 1 not a booted simulator, a device not connected with USB, no camera access, a
+              missing directory, an existing file without --force, already recording, the recording failing to
+              start (simctl, or no frame from the device), or an empty video, 3 no runner (no runner.json or no
+              answer; for stop and status, a --runner or $RELAY_RUNNER that does not exist), 4 the token was
+              rejected (401).
             """
         ),
         "run": (
