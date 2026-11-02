@@ -8,7 +8,7 @@ enum Command: Equatable {
     case run(ScenarioOptions)
     case status(RunnerStatusOptions)
     case stop(RunnerStopOptions)
-    /// `relay record start|stop|status` (simulators only).
+    /// `relay record start|stop|status` (simulators, and devices plugged in with USB).
     case record(RecordOptions)
     case devices(json: Bool, os: String?)
     case doctor(DoctorOptions)
@@ -317,6 +317,7 @@ enum Arguments {
         var port: Int?
         var force = false
         var udid: String?
+        var deviceName: String?
         let takesOutput = action == "start" || action == "supervise"
         while !rest.isEmpty {
             let option = rest.removeFirst()
@@ -337,6 +338,7 @@ enum Arguments {
                 }
                 port = value
             case "--udid" where action == "supervise": udid = try value(for: option)
+            case "--device-name" where action == "supervise": deviceName = try value(for: option)
             case "-h", "--help": return .commandHelp("record")
             default: throw ArgumentError(description: "unknown option for record \(action): \(option)")
             }
@@ -355,7 +357,7 @@ enum Arguments {
             guard let udid, let output else {
                 throw ArgumentError(description: "record supervise requires --udid and --output")
             }
-            return .record(RecordOptions(action: .supervise(udid: udid, output: output, maxDuration: maxDuration)))
+            return .record(RecordOptions(action: .supervise(udid: udid, output: output, maxDuration: maxDuration, deviceName: deviceName)))
         }
     }
 
@@ -449,9 +451,9 @@ enum Arguments {
     stop     Stops relay start (SIGTERM, like Ctrl-C), which shuts the runner down, shuts down a simulator
              it booted, and removes runner.json. Prints "not running" (exit 0) if nothing runs.
              A recording (relay record) of that runner is finished first.
-    record   Simulators only. Records the screen of the runner's simulator to an MP4 (simctl io recordVideo,
-             detached from the terminal) until relay record stop, which prints the video's path, or until
-             --max-duration seconds. relay record --help for details.
+    record   Records the screen of the runner's simulator, or of its device connected with USB, to an MP4
+             (detached from the terminal) until relay record stop, which prints the video's path, or until
+             --max-duration seconds. A device needs camera access for the terminal. relay record --help for details.
     install  Copies the runner project and the agent skill from the device-relay checkout (--project,
              $RELAY_HOME, or the one the relay executable was built in) to ~/.relay/runner, replacing a
              previous copy, and records the relay version. --build also builds it for simulators (log: ~/.relay/logs/build-*.log;

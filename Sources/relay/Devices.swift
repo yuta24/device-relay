@@ -2,7 +2,7 @@ import Foundation
 
 /// A physical device from `devicectl list devices` or a simulator from `simctl list devices`.
 struct Device: Equatable {
-    enum Kind: String {
+    enum Kind: String, Codable {
         case device
         case simulator
     }
@@ -22,6 +22,8 @@ struct Device: Equatable {
     var pairingState: String?
     var developerModeEnabled: Bool?
     var ddiServicesAvailable: Bool?
+    /// Devices: devicectl's transport (`wired` for USB, `localNetwork`); nil when it has none.
+    var transport: String?
 
     var isBooted: Bool { kind == .simulator && state == "booted" }
 
@@ -144,7 +146,8 @@ enum DeviceList {
             isAvailable: connectionState == "connected" || (transport != nil && connectionState != "unavailable"),
             pairingState: connection["pairingState"] as? String ?? oldConnection["pairingState"] as? String,
             developerModeEnabled: developerMode(state["developerModeStatus"] ?? oldDevice["developerModeStatus"]),
-            ddiServicesAvailable: oldDevice["ddiServicesAvailable"] as? Bool
+            ddiServicesAvailable: oldDevice["ddiServicesAvailable"] as? Bool,
+            transport: transport
         )
     }
 
