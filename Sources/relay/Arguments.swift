@@ -8,6 +8,8 @@ enum Command: Equatable {
     case run(ScenarioOptions)
     case status(RunnerStatusOptions)
     case stop(RunnerStopOptions)
+    /// `relay record start|stop|status` (simulators only).
+    case record(RecordOptions)
     case devices(json: Bool, os: String?)
     case doctor(DoctorOptions)
     case config(ConfigOptions)
@@ -150,6 +152,8 @@ enum Arguments {
             return subcommand == "status" ? .status(RunnerStatusOptions(json: json, runnerPath: runnerPath)) : .stop(RunnerStopOptions(runnerPath: runnerPath))
         case "run":
             return try parseRun(rest)
+        case "record":
+            return try parseRecord(rest)
         case "devices":
             var json = false
             var os: String?
@@ -285,6 +289,76 @@ enum Arguments {
         return .run(ScenarioOptions(source: source, runnerPath: runnerPath, quiet: quiet, check: check))
     }
 
+    /// `relay record start [--output <path>] [--force] [--max-duration <s>] [--runner <path>]`, `relay record
+    /// stop [--runner <path> | --port <n>]`, `relay record status [--json] [--runner <path> | --port <n>]`, and the internal `relay record
+    /// supervise`, which `record start` runs detached (see `RecordSupervisor`).
+    static func parseRecord(_ raw: [String]) throws -> Command {
+        var rest = raw
+        guard !rest.isEmpty else {
+            throw ArgumentError(description: "record takes start, stop, or status")
+        }
+        let action = rest.removeFirst()
+        guard ["start", "stop", "status", "supervise"].contains(action) else {
+            if ["-h", "--help", "help"].contains(action) { return .commandHelp("record") }
+            throw ArgumentError(description: "unknown record action: \(action) (start, stop, or status)")
+        }
+
+        func value(for option: String) throws -> String {
+            guard !rest.isEmpty, !rest[0].hasPrefix("--") else {
+                throw ArgumentError(description: "\(option) requires a value")
+            }
+            return rest.removeFirst()
+        }
+
+        var output: String?
+        var maxDuration = Recording.defaultMaxDuration
+        var json = false
+        var runnerPath: String?
+        var port: Int?
+        var force = false
+        var udid: String?
+        let takesOutput = action == "start" || action == "supervise"
+        while !rest.isEmpty {
+            let option = rest.removeFirst()
+            switch option {
+            case "--output" where takesOutput, "-o" where takesOutput:
+                output = try value(for: option)
+            case "--max-duration" where takesOutput:
+                guard let seconds = TimeInterval(try value(for: option)), seconds > 0, seconds.isFinite else {
+                    throw ArgumentError(description: "--max-duration requires seconds greater than zero")
+                }
+                maxDuration = seconds
+            case "--force" where action == "start": force = true
+            case "--json" where action == "status": json = true
+            case "--runner" where action != "supervise": runnerPath = try value(for: option)
+            case "--port" where action == "stop" || action == "status":
+                guard let value = Int(try value(for: option)), (1...65535).contains(value) else {
+                    throw ArgumentError(description: "--port requires a valid TCP port")
+                }
+                port = value
+            case "--udid" where action == "supervise": udid = try value(for: option)
+            case "-h", "--help": return .commandHelp("record")
+            default: throw ArgumentError(description: "unknown option for record \(action): \(option)")
+            }
+        }
+        guard runnerPath == nil || port == nil else {
+            throw ArgumentError(description: "record \(action) takes either --runner or --port, not both")
+        }
+        switch action {
+        case "start":
+            return .record(RecordOptions(action: .start(output: output, maxDuration: maxDuration, force: force), runnerPath: runnerPath))
+        case "stop":
+            return .record(RecordOptions(action: .stop, runnerPath: runnerPath, port: port))
+        case "status":
+            return .record(RecordOptions(action: .status(json: json), runnerPath: runnerPath, port: port))
+        default:
+            guard let udid, let output else {
+                throw ArgumentError(description: "record supervise requires --udid and --output")
+            }
+            return .record(RecordOptions(action: .supervise(udid: udid, output: output, maxDuration: maxDuration)))
+        }
+    }
+
     /// `relay config` arguments: `get <key>`, `set <key> <value>`, `unset <key>`, or nothing.
     static func parseConfig(_ raw: [String]) throws -> ConfigOptions {
         func key(_ value: String) throws -> String {
@@ -331,6 +405,7 @@ enum Arguments {
         """),
         (["status"], "relay status [--json] [--runner <PATH>]"),
         (["stop"], "relay stop [--runner <PATH>]"),
+        (["record"], "relay record start [-o <file>] [--force] [--max-duration 600] [--runner <PATH>] | relay record stop | relay record status [--json]"),
         (["install", "uninstall"], "relay install [--project <PATH>] [--build [--verbose]] | relay install --remove | relay uninstall"),
         (["skill"], "relay skill install [--global | --dir <skills dir>] [--link] [--force] | relay skill uninstall | relay skill status"),
         (["devices"], "relay devices [--json] [--os <VERSION>]"),
@@ -373,6 +448,10 @@ enum Arguments {
              (the token in runner.json is not that runner's).
     stop     Stops relay start (SIGTERM, like Ctrl-C), which shuts the runner down, shuts down a simulator
              it booted, and removes runner.json. Prints "not running" (exit 0) if nothing runs.
+             A recording (relay record) of that runner is finished first.
+    record   Simulators only. Records the screen of the runner's simulator to an MP4 (simctl io recordVideo,
+             detached from the terminal) until relay record stop, which prints the video's path, or until
+             --max-duration seconds. relay record --help for details.
     install  Copies the runner project and the agent skill from the device-relay checkout (--project,
              $RELAY_HOME, or the one the relay executable was built in) to ~/.relay/runner, replacing a
              previous copy, and records the relay version. --build also builds it for simulators (log: ~/.relay/logs/build-*.log;

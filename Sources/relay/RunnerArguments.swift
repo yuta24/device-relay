@@ -171,7 +171,7 @@ extension Arguments {
         "shutdown": ("relay shutdown", "Stops the runner; relay start then exits.")
     ]
 
-    /// `relay status`, `relay stop`, and `relay run`, which manage the runner or run several commands rather
+    /// `relay status`, `relay stop`, `relay record`, and `relay run`, which manage the runner or run several commands rather
     /// than send it one.
     static let lifecycleUsages: [String: (synopsis: String, details: String)] = [
         "status": (
@@ -189,6 +189,37 @@ extension Arguments {
             simulator it booted, and removes runner.json) and waits for it to exit. Without that process, it sends
             /shutdown to the runner and removes the stale runner.json. Prints "stopped", or "not running" if nothing
             runs; both exit 0. Exits 1 if relay start does not exit within 60 seconds.
+            A recording of that runner (relay record) is finished first; its path goes to stderr.
+            """
+        ),
+        "record": (
+            """
+            relay record start [-o <file>] [--force] [--max-duration 600] [--runner <path>]
+              relay record stop [--runner <path> | --port <n>]
+              relay record status [--json] [--runner <path> | --port <n>]
+            """,
+            """
+            Simulators only (recording a device is not supported yet). Records the screen of the simulator the
+            runner in runner.json runs on, to show what happened (a video for a pull request, for example):
+            relay record start, then the runner commands, then relay record stop.
+            start runs xcrun simctl io <udid> recordVideo --codec h264 --force <file> detached from the terminal
+            (log: ~/.relay/logs/record-*.log), waits until simctl reports that it records, and prints the video's
+            absolute path. Without -o it goes to $TMPDIR/relay/relay-recording-<time>.mp4; a relative -o is under
+            the current directory, whose directory must exist. An existing file is an error unless --force
+            replaces it (relay checks before starting; simctl always gets its own --force). The recording stops
+            by itself after --max-duration seconds (600 by default); relay record stop still prints its path.
+            One recording per runner: the state is ~/.relay/recording-<port>.json (mode 0600); a second start
+            fails while it records, and the state of one that ended does not block the next.
+            stop sends SIGINT to simctl, waits up to 30 seconds for the video to be written, checks that it is not
+            empty, and prints its path; "not recording" when there is none. relay stop and the exit of relay start
+            finish a recording of their runner too. A simulator shut down while recording ends the video there.
+            stop and status use the recording of the runner in runner.json; --port <n> uses the one of that runner
+            port directly (also without runner.json; not with --runner). Without runner.json, the only recording
+            is used, and several are listed by port to choose one with --port.
+            status shows whether it records, the video, and the elapsed time (--json: one object); it exits 0.
+            Exit status: 0 ok, 1 not a booted simulator, a missing directory, an existing file without --force,
+              already recording, simctl failing,
+              or an empty video, 3 no runner (no runner.json or no answer), 4 the token was rejected (401).
             """
         ),
         "run": (

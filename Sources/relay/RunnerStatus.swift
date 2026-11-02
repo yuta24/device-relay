@@ -139,7 +139,7 @@ enum RunnerStatus {
         return (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])) ?? Data("{}".utf8)
     }
 
-    private static func formatted(_ date: Date, timeZone: TimeZone) -> String {
+    static func formatted(_ date: Date, timeZone: TimeZone) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = timeZone
@@ -182,6 +182,8 @@ enum RunnerStop {
         } catch {
             return RunnerStatus.fail("cannot read runner info: \(error)", code: .usage)
         }
+        // While the simulator still runs, so the video is complete; its path goes to stderr.
+        Recording.cleanUp(port: Recording.port(of: info))
 
         if let pid = RelayProcess.runningRelayStart(info) {
             note("stopping relay start (pid \(pid)); it shuts the runner down")

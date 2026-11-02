@@ -26,9 +26,12 @@ do {
         do {
             status = try launcher.run()
         } catch {
+            Recording.cleanUp(port: setup.options.port)
             setup.finish()
             throw error
         }
+        // Before a simulator relay start booted is shut down, so the video is complete.
+        Recording.cleanUp(port: setup.options.port)
         setup.finish()
         exit(status)
     case .devices(let json, let os):
@@ -62,6 +65,8 @@ do {
         exit(RunnerStatus.run(options))
     case .stop(let options):
         exit(RunnerStop.run(options))
+    case .record(let options):
+        exit(Recording.run(options))
     case .help:
         print(Arguments.usage)
     case .commandHelp(let name):
