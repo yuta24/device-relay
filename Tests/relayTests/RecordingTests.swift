@@ -579,6 +579,7 @@ struct DeviceCaptureTests {
         #expect(none.contains("no device screen is available"))
         #expect(none.contains("USB cable"))
         #expect(none.contains("unlock it"))
+        #expect(none.contains("wait a minute"))
         let others = DeviceCapture.notFoundMessage(name: "Test Phone", candidates: [DeviceCapture.Candidate(uniqueID: "A", name: "Test Pad")])
         #expect(others.contains("the screens available are \"Test Pad\""))
     }

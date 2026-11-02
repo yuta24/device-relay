@@ -114,7 +114,8 @@ enum DeviceCapture {
     static func notFoundMessage(name: String, candidates: [Candidate]) -> String {
         let seen = candidates.isEmpty ? "no device screen is available" : "the screens available are \(candidates.map { "\"\($0.name)\"" }.joined(separator: ", "))"
         return "the screen of \(name) did not show up as a capture device within \(Int(discoveryTimeout))s (\(seen)); "
-            + "connect it with a USB cable (not only Wi-Fi), unlock it, tap Trust if it asks to trust this computer, and try again"
+            + "connect it with a USB cable (not only Wi-Fi), unlock it, tap Trust if it asks to trust this computer, and try again; "
+            + "the screen can take up to a minute to show up after another capture stopped, so if it still fails, wait a minute and retry"
     }
 
     /// Whether the supervisor's log says no device screen showed up at all, which a process that started just
