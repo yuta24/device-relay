@@ -108,7 +108,7 @@ runner.json: /Users/<you>/.relay/runner.json
 | --- | --- |
 | `screenshot` | `relay screenshot [-o <file>\|-] [--format png\|jpeg] [--quality 0.05-1.0] [--max-size <px>] [--scale <px/pt>]`。保存先の絶対パスを 1 行出します（既定は `$TMPDIR/relay/screenshot-<時刻>.png`）。`.jpg` / `.jpeg` の拡張子か `--quality` で JPEG（既定の quality 0.7）。`--max-size` は長辺の画素数、`--scale` は 1 ポイントあたりの画素数の上限で、端末側で縮小します（両方なら小さい方。拡大はしない）。縮小したときは stderr に画像と画面の大きさと px/pt を出します（下の「座標と向き」） |
 | `source` | `relay source [--format json\|text\|compact] [--filter interactive] [--max-depth <n>] [--bundle-id <id>]`。`--max-depth 0` はルートだけ。`compact` は 1 行 1 要素、`--filter interactive` は操作できる要素だけ（下の「要素ツリーの形式」） |
-| `find` | `relay find <selector> [--limit 20] [--timeout <s>] [--bundle-id <id>]`。`--limit` は 1–100、`--timeout` は最大 10 秒 |
+| `find` | `relay find <selector> [--limit 20] [--timeout <s>] [--require] [--bundle-id <id>]`。`--limit` は 1–100、`--timeout` は最大 10 秒。一致がなくても終了コード 0（`"count":0`）、`--require` なら 6 |
 | `tap` | `relay tap (<x> <y> \| <selector>) [--mode private\|xcui] [--timeout <s>] [--bundle-id <id>]`。`--timeout`・`--bundle-id` はセレクタのときだけ |
 | `press` | `relay press (<x> <y> \| <selector>) [--duration 1.0] [--mode private\|xcui] [--timeout <s>] [--bundle-id <id>]` |
 | `swipe` | `relay swipe <x1> <y1> <x2> <y2> [--duration 0.3] [--hold 0.05] [--mode private\|xcui]`。始点で `--hold` 秒止まってから `--duration` 秒かけて終点へ |
@@ -122,6 +122,25 @@ runner.json: /Users/<you>/.relay/runner.json
 
 - `--type` の名前、キー名、ボタン名、向き、数値の範囲は送る前に確認され、間違っていれば終了コード 1 で何も送りません（例: `relay key tab` → `unsupported key 'tab'`）。
 - `--mode` は通常指定しません（既定の `private` が速い。`xcui` はアプリのアイドルを待つので 1 回 1–2 秒）。
+
+## シナリオの実行（relay run、実験的）
+
+実験的な機能です。手順の書き方や出力は今後変わることがあります。決まった手順や、一度確かめた手順を 1 回の呼び出しで再生するときに使えます。
+
+```sh
+relay run steps.relay        # ファイル（1 行 1 手順。空行と # で始まる行は無視）
+relay run - < steps.relay    # 標準入力
+relay run --step "launch <bundle-id>" --step "tap --id login.button --timeout 5" --step "find --id home.title --timeout 5 --require"
+relay run steps.relay --check   # 検証だけ（ランナー不要、何も実行しない。問題なければ 0）
+```
+
+- 手順は `relay` を除いたランナー操作のコマンド（`tap`・`press`・`swipe`・`type`・`key`・`button`・`orientation`・`launch`・`terminate`・`find`・`source`・`screenshot`・`health`・`foreground`・`ping`）と `sleep <秒>`（60 秒まで）です。`start` / `stop` / `shutdown` などは書けません。
+- 語の区切りはシェル風（空白、`'...'`、`"..."`、`\`）です。`--runner` は `relay run` 側に付け、手順には書けません。`type --stdin` も使えません。`screenshot` は `--output <file>` が必須です。
+- 保存するシナリオは、最初の行に `# relay-run: 1`（形式の版）を書きます。対応しない版なら、その行のエラーで何も実行しません。
+- 実行前に全行を確かめ、不正な行があれば `relay: line <N>: <理由>` を出して何も実行せず終了コード 1。書いたシナリオは、流す前に `--check` で確かめられます。
+- 実行中は最初に失敗した手順で止まり、その手順のエラーと `relay: step i/n (line N) failed: <手順>` を出して、その手順の終了コード（1・3〜8。1 はスクリーンショットを保存できなかったとき）で終わります。
+- 手順は単独のコマンドと同じ意味です。確認したい要素は `find <セレクタ> --timeout <秒> --require` で待ち、現れなければそこで止めます（終了コード 6）。`--require` のない `find` は一致がなくても先に進みます。固定の `sleep` は最後の手段です。
+- 各手順の stdout はそのまま stdout に、手順ごとの進行（`relay: [i/n] … ok (… ms)`）と合計は stderr に出ます（`--quiet` で消える）。進行行と失敗行では `type` の文字列を `***` に伏せますが、シナリオのファイルには書いたまま残ります。利用者から渡されたパスワードをシナリオに書かないでください（1 コマンドずつ `relay type --stdin` を使う）。
 
 ## 要素ツリーの形式
 

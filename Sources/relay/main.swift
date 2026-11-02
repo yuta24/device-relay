@@ -56,6 +56,8 @@ do {
         try Bench.run(options)
     case .runner(let options):
         exit(RunnerControl.run(options))
+    case .run(let options):
+        exit(ScenarioCommand.run(options))
     case .status(let options):
         exit(RunnerStatus.run(options))
     case .stop(let options):

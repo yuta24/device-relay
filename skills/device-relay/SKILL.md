@@ -26,7 +26,7 @@ relay screenshot --scale 1                      # 保存先の絶対パスが出
 relay source --format compact --filter interactive   # 操作できる要素を 1 行 1 要素で
 relay find --type button                        # セレクタに一致する要素（JSON）
 relay tap --id <identifier>                     # 要素を指定して操作
-relay find --id <次の画面の要素> --timeout 5    # 結果を待ってから観察し直す
+relay find --id <次の画面の要素> --timeout 5 --require   # 現れるまで待つ（現れなければ終了コード 6）。その後で観察し直す
 relay stop                                      # 自分で起動したときだけ。stopped か not running で 0
 ```
 
@@ -46,7 +46,7 @@ relay stop                                      # 自分で起動したときだ
 - 小さな文字や細部を確かめたいときだけ、フル解像度の `relay screenshot`（オプションなし）を使います。その画像の画素はポイント × scale（iPhone では 3）です。
 - `relay source --format compact --filter interactive` は、画面に見えていて有効な、操作できる要素（ボタン、セル、入力欄、スイッチなど）だけを 1 行 1 要素で出します（設定のトップで 12 行・約 1 KB）。行の `type`・`label`・`id`・`value` はそのままセレクタに使えます: `button label="General" id="com.apple.settings.general" frame=16,293,370,52` → `relay tap --id com.apple.settings.general` か `relay tap --type button --label General`。キーボードのキーは出ません（`relay type` / `relay key` を使う）。JSON がほしければ `--format compact` を外します。
 - 一覧にない要素（見出しや結果のテキスト、無効なボタン）を確かめたいときは、`relay find <セレクタ>` か、全体のツリー `relay source --format compact`（1 行 1 要素、字下げで親子関係）を使います。`relay source`（JSON）と `--format text` は大きいので、必要なときだけ（JSON は `jq` で絞るか `--max-depth <n>`）。どれも `--bundle-id` がなければ前面アプリが対象です。
-- `relay find <セレクタ>` は一致した要素の `type`・`identifier`・`label`・`value`・`frame`・`enabled`・`index` を返します。決まった要素を探すにはこれがいちばん速く、一致がなくても終了コード 0（`"count":0`）です。
+- `relay find <セレクタ>` は一致した要素の `type`・`identifier`・`label`・`value`・`frame`・`enabled`・`index` を返します。決まった要素を探すにはこれがいちばん速く、一致がなくても終了コード 0（`"count":0`）です。`--require` を付けると、一致がないとき終了コード 6 になります（あるはずの要素を確かめるとき）。
 - スクリーンショットは利用者に見えるもの、ツリーは指定できるものです。画面の理解にはスクリーンショット、セレクタを決めるには絞り込んだツリーや `find` と、両方を使います。
 
 ## 操作
@@ -68,6 +68,17 @@ relay press --label "Photo" --type cell --duration 1.0
 - **画面が変わったら観察し直す。** frame、index、前面アプリは変わります。前の画面のセレクタや座標を確かめずに使い回さないでください。
 - コマンドは 1 つずつ、前の結果を待ってから送ります。ランナーは一度に 1 コマンドしか実行せず、重なると busy（終了コード 5）になります。
 - `relay launch` の直後は前面アプリが切り替え前のまま返ることがあります。対象を確実にしたいときは `find` / `tap` / `type` / `source` に `--bundle-id <id>` を付けます。
+
+## 手順の再生（relay run、実験的）
+
+実験的な機能で、形式は変わることがあります。初めての画面は 1 コマンドずつ観察して進め、確かめ終えた手順だけを再生に回します。
+
+1. 確かめた手順を、`relay` を除いて 1 行 1 手順で `<名前>.relay` に書き出す（先頭に `# relay-run: 1`。リポジトリに置くかは利用者に確認）。画面が変わるところは `find <セレクタ> --timeout 5 --require` か `tap … --timeout 5` で待ち、到着を確かめる。
+2. 流す前に `relay run <file> --check` で検証する（何も実行しない）。
+3. 次からは `relay run <file>` で再生する。最初に失敗した手順で止まり、`relay: step i/n (line N) failed: …` とその手順の終了コード（下の表）が出る。
+4. 失敗したら、止まった時点の画面を観察し直し（スクリーンショット、`relay source --format compact --filter interactive`）、line N のセレクタや待ちを直して 2 からやり直す。
+
+書き方の詳細は [reference.md](reference.md#シナリオの実行relay-run実験的)。
 
 ## 終了コード
 

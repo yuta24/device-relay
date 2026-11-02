@@ -34,6 +34,20 @@ struct RunnerControlOptions: Equatable {
     var operation: RunnerOperation
     /// `--runner <path>`; nil searches as `RunnerLocator` describes.
     var runnerPath: String?
+    /// `relay find --require`: no element is a failure (exit 6), not `"count":0` with exit 0.
+    var requireMatch = false
+}
+
+/// runner.json as read once: where it is, what it says, and the runner URL.
+struct RunnerConnection {
+    let infoURL: URL
+    let info: RunnerInfo
+    let baseURL: URL
+}
+
+/// `RunnerControl.connect` failed; the reason is already on stderr.
+struct RunnerControlFailure: Error {
+    let code: Int32
 }
 
 /// Runs one runner command: finds runner.json, sends the operation, and prints the result.
@@ -45,23 +59,40 @@ enum RunnerControl {
     static let baseTimeout: TimeInterval = 30
 
     static func run(_ options: RunnerControlOptions) -> Int32 {
+        switch connect(runnerPath: options.runnerPath) {
+        case .success(let connection): return perform(options.operation, on: connection, requireMatch: options.requireMatch)
+        case .failure(let failure): return failure.code
+        }
+    }
+
+    /// Finds and reads runner.json. On failure the reason is already on stderr and the error carries the exit status.
+    /// Split from `perform` so `relay run` reads the file once for all its steps.
+    static func connect(runnerPath: String?) -> Result<RunnerConnection, RunnerControlFailure> {
         let infoURL: URL
         let info: RunnerInfo
         do {
-            infoURL = try RunnerLocator.locate(explicitPath: options.runnerPath)
+            infoURL = try RunnerLocator.locate(explicitPath: runnerPath)
             info = try RunnerInfo.read(from: infoURL)
         } catch let error as RunnerUnavailableError {
-            return fail(error.description, code: .unavailable)
+            return .failure(RunnerControlFailure(code: fail(error.description, code: .unavailable)))
         } catch {
-            return fail("cannot read runner info: \(error)", code: .usage)
+            return .failure(RunnerControlFailure(code: fail("cannot read runner info: \(error)", code: .usage)))
         }
         guard let baseURL = URL(string: info.url) else {
-            return fail("invalid url in \(infoURL.path): \(info.url)", code: .usage)
+            return .failure(RunnerControlFailure(code: fail("invalid url in \(infoURL.path): \(info.url)", code: .usage)))
         }
+        return .success(RunnerConnection(infoURL: infoURL, info: info, baseURL: baseURL))
+    }
 
-        var client = RunnerClient(baseURL: baseURL, token: info.token)
-        client.timeout = baseTimeout + options.operation.waitTime
-        let request = options.operation.request
+    /// Sends one operation and prints the result; returns the exit status.
+    /// `requireMatch` (`find --require`): a `/find` that returns no element fails with exit 6, as a tap of a
+    /// missing element does, so `find --timeout` checks the screen as well as waits for it.
+    static func perform(_ operation: RunnerOperation, on connection: RunnerConnection, requireMatch: Bool = false) -> Int32 {
+        let infoURL = connection.infoURL
+        let info = connection.info
+        var client = RunnerClient(baseURL: connection.baseURL, token: info.token)
+        client.timeout = baseTimeout + operation.waitTime
+        let request = operation.request
         let response: RunnerResponse
         do {
             response = try request.method == "GET" ? client.get(request.path) : client.post(request.path, json: request.body ?? [:])
@@ -82,7 +113,12 @@ enum RunnerControl {
             return code.rawValue
         }
 
-        if case .screenshot(let screenshot) = options.operation {
+        if requireMatch, !hasElements(response.body) {
+            write(response.body, to: .standardError)
+            return fail("no element matched", code: .actionFailed)
+        }
+
+        if case .screenshot(let screenshot) = operation {
             do {
                 if let path = try save(response.body, screenshot) {
                     print(path)
@@ -97,6 +133,14 @@ enum RunnerControl {
             write(response.body, to: .standardOutput)
         }
         return code.rawValue
+    }
+
+    /// Whether a `/find` answer lists an element. Its `count` is not used: with `index` it stays the number
+    /// of matches while `elements` is empty for an index out of range.
+    static func hasElements(_ body: Data) -> Bool {
+        guard let object = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+              let elements = object["elements"] as? [Any] else { return false }
+        return !elements.isEmpty
     }
 
     static func hint(for code: RunnerExitCode, infoURL: URL) -> String? {
