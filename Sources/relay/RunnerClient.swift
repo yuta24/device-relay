@@ -7,6 +7,35 @@ struct RunnerResponse {
     var headers: [String: String] = [:]
 }
 
+/// Why a request got no answer from the runner, for the `relay:` lines.
+enum RunnerConnectionError {
+    /// What follows "cannot reach the runner" when the OS refused the connection: relay itself is not
+    /// allowed to connect, so the runner may well be running.
+    static let refusedByOSHint = "the OS refused the connection (Operation not permitted); relay may be running inside a sandbox "
+        + "(an AI agent's, for example) that blocks localhost. Run relay outside the sandbox or let it connect to localhost; "
+        + "see the sandbox section of docs/setup.md in device-relay"
+
+    /// Whether the connection was refused by this Mac (EPERM), not by the other end. A sandbox that blocks
+    /// localhost, such as macOS Seatbelt in an agent's sandbox, fails `connect()` with EPERM, which URLSession
+    /// reports as `NSPOSIXErrorDomain` 1, or as an `NSURLErrorDomain` error whose CFStream fields or
+    /// underlying error say so. Nothing listening (ECONNREFUSED, 61) and timeouts are not.
+    static func isRefusedByOS(_ error: Error) -> Bool {
+        let error = error as NSError
+        if error.domain == NSPOSIXErrorDomain, error.code == Int(EPERM) {
+            return true
+        }
+        // kCFStreamErrorDomainPOSIX is 1.
+        if (error.userInfo["_kCFStreamErrorDomainKey"] as? NSNumber)?.intValue == 1,
+           (error.userInfo["_kCFStreamErrorCodeKey"] as? NSNumber)?.intValue == Int(EPERM) {
+            return true
+        }
+        if let underlying = error.userInfo[NSUnderlyingErrorKey] as? Error {
+            return isRefusedByOS(underlying)
+        }
+        return false
+    }
+}
+
 /// Small synchronous HTTP client for the on-device runner.
 struct RunnerClient {
     let baseURL: URL

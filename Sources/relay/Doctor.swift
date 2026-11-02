@@ -18,6 +18,7 @@ enum Doctor {
         resolveProject: (String?) throws -> (root: URL, source: RunnerProject.Source) = { try RunnerProject.resolve(explicitPath: $0) },
         home: URL = UserHome.url,
         staleness: (URL, RunnerProject.Source) -> String? = { RunnerInstaller.staleness(root: $0, source: $1) },
+        sandbox: (URL) -> [Check] = SandboxProbe.checks(home:),
         output: (String) -> Void = { print($0) }
     ) -> Int32 {
         var checks: [Check] = []
@@ -27,16 +28,21 @@ enum Doctor {
             checks += sectionChecks
         }
 
-        section("Host", hostChecks(commands: commands, resolveProject: { try resolveProject(options.project) }, home: home, staleness: staleness))
+        section("Host", hostChecks(commands: commands, resolveProject: { try resolveProject(options.project) }, home: home, staleness: staleness)
+            + sandbox(home))
 
         var deviceChecks: [Check] = []
         var target: Device?
         do {
-            let (devices, warnings) = try DeviceList.load(commands)
+            let (devices, warnings) = try DeviceList.load(commands, udid: options.udid, simulator: options.simulator)
             let active = devices.filter(\.isActive)
             let connected = active.filter { $0.kind == .device }.count
-            deviceChecks.append(.ok("devices", "\(connected) connected device(s), \(active.count - connected) booted simulator(s), "
-                + "\(devices.filter { $0.kind == .simulator && $0.isAvailable }.count) iOS simulator(s)"))
+            let simulators = "\(active.count - connected) booted simulator(s), \(devices.filter { $0.kind == .simulator && $0.isAvailable }.count) iOS simulator(s)"
+            if let reason = DeviceList.devicectlSkipReason(udid: options.udid, simulator: options.simulator, simulators: devices) {
+                deviceChecks.append(.ok("devices", "\(simulators) (devices not listed: \(reason))"))
+            } else {
+                deviceChecks.append(.ok("devices", "\(connected) connected device(s), \(simulators)"))
+            }
             deviceChecks += warnings.map { .warning("devicectl", $0, fix: "check that Xcode 15 or later is selected (xcode-select -p)") }
             do {
                 let selection = try DeviceSelector.select(from: devices, udid: options.udid, name: options.device,

@@ -23,7 +23,7 @@ Runner の用意、端末の選択、環境の確認から、シミュレータ�
 
 対象アプリのリポジトリなど、チェックアウトの外から実行すると 4 の `~/.relay/runner` を使います。device-relay のリポジトリ内で実行すると 3 のチェックアウトを使うので、`relay install` 済みでも、編集中（未コミットを含む）の Runner がそのままビルドされます。
 
-1 と 2 で指定した場所にプロジェクトがなければ、ほかを探さずにエラーにします。どこにも見つからなければ、`relay install` などの設定方法を示して終了します。DerivedData は Runner プロジェクトごとに `~/.relay/build/installed`（インストールしたもの）か `~/.relay/build/<ディレクトリ名>-<パスのハッシュ>` に分けるので、別のソースでビルドした `.xctestrun` を使い回すことはありません。
+1 と 2 で指定した場所にプロジェクトがなければ、ほかを探さずにエラーにします。どこにも見つからなければ、`relay install` などの設定方法を示して終了します。DerivedData は Runner プロジェクトごとに `~/.relay/build/installed`（インストールしたもの）か `~/.relay/build/<ディレクトリ名>-<パスのハッシュ>` に分けるので、別のソースでビルドした `.xctestrun` を使い回すことはありません。ランナーを起動する `xcodebuild test-without-building` にも同じ `-derivedDataPath` を渡すので、テストのログと xcresult も `~/.relay/build/…/DerivedData-*/Logs/Test` に入り、`~/Library/Developer/Xcode/DerivedData` には何も作りません。
 
 ## 端末の選択（relay devices）
 
@@ -44,6 +44,8 @@ iPhone 17      22222222-2222-2222-2222-222222222222  simulator  iOS 27.0    shut
    2. 候補（起動中のものがあればその中、なければすべて）がすべてシミュレータなら、最も新しい iOS のもの（`26.10` は `26.5` より新しい、のように数値で比べます）。`relay: using iPhone 17 Pro (iPhone 17 Pro, iOS 27.0, simulator, shutdown) <SIM_UDID> (--device; the newest iOS of 3 simulators named "iPhone 17 Pro")` のように表示します
    3. 実機とシミュレータが同じ名前の場合、同じ名前の実機が複数ある場合、最も新しい iOS のシミュレータが複数ある場合は、候補つきでエラーにします（実機は OS で推測しません。`--simulator` か `--udid` で選びます）
 3. どちらもなければ、接続中の実機が 1 台だけならそれ、実機がなく起動中のシミュレータが 1 台だけならそれ。複数・0 台なら候補一覧つきでエラーにします
+
+実機の一覧には `devicectl list devices` を使いますが、`--simulator` を付けたときと、`--udid` が `simctl` の一覧にあるシミュレータのときは、実機を選ぶことはないので devicectl を呼びません（CoreDevice が応答しないときの待ちや `Timed out waiting for CoreDeviceService` などの警告も出ません）。このとき `relay doctor` の `devices` の行は `0 booted simulator(s), … iOS simulator(s) (devices not listed: --udid is a simulator)` のように実機の数を出さず、候補が見つからないときのエラーにも実機は並びません。`--device <名前>` だけでは、同じ名前の実機があるかを確かめるために devicectl を呼びます（シミュレータだけから選ぶなら `--simulator` を付けます）。
 
 次の 2 つで、上の選択の前に候補を絞れます。`--udid` / `--device` とも、自動選択とも組み合わせられます。
 
@@ -79,6 +81,7 @@ relay config unset teamID         # 忘れて、次回はキーチェーンか�
 - 実機: OS のバージョン（17 以上）、接続状態、ペアリング、デベロッパモード（`devicectl list devices`）、DDI のマウント状態（`ddiServicesAvailable`）、ロック状態（`devicectl device info lockState` の `passcodeRequired`）。UI オートメーションの有効状態は Mac から読めないので、常に ! で確認を促します
 - シミュレータ: ランタイムが入っているか、起動状態
 - 署名: 証明書と Team ID（実機なら見つからなければ ✗、シミュレータなら !）
+- sandbox: 127.0.0.1 への接続と、`~/.relay`（あれば）へのファイルの作成を試します。OS に拒否された（`Operation not permitted`）ら、エージェントなどの sandbox の中で動いているようだとして ✗ にします（「[エージェントの sandbox から使う](#エージェントの-sandbox-から使う)」）
 - エージェントスキル: カレントディレクトリの git のルートの `.claude/skills/device-relay` と `~/.claude/skills/device-relay` の状態（`relay skill status` と同じ判定。古い・relay が入れたものでなければ !。入っていなくても問題にはしません）
 
 `relay start` も、ビルドの前に同じ端末のチェックを行い、✗（接続されていない、ペアリングされていない、デベロッパモードが無効、iOS 17 未満、シミュレータのランタイムがない）があればビルドせずに終了します。! の項目（ロック中、DDI 未マウント）は表示だけして続けます。
@@ -152,6 +155,35 @@ relay stop            # stopped
 - `relay status [--json]` は、runner.json（「[接続先（runner.json）の探し方](cli.md#接続先runnerjsonの探し方)」と同じ順に探します。`--runner <path>` も可）の URL・端末名と UDID・`relay start` の PID とそれがまだ動いているか・起動時刻・`/ping` の結果（`busy` を含む）を表示します。`--json` では 1 つの JSON オブジェクト（`alive`、`url`、`udid`、`name`、`pid`、`processRunning`、`startedAt`、`ping`、`runnerInfo`）を出します。ランナーが `/ping` に応答すれば `0`、runner.json がないか応答しなければ `3`、トークンが拒否されたら（`401`）`4` です。
 - `relay stop` は、runner.json の `relay start` に SIGTERM を送り、終了を待ちます。フォアグラウンドの Ctrl-C と同じ経路で、ランナーの `/shutdown`、relay が boot したシミュレータの shutdown、runner.json の削除を行います。`stopped` と表示して `0` で終わります（60 秒以内に終わらなければ `1`）。`relay start` がもう動いていない場合（強制終了された場合など）は、runner.json の URL とトークンで `POST /shutdown` を送り、runner.json を削除します。何も動いていなければ `not running` と表示して `0` です。フォアグラウンドの `relay start` も同じように止められます。そのランナーの録画（`relay record`。docs/cli.md の「[録画](cli.md#録画relay-recordシミュレータのみ)」）が残っていれば、ランナーを止める前に書き出し、保存先を stderr に出します。
 - runner.json には `relay start` の PID と起動時刻（秒単位）を記録します。`relay stop` は、その PID のプロセスの起動時刻が一致し、実行ファイルが `relay` で最初の引数が `start` の場合だけシグナルを送ります。`relay start` の終了後にその PID が別のプロセスに再利用されても、そのプロセスには何も送りません。
+
+## エージェントの sandbox から使う
+
+Claude Code などのコーディングエージェントは、シェルコマンドを OS の sandbox（macOS では Seatbelt）の中で動かすことがあります。relay はそのままでは sandbox の中では動きません。
+
+- **`relay start` は sandbox の中では動きません。** `~/.relay`（ロック、ログ、ビルド）への書き込み、xcodebuild、testmanagerd の unix socket、CoreSimulator の XPC、疑似端末などを使うので、sandbox の書き込み先や socket を少し広げただけでは足りません。sandbox の外で起動してください。
+- **ランナー操作のコマンド（`relay status`・`relay tap` など）も、既定の sandbox ではランナーに届きません。** ランナーは `127.0.0.1:<port>`（シミュレータ）で待ち受けていますが、Claude Code の macOS の sandbox は localhost への直接の接続を拒否します。このとき relay は、接続が OS に拒否された（`Operation not permitted`）ことと sandbox の可能性を示します（終了コードは届かないときと同じ `3`）。ランナーが止まっているわけではないので、`relay stop` や `relay start` をし直さないでください。`relay stop` はこの場合、runner.json を消さずに終了コード `3` で終わります。
+- `relay doctor` は、127.0.0.1 への接続と `~/.relay` への書き込みを試し、OS に拒否されたら（`Operation not permitted`）✗ にします。sandbox かどうかを直接知る方法はないので「sandbox の中で動いているようだ」という扱いです（同じように拒否するネットワークフィルタも区別できません）。
+
+いちばん簡単なのは、**relay を sandbox の外で動かす**ことです。Claude Code では `sandbox.excludedCommands` に relay を書きます（ユーザー設定 `~/.claude/settings.json`、またはプロジェクトの `.claude/settings.json` / `.claude/settings.local.json`）。
+
+```json
+{
+  "sandbox": {
+    "excludedCommands": ["relay *"]
+  }
+}
+```
+
+- パターンは `Bash(...)` の許可ルールと同じ書き方で、`relay *` は relay のコマンドすべてに一致します。除外したコマンドも、通常の許可の確認（permission）は通ります。
+- 除外は 1 回の Bash 呼び出しの中のコマンドすべてが一致したときだけ効きます。`cd app && relay tap …`、`relay screenshot > out.png` のようなリダイレクト、`$(…)`、`for`・`if` などを含むと sandbox の中で動きます。relay は 1 回に 1 コマンドで呼んでください（スクリーンショットは `-o <file>` で保存先を指定できます）。
+- 管理者が sandbox を必須にしている場合（admin-required）は、リポジトリの `.claude/settings.json` / `.claude/settings.local.json` の `excludedCommands` は無視されます。`~/.claude/settings.json` に書くか、管理者に相談してください。
+- sandbox の中から操作のコマンドだけを通したい場合は、`sandbox.network.allowLocalBinding: true`（macOS で localhost の任意のポートへの接続と待ち受けを許す）でランナーに届くようになります。ただし localhost で動くほかのサービスすべてにも届くようになり、`relay start` は相変わらず sandbox の外で起動する必要があるので、通常は `excludedCommands` を勧めます。`sandbox.network.allowUnixSockets`（macOS で接続してよい unix socket のパス）や `sandbox.network.allowMachLookup`（XPC のサービス名）、`sandbox.filesystem.allowWrite`（書き込み先）を広げて `relay start` を sandbox の中で動かすことは、試しておらず勧めません。
+- エージェントが sandbox で失敗したコマンドを sandbox の外でやり直すこと（Claude Code の `dangerouslyDisableSandbox`。許可の確認が出ます）もできますが、`sandbox.allowUnsandboxedCommands: false` ではできません。
+- 実機ではランナーのアドレスは CoreDevice トンネル（IPv6）などになり、localhost ではないので、sandbox のプロキシを通らない直接の接続が拒否されます。やはり relay を sandbox の外で動かします。
+
+ほかのエージェントやツールでも事情は同じです。シェルコマンドを sandbox で動かすものでは、relay（少なくとも `relay start`）を sandbox の外で動かす設定を使い、操作のコマンドには localhost への接続を許してください。Linux 系の sandbox のようにコマンドごとに別の loopback を持つ仕組みでは、localhost はホストのランナーに届かず、接続は拒否ではなく `connection refused` になるので、relay の判定でも sandbox とはわかりません。
+
+Claude Code の設定の根拠: [Sandboxing](https://code.claude.com/docs/en/sandboxing)、[Settings reference の `sandbox`](https://code.claude.com/docs/en/settings-reference#sandbox)。
 
 ## 実機
 

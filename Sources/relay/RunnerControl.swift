@@ -5,7 +5,8 @@ enum RunnerExitCode: Int32 {
     case success = 0
     /// Invalid arguments, an unreadable runner.json, or a screenshot that could not be saved.
     case usage = 1
-    /// No runner.json, or nothing answered at its URL (connection refused or timed out).
+    /// No runner.json, or nothing answered at its URL (connection refused or timed out, or this Mac
+    /// refused the connection, as a sandbox that blocks localhost does).
     case unavailable = 3
     /// 401: the token in runner.json is not the running runner's (a stale file, or another runner on the port).
     case unauthorized = 4
@@ -97,6 +98,11 @@ enum RunnerControl {
         do {
             response = try request.method == "GET" ? client.get(request.path) : client.post(request.path, json: request.body ?? [:])
         } catch {
+            if RunnerConnectionError.isRefusedByOS(error) {
+                // Not "is relay start running?": the runner may be fine, and restarting it would not help.
+                return fail("cannot reach the runner at \(info.url): \(RunnerConnectionError.refusedByOSHint) (runner info: \(infoURL.path))",
+                            code: .unavailable)
+            }
             let reason = (error as? URLError)?.code == .timedOut
                 ? "no response within \(Int(client.timeout))s; check it with relay ping"
                 : "is relay start running?"

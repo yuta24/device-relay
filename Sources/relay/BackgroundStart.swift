@@ -53,7 +53,7 @@ enum BackgroundStart {
             return nil
         }
         switch ping() {
-        case .unreachable:
+        case .unreachable, .refusedByOS:
             return nil
         case .alive:
             let process = owner().map { ", relay start pid \($0)" } ?? ""

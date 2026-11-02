@@ -17,6 +17,8 @@ enum RunnerPing: Equatable {
     /// The runner answered with something other than 200 (401 when the token is not its own).
     case status(Int)
     case unreachable(String)
+    /// This Mac refused the connection (EPERM), as a sandbox that blocks localhost does; the runner may be fine.
+    case refusedByOS(String)
 
     static func check(_ info: RunnerInfo, timeout: TimeInterval = 3) -> RunnerPing {
         guard let url = URL(string: info.url) else { return .unreachable("invalid url: \(info.url)") }
@@ -25,7 +27,7 @@ enum RunnerPing: Equatable {
         do {
             return parse(try client.get("/ping"))
         } catch {
-            return .unreachable(error.localizedDescription)
+            return RunnerConnectionError.isRefusedByOS(error) ? .refusedByOS(error.localizedDescription) : .unreachable(error.localizedDescription)
         }
     }
 
@@ -45,7 +47,7 @@ enum RunnerPing: Equatable {
         switch self {
         case .alive: return .success
         case .status(let status): return status == 200 ? .runnerError : RunnerExitCode(status: status)
-        case .unreachable: return .unavailable
+        case .unreachable, .refusedByOS: return .unavailable
         }
     }
 
@@ -57,6 +59,8 @@ enum RunnerPing: Equatable {
             return status == 401 ? "401 (the runner rejected the token in runner.json)" : "HTTP \(status)"
         case .unreachable(let reason):
             return "no answer (\(reason))"
+        case .refusedByOS:
+            return "no answer: the OS refused the connection (Operation not permitted); relay may be in a sandbox that blocks localhost"
         }
     }
 }
@@ -93,7 +97,10 @@ enum RunnerStatus {
         } else {
             print(text(report))
         }
-        if !report.ping.isAlive, report.ping.exitCode == .unavailable {
+        if case .refusedByOS = report.ping {
+            // relay stop would remove runner.json of a runner that may be fine, and relay start can't run here either.
+            FileHandle.standardError.write(Data("relay: cannot check the runner from here: \(RunnerConnectionError.refusedByOSHint)\n".utf8))
+        } else if !report.ping.isAlive, report.ping.exitCode == .unavailable {
             FileHandle.standardError.write(Data("relay: the runner does not answer; relay stop cleans up, relay start --background starts a new one\n".utf8))
         }
         return report.ping.exitCode.rawValue
@@ -135,6 +142,8 @@ enum RunnerStatus {
             object["ping"] = ["status": status]
         case .unreachable(let reason):
             object["ping"] = ["error": reason]
+        case .refusedByOS(let reason):
+            object["ping"] = ["error": reason, "refusedByOS": true] as [String: Any]
         }
         return (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])) ?? Data("{}".utf8)
     }
@@ -187,7 +196,11 @@ enum RunnerStop {
 
         if let pid = RelayProcess.runningRelayStart(info) {
             note("stopping relay start (pid \(pid)); it shuts the runner down")
-            kill(pid, SIGTERM)
+            if kill(pid, SIGTERM) != 0 {
+                let error = errno
+                let reason = error == EPERM ? "; relay may be running inside a sandbox (an AI agent's, for example); run relay stop outside it" : ""
+                return RunnerStatus.fail("cannot signal relay start (pid \(pid)): \(String(cString: strerror(error)))\(reason)", code: .usage)
+            }
             let deadline = Date().addingTimeInterval(exitTimeout)
             while RelayProcess.runningRelayStart(info) != nil {
                 guard Date() < deadline else {
@@ -211,7 +224,17 @@ enum RunnerStop {
         }
         var client = RunnerClient(baseURL: url, token: info.token)
         client.timeout = 5
-        let status = (try? client.post("/shutdown"))?.status
+        let status: Int?
+        do {
+            status = try client.post("/shutdown").status
+        } catch {
+            if RunnerConnectionError.isRefusedByOS(error) {
+                // Nothing is known about the runner, so its runner.json stays.
+                return RunnerStatus.fail("cannot reach the runner at \(info.url) to stop it: \(RunnerConnectionError.refusedByOSHint); "
+                    + "\(infoURL.path) is left as it is", code: .unavailable)
+            }
+            status = nil
+        }
         RunnerInfo.remove(at: infoURL, ifTokenIs: info.token)
         if status == 200 {
             note("relay start is not running; sent /shutdown to the runner at \(info.url) and removed \(infoURL.path)")

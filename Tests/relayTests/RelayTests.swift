@@ -91,6 +91,14 @@ struct ArgumentsTests {
 }
 
 struct RunnerLauncherTests {
+    @Test func testsWriteToTheBuildsDerivedData() {
+        let derivedData = URL(fileURLWithPath: "/home/.relay/build/installed/DerivedData-sim")
+        let arguments = RunnerLauncher.testArguments(xctestrun: URL(fileURLWithPath: "/d/Build/Products/R.xctestrun"), udid: "SIM",
+                                                     derivedData: derivedData)
+        #expect(arguments == ["xcodebuild", "test-without-building", "-xctestrun", "/d/Build/Products/R.xctestrun",
+                              "-destination", "id=SIM", "-derivedDataPath", derivedData.path])
+    }
+
     @Test func parsesReadyLine() {
         let line = "RELAY_RUNNER_READY port=8100 addresses=en0=192.168.1.5,utun3=fd00::1"
         #expect(RunnerLauncher.parseReadyLine(line) == ["192.168.1.5", "fd00::1"])
@@ -1058,6 +1066,30 @@ struct RunnerElementSelectorTests {
 }
 
 struct RunnerRequestValuesTests {
+    @Test func pointsOnTheScreenPassAndOthersAreRejected() throws {
+        let portrait = CGSize(width: 402, height: 874)
+        func outside(_ x: Double, _ y: Double, _ screen: CGSize = portrait) -> String? {
+            RunnerRequestValues.pointOutsideScreen("x, y", x: x, y: y, screen: screen, orientation: "portrait")
+        }
+        // 0 <= x < width, 0 <= y < height; fractions inside the last point are fine.
+        for (x, y) in [(0.0, 0.0), (401.0, 873.0), (401.9, 873.9), (200, 120)] {
+            #expect(outside(x, y) == nil)
+        }
+        for (x, y) in [(402.0, 100.0), (100.0, 874.0), (500.0, 500.0), (-1.0, 10.0), (10.0, -0.5)] {
+            #expect(outside(x, y) != nil)
+        }
+        // The landscape screen swaps the bounds: (800, 100) is inside it but not inside portrait.
+        let landscape = CGSize(width: 874, height: 402)
+        #expect(outside(800, 100, landscape) == nil)
+        #expect(outside(100, 800, landscape) != nil)
+        #expect(outside(800, 100) != nil)
+        let message = try #require(RunnerRequestValues.pointOutsideScreen("to", x: 900, y: 100.5, screen: landscape, orientation: "landscapeLeft"))
+        #expect(message == "to: (900, 100.5) is outside the screen, which is 874x402 points in landscapeLeft "
+            + "(0 <= x < 874, 0 <= y < 402; relay health shows the screen)")
+        // An unknown (empty) screen rejects nothing.
+        #expect(outside(5000, 5000, .zero) == nil)
+    }
+
     private func number(fromJSON text: String) throws -> Double? {
         let object = try JSONSerialization.jsonObject(with: Data("{\"v\":\(text)}".utf8)) as? [String: Any]
         return try RunnerRequestValues.number(#require(object?["v"]))
@@ -1341,6 +1373,9 @@ struct RunnerArgumentsTests {
         #expect(try operation(["key", "space"]) == .key("space", bundleID: nil))
         #expect(try operation(["button", "home"]) == .button("home"))
         #expect(try operation(["orientation", "landscapeLeft"]) == .orientation("landscapeLeft"))
+        // The alias is resolved before sending, so the runner sees only its own four names.
+        #expect(try operation(["orientation", "landscape"]) == .orientation("landscapeLeft"))
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["orientation", "portraitUpsideDownish"]) }
         #expect(try operation(["launch", "com.apple.Preferences"]) == .launch(bundleID: "com.apple.Preferences"))
         #expect(try operation(["terminate", "com.apple.Preferences"]) == .terminate(bundleID: "com.apple.Preferences"))
         #expect(throws: ArgumentError.self) { try Arguments.parse(["key", "escape"]) }
@@ -1495,6 +1530,27 @@ struct RunnerLocatorTests {
 }
 
 struct RunnerControlTests {
+    @Test func tellsAConnectionTheOSRefusedFromNothingListening() {
+        // What URLSession reported under a Seatbelt profile that denies localhost (macOS 27).
+        let sandboxed = NSError(domain: NSPOSIXErrorDomain, code: Int(EPERM), userInfo: ["_kCFStreamErrorDomainKey": 1, "_kCFStreamErrorCodeKey": 1])
+        #expect(RunnerConnectionError.isRefusedByOS(sandboxed))
+        // Nothing listening: NSURLErrorDomain -1004 over a CFNetwork error with ECONNREFUSED (61).
+        let refused = NSError(domain: NSURLErrorDomain, code: NSURLErrorCannotConnectToHost, userInfo: [
+            "_kCFStreamErrorDomainKey": 1, "_kCFStreamErrorCodeKey": 61,
+            NSUnderlyingErrorKey: NSError(domain: "kCFErrorDomainCFNetwork", code: -1004, userInfo: ["_kCFStreamErrorDomainKey": 1, "_kCFStreamErrorCodeKey": 61])
+        ])
+        #expect(!RunnerConnectionError.isRefusedByOS(refused))
+        #expect(!RunnerConnectionError.isRefusedByOS(URLError(.timedOut)))
+        // EPERM wrapped in a URL error, in its CFStream fields or as the underlying error.
+        #expect(RunnerConnectionError.isRefusedByOS(NSError(domain: NSURLErrorDomain, code: NSURLErrorCannotConnectToHost,
+                                                            userInfo: ["_kCFStreamErrorDomainKey": 1, "_kCFStreamErrorCodeKey": 1])))
+        #expect(RunnerConnectionError.isRefusedByOS(NSError(domain: NSURLErrorDomain, code: NSURLErrorCannotConnectToHost,
+                                                            userInfo: [NSUnderlyingErrorKey: sandboxed])))
+        // Error code 1 of another CFStream domain (2 is kCFStreamErrorDomainNetDB) is not EPERM.
+        #expect(!RunnerConnectionError.isRefusedByOS(NSError(domain: NSURLErrorDomain, code: NSURLErrorCannotFindHost,
+                                                             userInfo: ["_kCFStreamErrorDomainKey": 2, "_kCFStreamErrorCodeKey": 1])))
+    }
+
     @Test func mapsStatusesToExitCodes() {
         #expect(RunnerExitCode(status: 200) == .success)
         #expect(RunnerExitCode(status: 400) == .badRequest)

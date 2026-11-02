@@ -15,6 +15,10 @@ description: relay CLI（device-relay）で iOS のシミュレータや実機�
 2. `relay doctor [--udid <UDID> | --device <名前>] [--simulator] [--os <version>]` で環境を確かめます（`relay start` に付けるのと同じ指定で、その端末を確認します）。✗ があれば終了コード 1 で、各行に直し方が出ます。! は注意で、起動は止めません。
 3. このスキル自体は `relay skill install`（対象アプリのリポジトリの `.claude/skills/device-relay` にコピー。`--global` なら `~/.claude/skills`）で入ります。`relay skill status` で ! が出たら（relay の更新でスキルが古い）、`relay skill install` で更新するよう利用者に伝えます。リポジトリやホームのファイルを書き換えるので、断りなく実行しないでください。
 
+### sandbox の中で動くとき
+
+エージェントのシェルが sandbox（Claude Code の sandbox など）の中で動くと、`relay start` は動かず（`~/.relay` や DerivedData に書けない、testmanagerd に接続できないなど）、ランナー操作のコマンドも localhost に接続できません。relay が `the OS refused the connection (Operation not permitted)` と出したり、`relay doctor` の `localhost` / `~/.relay` が ✗ なら、ランナーが止まっているのではなく、relay が sandbox の中にいます。`relay stop` や起動し直しをせず、relay を sandbox の外で動かす設定（Claude Code では `sandbox.excludedCommands` に `"relay *"`。[reference.md](reference.md#sandbox-の中から使う)）を利用者に頼みます。設定ファイルは断りなく書き換えないでください。除外が効くよう、relay は 1 回に 1 コマンドで呼び、`cd … &&`、リダイレクト（`>`）、`$(…)` と組み合わせません。
+
 ## 基本の流れ
 
 ```sh
@@ -62,7 +66,7 @@ relay press --label "Photo" --type cell --duration 1.0
 
 - アプリが accessibilityIdentifier を付けていれば `--id`、なければ `--label` と `--type` を使います（セルは同じラベルの `button` と `staticText` の 2 つに見えることが多いので `--type` を足す）。
 - `ambiguous` で失敗したら、候補を読んで条件か `--index` を足します。
-- 座標（`relay tap <x> <y>`、`relay swipe <x1> <y1> <x2> <y2>`）は、表示の向きでの画面左上を原点とするポイント単位です。要素の `frame` や `relay health` の `screen.width` / `screen.height` から求めます。スクリーンショットから求めるときは、`--scale 1` の画像なら画素がそのままポイント、それ以外は画素を stderr の px/pt（フル解像度なら scale）で割ります。座標は、スクロールなど要素で指定できない操作だけに使います（例: `relay swipe 200 700 200 200` で下から上へ）。
+- 座標（`relay tap <x> <y>`、`relay swipe <x1> <y1> <x2> <y2>`）は、表示の向きでの画面左上を原点とするポイント単位です。画面の外（`0 ≤ x < screen.width`、`0 ≤ y < screen.height` の外）は何も送らずに終了コード 7 です。要素の `frame` や `relay health` の `screen.width` / `screen.height` から求めます。スクリーンショットから求めるときは、`--scale 1` の画像なら画素がそのままポイント、それ以外は画素を stderr の px/pt（フル解像度なら scale）で割ります。座標は、スクロールなど要素で指定できない操作だけに使います（例: `relay swipe 200 700 200 200` で下から上へ）。
 - 文字入力: 入力欄をタップしてから `relay type "text"`。確定は `--key return` を付けます。1 文字消すのは `relay key delete`。キーは `return`・`delete`・`space` だけです。`-` で始まる文字列は `relay type -- -text` のように `--` を挟みます。
 - **sleep せずに待つ。** 画面が変わる操作の後は、次の画面にある要素を `relay find <セレクタ> --timeout <秒>`（最大 10 秒。`count` を確認）で待つか、`tap` / `press` に `--timeout` を付けて要素が現れるのを待たせます。もっと長く待つときは短い timeout を繰り返します。
 - **画面が変わったら観察し直す。** frame、index、前面アプリは変わります。前の画面のセレクタや座標を確かめずに使い回さないでください。
@@ -94,11 +98,11 @@ relay press --label "Photo" --type cell --duration 1.0
 | --- | --- | --- |
 | 0 | 成功 | – |
 | 1 | 引数の誤りやローカルの失敗（何も送っていない） | コマンドを直す。`relay <command> --help` |
-| 3 | ランナーに届かない（runner.json がない、接続できない） | `relay status`。runner.json がなければ `relay start --background …`。runner.json はあるが応答しない（`relay start` が強制終了されたなど）なら、`relay stop` で片付けてから起動 |
+| 3 | ランナーに届かない（runner.json がない、接続できない） | `relay status`。runner.json がなければ `relay start --background …`。runner.json はあるが応答しない（`relay start` が強制終了されたなど）なら、`relay stop` で片付けてから起動。`the OS refused the connection` なら relay が sandbox の中にいる（上の「sandbox の中で動くとき」）ので、止めも起動もしない |
 | 4 | トークンが拒否された（401）。runner.json が古いか、別のランナーのもの | `relay status` で URL・端末・PID を確かめ、`--runner` / `$RELAY_RUNNER` / カレントディレクトリから親へ順にたどった `.relay/runner.json` も確認。自分で起動したものなら `relay stop` → 起動し直す。そうでなければ止めずに利用者に確認 |
 | 5 | busy（409）。別のコマンドを実行中 | 1 秒ほど待つか、`relay ping` が `"busy":false` になってから再試行 |
 | 6 | 操作の失敗（422）: 要素が見つからない・1 つに決まらない・無効・画面外、キーボードのフォーカスがない | stderr の `reason` と `candidates` を読み、観察し直してセレクタを直す |
-| 7 | リクエストの拒否（400 などの 4xx） | エラー文を読む。多くは値の範囲や対応外の値 |
+| 7 | リクエストの拒否（400 などの 4xx） | エラー文を読む。多くは値の範囲や対応外の値。`is outside the screen` は座標が画面の外（`relay health` の `screen` を読み直す。向きを変えると縦横が入れ替わる） |
 | 8 | ランナーのエラー（5xx など） | 1 回だけ再試行。続くなら `relay status` とログを確認 |
 
 成功時はランナーの JSON が stdout に、失敗時は stderr に出ます。stderr の `relay:` で始まる行は人向けのヒントです。`reason` ごとの対処は [reference.md](reference.md#操作が失敗したとき終了コード-6) にあります。
@@ -109,7 +113,7 @@ relay press --label "Photo" --type cell --duration 1.0
 - **状態をそろえてから始める。** 前の操作の影響を避けたいときは、`relay button home` → `relay launch <bundle-id>`（まっさらに起動し直すなら先に `relay terminate <bundle-id>`）。
 - **パスワードや個人情報を勝手に入力しない。** 利用者から渡されたものだけを入力します。パスワードはコマンドラインに書かず（`ps` やシェルの履歴に残るため）、利用者が用意した環境変数やファイルから標準入力で渡します: `printf '%s' "$PASSWORD" | relay type --stdin`。
 - **実機では破壊的な操作をしない。** データやアプリの削除、購入、メッセージやメールの送信、システム設定の変更、サインアウトなどは、事前に利用者に確認します。実機のスクリーンショットには個人情報が写りうるので、タスクに必要な範囲を超えて共有しないでください。
-- **後片付け。** 向きを変えたら `relay orientation portrait` で戻し、アプリを妥当な画面に戻し、自分で起動したランナーだけを `relay stop` で止めます。
+- **後片付け。** 向きを変えたら（`relay orientation landscape` は `landscapeLeft` と同じ）`relay orientation portrait` で戻し、アプリを妥当な画面に戻し、自分で起動したランナーだけを `relay stop` で止めます。
 
 ## よくある失敗
 

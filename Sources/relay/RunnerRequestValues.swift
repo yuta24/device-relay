@@ -22,6 +22,20 @@ enum RunnerRequestValues {
         return quality
     }
 
+    /// Why the point `x`, `y` of a `/tap`, `/press`, or `/swipe` field (`name`: `x`/`y`, `from`, `to`) is
+    /// outside `screen` (points in the displayed orientation, as `/health` reports it), or nil when it is
+    /// inside. A point is inside when 0 <= x < width and 0 <= y < height: the last point row and column
+    /// start at width - 1 and height - 1, so `width` itself is past the edge. Such a touch reaches nothing,
+    /// so the runner answers 400 and sends nothing rather than report a success that did nothing.
+    static func pointOutsideScreen(_ name: String, x: Double, y: Double, screen: CGSize, orientation: String) -> String? {
+        let width = Double(screen.width), height = Double(screen.height)
+        guard width > 0, height > 0 else { return nil }
+        guard !((0..<width).contains(x) && (0..<height).contains(y)) else { return nil }
+        return "\(name): (\(decimal(CGFloat(x))), \(decimal(CGFloat(y)))) is outside the screen, "
+            + "which is \(decimal(screen.width))x\(decimal(screen.height)) points in \(orientation) "
+            + "(0 <= x < \(decimal(screen.width)), 0 <= y < \(decimal(screen.height)); relay health shows the screen)"
+    }
+
     /// The smallest `maxSize`; anything smaller is too blurry to read.
     static let minScreenshotMaxSize = 16
     static let screenshotScaleRange = 0.1...10.0

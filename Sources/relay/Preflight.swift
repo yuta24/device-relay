@@ -141,7 +141,7 @@ struct StartSetup {
             info("\(reason); run relay install again to update the runner")
         }
 
-        let (devices, warnings) = try DeviceList.load(commands)
+        let (devices, warnings) = try DeviceList.load(commands, udid: options.udid, simulator: options.simulator)
         warnings.forEach(info)
         let selection = try DeviceSelector.select(from: devices, udid: options.udid, name: options.device,
                                                   simulator: options.simulator, os: options.os)

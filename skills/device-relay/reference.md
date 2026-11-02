@@ -104,6 +104,32 @@ runner.json: /Users/<you>/.relay/runner.json
 - 録画はターミナルから切り離して続くので、`record start` の後に別のコマンドを続けて実行できます。`relay stop` も録画を先に書き出します（パスは stderr）。
 - シミュレータが録画中に shutdown しても、`record stop` は shutdown までの動画を返します。
 
+## sandbox の中から使う
+
+Claude Code などがシェルコマンドを sandbox（macOS では Seatbelt）で動かすと、relay は次のようになります。
+
+| 症状 | 意味 |
+| --- | --- |
+| `relay start` が `~/.relay/locks` を作れない、DerivedData に書けない、testmanagerd の socket につなげない、疑似端末を作れない | `relay start` は sandbox の中では動かない。sandbox の外で起動する |
+| `cannot reach the runner at http://127.0.0.1:8100/: the OS refused the connection (Operation not permitted); relay may be running inside a sandbox …`（終了コード 3） | ランナーは動いているかもしれない。relay の接続が OS に拒否された。`relay stop`・`relay start` をし直さない（`relay stop` もこの場合は runner.json を消さずに 3 で終わる） |
+| `relay doctor` の `✗ localhost` / `✗ ~/.relay`（`Operation not permitted`） | 127.0.0.1 への接続か `~/.relay` への書き込みが拒否された。sandbox の中で動いているようだ |
+
+推奨は relay を sandbox の外で動かすことです。利用者に、Claude Code の設定（`~/.claude/settings.json`、またはプロジェクトの `.claude/settings.json` / `.claude/settings.local.json`）に次を足してもらいます（エージェントが断りなく書き換えないこと）。
+
+```json
+{
+  "sandbox": {
+    "excludedCommands": ["relay *"]
+  }
+}
+```
+
+- 除外は Bash の 1 回の呼び出しの中のコマンドがすべて一致したときだけ効きます。`cd … && relay …`、`relay … > file`、`$(relay …)`、`for` / `if` の中では sandbox に戻るので、relay は単独で呼びます（保存先は `-o <file>` で指定する）。
+- 管理者が sandbox を必須にしているとリポジトリの設定の `excludedCommands` は無視されます（`~/.claude/settings.json` なら効く）。
+- 操作のコマンドだけを sandbox の中から通すなら `"network": {"allowLocalBinding": true}`（macOS。localhost のすべてのポートに届くようになる）。それでも `relay start` は外で起動が要るので、通常は `excludedCommands` を使う。
+- 実機のランナーは localhost ではなく CoreDevice トンネルのアドレスなので、やはり sandbox の外で動かす。
+- ほかのエージェントでも同じで、relay を sandbox の外で動かす設定を使う。詳しくは device-relay の docs/setup.md の「エージェントの sandbox から使う」。
+
 ## 接続先（runner.json）
 
 ランナー操作のコマンドは、URL とトークンを次の順に探した runner.json から読みます（トークンはコマンドラインでは渡せません）。
@@ -128,7 +154,7 @@ runner.json: /Users/<you>/.relay/runner.json
 | `type` | `relay type [<text> \| --stdin] [--key return\|delete\|space]... [--bundle-id <id>]`。`--key` は複数可、文字の後に順に送ります |
 | `key` | `relay key return\|delete\|space [--bundle-id <id>]` |
 | `button` | `relay button home\|volumeUp\|volumeDown`（音量ボタンは実機のみ） |
-| `orientation` | `relay orientation portrait\|portraitUpsideDown\|landscapeLeft\|landscapeRight` |
+| `orientation` | `relay orientation portrait\|portraitUpsideDown\|landscapeLeft\|landscapeRight\|landscape`（`landscape` は `landscapeLeft` の別名） |
 | `launch` / `terminate` | `relay launch <bundle-id>` / `relay terminate <bundle-id>` |
 | `foreground` | 前面アプリの `bundleId` と `pid` |
 | `shutdown` | ランナーを止めます（`relay start` の後片付けは行いません。通常は `relay stop` を使う） |
@@ -213,6 +239,7 @@ stderr に JSON が出ます。
 - フル解像度のスクリーンショットの画素は `screen.width × scale` × `screen.height × scale` です。画像上の位置から座標を出すときは scale で割ります。
 - `--scale 1` の画像は画素 = ポイントです（iPhone 17 Pro の縦向きで 402×874）。`--max-size` などで縮小した画像は、stderr の `relay: image 471x1024 px, screen 402x874 pt, 1.172 px/pt (tap in points: px / 1.172)` の px/pt で割ります（例: (120, 375) px → (102, 320) pt）。curl では応答ヘッダー `X-Relay-Image-Scale` などで同じ値が得られます。
 - タップやスワイプの座標は、どの画像を使っても常にポイントです。
+- 座標は `0 ≤ x < screen.width`、`0 ≤ y < screen.height`（表示の向き）の中でなければなりません。外なら何も送らずに 400（終了コード 7）で、`invalid field: x, y: (500, 100) is outside the screen, which is 402x874 points in portrait (...)` のように画面の大きさと向きが出ます。`swipe` は始点（`from:`）と終点（`to:`）の両方を確かめます。端ぎりぎりではなく、数ポイント内側を使います。
 - `relay orientation` の後は `relay health` の `orientation` と `screen` を読み直します。iPhone のアプリの多くは `portraitUpsideDown` に回転しません。
 - 詳しくは device-relay の docs/screen.md の「座標系と画面の向き」。
 
@@ -251,6 +278,7 @@ relay find --id relay.submitted       # label が "submitted #1: hello"
 | `unknown argument: '-target-arch-variant'`（relay のビルド時） | PATH の先頭に別の Swift がある。`make install` は `xcrun swift` を使うのでそちらで | README の「要件」 |
 | 1 回の操作が数分戻らず、その間 busy が続く | 別プロセスのシート（Apple Account のサインインなど）が出ていてスナップショットが詰まっている。待つか、利用者に閉じてもらう | docs/limitations.md |
 | 実機で `relay button home` が効かない | ホームボタンのある端末では、代用のスワイプでコントロールセンターが開く | docs/limitations.md |
+| `the OS refused the connection (Operation not permitted)`（終了コード 3） | relay がエージェントの sandbox の中にいて localhost に接続できない。ランナーは止まっていない。上の「sandbox の中から使う」の設定を利用者に頼む | docs/setup.md の「エージェントの sandbox から使う」 |
 | 終了コード 3 だが runner.json がある | `relay start` が強制終了され、ファイルだけ残っている（`relay status` の pid が `relay start not running`、ping が応答なし）。`relay stop` で片付けて（`not running`）から起動する | docs/setup.md の「バックグラウンドで動かす」、docs/limitations.md |
 | `relay start --background` が「a runner is already running」で 1 | `~/.relay/runner.json` のランナーが同じポートで応答している。`relay status` で確かめ、そのまま使う。自分で起動したものでなければ止めない | docs/setup.md の「バックグラウンドで動かす」 |
 

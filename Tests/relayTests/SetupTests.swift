@@ -174,6 +174,32 @@ struct DeviceListTests {
         #expect(warnings.count == 1)
     }
 
+    @Test func skipsDevicectlWhenOnlySimulatorsCanBePicked() throws {
+        let simulators = [simulator("iPhone 17 Pro", udid: simulatorUDID)]
+        #expect(DeviceList.devicectlSkipReason(udid: nil, simulator: true, simulators: simulators) == "--simulator")
+        #expect(DeviceList.devicectlSkipReason(udid: simulatorUDID.lowercased(), simulator: false, simulators: simulators) == "--udid is a simulator")
+        // A device's UDID, or no --udid: devices must be listed (and --device may name a device too).
+        #expect(DeviceList.devicectlSkipReason(udid: deviceUDID, simulator: false, simulators: simulators) == nil)
+        #expect(DeviceList.devicectlSkipReason(udid: nil, simulator: false, simulators: simulators) == nil)
+
+        var devicectlCalls = 0
+        var commands = FakeHost().commands
+        let devicectlJSON = commands.devicectlJSON
+        commands.devicectlJSON = { args in
+            devicectlCalls += 1
+            return try devicectlJSON(args)
+        }
+        let (simulatorOnly, warnings) = try DeviceList.load(commands, udid: simulatorUDID)
+        #expect(devicectlCalls == 0)
+        #expect(simulatorOnly.map(\.udid) == [simulatorUDID])
+        #expect(warnings.isEmpty)
+        _ = try DeviceList.load(commands, simulator: true)
+        #expect(devicectlCalls == 0)
+        let (all, _) = try DeviceList.load(commands, udid: deviceUDID)
+        #expect(devicectlCalls == 1)
+        #expect(all.map(\.udid) == [deviceUDID, otherDeviceUDID, simulatorUDID])
+    }
+
     @Test func sortsDevicesThenActiveSimulators() {
         let sorted = DeviceList.sort([
             simulator("b", udid: "1"), simulator("a", udid: "2"), simulator("z", udid: "3", booted: true),
@@ -740,6 +766,46 @@ struct DoctorTests {
                        resolveProject: project, home: URL(fileURLWithPath: "/nonexistent"), output: { lines.append($0) })
         #expect(lines.contains { $0.hasPrefix("  ! target           no booted iOS simulator (--simulator)")
             && $0.hasSuffix("→ relay devices lists the simulators; relay doctor --device <name> checks the one relay start would boot") })
+    }
+
+    @Test func aSimulatorUDIDIsCheckedWithoutDevicectl() {
+        let host = FakeHost()
+        var commands = host.commands
+        commands.devicectlJSON = { args in
+            Issue.record("devicectl \(args)")
+            throw ShellError(args: args, status: 1, output: "")
+        }
+        var lines: [String] = []
+        let status = Doctor.run(DoctorOptions(udid: simulatorUDID), commands: commands, configURL: URL(fileURLWithPath: "/nonexistent/config.json"),
+                                resolveProject: project, home: URL(fileURLWithPath: "/nonexistent"), sandbox: { _ in [] }, output: { lines.append($0) })
+        #expect(status == RunnerExitCode.success.rawValue)
+        #expect(lines.contains("  ✓ devices          0 booted simulator(s), 1 iOS simulator(s) (devices not listed: --udid is a simulator)"))
+        #expect(!lines.contains { $0.contains("devicectl") && $0.contains("cannot list") })
+    }
+
+    @Test func reportsASandboxThatBlocksLocalhost() {
+        var lines: [String] = []
+        let status = Doctor.run(DoctorOptions(udid: simulatorUDID), commands: FakeHost().commands, configURL: URL(fileURLWithPath: "/nonexistent/config.json"),
+                                resolveProject: project, home: URL(fileURLWithPath: "/nonexistent"),
+                                sandbox: { _ in [SandboxProbe.localhostCheck(connectError: EPERM)] }, output: { lines.append($0) })
+        #expect(status == RunnerExitCode.usage.rawValue)
+        #expect(lines.contains { $0.hasPrefix("  ✗ localhost        the OS refused a connection to 127.0.0.1 (Operation not permitted)") })
+        #expect(lines.contains { $0.contains("→ run relay outside the sandbox (in Claude Code: sandbox.excludedCommands)") })
+    }
+
+    @Test func sandboxChecksReadTheErrno() throws {
+        #expect(SandboxProbe.localhostCheck(connectError: ECONNREFUSED).status == .ok)
+        #expect(SandboxProbe.localhostCheck(connectError: 0).status == .ok)
+        #expect(SandboxProbe.localhostCheck(connectError: EPERM).status == .problem)
+        #expect(SandboxProbe.stateWriteCheck(writeError: 0, path: "/h/.relay") == .ok("~/.relay", "writable"))
+        #expect(SandboxProbe.stateWriteCheck(writeError: EPERM, path: "/h/.relay").detail.contains("sandbox"))
+        #expect(!SandboxProbe.stateWriteCheck(writeError: EACCES, path: "/h/.relay").detail.contains("sandbox"))
+        // The live probes, outside any sandbox here: the directory is writable and leaves nothing behind.
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        #expect(SandboxProbe.writeError(in: directory) == 0)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).isEmpty)
+        #expect(SandboxProbe.writeError(in: directory.appendingPathComponent("missing")) == ENOENT)
     }
 
     @Test func aMissingTeamIsOnlyANoteForSimulators() {

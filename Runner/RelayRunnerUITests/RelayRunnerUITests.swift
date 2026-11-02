@@ -355,6 +355,7 @@ final class RelayRunnerUITests: XCTestCase {
     private func touch(_ body: RunnerJSON, duration: TimeInterval?) throws -> RunnerHTTPResponse {
         guard let element = body.object["element"] else {
             let x = try body.double("x"), y = try body.double("y")
+            try requireOnScreen([("x, y", x, y)])
             return .json(["ok": true, "mode": try touch(x: x, y: y, duration: duration, mode: touchMode(body)).rawValue])
         }
         guard body.object["x"] == nil, body.object["y"] == nil else {
@@ -382,6 +383,23 @@ final class RelayRunnerUITests: XCTestCase {
             "element": target.match.json,
             "point": RunnerElementTree.json(target.point)
         ])
+    }
+
+    /// Throws 400 when a point of `/tap`, `/press`, or `/swipe` is outside the screen in the displayed
+    /// orientation (`RunnerRequestValues.pointOutsideScreen`), before anything is sent: such a touch reaches
+    /// nothing, and answering 200 for it hides the mistake. Element targets need no check, since their point
+    /// is already inside the screen. Skipped while the screen size is only UIScreen's guess (SpringBoard's
+    /// frame could not be read), which on devices is the 320x480 compatibility size and would reject real points.
+    private func requireOnScreen(_ points: [(name: String, x: Double, y: Double)]) throws {
+        let orientation = interfaceOrientation()
+        let size = screen(in: orientation).size
+        guard cachedScreen != nil else { return }
+        for point in points {
+            if let reason = RunnerRequestValues.pointOutsideScreen(point.name, x: point.x, y: point.y, screen: size,
+                                                                    orientation: Self.name(of: orientation)) {
+                throw RunnerError.invalidField(reason)
+            }
+        }
     }
 
     private func touch(x: Double, y: Double, duration: TimeInterval?, mode: TouchMode) throws -> TouchMode {
@@ -597,6 +615,7 @@ final class RelayRunnerUITests: XCTestCase {
         let to = try body.point("to")
         let duration = try body.positiveDouble("duration", default: 0.3)
         let hold = try body.nonNegativeDouble("hold", default: 0.05)
+        try requireOnScreen([("from", from.x, from.y), ("to", to.x, to.y)])
         if mode == .private {
             // Down at `from`, rest for `hold`, move to `to` over `duration`, lift immediately.
             try synthesizeTouch(

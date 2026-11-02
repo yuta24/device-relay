@@ -20,8 +20,11 @@ xcrun swift run relay doctor
 xcodebuild build-for-testing -project Runner/RelayRunner.xcodeproj -scheme RelayRunner \
   -destination 'id=<SIM_UDID>' -derivedDataPath /tmp/relay-DerivedData-sim
 TEST_RUNNER_RELAY_RUNNER_PORT=8100 xcodebuild test-without-building \
-  -xctestrun /tmp/relay-DerivedData-sim/Build/Products/*.xctestrun -destination 'id=<SIM_UDID>'
+  -xctestrun /tmp/relay-DerivedData-sim/Build/Products/*.xctestrun -destination 'id=<SIM_UDID>' \
+  -derivedDataPath /tmp/relay-DerivedData-sim
 ```
+
+（`test-without-building` にも `-derivedDataPath` を付けると、テストのログと xcresult が `~/Library/Developer/Xcode/DerivedData` ではなくそこに入ります。`relay start` も同じようにしています。）
 
 xcodebuild の出力に `RELAY_RUNNER_READY port=8100 addresses=en0=…,utun3=…` が出たら待ち受け開始です。`TEST_RUNNER_RELAY_RUNNER_TOKEN_SHA256` を渡さずに起動した場合は、ランナーがトークンを生成して `relay-runner: RELAY_RUNNER_TOKEN_SHA256 is not set; generated token: <token>` と 1 回だけ出力します。認証なしでは待ち受けません。自分で決めたトークンを使う場合は、そのトークンの SHA-256（hex 64 文字、例: `printf %s "$TOKEN" | shasum -a 256`）を渡します。64 文字の hex でない値を渡すと、ランナーは待ち受けずに失敗します。
 

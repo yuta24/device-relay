@@ -58,16 +58,33 @@ struct Device: Equatable {
 enum DeviceList {
     /// Physical devices and iOS simulators, read with `devicectl` and `simctl`. A failing `devicectl`
     /// (older Xcode, CoreDevice not running) leaves only the simulators, with the error in `warnings`.
-    static func load(_ commands: HostCommands = .live) throws -> (devices: [Device], warnings: [String]) {
+    /// `udid` and `simulator` are the `--udid` and `--simulator` of `relay start` / `relay doctor`: when they
+    /// leave only simulators to pick from (`devicectlSkipReason`), devicectl is not asked at all, so a slow or
+    /// stuck CoreDevice (`Timed out waiting for CoreDeviceService`) neither delays nor warns about a simulator.
+    static func load(_ commands: HostCommands = .live, udid: String? = nil, simulator: Bool = false) throws -> (devices: [Device], warnings: [String]) {
         var warnings: [String] = []
-        var devices: [Device] = []
-        do {
-            devices += try parseDevicectl(commands.devicectlJSON(["list", "devices"]))
-        } catch {
-            warnings.append("cannot list devices with devicectl: \(error)")
+        var devices = try parseSimctl(Data(commands.xcrun(["simctl", "list", "devices", "--json"]).utf8))
+        if devicectlSkipReason(udid: udid, simulator: simulator, simulators: devices) == nil {
+            do {
+                devices += try parseDevicectl(commands.devicectlJSON(["list", "devices"]))
+            } catch {
+                warnings.append("cannot list devices with devicectl: \(error)")
+            }
         }
-        devices += try parseSimctl(Data(commands.xcrun(["simctl", "list", "devices", "--json"]).utf8))
         return (sort(devices), warnings)
+    }
+
+    /// Why physical devices need not be listed for `DeviceSelector.select`, or nil when they must be:
+    /// `--simulator` leaves them out, and a `--udid` that simctl lists can only pick that simulator. A
+    /// `--device` name is not enough: a device may have the same name, which `select` reports as an error.
+    static func devicectlSkipReason(udid: String?, simulator: Bool, simulators: [Device]) -> String? {
+        if simulator {
+            return "--simulator"
+        }
+        if let udid, simulators.contains(where: { $0.kind == .simulator && $0.udid.caseInsensitiveCompare(udid) == .orderedSame }) {
+            return "--udid is a simulator"
+        }
+        return nil
     }
 
     /// Devices first, then simulators; active ones (connected / booted) first in each, then by name.
