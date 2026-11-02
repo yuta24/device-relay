@@ -14,6 +14,10 @@ final class RelayRunnerUITests: XCTestCase {
     private var lastActivatedBundleID: String?
     /// Portrait size and scale; they don't change with rotation, so they are measured once.
     private var cachedScreen: (size: CGSize, scale: CGFloat)?
+    /// Every display of the device, measured once like `cachedScreen` (they don't change).
+    private var cachedDisplays: [RunnerDisplay]?
+    /// The display the running command acts on, looked up once per command; `handle` clears it.
+    private var commandDisplay: DisplayLookup?
 
     private lazy var springboard = XCUIApplication(bundleIdentifier: Self.springboardBundleID)
 
@@ -108,7 +112,11 @@ final class RelayRunnerUITests: XCTestCase {
     private func handle(_ request: RunnerHTTPRequest) -> RunnerHTTPResponse {
         let startedAt = DispatchTime.now().uptimeNanoseconds
         capturedIssues = []
-        defer { capturedIssues = nil }
+        commandDisplay = nil
+        defer {
+            capturedIssues = nil
+            commandDisplay = nil
+        }
 
         var response: RunnerHTTPResponse
         do {
@@ -206,7 +214,7 @@ final class RelayRunnerUITests: XCTestCase {
     private func health() -> [String: Any] {
         let orientation = interfaceOrientation()
         let screen = self.screen(in: orientation)
-        return [
+        var object: [String: Any] = [
             "ok": true,
             "device": [
                 "model": UIDevice.current.model,
@@ -220,9 +228,21 @@ final class RelayRunnerUITests: XCTestCase {
             ],
             "orientation": Self.name(of: orientation),
             "coordinateSpace": "points",
-            "touchSynthesis": (RelayTouchSynthesizer.isAvailable ? TouchMode.private : .xcui).rawValue,
+            "touchSynthesis": (privateTouchIsDefault ? TouchMode.private : .xcui).rawValue,
             "foreground": foregroundApplication().json
         ]
+        // `screen` is the display the foreground app is on; `display` names it (null when that can't be told on a
+        // device with more than one, where `screen` falls back to the main display and touches answer 422).
+        let displays = self.displays()
+        if !displays.isEmpty {
+            object["displays"] = displays.map(\.json)
+            switch appDisplay() {
+            case .single: object["display"] = displays[0].id
+            case .found(let display): object["display"] = display.id
+            case .unknown: object["display"] = NSNull()
+            }
+        }
+        return object
     }
 
     // MARK: - Foreground application
@@ -346,7 +366,19 @@ final class RelayRunnerUITests: XCTestCase {
         } catch {
             throw RunnerError.actionFailed("failed to snapshot \(bundleID): \(error.localizedDescription)")
         }
-        return Self.elementNode(snapshot, depth: 0, maxDepth: maxDepth)
+        let root = Self.elementNode(snapshot, depth: 0, maxDepth: maxDepth)
+        let displays = self.displays()
+        guard displays.count > 1 else { return root }
+        // The windows' display IDs say where the app is, so a command that snapshots needs no second snapshot
+        // to look its display up. SpringBoard has windows on every display, so it is looked up by `appDisplay`.
+        let windowDisplayIDs = snapshot.children.map(Self.displayID(of:))
+        if commandDisplay == nil, bundleID != Self.springboardBundleID,
+           let display = RunnerDisplays.windowDisplay(windowDisplayIDs, in: displays) {
+            commandDisplay = .found(display)
+        }
+        guard case .found(let display) = appDisplay() else { return root }
+        return RunnerDisplays.tree(root, windowDisplayIDs: windowDisplayIDs, display: display,
+                                   orientation: Self.runnerOrientation(interfaceOrientation()))
     }
 
     // MARK: - Elements
@@ -391,6 +423,8 @@ final class RelayRunnerUITests: XCTestCase {
     /// is already inside the screen. Skipped while the screen size is only UIScreen's guess (SpringBoard's
     /// frame could not be read), which on devices is the 320x480 compatibility size and would reject real points.
     private func requireOnScreen(_ points: [(name: String, x: Double, y: Double)]) throws {
+        // The screen to check against is the app's display, so it must be known first.
+        _ = try touchDisplay()
         let orientation = interfaceOrientation()
         let size = screen(in: orientation).size
         guard cachedScreen != nil else { return }
@@ -408,9 +442,9 @@ final class RelayRunnerUITests: XCTestCase {
             try synthesizeTouch(points: [(x, y)], offsets: [], liftOffset: duration ?? Self.tapDuration)
         case .xcui:
             if let duration {
-                coordinate(x: x, y: y).press(forDuration: duration)
+                try coordinate(x: x, y: y).press(forDuration: duration)
             } else {
-                coordinate(x: x, y: y).tap()
+                try coordinate(x: x, y: y).tap()
             }
         }
         return mode
@@ -494,9 +528,136 @@ final class RelayRunnerUITests: XCTestCase {
 
     /// The screen size in points as the foreground app is displayed (landscape swaps width and height).
     private func screen(in orientation: UIInterfaceOrientation) -> (size: CGSize, scale: CGFloat) {
-        let screen = portraitScreen()
+        let screen = displayScreen()
         guard orientation.isLandscape else { return screen }
         return (CGSize(width: screen.size.height, height: screen.size.width), screen.scale)
+    }
+
+    /// The portrait size and scale of the display the foreground app is on: `portraitScreen()` on a device
+    /// with one display, and also while the display can't be told (touches answer 422 then).
+    private func displayScreen() -> (size: CGSize, scale: CGFloat) {
+        guard case .found(let display) = appDisplay() else { return portraitScreen() }
+        return (display.size, display.scale)
+    }
+
+    // MARK: - Displays
+
+    /// Which display a command acts on.
+    private enum DisplayLookup {
+        /// The device has one display (or its displays can't be listed): the main one, as always.
+        case single
+        case found(RunnerDisplay)
+        /// More than one display, and which one the app is on can't be told.
+        case unknown
+    }
+
+    /// The displays from `XCUIScreen.screens`, listed once. A device with one display gets one entry, without
+    /// slowing anything down. Empty while the screen size is only UIScreen's guess, and when the private
+    /// display IDs and sizes can't be read, which leaves everything on the main display as before.
+    private func displays() -> [RunnerDisplay] {
+        if let cachedDisplays {
+            return cachedDisplays
+        }
+        let main = portraitScreen()
+        guard cachedScreen != nil else { return [] }
+        let (screens, failed) = ignoringIssues { XCUIScreen.screens.map(Self.screen(of:)) }
+        // Every screen must be readable; a display that couldn't be told apart would be left out unseen.
+        let readable = failed || screens.contains { $0 == nil } ? nil : screens.compactMap { $0 }
+        let displays = readable.flatMap { RunnerDisplays.displays($0, mainPortraitPoints: main.size) } ?? []
+        cachedDisplays = displays
+        return displays
+    }
+
+    private static let displayIDSelector = NSSelectorFromString("displayID")
+    private static let boundsSelector = NSSelectorFromString("bounds")
+
+    private static let traitsSelector = NSSelectorFromString("traits")
+
+    /// `-[XCUIScreen displayID]`, `-[XCUIScreen bounds]` (native pixels), and `-[XCUIScreen traits]` are
+    /// private. Without `traits`, a screen counts as part of the device.
+    private static func screen(of screen: XCUIScreen) -> RunnerDisplays.Screen? {
+        let object = screen as NSObject
+        guard object.responds(to: displayIDSelector), object.responds(to: boundsSelector),
+              let id = (object.value(forKey: "displayID") as? NSNumber)?.intValue,
+              let bounds = (object.value(forKey: "bounds") as? NSValue)?.cgRectValue else { return nil }
+        let traits = object.responds(to: traitsSelector) ? (object.value(forKey: "traits") as? NSNumber)?.intValue : nil
+        return RunnerDisplays.Screen(id: id, pixels: bounds.size, isMain: screen.isEqual(XCUIScreen.main),
+                                     isIntegrated: traits.map { $0 & RunnerDisplays.integratedTrait != 0 } ?? true)
+    }
+
+    /// `-[XCElementSnapshot displayID]` is private; windows have the ID of their display, other elements 0.
+    private static func displayID(of snapshot: XCUIElementSnapshot) -> Int? {
+        guard let object = snapshot as? NSObject, object.responds(to: displayIDSelector) else { return nil }
+        return (object.value(forKey: "displayID") as? NSNumber)?.intValue
+    }
+
+    /// The display the foreground app is on, looked up once per command.
+    private func appDisplay() -> DisplayLookup {
+        if let commandDisplay {
+            return commandDisplay
+        }
+        let lookup = lookUpDisplay()
+        commandDisplay = lookup
+        return lookup
+    }
+
+    /// On a device with more than one display (iPhone Duo), an app's windows name its display (a snapshot,
+    /// about 50 ms in Settings). SpringBoard has windows on every display, so for it, and for an app whose
+    /// windows can't be read, the display is the only lit one: the dark display's screenshot is black
+    /// (one screenshot per display, about 150 ms each). Neither gives an answer while all are dark.
+    private func lookUpDisplay() -> DisplayLookup {
+        let displays = self.displays()
+        guard displays.count > 1 else { return .single }
+        let bundleID = foregroundApplication().bundleID
+        if bundleID != Self.springboardBundleID {
+            let (windowDisplayIDs, failed) = ignoringIssues { () -> [Int?] in
+                guard let snapshot = try? XCUIApplication(bundleIdentifier: bundleID).snapshot() else { return [] }
+                return snapshot.children.map(Self.displayID(of:))
+            }
+            if !failed, let display = RunnerDisplays.windowDisplay(windowDisplayIDs, in: displays) {
+                return .found(display)
+            }
+        }
+        let shots = displays.compactMap { display -> (display: RunnerDisplay, isBlank: Bool)? in
+            guard let screen = Self.xcuiScreen(display) else { return nil }
+            let (blank, failed) = ignoringIssues { Self.isBlank(screen.screenshot().image) }
+            return failed ? nil : (display, blank)
+        }
+        return RunnerDisplays.litDisplay(shots).map { .found($0) } ?? .unknown
+    }
+
+    private static func xcuiScreen(_ display: RunnerDisplay) -> XCUIScreen? {
+        XCUIScreen.screens.first { screen(of: $0)?.id == display.id }
+    }
+
+    /// Whether `image` is black, judged on a 32x32 copy.
+    private static func isBlank(_ image: UIImage) -> Bool {
+        guard let cgImage = image.cgImage else { return true }
+        let side = 32
+        var pixels = [UInt8](repeating: 0, count: side * side * 4)
+        let drawn = pixels.withUnsafeMutableBytes { buffer -> Bool in
+            guard let context = CGContext(data: buffer.baseAddress, width: side, height: side, bitsPerComponent: 8,
+                                          bytesPerRow: side * 4, space: CGColorSpaceCreateDeviceRGB(),
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: side, height: side))
+            return true
+        }
+        return drawn && RunnerDisplays.isBlank(rgba: pixels)
+    }
+
+    /// The display touches go to: nil on a device with one display, where they go to the main display as
+    /// always. Throws (422) when the device has more than one and the app's can't be told, rather than send a
+    /// touch that may land on the dark display and report it as done.
+    private func touchDisplay() throws -> RunnerDisplay? {
+        switch appDisplay() {
+        case .single:
+            return nil
+        case .found(let display):
+            return display
+        case .unknown:
+            throw RunnerError.actionFailed(RunnerDisplays.unknownDisplayMessage(bundleID: foregroundApplication().bundleID,
+                                                                                displays: displays()))
+        }
     }
 
     /// The real portrait screen size in points, taken from SpringBoard's frame.
@@ -538,7 +699,7 @@ final class RelayRunnerUITests: XCTestCase {
         if !failed, let raw, let orientation = UIInterfaceOrientation(rawValue: raw), orientation != .unknown {
             return orientation
         }
-        let (imageOrientation, _) = ignoringIssues { XCUIScreen.main.screenshot().image.imageOrientation }
+        let (imageOrientation, _) = ignoringIssues { appScreen().screenshot().image.imageOrientation }
         switch imageOrientation {
         case .down: return .portraitUpsideDown
         case .left: return .landscapeRight
@@ -575,20 +736,23 @@ final class RelayRunnerUITests: XCTestCase {
             return scale
         }
 
-        let screenshot = XCUIScreen.main.screenshot()
+        let screen = try screenshotDisplay()
+        let screenshot = screen.xcuiScreen.screenshot()
         // The pixels are always portrait, with the rotation only in the image orientation. Redraw them
         // upright so pixel coordinates are points x scale in the displayed orientation. Shrinking happens
         // in the same draw: one pass over the full-size pixels, and the encoder sees only the small image.
         let image = screenshot.image
         let pixels = CGSize(width: image.size.width * image.scale, height: image.size.height * image.scale)
-        let screen = portraitScreen()
         let size = RunnerRequestValues.screenshotSize(pixels: pixels, screenScale: screen.scale, maxSize: maxSize, scale: scale)
         let renderer = image.imageOrientation == .up && size == pixels ? nil : Self.renderer(size: size)
         let draw: (UIGraphicsImageRendererContext) -> Void = { _ in image.draw(in: CGRect(origin: .zero, size: size)) }
         let points = pixels.width > pixels.height
             ? CGSize(width: screen.size.height, height: screen.size.width)
             : screen.size
-        let headers = RunnerRequestValues.screenshotHeaders(image: size, screen: points)
+        var headers = RunnerRequestValues.screenshotHeaders(image: size, screen: points)
+        if let display = screen.display {
+            headers[RunnerRequestValues.ScreenshotHeader.display] = String(display.id)
+        }
         if let quality {
             let data = renderer.map { $0.jpegData(withCompressionQuality: quality, actions: draw) }
                 ?? image.jpegData(compressionQuality: quality)
@@ -599,6 +763,27 @@ final class RelayRunnerUITests: XCTestCase {
         }
         let data = renderer?.pngData(actions: draw) ?? screenshot.pngRepresentation
         return RunnerHTTPResponse(status: 200, contentType: "image/png", body: data, headers: headers)
+    }
+
+    /// The screen to capture and its portrait size and scale: the display the foreground app is on. On a device
+    /// with more than one display, `XCUIScreen.main` is the cover display of iPhone Duo even while it is dark,
+    /// so the app's display is captured instead, and `display` names it for the `X-Relay-Display` header.
+    /// Throws (422) when that display can't be told, rather than return a picture of a dark display.
+    private func screenshotDisplay() throws -> (xcuiScreen: XCUIScreen, size: CGSize, scale: CGFloat, display: RunnerDisplay?) {
+        guard let display = try touchDisplay() else {
+            let screen = portraitScreen()
+            return (XCUIScreen.main, screen.size, screen.scale, nil)
+        }
+        guard let xcuiScreen = Self.xcuiScreen(display) else {
+            throw RunnerError.actionFailed("display \(display.id) is no longer listed by XCUIScreen.screens")
+        }
+        return (xcuiScreen, display.size, display.scale, display)
+    }
+
+    /// The screen of the app's display without looking it up: `XCUIScreen.main` unless a command already did.
+    private func appScreen() -> XCUIScreen {
+        guard case .found(let display)? = commandDisplay, let screen = Self.xcuiScreen(display) else { return XCUIScreen.main }
+        return screen
     }
 
     /// Draws `size` pixels (scale 1, so points are pixels); 8-bit sRGB even on wide-color devices.
@@ -627,7 +812,7 @@ final class RelayRunnerUITests: XCTestCase {
         }
         let distance = hypot(to.x - from.x, to.y - from.y)
         let velocity = XCUIGestureVelocity(rawValue: max(distance / duration, 1))
-        coordinate(x: from.x, y: from.y).press(
+        try coordinate(x: from.x, y: from.y).press(
             forDuration: hold,
             thenDragTo: coordinate(x: to.x, y: to.y),
             withVelocity: velocity,
@@ -645,6 +830,12 @@ final class RelayRunnerUITests: XCTestCase {
         case xcui
     }
 
+    /// Whether `auto` touches use the private path: when it is available and, on a device with more than one
+    /// display, can name the display (`/health`'s `touchSynthesis` reports the same).
+    private var privateTouchIsDefault: Bool {
+        RelayTouchSynthesizer.isAvailable && (displays().count <= 1 || RelayTouchSynthesizer.supportsDisplayID)
+    }
+
     /// How long a synthesized tap keeps the finger down.
     private static let tapDuration: TimeInterval = 0.05
 
@@ -652,12 +843,16 @@ final class RelayRunnerUITests: XCTestCase {
     private func touchMode(_ body: RunnerJSON) throws -> TouchMode {
         switch body.optionalString("mode") {
         case nil, "auto":
-            return RelayTouchSynthesizer.isAvailable ? .private : .xcui
+            return privateTouchIsDefault ? .private : .xcui
         case "xcui":
             return .xcui
         case "private":
             if let reason = RelayTouchSynthesizer.unavailableReason {
                 throw RunnerError.invalidField("mode: private touch synthesis is unavailable (\(reason))")
+            }
+            if displays().count > 1, !RelayTouchSynthesizer.supportsDisplayID {
+                throw RunnerError.invalidField("mode: private touch synthesis can't aim at a display on this Xcode "
+                    + "(XCSynthesizedEventRecord has no initWithName:displayID:interfaceOrientation:)")
             }
             return .private
         default:
@@ -674,17 +869,27 @@ final class RelayRunnerUITests: XCTestCase {
         offsets: [TimeInterval],
         liftOffset: TimeInterval
     ) throws {
-        let orientation = interfaceOrientation()
-        let portraitSize = portraitScreen().size
+        let orientation = Self.runnerOrientation(interfaceOrientation())
+        // On a device with more than one display, every touch names its display, the main one too: on iPhone Duo,
+        // a touch without one stopped reaching the cover display after the device was unfolded and folded again.
+        // Points are in that display's own portrait space. A device with one display gets no ID, as before.
+        let display = try touchDisplay()
+        let displayID = display.map { NSNumber(value: $0.id) }
+        if let display, !RelayTouchSynthesizer.supportsDisplayID {
+            throw RunnerError.actionFailed("private touch synthesis can't aim at display \(display.id) "
+                + "(XCSynthesizedEventRecord has no initWithName:displayID:interfaceOrientation:); nothing was sent")
+        }
+        let portraitSize = display?.size ?? portraitScreen().size
         let completion = TouchCompletion()
         do {
             try RelayTouchSynthesizer.synthesizeTouch(
                 withPoints: points.map {
-                    NSValue(cgPoint: Self.portraitPoint(CGPoint(x: $0.x, y: $0.y), from: orientation, portraitSize: portraitSize))
+                    NSValue(cgPoint: RunnerDisplays.portraitPoint(CGPoint(x: $0.x, y: $0.y), from: orientation, portraitSize: portraitSize))
                 },
                 offsets: offsets.map { NSNumber(value: $0) },
                 liftOffset: liftOffset,
                 interfaceOrientation: .portrait,
+                displayID: displayID,
                 completion: { completion.finish($0) }
             )
         } catch {
@@ -703,19 +908,17 @@ final class RelayRunnerUITests: XCTestCase {
         }
     }
 
-    /// Converts a point in the displayed orientation to the screen's native portrait space.
+    /// `orientation` as the shared `RunnerDisplays` functions take it.
     ///
     /// The synthesizer takes native portrait points: the record's interface orientation is not applied
-    /// to them (a landscape point passed with `.landscapeRight` lands somewhere else), so rotate here
-    /// and always pass `.portrait`.
-    private static func portraitPoint(_ point: CGPoint, from orientation: UIInterfaceOrientation, portraitSize size: CGSize) -> CGPoint {
+    /// to them (a landscape point passed with `.landscapeRight` lands somewhere else), so points are
+    /// rotated with `RunnerDisplays.portraitPoint` and `.portrait` is always passed.
+    private static func runnerOrientation(_ orientation: UIInterfaceOrientation) -> RunnerInterfaceOrientation {
         switch orientation {
-        case .portraitUpsideDown: return CGPoint(x: size.width - point.x, y: size.height - point.y)
-        // The top of the interface is the right edge of the portrait screen.
-        case .landscapeRight: return CGPoint(x: size.width - point.y, y: point.x)
-        // The top of the interface is the left edge of the portrait screen.
-        case .landscapeLeft: return CGPoint(x: point.y, y: size.height - point.x)
-        default: return point
+        case .portraitUpsideDown: return .portraitUpsideDown
+        case .landscapeLeft: return .landscapeLeft
+        case .landscapeRight: return .landscapeRight
+        default: return .portrait
         }
     }
 
@@ -723,7 +926,13 @@ final class RelayRunnerUITests: XCTestCase {
         switch name {
         case "home":
             #if targetEnvironment(simulator)
-            XCUIDevice.shared.press(.home)
+            // On a device with more than one display (iPhone Duo, on either display) the button reports success
+            // and does nothing, like on devices, so go home with the gesture there too.
+            if try touchDisplay() != nil {
+                try swipeHome()
+            } else {
+                XCUIDevice.shared.press(.home)
+            }
             #else
             try swipeHome()
             #endif
@@ -747,7 +956,7 @@ final class RelayRunnerUITests: XCTestCase {
     private func swipeHome() throws {
         let size = screen(in: interfaceOrientation()).size
         let from = (x: Double(size.width / 2), y: Double(size.height - 3))
-        if RelayTouchSynthesizer.isAvailable {
+        if privateTouchIsDefault {
             let to = (x: from.x, y: Double(size.height * 0.6))
             let duration = 0.12
             // Same shape as a private /swipe with hold 0: the extra move at `from` makes the synthesizer
@@ -757,7 +966,7 @@ final class RelayRunnerUITests: XCTestCase {
             // XCUI drags only go home with a short press first; with forDuration 0 nothing happens.
             let to = (x: from.x, y: Double(size.height * 0.5))
             let duration = 0.2
-            coordinate(x: from.x, y: from.y).press(
+            try coordinate(x: from.x, y: from.y).press(
                 forDuration: 0.02,
                 thenDragTo: coordinate(x: to.x, y: to.y),
                 withVelocity: XCUIGestureVelocity(rawValue: (from.y - to.y) / duration),
@@ -805,10 +1014,38 @@ final class RelayRunnerUITests: XCTestCase {
 
     /// Screen coordinates in points from the top-left corner in the displayed orientation. SpringBoard's
     /// frame stays portrait, but XCTest converts the point with the active interface orientation.
-    private func coordinate(x: Double, y: Double) -> XCUICoordinate {
-        springboard
+    ///
+    /// SpringBoard's coordinates are on the main display. On another display (the inner one of iPhone Duo),
+    /// XCUI touches arrive only through an element there, so offsets are taken from the foreground app's
+    /// first window, which is on its display (offsets from SpringBoard's frame or the app's do nothing there);
+    /// SpringBoard has windows on every display, so it can't be used.
+    private func coordinate(x: Double, y: Double) throws -> XCUICoordinate {
+        guard let display = try touchDisplay(), !display.isMain else {
+            return springboard
+                .coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
+                .withOffset(CGVector(dx: x, dy: y))
+        }
+        let bundleID = foregroundApplication().bundleID
+        guard bundleID != Self.springboardBundleID else {
+            throw RunnerError.actionFailed("xcui touches can't reach display \(display.id) while SpringBoard is in front "
+                + "(its coordinates are on the main display); use mode private; nothing was sent")
+        }
+        let window = XCUIApplication(bundleIdentifier: bundleID).windows.firstMatch
+        // An app that stays portrait on a landscape display is shown rotated, with a portrait window. XCUI
+        // coordinate touches reported success and did nothing there, with offsets in either orientation.
+        let (frame, failed) = ignoringIssues { window.frame }
+        guard !failed else {
+            throw RunnerError.actionFailed("can't find a window of \(bundleID) on display \(display.id); nothing was sent")
+        }
+        guard !RunnerDisplays.isPortrait(frame, in: Self.runnerOrientation(interfaceOrientation())) else {
+            throw RunnerError.actionFailed("xcui touches can't reach \(bundleID) on display \(display.id) "
+                + "(it stays portrait and is shown rotated); use mode private; nothing was sent")
+        }
+        // The window need not start at the display's corner: an app shown rotated sat at (282, 0), so the offset
+        // is taken from the window's origin.
+        return window
             .coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
-            .withOffset(CGVector(dx: x, dy: y))
+            .withOffset(CGVector(dx: x - frame.minX, dy: y - frame.minY))
     }
 
     private func ok() -> RunnerHTTPResponse {

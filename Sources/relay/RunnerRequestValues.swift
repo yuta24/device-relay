@@ -77,6 +77,8 @@ enum RunnerRequestValues {
         static let screenWidth = "X-Relay-Screen-Width"
         static let screenHeight = "X-Relay-Screen-Height"
         static let scale = "X-Relay-Image-Scale"
+        /// The display ID of the captured display, sent only on devices with more than one (iPhone Duo).
+        static let display = "X-Relay-Display"
     }
 
     /// The `ScreenshotHeader` values for an image of `image` pixels of a screen of `screen` points.

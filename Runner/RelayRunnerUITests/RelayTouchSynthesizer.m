@@ -13,6 +13,9 @@
 
 @protocol RelayXCSynthesizedEventRecord <NSObject>
 - (instancetype)initWithName:(NSString *)name interfaceOrientation:(UIInterfaceOrientation)orientation;
+- (instancetype)initWithName:(NSString *)name
+                   displayID:(unsigned long long)displayID
+        interfaceOrientation:(UIInterfaceOrientation)orientation;
 - (void)addPointerEventPath:(id<RelayXCPointerEventPath>)path;
 @end
 
@@ -40,6 +43,12 @@ static NSString *const RelayTouchSynthesizerErrorDomain = @"RelayTouchSynthesize
 
 + (BOOL)isAvailable {
     return self.unavailableReason == nil;
+}
+
++ (BOOL)supportsDisplayID {
+    Class recordClass = NSClassFromString(@"XCSynthesizedEventRecord");
+    return self.isAvailable
+        && [recordClass instancesRespondToSelector:@selector(initWithName:displayID:interfaceOrientation:)];
 }
 
 + (nullable NSString *)probe {
@@ -82,11 +91,15 @@ static NSString *const RelayTouchSynthesizerErrorDomain = @"RelayTouchSynthesize
                           offsets:(NSArray<NSNumber *> *)offsets
                        liftOffset:(NSTimeInterval)liftOffset
              interfaceOrientation:(UIInterfaceOrientation)orientation
+                        displayID:(nullable NSNumber *)displayID
                        completion:(void (^)(NSError *_Nullable))completion
                             error:(NSError **)error {
     NSString *reason = self.unavailableReason;
     if (reason == nil && (points.count == 0 || offsets.count != points.count - 1)) {
         reason = @"points must be non-empty and offsets must have one entry per move";
+    }
+    if (reason == nil && displayID != nil && !self.supportsDisplayID) {
+        reason = @"XCSynthesizedEventRecord does not respond to initWithName:displayID:interfaceOrientation:";
     }
     if (reason != nil) {
         if (error != NULL) {
@@ -105,9 +118,10 @@ static NSString *const RelayTouchSynthesizerErrorDomain = @"RelayTouchSynthesize
     }
     [path liftUpAtOffset:liftOffset];
 
-    id<RelayXCSynthesizedEventRecord> record = [(id<RelayXCSynthesizedEventRecord>)[NSClassFromString(@"XCSynthesizedEventRecord") alloc]
-        initWithName:@"relay touch"
-        interfaceOrientation:orientation];
+    id<RelayXCSynthesizedEventRecord> record = [NSClassFromString(@"XCSynthesizedEventRecord") alloc];
+    record = displayID != nil
+        ? [record initWithName:@"relay touch" displayID:displayID.unsignedLongLongValue interfaceOrientation:orientation]
+        : [record initWithName:@"relay touch" interfaceOrientation:orientation];
     [record addPointerEventPath:path];
 
     id<RelayXCUIEventSynthesizing> synthesizer = [(id<RelayXCUIDeviceEventSynthesizer>)XCUIDevice.sharedDevice eventSynthesizer];

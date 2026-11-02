@@ -190,11 +190,16 @@ enum DeviceList {
     }
 
     /// `com.apple.CoreSimulator.SimRuntime.iOS-27-0` → `iOS 27.0`.
+    ///
+    /// A runtime made for one device type puts it after the version (iPhone Duo's is `iOS-27-2-iPhone19-4`);
+    /// the version ends at the first part that isn't a number, so that is `iOS 27.2`, which sorts and matches
+    /// `--os 27.2` like any other. The device type is shown as the model anyway.
     static func osName(simulatorRuntime runtime: String) -> String? {
         guard let last = runtime.split(separator: ".").last else { return nil }
         let parts = last.split(separator: "-")
         guard parts.count >= 2 else { return nil }
-        return "\(parts[0]) \(parts.dropFirst().joined(separator: "."))"
+        let version = parts.dropFirst().prefix { Int($0) != nil }
+        return "\(parts[0]) \((version.isEmpty ? parts.dropFirst() : version).joined(separator: "."))"
     }
 
     /// `com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro` → `iPhone 17 Pro`.
