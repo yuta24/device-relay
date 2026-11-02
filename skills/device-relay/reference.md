@@ -116,6 +116,7 @@ Claude Code などがシェルコマンドを sandbox（macOS では Seatbelt）
 | `relay start` が `~/.relay/locks` を作れない、DerivedData に書けない、testmanagerd の socket につなげない、疑似端末を作れない | `relay start` は sandbox の中では動かない。sandbox の外で起動する |
 | `cannot reach the runner at http://127.0.0.1:8100/: the OS refused the connection (Operation not permitted); relay may be running inside a sandbox …`（終了コード 3） | ランナーは動いているかもしれない。relay の接続が OS に拒否された。`relay stop`・`relay start` をし直さない（`relay stop` もこの場合は runner.json を消さずに 3 で終わる） |
 | `relay doctor` の `✗ localhost` / `✗ ~/.relay`（`Operation not permitted`） | 127.0.0.1 への接続か `~/.relay` への書き込みが拒否された。sandbox の中で動いているようだ |
+| `relay stop` が `cannot signal relay start (pid …): Operation not permitted; relay may be running inside a sandbox …`（終了コード 1） | sandbox の外で動いている `relay start` に、sandbox の中からシグナルを送れない。`relay stop` を sandbox の外で実行してもらう（引数の誤りではない） |
 
 推奨は relay を sandbox の外で動かすことです。利用者に、Claude Code の設定（`~/.claude/settings.json`、またはプロジェクトの `.claude/settings.json` / `.claude/settings.local.json`）に次を足してもらいます（エージェントが断りなく書き換えないこと）。
 
@@ -129,7 +130,7 @@ Claude Code などがシェルコマンドを sandbox（macOS では Seatbelt）
 
 - 除外は Bash の 1 回の呼び出しの中のコマンドがすべて一致したときだけ効きます。`cd … && relay …`、`relay … > file`、`$(relay …)`、`for` / `if` の中では sandbox に戻るので、relay は単独で呼びます（保存先は `-o <file>` で指定する）。
 - 管理者が sandbox を必須にしているとリポジトリの設定の `excludedCommands` は無視されます（`~/.claude/settings.json` なら効く）。
-- 操作のコマンドだけを sandbox の中から通すなら `"network": {"allowLocalBinding": true}`（macOS。localhost のすべてのポートに届くようになる）。それでも `relay start` は外で起動が要るので、通常は `excludedCommands` を使う。
+- 操作のコマンドだけを sandbox の中から通すなら `"network": {"allowLocalBinding": true}`（macOS。localhost のすべてのポートに届くようになり、localhost 以外で待ち受けるコマンドはほかのマシンからの接続も受けうる。管理者が sandbox を必須にしているとリポジトリの設定の `true` は無視される（`~/.claude/settings.json` なら効く））。それでも `relay start` は外で起動が要るので、通常は `excludedCommands` を使う。
 - 実機のランナーは localhost ではなく CoreDevice トンネルのアドレスなので、やはり sandbox の外で動かす。
 - ほかのエージェントでも同じで、relay を sandbox の外で動かす設定を使う。詳しくは device-relay の docs/setup.md の「エージェントの sandbox から使う」。
 
