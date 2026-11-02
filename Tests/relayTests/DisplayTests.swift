@@ -46,6 +46,28 @@ struct RunnerDisplaysTests {
         #expect(RunnerDisplays.displays(Self.screens, mainPortraitPoints: .zero) == nil)
     }
 
+    @Test func keepsOnlyAListAndAnXcodeWithoutTheFields() {
+        let points = CGSize(width: 466, height: 678)
+        let read = Self.screens.map { RunnerDisplays.ScreenReading.screen($0) }
+        let listed = RunnerDisplays.displays(reading: read, mainPortraitPoints: points)
+        #expect(listed.displays == [Self.cover, Self.inner] && listed.keep)
+        // An Xcode without the private fields never lists them: one display, for the whole session.
+        let unsupported = RunnerDisplays.displays(reading: [.unsupported, .unsupported], mainPortraitPoints: points)
+        #expect(unsupported.displays.isEmpty && unsupported.keep)
+        #expect(RunnerDisplays.displays(reading: [read[0], .unreadable, .unsupported], mainPortraitPoints: points).keep)
+    }
+
+    @Test func readsAgainAfterAnIssueOrAnUnreadableScreen() {
+        let points = CGSize(width: 466, height: 678)
+        let read = Self.screens.map { RunnerDisplays.ScreenReading.screen($0) }
+        // An XCTest issue, one screen whose values can't be read, or values that make no display list.
+        for screens in [nil, [read[0], .unreadable], [], [read[1]]] as [[RunnerDisplays.ScreenReading]?] {
+            let result = RunnerDisplays.displays(reading: screens, mainPortraitPoints: points)
+            #expect(result.displays.isEmpty && !result.keep)
+        }
+        #expect(!RunnerDisplays.displays(reading: read, mainPortraitPoints: .zero).keep)
+    }
+
     @Test func findsTheDisplayOfTheFirstWindowThatNamesOne() {
         let displays = [Self.cover, Self.inner]
         #expect(RunnerDisplays.windowDisplay([3], in: displays) == Self.inner)

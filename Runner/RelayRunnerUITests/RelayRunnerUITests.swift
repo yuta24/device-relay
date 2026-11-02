@@ -552,19 +552,20 @@ final class RelayRunnerUITests: XCTestCase {
     }
 
     /// The displays from `XCUIScreen.screens`, listed once. A device with one display gets one entry, without
-    /// slowing anything down. Empty while the screen size is only UIScreen's guess, and when the private
-    /// display IDs and sizes can't be read, which leaves everything on the main display as before.
+    /// slowing anything down. Empty when this Xcode has no private display IDs and sizes, which leaves
+    /// everything on the main display as before. Also empty, and listed again by the next command like
+    /// `portraitScreen()`, while the screen size is only UIScreen's guess or a screen can't be read.
     private func displays() -> [RunnerDisplay] {
         if let cachedDisplays {
             return cachedDisplays
         }
         let main = portraitScreen()
         guard cachedScreen != nil else { return [] }
-        let (screens, failed) = ignoringIssues { XCUIScreen.screens.map(Self.screen(of:)) }
-        // Every screen must be readable; a display that couldn't be told apart would be left out unseen.
-        let readable = failed || screens.contains { $0 == nil } ? nil : screens.compactMap { $0 }
-        let displays = readable.flatMap { RunnerDisplays.displays($0, mainPortraitPoints: main.size) } ?? []
-        cachedDisplays = displays
+        let (screens, failed) = ignoringIssues { XCUIScreen.screens.map(Self.reading(of:)) }
+        let (displays, keep) = RunnerDisplays.displays(reading: failed ? nil : screens, mainPortraitPoints: main.size)
+        if keep {
+            cachedDisplays = displays
+        }
         return displays
     }
 
@@ -575,14 +576,14 @@ final class RelayRunnerUITests: XCTestCase {
 
     /// `-[XCUIScreen displayID]`, `-[XCUIScreen bounds]` (native pixels), and `-[XCUIScreen traits]` are
     /// private. Without `traits`, a screen counts as part of the device.
-    private static func screen(of screen: XCUIScreen) -> RunnerDisplays.Screen? {
+    private static func reading(of screen: XCUIScreen) -> RunnerDisplays.ScreenReading {
         let object = screen as NSObject
-        guard object.responds(to: displayIDSelector), object.responds(to: boundsSelector),
-              let id = (object.value(forKey: "displayID") as? NSNumber)?.intValue,
-              let bounds = (object.value(forKey: "bounds") as? NSValue)?.cgRectValue else { return nil }
+        guard object.responds(to: displayIDSelector), object.responds(to: boundsSelector) else { return .unsupported }
+        guard let id = (object.value(forKey: "displayID") as? NSNumber)?.intValue,
+              let bounds = (object.value(forKey: "bounds") as? NSValue)?.cgRectValue else { return .unreadable }
         let traits = object.responds(to: traitsSelector) ? (object.value(forKey: "traits") as? NSNumber)?.intValue : nil
-        return RunnerDisplays.Screen(id: id, pixels: bounds.size, isMain: screen.isEqual(XCUIScreen.main),
-                                     isIntegrated: traits.map { $0 & RunnerDisplays.integratedTrait != 0 } ?? true)
+        return .screen(RunnerDisplays.Screen(id: id, pixels: bounds.size, isMain: screen.isEqual(XCUIScreen.main),
+                                             isIntegrated: traits.map { $0 & RunnerDisplays.integratedTrait != 0 } ?? true))
     }
 
     /// `-[XCElementSnapshot displayID]` is private; windows have the ID of their display, other elements 0.
@@ -627,7 +628,10 @@ final class RelayRunnerUITests: XCTestCase {
     }
 
     private static func xcuiScreen(_ display: RunnerDisplay) -> XCUIScreen? {
-        XCUIScreen.screens.first { screen(of: $0)?.id == display.id }
+        XCUIScreen.screens.first { screen in
+            guard case .screen(let read) = reading(of: screen) else { return false }
+            return read.id == display.id
+        }
     }
 
     /// Whether `image` is black, judged on a 32x32 copy.

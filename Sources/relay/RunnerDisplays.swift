@@ -70,6 +70,38 @@ enum RunnerDisplays {
         }
     }
 
+    /// What reading one `XCUIScreen` gave.
+    enum ScreenReading: Equatable {
+        case screen(Screen)
+        /// The screen does not answer the private `displayID` or `bounds`: this Xcode has no such fields,
+        /// and reading again won't change that.
+        case unsupported
+        /// It answers them, but a value could not be read.
+        case unreadable
+    }
+
+    /// The displays from reading every `XCUIScreen` (nil when the reading recorded an XCTest issue), and
+    /// whether to keep them for the session.
+    ///
+    /// Only a list and an Xcode without the private fields are kept; the latter gives `[]`, so a device with
+    /// one display stays as fast as before. Anything else may be passing, and gives `[]` for this command
+    /// only: kept, it would leave iPhone Duo acting as one display, its touches sent to the dark one.
+    static func displays(reading screens: [ScreenReading]?, mainPortraitPoints: CGSize) -> (displays: [RunnerDisplay], keep: Bool) {
+        guard let screens else { return ([], false) }
+        if screens.contains(.unsupported) {
+            return ([], true)
+        }
+        let read = screens.compactMap { reading -> Screen? in
+            guard case .screen(let screen) = reading else { return nil }
+            return screen
+        }
+        // Every screen must be readable; a display that couldn't be told apart would be left out unseen.
+        guard read.count == screens.count, let displays = displays(read, mainPortraitPoints: mainPortraitPoints) else {
+            return ([], false)
+        }
+        return (displays, true)
+    }
+
     /// The display the foreground app is on, from the display IDs of its top-level windows (nil where a
     /// window's ID could not be read): the first that names one of `displays`. An app has windows only on
     /// the display it is on; SpringBoard has windows on every display, so it is told apart with `litDisplay`.
