@@ -14,6 +14,9 @@ struct RunnerInfo: Codable, Equatable {
     /// When that process started (whole seconds). With `pid`, it tells the process apart from an
     /// unrelated one that reuses the pid later (see `RelayProcess`).
     var startedAt: Date?
+    /// What the runner should report as its build (`/ping`'s `runner`): this relay's version and the
+    /// sources relay built or reused. Saved so `relay status` compares without hashing the sources.
+    var runner: RunnerBuildVersion?
     /// The bundle ID of the runner's host app (see `RunnerBundleID`), which the runner commands take as `host`.
     var hostBundleID: String?
 

@@ -58,7 +58,9 @@ final class RelayRunnerUITests: XCTestCase {
             if request.path == "/ping" {
                 // The liveness check: answered here, so it never takes the gate from a command and never
                 // waits for the main queue. Not logged, because relay sends it every few seconds.
-                respond(request.method == "GET" ? .json(gate.pingBody()) : .error(RunnerError.methodNotAllowed.description, status: 405))
+                var body = gate.pingBody()
+                body["runner"] = Self.buildVersion
+                respond(request.method == "GET" ? .json(body) : .error(RunnerError.methodNotAllowed))
                 return
             }
             if request.method == "POST" && request.path == "/shutdown" {
@@ -69,11 +71,11 @@ final class RelayRunnerUITests: XCTestCase {
             }
             guard gate.tryEnter() else {
                 Self.emit("relay-runner \(request.method) \(request.path) -> 409")
-                respond(.error("busy", status: 409))
+                respond(.error(.busy, "busy", status: 409))
                 return
             }
             DispatchQueue.main.async {
-                let response = self?.handle(request) ?? .error("runner is shutting down", status: 500)
+                let response = self?.handle(request) ?? .error(.internalError, "runner is shutting down", status: 500)
                 // Leave before responding so a client that sends its next request right after the
                 // response never sees a stale busy state.
                 gate.leave()
@@ -130,15 +132,13 @@ final class RelayRunnerUITests: XCTestCase {
         var response: RunnerHTTPResponse
         do {
             response = try route(request)
-        } catch RunnerError.elementNotResolved(let failure) {
-            response = .json(failure.json, status: 422)
         } catch let error as RunnerError {
-            response = .error(error.description, status: error.status)
+            response = .error(error)
         } catch {
-            response = .error(String(describing: error), status: 500)
+            response = .error(.internalError, String(describing: error), status: 500)
         }
         if let issues = capturedIssues, !issues.isEmpty {
-            response = .error(issues.joined(separator: "; "), status: 422)
+            response = .error(.xcuiFailed, issues.joined(separator: "; "), status: 422)
         }
 
         let durationMs = Int((DispatchTime.now().uptimeNanoseconds - startedAt) / 1_000_000)
@@ -238,7 +238,8 @@ final class RelayRunnerUITests: XCTestCase {
             "orientation": Self.name(of: orientation),
             "coordinateSpace": "points",
             "touchSynthesis": (privateTouchIsDefault ? TouchMode.private : .xcui).rawValue,
-            "foreground": foregroundApplication().json
+            "foreground": foregroundApplication().json,
+            "runner": Self.buildVersion
         ]
         // `screen` is the display the foreground app is on; `display` names it (null when that can't be told on a
         // device with more than one, where `screen` falls back to the main display and touches answer 422).
@@ -313,7 +314,7 @@ final class RelayRunnerUITests: XCTestCase {
         if let issues = capturedIssues, issues.count > issueCount,
            issues[issueCount...].contains(where: RunnerTyping.isMissingKeyboardFocus) {
             capturedIssues?.removeSubrange(issueCount...)
-            throw RunnerError.actionFailed(RunnerTyping.missingKeyboardFocusMessage(bundleID: bundleID))
+            throw RunnerError.noKeyboardFocus(bundleID: bundleID)
         }
     }
 
@@ -440,7 +441,7 @@ final class RelayRunnerUITests: XCTestCase {
         for point in points {
             if let reason = RunnerRequestValues.pointOutsideScreen(point.name, x: point.x, y: point.y, screen: size,
                                                                     orientation: Self.name(of: orientation)) {
-                throw RunnerError.invalidField(reason)
+                throw RunnerError.pointOffscreen(reason)
             }
         }
     }
@@ -668,7 +669,7 @@ final class RelayRunnerUITests: XCTestCase {
         case .found(let display):
             return display
         case .unknown:
-            throw RunnerError.actionFailed(RunnerDisplays.unknownDisplayMessage(bundleID: foregroundApplication().bundleID,
+            throw RunnerError.displayUnknown(RunnerDisplays.unknownDisplayMessage(bundleID: foregroundApplication().bundleID,
                                                                                 displays: displays()))
         }
     }
@@ -788,7 +789,7 @@ final class RelayRunnerUITests: XCTestCase {
             return (XCUIScreen.main, screen.size, screen.scale, nil)
         }
         guard let xcuiScreen = Self.xcuiScreen(display) else {
-            throw RunnerError.actionFailed("display \(display.id) is no longer listed by XCUIScreen.screens")
+            throw RunnerError.displayUnknown("display \(display.id) is no longer listed by XCUIScreen.screens")
         }
         return (xcuiScreen, display.size, display.scale, display)
     }
@@ -861,10 +862,10 @@ final class RelayRunnerUITests: XCTestCase {
             return .xcui
         case "private":
             if let reason = RelayTouchSynthesizer.unavailableReason {
-                throw RunnerError.invalidField("mode: private touch synthesis is unavailable (\(reason))")
+                throw RunnerError.touchModeRejected("mode: private touch synthesis is unavailable (\(reason))")
             }
             if displays().count > 1, !RelayTouchSynthesizer.supportsDisplayID {
-                throw RunnerError.invalidField("mode: private touch synthesis can't aim at a display on this Xcode "
+                throw RunnerError.touchModeRejected("mode: private touch synthesis can't aim at a display on this Xcode "
                     + "(XCSynthesizedEventRecord has no initWithName:displayID:interfaceOrientation:)")
             }
             return .private
@@ -889,7 +890,7 @@ final class RelayRunnerUITests: XCTestCase {
         let display = try touchDisplay()
         let displayID = display.map { NSNumber(value: $0.id) }
         if let display, !RelayTouchSynthesizer.supportsDisplayID {
-            throw RunnerError.actionFailed("private touch synthesis can't aim at display \(display.id) "
+            throw RunnerError.touchUnreachable("private touch synthesis can't aim at display \(display.id) "
                 + "(XCSynthesizedEventRecord has no initWithName:displayID:interfaceOrientation:); nothing was sent")
         }
         let portraitSize = display?.size ?? portraitScreen().size
@@ -906,7 +907,7 @@ final class RelayRunnerUITests: XCTestCase {
                 completion: { completion.finish($0) }
             )
         } catch {
-            throw RunnerError.internalError("touch synthesis failed: \(error.localizedDescription)")
+            throw RunnerError.touchSynthesisError("touch synthesis failed: \(error.localizedDescription)")
         }
 
         let deadline = Date(timeIntervalSinceNow: liftOffset + 10)
@@ -1040,7 +1041,7 @@ final class RelayRunnerUITests: XCTestCase {
         }
         let bundleID = foregroundApplication().bundleID
         guard bundleID != Self.springboardBundleID else {
-            throw RunnerError.actionFailed("xcui touches can't reach display \(display.id) while SpringBoard is in front "
+            throw RunnerError.touchUnreachable("xcui touches can't reach display \(display.id) while SpringBoard is in front "
                 + "(its coordinates are on the main display); use mode private; nothing was sent")
         }
         let window = XCUIApplication(bundleIdentifier: bundleID).windows.firstMatch
@@ -1048,10 +1049,10 @@ final class RelayRunnerUITests: XCTestCase {
         // coordinate touches reported success and did nothing there, with offsets in either orientation.
         let (frame, failed) = ignoringIssues { window.frame }
         guard !failed else {
-            throw RunnerError.actionFailed("can't find a window of \(bundleID) on display \(display.id); nothing was sent")
+            throw RunnerError.touchUnreachable("can't find a window of \(bundleID) on display \(display.id); nothing was sent")
         }
         guard !RunnerDisplays.isPortrait(frame, in: Self.runnerOrientation(interfaceOrientation())) else {
-            throw RunnerError.actionFailed("xcui touches can't reach \(bundleID) on display \(display.id) "
+            throw RunnerError.touchUnreachable("xcui touches can't reach \(bundleID) on display \(display.id) "
                 + "(it stays portrait and is shown rotated); use mode private; nothing was sent")
         }
         // The window need not start at the display's corner: an app shown rotated sat at (282, 0), so the offset
@@ -1068,6 +1069,19 @@ final class RelayRunnerUITests: XCTestCase {
     private func ok(mode: TouchMode) -> RunnerHTTPResponse {
         .json(["ok": true, "mode": mode.rawValue])
     }
+
+    /// What this build was made from, as `/ping` and `/health` report it: relay passes its version and the
+    /// hash of the runner sources to xcodebuild as build settings, and the UI test target's Info.plist expands
+    /// them (`Info.plist` next to this file). Read from the bundle, so it describes the build, not the launch;
+    /// null for a build made without them (from Xcode, say).
+    private static let buildVersion: [String: Any] = {
+        let info = Bundle(for: RelayRunnerUITests.self).infoDictionary ?? [:]
+        func value(_ key: String) -> Any {
+            guard let string = info[key] as? String, !string.isEmpty else { return NSNull() }
+            return string
+        }
+        return ["version": value("RelayRunnerVersion"), "sourceHash": value("RelayRunnerSourceHash")]
+    }()
 
     private static var isSimulator: Bool {
         #if targetEnvironment(simulator)
@@ -1092,41 +1106,6 @@ final class RelayRunnerUITests: XCTestCase {
         guard let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "_XCTSetApplicationStateTimeout") else { return }
         typealias SetTimeout = @convention(c) (Double) -> Void
         unsafeBitCast(symbol, to: SetTimeout.self)(defaultApplicationStateTimeout)
-    }
-}
-
-enum RunnerError: Error, CustomStringConvertible {
-    case invalidJSON
-    case missingField(String)
-    case invalidField(String)
-    case notFound
-    case methodNotAllowed
-    case internalError(String)
-    case touchFailed(String)
-    case actionFailed(String)
-    /// A selector that didn't lead to one touchable element; answered with the failure's JSON.
-    case elementNotResolved(RunnerElementLookupFailure)
-
-    var description: String {
-        switch self {
-        case .invalidJSON: return "request body must be a JSON object"
-        case .missingField(let name): return "missing required field: \(name)"
-        case .invalidField(let name): return "invalid field: \(name)"
-        case .notFound: return "not found"
-        case .methodNotAllowed: return "method not allowed"
-        case .internalError(let message), .touchFailed(let message), .actionFailed(let message): return message
-        case .elementNotResolved(let failure): return failure.message
-        }
-    }
-
-    var status: Int {
-        switch self {
-        case .invalidJSON, .missingField, .invalidField: return 400
-        case .notFound: return 404
-        case .methodNotAllowed: return 405
-        case .internalError: return 500
-        case .touchFailed, .actionFailed, .elementNotResolved: return 422
-        }
     }
 }
 

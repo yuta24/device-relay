@@ -230,18 +230,25 @@ enum InstallCommand {
         output("building the runner for simulators into \(derivedData.path) (log: \(buildLogURL.path))")
         let buildLog = try FileHandle(forWritingTo: buildLogURL)
         defer { try? buildLog.close() }
+        let sourceHash = try RunnerSourceHash.compute(root: root)
+        // As relay start on a simulator builds it, so that reuses this build.
+        let bundleIDPrefix = RunnerBundleID.prefix(
+            configured: (try? RelayConfig.read(from: RelayConfig.defaultURL(home: home)))?.bundleIDPrefix, teamID: nil
+        ).prefix
         let arguments = RunnerLauncher.buildArguments(
             projectURL: root.appendingPathComponent(RunnerProject.projectPath),
             destination: "generic/platform=iOS Simulator",
             derivedData: derivedData,
             teamID: nil,
-            // As relay start on a simulator builds it, so that reuses this build.
-            bundleIDPrefix: RunnerBundleID.prefix(
-                configured: (try? RelayConfig.read(from: RelayConfig.defaultURL(home: home)))?.bundleIDPrefix, teamID: nil
-            ).prefix
+            sourceHash: sourceHash,
+            bundleIDPrefix: bundleIDPrefix
         )
         do {
+            RunnerBuildStamp.remove(derivedData: derivedData)
             try build(arguments, buildLog, options.verbose)
+            // relay start reuses the build only with this record (RunnerBuildPlan).
+            try RunnerBuildStamp(sourceHash: sourceHash, relayVersion: RelayVersion.current, bundleIDPrefix: bundleIDPrefix)
+                .write(derivedData: derivedData)
         } catch {
             // The runner is installed; only the prebuild failed, and relay start builds it again anyway.
             throw SetupError(description: "\(error)\nthe runner is installed, but building it failed; see \(buildLogURL.path)")

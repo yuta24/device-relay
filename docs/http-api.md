@@ -8,8 +8,8 @@
 
 | メソッド / パス | ボディ / クエリ | 説明 |
 | --- | --- | --- |
-| `GET /ping` | – | 生存確認。busy ゲートもメインスレッドも通らずに即答します（`{"ok":true,"busy":<bool>,"busyForMs":<ms or null>}`）。詳しくは「生存確認（/ping）」 |
-| `GET /health` | – | 端末情報、表示の向きでの画面サイズ（points / scale）、`orientation`、`touchSynthesis`、`foreground`、表示の一覧 `displays` と前面アプリの表示 `display`（下の「表示が複数ある端末」） |
+| `GET /ping` | – | 生存確認。busy ゲートもメインスレッドも通らずに即答します（`{"ok":true,"busy":<bool>,"busyForMs":<ms or null>,"runner":{…}}`）。詳しくは「生存確認（/ping）」と「ランナーの版（runner）」 |
+| `GET /health` | – | 端末情報、表示の向きでの画面サイズ（points / scale）、`orientation`、`touchSynthesis`、`foreground`、表示の一覧 `displays` と前面アプリの表示 `display`（下の「表示が複数ある端末」）、ランナーの版 `runner`（下の「ランナーの版（runner）」） |
 | `GET /foreground` | – | 前面アプリの `bundleId` と `pid`、取得経路 `source`（`private` / `fallback`）。詳しくは「前面アプリ」 |
 | `GET /screenshot` | `?format=png\|jpeg&quality=0.05–1.0&maxSize=<px>&scale=<px/pt>`（既定は png、jpeg の既定 quality は 0.7。範囲外・数値以外の quality と、png への quality の指定は 400。`maxSize`・`scale` は省略時は縮小なし） | 画面全体のスクリーンショット（表示の向きに正規化済み）。`maxSize`・`scale` で端末側で縮小します。画像と座標の関係を `X-Relay-*` ヘッダーで返します。詳しくは「[スクリーンショットの縮小](screen.md#スクリーンショットの縮小)」 |
 | `GET /source` | `?format=json\|text\|compact&filter=interactive&maxDepth=<n>&bundleId=`（既定は json、bundleId の既定は前面アプリ） | XCUI の要素ツリー。json は要素ごとの属性と frame、text は `debugDescription`、compact は 1 行 1 要素。`filter=interactive` で操作できる要素だけに絞ります。詳しくは「[要素ツリー（/source）](elements.md#要素ツリーsource)」 |
@@ -25,7 +25,7 @@
 | `POST /terminate` | `{"bundleId":"com.apple.Preferences"}` | アプリの終了。終了するまで `/launch` と同じだけ待ちます |
 | `POST /shutdown` | – | ランナーを停止（テストメソッドから抜ける） |
 
-**画面の外の座標**: `/tap`・`/press` の `x`・`y` と `/swipe` の `from`・`to` は、前面アプリの表示の向きでの画面（`/health` の `screen`）の中、つまり `0 ≤ x < screen.width` かつ `0 ≤ y < screen.height` でなければなりません（小数も可。`x = screen.width` は画面の外です）。外なら何も送らずに `400` と `{"ok":false,"error":"invalid field: x, y: (500, 100) is outside the screen, which is 402x874 points in portrait (0 <= x < 402, 0 <= y < 874; relay health shows the screen)"}` のように返します（`/swipe` では `from:` / `to:`）。以前は画面の外のタッチも `200` を返し、何も起きませんでした。`422`（XCUI で操作に失敗）ではなく `400` にしたのは、操作を試す前に値の範囲で判定でき、ほかの範囲外の値と同じ扱い（CLI では終了コード `7`）にするためです。画面は向きを変えると縦横が入れ替わるので、`relay orientation` の後は `/health` を読み直します。要素を指定したタップ（`element`）は、要素の frame の画面内の部分の中心に当たるので、この判定はありません（画面の外の要素は `422` の `offscreen`）。画面の大きさを SpringBoard から取れず `UIScreen` の値で代用している間（実機では 320×480 の互換モードの値になります）は、正しい座標を拒否しないよう判定を省きます。
+**画面の外の座標**: `/tap`・`/press` の `x`・`y` と `/swipe` の `from`・`to` は、前面アプリの表示の向きでの画面（`/health` の `screen`）の中、つまり `0 ≤ x < screen.width` かつ `0 ≤ y < screen.height` でなければなりません（小数も可。`x = screen.width` は画面の外です）。外なら何も送らずに `400` と `{"ok":false,"code":"point_offscreen","error":"invalid field: x, y: (500, 100) is outside the screen, which is 402x874 points in portrait (0 <= x < 402, 0 <= y < 874; relay health shows the screen)"}` のように返します（`/swipe` では `from:` / `to:`）。以前は画面の外のタッチも `200` を返し、何も起きませんでした。`422`（XCUI で操作に失敗）ではなく `400` にしたのは、操作を試す前に値の範囲で判定でき、ほかの範囲外の値と同じ扱い（CLI では終了コード `7`）にするためです。画面は向きを変えると縦横が入れ替わるので、`relay orientation` の後は `/health` を読み直します。要素を指定したタップ（`element`）は、要素の frame の画面内の部分の中心に当たるので、この判定はありません（画面の外の要素は `422` の `offscreen`）。画面の大きさを SpringBoard から取れず `UIScreen` の値で代用している間（実機では 320×480 の互換モードの値になります）は、正しい座標を拒否しないよう判定を省きます。
 
 `/tap` `/press` `/swipe` は `"mode": "private" | "xcui"` を受け付けます（省略時は使えれば `private`）。応答の `mode` に実際に使った経路が入り、`/health` の `touchSynthesis` で端末側の既定経路がわかります。詳しくは「[タッチ合成の経路](design.md#タッチ合成の経路)」を参照してください。
 
@@ -34,8 +34,11 @@
 ```json
 {"coordinateSpace":"points","device":{"model":"iPhone","simulator":true,"systemVersion":"27.0"},
  "foreground":{"bundleId":"com.apple.mobilesafari","pid":42390,"source":"private"},"ok":true,
- "orientation":"landscapeLeft","screen":{"height":402,"scale":3,"width":874},"touchSynthesis":"private"}
+ "orientation":"landscapeLeft","runner":{"sourceHash":"<64 桁>","version":"0.2.0"},
+ "screen":{"height":402,"scale":3,"width":874},"touchSynthesis":"private"}
 ```
+
+**ランナーの版（runner）**: `/ping` と `/health` の成功時の応答には `runner` が入ります。`version` はランナーをビルドした relay のバージョン、`sourceHash` はビルドしたランナーのソースのハッシュ（SHA-256 の 16 進 64 桁）です。どちらもビルドのときに Info.plist に埋め込んだもので（docs/setup.md の「[ランナーの版](setup.md#ランナーの版ソースのハッシュ)」）、起動のしかたでは変わりません。relay を通さずにビルドしたランナーでは両方 `null` です。この版を返す前にビルドしたランナーには `runner` がないので、クライアントはないことも扱ってください。
 
 **表示が複数ある端末**: iPhone Duo（外側と内側）では、`screen`・`/screenshot`・画面の外の判定・タッチ・要素の frame を、前面アプリが載っている表示に合わせます。`/health` には次のフィールドが加わります（既存のフィールドはそのままです）。
 
@@ -61,15 +64,15 @@
 | --- | --- |
 | `200` | 成功 |
 | `400` | リクエスト不正（JSON、必須フィールド、値の範囲、画面の外の座標、数値フィールドへの数値以外（真偽値を含む）、負の値・数値以外・矛盾する `Content-Length`） |
-| `401` | `Authorization: Bearer <token>` がない、または一致しない（`{"ok":false,"error":"unauthorized"}`）。リクエストヘッダーの形式の判定（`400`・`413`・`431`・`501`）の次、ほかのどの判定よりも先に行います |
+| `401` | `Authorization: Bearer <token>` がない、または一致しない（`{"ok":false,"code":"unauthorized","error":"unauthorized"}`）。リクエストヘッダーの形式の判定（`400`・`413`・`431`・`501`）の次、ほかのどの判定よりも先に行います |
 | `404` / `405` | 未知のパス / メソッド違い |
-| `409` | 別のコマンドを実行中（`{"ok":false,"error":"busy"}`）。待たずにすぐ返ります。`/ping` と `/shutdown` 以外のすべてのエンドポイント（`/health` を含む）で起こります。詳しくは「同時リクエスト」 |
-| `422` | XCUI 側で操作に失敗（エラーメッセージを JSON で返し、ランナーは動き続けます）。`/type`・`/key` でキーボードのフォーカスがない場合は `no element has keyboard focus in <bundleId>`。表示が複数ある端末で前面アプリの表示を判定できない場合は `cannot tell which display <bundleId> is on …`、`xcui` の座標タッチが届かない表示やアプリでは `xcui touches can't reach … use mode private`（どちらも何も送りません）。`/tap`・`/press` の `element` で触れる要素が 1 つに決まらない場合は `reason`・`count`・`candidates` 付き（「[要素セレクタ](elements.md#要素セレクタ)」） |
+| `409` | 別のコマンドを実行中（`{"ok":false,"code":"busy","error":"busy"}`）。待たずにすぐ返ります。`/ping` と `/shutdown` 以外のすべてのエンドポイント（`/health` を含む）で起こります。詳しくは「同時リクエスト」 |
+| `422` | XCUI 側で操作に失敗（エラーメッセージを JSON で返し、ランナーは動き続けます。どの失敗かは `code` でわかります）。`/type`・`/key` でキーボードのフォーカスがない場合は `no element has keyboard focus in <bundleId>`。表示が複数ある端末で前面アプリの表示を判定できない場合は `cannot tell which display <bundleId> is on …`、`xcui` の座標タッチが届かない表示やアプリでは `xcui touches can't reach … use mode private`（どちらも何も送りません）。`/tap`・`/press` の `element` で触れる要素が 1 つに決まらない場合は `reason`・`count`・`candidates` 付き（「[要素セレクタ](elements.md#要素セレクタ)」） |
 | `413` / `431` | ボディが 16 MB を超える / リクエストヘッダーが 64 KB を超える |
 | `500` | 内部エラー（JPEG エンコード失敗など） |
 | `501` | `Transfer-Encoding` ヘッダーがある（値に関わらず。ボディは `Content-Length` でのみ受け付けます） |
 
-`400`・`401`・`413`・`431`・`501` は、応答した後に接続を閉じます。リクエストは、接続を開いてから（keep-alive の場合は前の応答を返してから）30 秒以内に全体が届かないと、接続を閉じます。実行中のコマンドの時間はこの 30 秒に含めません。
+エラーの本文は「[エラーの形式と code](#エラーの形式と-code)」の形です。`400`・`401`・`413`・`431`・`501` は、応答した後に接続を閉じます。リクエストは、接続を開いてから（keep-alive の場合は前の応答を返してから）30 秒以内に全体が届かないと、接続を閉じます。実行中のコマンドの時間はこの 30 秒に含めません。
 
 ```sh
 R=http://127.0.0.1:8100
@@ -98,6 +101,39 @@ curl -s -H "$AUTH" -X POST $R/terminate   -H 'Content-Type: application/json' -d
 curl -s -H "$AUTH" -X POST $R/shutdown
 ```
 
+## エラーの形式と code
+
+成功以外の応答は、どのステータスでも次の形の JSON です。
+
+```json
+{"ok":false,"code":"no_keyboard_focus","error":"no element has keyboard focus in com.apple.Preferences"}
+```
+
+- `code` は機械向けの安定した文字列（snake_case）で、名前を変えることはありません。クライアントは英文の `error` ではなく `code` で分岐します。`error` は人向けの文で、文言は変わることがあります。
+- `code` は「次に何をするか」が変わる単位です。1 つの code に複数の文言（ときには複数のステータス）が対応します。ステータスと code の対応は下の表のとおりで、ステータスは code を足す前から変えていません。
+- 要素の解決の失敗には、ほかに `reason`・`count`・`candidates` が付きます（「[要素セレクタ](elements.md#要素セレクタ)」）。`reason` は code より細かい区別です。
+- `code` がない応答は、code を返す前の古いランナーのものです。そのときはステータスで判断します。知らない `code` も同じく、ステータスで判断します。
+
+| `code` | ステータス | 意味 | 推奨する対処 |
+| --- | --- | --- | --- |
+| `invalid_request` | 400 | ボディが JSON オブジェクトでない、必須フィールドがない、値の型・範囲が違う、対応外の値（キー名、ボタン名、`format` など） | `error` を読んでリクエストを直す。送り直しても同じ |
+| `point_offscreen` | 400 | 座標が画面の外（「画面の外の座標」）。何も送っていない | `/health` の `screen` を読み直す（向きで縦横が入れ替わる） |
+| `touch_mode_unavailable` | 400 / 422 | 指定した `mode` が使えない（400）、または選んだタッチの経路が対象の表示・アプリに届かない（422）。何も送っていない | `mode` を外す（auto）か、`error` が示す経路で送り直す |
+| `http_malformed` | 400 / 501 | HTTP のリクエストそのものの不正（リクエスト行、文字コード、`Content-Length`、`Transfer-Encoding`） | クライアントを直す |
+| `request_too_large` | 413 / 431 | ボディが 16 MB、リクエストヘッダーが 64 KB を超える | 小さくする |
+| `unauthorized` | 401 | トークンがない・一致しない | runner.json を読み直す。古いファイルや別のランナーのものでないか確かめる |
+| `busy` | 409 | 別のコマンドを実行中 | 待って再試行する（`/ping` の `busy` が `false` になってから） |
+| `not_found` | 404 | 未知のパス | パスを直す。ドキュメントにあるパスなら、ランナーが古い（`relay start --rebuild`） |
+| `method_not_allowed` | 405 | メソッド違い | メソッドを直す |
+| `element_not_found` | 422 | セレクタに一致する要素がない、または `index` が範囲外（`reason` は `notFound` / `indexOutOfRange`） | 待つ（`timeout`）、前面アプリを確かめる、`/find`・`/source` で実際の値を確かめる |
+| `element_ambiguous` | 422 | 2 つ以上一致して `index` がない（`reason` は `ambiguous`）。待たずに返る | `candidates` を見て条件か `index` を足す。待っても直らない |
+| `element_not_hittable` | 422 | 要素はあるが触れない: frame が空、画面の外、`enabled: false`（`reason` は `emptyFrame` / `offscreen` / `disabled`） | スクロールする、前提の操作をする、画面を観察し直す |
+| `no_keyboard_focus` | 422 | `/type`・`/key` でキーボードのフォーカスがある要素がない | 入力欄をタップしてから送り直す |
+| `display_unknown` | 422 | 表示が複数ある端末で、前面アプリの表示を判定できない（どの表示も暗いなど）。何も送っていない | 画面の状態を利用者に確かめる |
+| `touch_failed` | 422 / 500 | 合成したタッチが失敗した、時間内に終わらなかった、合成を始められなかった（500） | 1 回だけ再試行する。続くならランナーのログを見る |
+| `xcui_failed` | 422 | XCUI が失敗を報告した（XCTest の issue、要素ツリーの取得の失敗など）。`error` に XCUI の文 | `error` を読み、前面アプリと画面を観察し直す |
+| `internal_error` | 500 | ランナーの内部エラー（JPEG エンコードの失敗、終了処理中など） | 1 回だけ再試行する。続くならランナーのログを見る |
+
 ## 認証
 
 - `relay start` は起動ごとに 32 バイトのランダムなトークン（`SecRandomCopyBytes`、hex 64 文字）を生成します。ランナーにはトークンそのものではなく、その SHA-256 だけを xcodebuild の環境変数 `TEST_RUNNER_RELAY_RUNNER_TOKEN_SHA256` で渡します（コマンドライン引数には載せません）。ランナーは提示されたトークンの SHA-256 を、保持しているハッシュと定数時間で比較します。
@@ -111,7 +147,7 @@ curl -s -H "$AUTH" -X POST $R/shutdown
 
 ## 同時リクエスト
 
-コマンドは 1 つずつ実行します。実行中（タッチの完了待ちなどを含む）に別のリクエストが来ると、ランナーは HTTP キュー上で即座に `409 {"ok":false,"error":"busy"}` を返し、メインスレッドには入れません（実行中のコマンドの後ろに並ばせることはしません）。`/shutdown` だけは実行中でも受け付けてすぐ `200` を返し、実行中のコマンドが終わった時点でランナーが止まります。シミュレータで 3 秒の `/swipe` 中に `/health`・`/screenshot`・`/tap` を送ると、それぞれ 1–5 ms で 409 が返り、swipe 自体は 200 で完了しました。
+コマンドは 1 つずつ実行します。実行中（タッチの完了待ちなどを含む）に別のリクエストが来ると、ランナーは HTTP キュー上で即座に `409 {"ok":false,"code":"busy","error":"busy"}` を返し、メインスレッドには入れません（実行中のコマンドの後ろに並ばせることはしません）。`/shutdown` だけは実行中でも受け付けてすぐ `200` を返し、実行中のコマンドが終わった時点でランナーが止まります。シミュレータで 3 秒の `/swipe` 中に `/health`・`/screenshot`・`/tap` を送ると、それぞれ 1–5 ms で 409 が返り、swipe 自体は 200 で完了しました。
 
 409 が起きるのは、ゲートを通るリクエスト（`/ping` と `/shutdown` 以外のすべて。`/health` も含みます）が、別のゲートを通るリクエストの実行中に届いたときだけです。1 本のクライアントが応答を待ってから次を送る使い方では、自分のリクエスト同士は重なりません。ランナーは 409 を返すたびに `relay-runner GET /screenshot -> 409` の形でログに出します（`~/.relay/logs/runner-*.log`）。
 
@@ -120,10 +156,10 @@ curl -s -H "$AUTH" -X POST $R/shutdown
 以前は `relay start` が ready の後も 3 秒ごとに `/health` を送っていました。`/health` は他のコマンドと同じくゲートを通ってメインスレッドで実行される（前面アプリの取得を含み、実機で p50 約 16 ms）ため、利用者のリクエストとたまたま重なると、利用者側に 409 が返っていました。いまは生存確認に `GET /ping` を使います。
 
 - `/ping` は HTTP キュー上で即答し、ゲートを取らず、メインスレッドにも入りません。コマンドの実行中でも `200` です。
-- 応答は `{"ok":true,"busy":<bool>,"busyForMs":<ms or null>}` です。`busy` はゲートを通ったコマンドが実行中かどうか、`busyForMs` はそのコマンドが受け付けられてからの経過ミリ秒（実行中でなければ `null`）です。
+- 応答は `{"ok":true,"busy":<bool>,"busyForMs":<ms or null>,"runner":{"version":…,"sourceHash":…}}` です（`runner` は「ランナーの版（runner）」）。`busy` はゲートを通ったコマンドが実行中かどうか、`busyForMs` はそのコマンドが受け付けられてからの経過ミリ秒（実行中でなければ `null`）です。
 - 認証は他のエンドポイントと同じく必須で、`401` の判定が先なので、トークンなしでは busy 状態はわかりません。
 - `/ping` はメインスレッドが止まっていても応答するので、「XCUI が動くこと」の確認にはなりません。そのため ready の判定（起動直後のアドレス探索）は、これまでどおり `/health` の `200` で行います。
-- 生存確認では `200` だけを生存扱いにします（`/ping` は 409 を返さないので、409 は失敗として数えます）。`--rebuild` を付けずに `/ping` のない古いランナーを使い回した場合は `404` が返るので、`relay start` は警告を出して `/health` に切り替えます（この場合だけ 409 も生存扱いで、利用者側の 409 も起こりえます）。
+- 生存確認では `200` だけを生存扱いにします（`/ping` は 409 を返さないので、409 は失敗として数えます）。`/ping` のない古いソースから作ったランナー（`/ping` より前に `relay install` したコピーなど。ソースが変われば relay は作り直すので、ほかの場合は起こりません）では `404` が返るので、`relay start` は警告を出して `/health` に切り替えます（この場合だけ 409 も生存扱いで、利用者側の 409 も起こりえます）。
 - 利用者のクライアントも、`/ping` の `busy` が `false` になるのを見てから送れば、実行中のコマンドとの重なりによる 409 を避けられます（ただし、ほかのクライアントが先に入ることはあります）。
 
 ## 前面アプリ
@@ -163,9 +199,9 @@ curl -s -H "$AUTH" -X POST $R/shutdown
 
 - `/type {"text":"..."}` は前面アプリ（または `bundleId`）で、キーボードのフォーカスがある要素に `XCUIElement.typeText` で入力します。入力欄をタップしてフォーカスを当ててから送ってください。
 - 特殊キーは `POST /key {"key":"return"}`、または `/type` の `keys` 配列（`{"text":"abc","keys":["delete","return"]}`。`text` の後に順に送ります）で送ります。キー名は大文字小文字を区別せず、別名 `enter`（= return）、`backspace`（= delete）も使えます。
-- 対応するキーは `return`・`delete`・`space` だけです。`tab` と `escape` は iPhone のソフトウェアキーボードにキーがなく、tab は `\t` の文字として入力され、escape は何も起きなかったため、外しました。対応していないキー名は、`/key` でも `keys` でも `400 {"ok":false,"error":"invalid field: key: unsupported key 'tab' (expected return, delete, space)"}` を返し、何も入力しません。
+- 対応するキーは `return`・`delete`・`space` だけです。`tab` と `escape` は iPhone のソフトウェアキーボードにキーがなく、tab は `\t` の文字として入力され、escape は何も起きなかったため、外しました。対応していないキー名は、`/key` でも `keys` でも `400 {"ok":false,"code":"invalid_request","error":"invalid field: key: unsupported key 'tab' (expected return, delete, space)"}` を返し、何も入力しません。
 - キーは `XCUIKeyboardKey` の文字（return は `\r`、delete は U+007F、space は ` `）として `typeText` で送ります。`typeKey(_:modifierFlags:)`（ハードウェアキーのイベント）も試しましたが、iPhone ではシミュレータ・実機とも space と tab しか届かず、return・delete・escape は何も起きませんでした。
-- フォーカスがない場合は、XCUI の長いエラー文の代わりに `422 {"ok":false,"error":"no element has keyboard focus in <bundleId>"}` を返します（XCUI が待つため約 2–3 秒かかります）。
+- フォーカスがない場合は、XCUI の長いエラー文の代わりに `422 {"ok":false,"code":"no_keyboard_focus","error":"no element has keyboard focus in <bundleId>"}` を返します（XCUI が待つため約 2–3 秒かかります）。
 
 RelayRunnerHost の入力欄（`relay.input`）で確認した結果（シミュレータ・実機とも同じ。`tab`・`escape` は外す前の結果）:
 

@@ -1020,6 +1020,13 @@ struct RunnerInstallTests {
         #expect(builds.count == 1)
         #expect(builds.first?.echo == true)
         #expect(builds.first?.args.contains("generic/platform=iOS Simulator") == true)
+        // Built from the installed copy's sources, and recorded so relay start reuses it.
+        let sourceHash = try RunnerSourceHash.compute(root: tree.installed)
+        #expect(builds.first?.args.contains("RELAY_RUNNER_SOURCE_HASH=\(sourceHash)") == true)
+        let derivedData = RunnerProject.buildDirectory(root: tree.installed, home: tree.home).appendingPathComponent("DerivedData-sim")
+        #expect(RunnerBuildStamp.read(derivedData: derivedData) == RunnerBuildStamp(sourceHash: sourceHash, relayVersion: RelayVersion.current,
+                                                                                          bundleIDPrefix: "dev.devicerelay.local"))
+        #expect(builds.first?.args.contains("RELAY_BUNDLE_ID_PREFIX=dev.devicerelay.local") == true)
         let files = try FileManager.default.contentsOfDirectory(atPath: logs.path)
         #expect(files.count == 1)
         #expect(files.first?.hasPrefix("build-") == true && files.first?.hasSuffix(".log") == true)
@@ -1038,8 +1045,22 @@ struct RunnerInstallTests {
             let description = String(describing: error)
             return error is SetupError && description.contains("error: boom") && description.contains("see \(tree.home.path)/.relay/logs/build-")
         }
-        // The copy stays installed.
+        // The copy stays installed, and nothing records a build relay start could reuse.
         #expect(RunnerProject.contains(tree.installed))
+        let derivedData = RunnerProject.buildDirectory(root: tree.installed, home: tree.home).appendingPathComponent("DerivedData-sim")
+        #expect(RunnerBuildStamp.read(derivedData: derivedData) == nil)
+    }
+
+    /// The installed copy holds the files the checkout's runner is built from, so a build of either is the
+    /// same sources; Xcode's per-user state in the checkout (dropped from the copy) does not count.
+    @Test func theInstalledCopyHashesLikeItsCheckout() throws {
+        let tree = try Tree()
+        defer { try? FileManager.default.removeItem(at: tree.root) }
+        try tree.write("state", to: "\(RunnerProject.projectPath)/xcuserdata/me.xcuserdatad/UserInterfaceState.xcuserstate")
+        try RunnerInstaller.install(from: source(tree), home: tree.home)
+        #expect(try RunnerSourceHash.compute(root: tree.installed) == RunnerSourceHash.compute(root: tree.checkout))
+        try tree.write("test changed", to: "Runner/RelayRunnerUITests/RelayRunnerUITests.swift")
+        #expect(try RunnerSourceHash.compute(root: tree.installed) != RunnerSourceHash.compute(root: tree.checkout))
     }
 
     @Test func detectsAnOutdatedInstall() {

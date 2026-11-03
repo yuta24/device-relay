@@ -52,24 +52,9 @@ enum RunnerBundleID {
         "\(buildSetting)=\(prefix)"
     }
 
-    /// Whether the project builds its bundle IDs from the prefix. A copy `relay install` made before it did
-    /// keeps the fixed IDs whatever relay passes, so it is not rebuilt for a prefix it ignores.
-    static func projectUsesPrefix(pbxproj: String) -> Bool {
-        pbxproj.contains("$(\(buildSetting))")
-    }
-
-    /// Whether a build whose host app has `built` must be redone to get `expected`. An unknown `built`
-    /// (no Info.plist) is reused as before.
-    static func needsRebuild(built: String?, expected: String, projectUsesPrefix: Bool) -> Bool {
-        guard projectUsesPrefix, let built else { return false }
-        return built != expected
-    }
-
-    /// What `relay start` says when it rebuilds for another prefix (`built` is the last build's host app).
-    static func rebuildNote(built: String, expectedPrefix: String) -> String {
-        let suffix = ".\(hostProduct)"
-        let builtPrefix = built.hasSuffix(suffix) ? String(built.dropLast(suffix.count)) : built
-        return "bundle ID prefix changed from \(builtPrefix) to \(expectedPrefix); rebuilding, and the device gets new apps "
+    /// Why `relay start` rebuilds for another prefix (`RunnerBuildPlan`).
+    static func rebuildNote(from built: String, to expected: String) -> String {
+        "bundle ID prefix changed from \(built) to \(expected); rebuilding, and the device gets new apps "
             + "with the new IDs (the old ones stay)"
     }
 

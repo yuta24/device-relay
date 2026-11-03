@@ -21,13 +21,20 @@ enum RunnerPing: Equatable {
     case refusedByOS(String)
 
     static func check(_ info: RunnerInfo, timeout: TimeInterval = 3) -> RunnerPing {
-        guard let url = URL(string: info.url) else { return .unreachable("invalid url: \(info.url)") }
+        checkWithBuild(info, timeout: timeout).ping
+    }
+
+    /// Also the build the runner reports in the `/ping` body (nil when it does not, or did not answer 200).
+    static func checkWithBuild(_ info: RunnerInfo, timeout: TimeInterval = 3) -> (ping: RunnerPing, runner: RunnerBuildVersion?) {
+        guard let url = URL(string: info.url) else { return (.unreachable("invalid url: \(info.url)"), nil) }
         var client = RunnerClient(baseURL: url, token: info.token)
         client.timeout = timeout
         do {
-            return parse(try client.get("/ping"))
+            let response = try client.get("/ping")
+            let ping = parse(response)
+            return (ping, ping.isAlive ? RunnerBuildVersion.parse(responseBody: response.body) : nil)
         } catch {
-            return RunnerConnectionError.isRefusedByOS(error) ? .refusedByOS(error.localizedDescription) : .unreachable(error.localizedDescription)
+            return (RunnerConnectionError.isRefusedByOS(error) ? .refusedByOS(error.localizedDescription) : .unreachable(error.localizedDescription), nil)
         }
     }
 
@@ -73,6 +80,8 @@ enum RunnerStatus {
         /// Whether the `relay start` in runner.json still runs (nil when runner.json has no pid).
         var processRunning: Bool?
         var ping: RunnerPing
+        /// The build the runner reports in `/ping` (nil when it does not answer, or predates reporting it).
+        var runner: RunnerBuildVersion? = nil
     }
 
     static func run(_ options: RunnerStatusOptions) -> Int32 {
@@ -86,11 +95,13 @@ enum RunnerStatus {
         } catch {
             return fail("cannot read runner info: \(error)", code: .usage)
         }
+        let check = RunnerPing.checkWithBuild(info)
         let report = Report(
             infoURL: infoURL,
             info: info,
             processRunning: info.pid.map { _ in RelayProcess.runningRelayStart(info) != nil },
-            ping: RunnerPing.check(info)
+            ping: check.ping,
+            runner: check.runner
         )
         if options.json {
             FileHandle.standardOutput.write(json(report) + Data("\n".utf8))
@@ -121,9 +132,29 @@ enum RunnerStatus {
             rows.append(("host app", host))
         }
         rows.append(("ping", report.ping.summary))
+        if let runner = runnerSummary(report) {
+            rows.append(("runner", runner))
+        }
         rows.append(("runner.json", report.infoURL.path))
         let width = rows.map(\.0.count).max() ?? 0
         return rows.map { "\($0.0):\(String(repeating: " ", count: width - $0.0.count + 1))\($0.1)" }.joined(separator: "\n")
+    }
+
+    /// The `runner:` row: what the runner reports, and whether it is what `relay start` built or reused
+    /// (runner.json's `runner`), or what runner.json expects while the runner does not answer.
+    static func runnerSummary(_ report: Report) -> String? {
+        let expected = report.info.runner
+        guard report.ping.isAlive else {
+            return expected.map { "\($0.summary), from runner.json" }
+        }
+        guard let reported = report.runner else {
+            return "not reported (the runner predates build reporting)"
+        }
+        if let expectedHash = expected?.sourceHash,
+           let mismatch = RunnerBuildVersion.mismatch(reported: reported, expectedSourceHash: expectedHash) {
+            return "\(reported.summary); \(mismatch)"
+        }
+        return reported.summary
     }
 
     static func json(_ report: Report) -> Data {
@@ -139,6 +170,13 @@ enum RunnerStatus {
             "startedAt": info.startedAt.map { ISO8601DateFormatter().string(from: $0) } ?? NSNull(),
             "hostBundleID": info.hostBundleID ?? NSNull()
         ]
+        func build(_ version: RunnerBuildVersion?) -> Any {
+            guard let version else { return NSNull() }
+            return ["version": version.version ?? NSNull(), "sourceHash": version.sourceHash ?? NSNull()] as [String: Any]
+        }
+        // What the runner reports, and what relay start expects it to (runner.json).
+        object["runner"] = build(report.runner)
+        object["expectedRunner"] = build(report.info.runner)
         switch report.ping {
         case .alive(let busy, let busyForMs):
             object["ping"] = ["status": 200, "busy": busy, "busyForMs": busyForMs.map { NSNumber(value: $0) } ?? NSNull()] as [String: Any]

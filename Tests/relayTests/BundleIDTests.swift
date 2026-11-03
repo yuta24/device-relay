@@ -25,29 +25,57 @@ struct RunnerBundleIDTests {
         let project = URL(fileURLWithPath: "/r/Runner/RelayRunner.xcodeproj")
         let derived = URL(fileURLWithPath: "/b/DerivedData-device")
         let device = RunnerLauncher.buildArguments(projectURL: project, destination: "id=X", derivedData: derived,
-                                                   teamID: "ABCDE12345", bundleIDPrefix: "dev.devicerelay.abcde12345")
+                                                   teamID: "ABCDE12345", sourceHash: "h", bundleIDPrefix: "dev.devicerelay.abcde12345")
         #expect(device.suffix(3) == ["-allowProvisioningUpdates", "RELAY_DEVELOPMENT_TEAM=ABCDE12345", "RELAY_BUNDLE_ID_PREFIX=dev.devicerelay.abcde12345"])
         let simulator = RunnerLauncher.buildArguments(projectURL: project, destination: "id=X", derivedData: derived,
-                                                      teamID: nil, bundleIDPrefix: "dev.devicerelay.local")
+                                                      teamID: nil, sourceHash: "h", bundleIDPrefix: "dev.devicerelay.local")
         #expect(!simulator.contains("-allowProvisioningUpdates"))
         #expect(simulator.last == "RELAY_BUNDLE_ID_PREFIX=dev.devicerelay.local")
+        // Both the bundle ID prefix and the build version settings go to xcodebuild.
+        #expect(simulator.contains("RELAY_RUNNER_SOURCE_HASH=h"))
     }
 
-    @Test func rebuildsOnlyAProjectThatUsesThePrefixAndWasBuiltWithAnother() {
-        let expected = "dev.devicerelay.abcde12345.RelayRunnerHost"
-        #expect(RunnerBundleID.needsRebuild(built: "dev.yuta24.devicerelay.RelayRunnerHost", expected: expected, projectUsesPrefix: true))
-        #expect(!RunnerBundleID.needsRebuild(built: expected, expected: expected, projectUsesPrefix: true))
-        // An old copy from relay install keeps its fixed ID however often it is rebuilt.
-        #expect(!RunnerBundleID.needsRebuild(built: "dev.yuta24.devicerelay.RelayRunnerHost", expected: expected, projectUsesPrefix: false))
-        #expect(!RunnerBundleID.needsRebuild(built: nil, expected: expected, projectUsesPrefix: true))
+    @Test func rebuildsWhenThePrefixOfTheLastBuildDiffers() {
+        let xctestrun = URL(fileURLWithPath: "/d/Build/Products/RelayRunner_iphonesimulator27.2-arm64.xctestrun")
+        func decide(_ stamp: RunnerBuildStamp, prefix: String = "dev.devicerelay.abcde12345") -> RunnerBuildPlan {
+            RunnerBuildPlan.decide(rebuild: false, selection: .reuse(xctestrun), platform: "iphonesimulator", sdkVersion: "27.2",
+                                   stamp: stamp, sourceHash: "a", bundleIDPrefix: prefix, relayVersion: "0.2.0")
+        }
+        #expect(decide(RunnerBuildStamp(sourceHash: "a", relayVersion: "0.2.0", bundleIDPrefix: "dev.devicerelay.abcde12345")) == .reuse(xctestrun))
+        #expect(decide(RunnerBuildStamp(sourceHash: "a", relayVersion: "0.2.0", bundleIDPrefix: "dev.yuta24.devicerelay"))
+            == .build(reason: RunnerBundleID.rebuildNote(from: "dev.yuta24.devicerelay", to: "dev.devicerelay.abcde12345")))
+        // Checked before the sources and the relay version, so the note about new apps is not hidden.
+        #expect(decide(RunnerBuildStamp(sourceHash: "b", relayVersion: "0.1.0", bundleIDPrefix: "dev.yuta24.devicerelay"))
+            == .build(reason: RunnerBundleID.rebuildNote(from: "dev.yuta24.devicerelay", to: "dev.devicerelay.abcde12345")))
+        // A stamp from a relay before prefixes.
+        guard case .build(let reason?) = decide(RunnerBuildStamp(sourceHash: "a", relayVersion: "0.2.0")) else {
+            Issue.record("expected a build with a reason")
+            return
+        }
+        #expect(reason.contains("no record of its bundle ID prefix"))
+        // The SDK check still comes first.
+        #expect(RunnerBuildPlan.decide(rebuild: false, selection: .otherSDK(xctestrun), platform: "iphonesimulator", sdkVersion: "27.2",
+                                       stamp: RunnerBuildStamp(sourceHash: "a", relayVersion: "0.2.0", bundleIDPrefix: "x.y"),
+                                       sourceHash: "a", bundleIDPrefix: "dev.devicerelay.abcde12345", relayVersion: "0.2.0")
+            != .reuse(xctestrun))
+    }
+
+    @Test func stampsFromBeforePrefixesStillRead() throws {
+        let derivedData = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: derivedData) }
+        let url = RunnerBuildStamp.url(derivedData: derivedData)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(#"{"relayVersion":"0.2.0","sourceHash":"a"}"#.utf8).write(to: url)
+        #expect(RunnerBuildStamp.read(derivedData: derivedData) == RunnerBuildStamp(sourceHash: "a", relayVersion: "0.2.0"))
+        try RunnerBuildStamp(sourceHash: "a", relayVersion: "0.2.0", bundleIDPrefix: "dev.devicerelay.local").write(derivedData: derivedData)
+        #expect(RunnerBuildStamp.read(derivedData: derivedData)?.bundleIDPrefix == "dev.devicerelay.local")
     }
 
     @Test func theProjectFileUsesThePrefix() throws {
         let pbxproj = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("Runner/RelayRunner.xcodeproj/project.pbxproj")
         let contents = try String(contentsOf: pbxproj, encoding: .utf8)
-        #expect(RunnerBundleID.projectUsesPrefix(pbxproj: contents))
-        #expect(!RunnerBundleID.projectUsesPrefix(pbxproj: "PRODUCT_BUNDLE_IDENTIFIER = dev.yuta24.devicerelay.RelayRunnerHost;"))
+        #expect(contents.contains(#"PRODUCT_BUNDLE_IDENTIFIER = "$(RELAY_BUNDLE_ID_PREFIX).RelayRunnerHost";"#))
         // The default for builds without relay matches RunnerBundleID.prefix.
         #expect(contents.contains(#"RELAY_BUNDLE_ID_PREFIX = "dev.devicerelay.$(DEVELOPMENT_TEAM:default=local:lower)";"#))
         #expect(!contents.contains("dev.yuta24"))
@@ -156,7 +184,7 @@ struct RunnerBundleIDTests {
     }
 
     @Test func rebuildNoteNamesBothPrefixes() {
-        #expect(RunnerBundleID.rebuildNote(built: "dev.yuta24.devicerelay.RelayRunnerHost", expectedPrefix: "dev.devicerelay.abcde12345")
+        #expect(RunnerBundleID.rebuildNote(from: "dev.yuta24.devicerelay", to: "dev.devicerelay.abcde12345")
             == "bundle ID prefix changed from dev.yuta24.devicerelay to dev.devicerelay.abcde12345; rebuilding, and the device gets new apps "
             + "with the new IDs (the old ones stay)")
     }

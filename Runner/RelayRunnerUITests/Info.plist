@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>RelayRunnerSourceHash</key>
+	<string>$(RELAY_RUNNER_SOURCE_HASH)</string>
+	<key>RelayRunnerVersion</key>
+	<string>$(RELAY_RUNNER_VERSION)</string>
+</dict>
+</plist>

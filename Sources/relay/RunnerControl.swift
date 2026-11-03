@@ -118,7 +118,7 @@ enum RunnerControl {
         let code = RunnerExitCode(status: response.status)
         guard code == .success else {
             write(response.body, to: .standardError)
-            if let hint = hint(for: code, infoURL: infoURL) {
+            if let hint = hint(for: code, errorCode: RunnerErrorCode.parse(body: response.body), infoURL: infoURL) {
                 FileHandle.standardError.write(Data("relay: \(hint)\n".utf8))
             }
             return code.rawValue
@@ -154,7 +154,23 @@ enum RunnerControl {
         return !elements.isEmpty
     }
 
-    static func hint(for code: RunnerExitCode, infoURL: URL) -> String? {
+    /// The `relay:` line for a failure. `errorCode` is the runner's `code`; a runner from before codes sends
+    /// none, and then only the exit code picks the hint, as before.
+    static func hint(for code: RunnerExitCode, errorCode: RunnerErrorCode? = nil, infoURL: URL) -> String? {
+        switch errorCode {
+        case .noKeyboardFocus:
+            return "tap the text field first (relay tap --id …), then send it again"
+        case .elementNotFound:
+            return "check the screen with relay find --type … or relay source, or wait for the element with --timeout <s>"
+        case .elementAmbiguous:
+            return "add --type, --label, or --id, or pick one of the candidates with --index <n>"
+        case .touchModeUnavailable:
+            return "send it again without --mode, or with the mode the error names"
+        case .notFound:
+            return "no such endpoint; the runner may be older than this relay (relay start --rebuild builds it again)"
+        default:
+            break
+        }
         switch code {
         case .unauthorized:
             return "the runner rejected the token in \(infoURL.path); the file is stale or belongs to another relay start (check --runner, $RELAY_RUNNER, or restart relay start)"

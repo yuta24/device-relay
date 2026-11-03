@@ -134,23 +134,24 @@ searchField label="Search" placeholder="Search" frame=28,808,346,28
  "type":"textField","value":null},"mode":"private","ok":true,"point":{"x":201,"y":149}}
 ```
 
-要素が 1 つに決まらない・触れない場合は `422` で、`reason`、一致した総数 `count`、候補（最大 5 件）`candidates` を返します。
+要素が 1 つに決まらない・触れない場合は `422` で、`code`、`reason`、一致した総数 `count`、候補（最大 5 件）`candidates` を返します。`code`（「[エラーの形式と code](http-api.md#エラーの形式と-code)」）は次の行動ごとに `reason` をまとめたもので、`reason` はその詳細です。
 
-| `reason` | 条件 | `candidates` |
-| --- | --- | --- |
-| `notFound` | 一致なし | 空 |
-| `ambiguous` | 2 件以上一致して `index` がない | 一致した要素（先頭 5 件） |
-| `indexOutOfRange` | `index` が一致件数以上 | 一致した要素（先頭 5 件） |
-| `emptyFrame` | 選んだ要素の frame の幅か高さが 0 | 選んだ要素 |
-| `offscreen` | 選んだ要素の frame が画面と重ならない | 選んだ要素 |
-| `disabled` | 選んだ要素が `enabled: false` | 選んだ要素 |
+| `reason` | `code` | 条件 | `candidates` |
+| --- | --- | --- | --- |
+| `notFound` | `element_not_found` | 一致なし | 空 |
+| `ambiguous` | `element_ambiguous` | 2 件以上一致して `index` がない | 一致した要素（先頭 5 件） |
+| `indexOutOfRange` | `element_not_found` | `index` が一致件数以上 | 一致した要素（先頭 5 件） |
+| `emptyFrame` | `element_not_hittable` | 選んだ要素の frame の幅か高さが 0 | 選んだ要素 |
+| `offscreen` | `element_not_hittable` | 選んだ要素の frame が画面と重ならない | 選んだ要素 |
+| `disabled` | `element_not_hittable` | 選んだ要素が `enabled: false` | 選んだ要素 |
 
 ```json
 {"candidates":[{"enabled":true,"frame":{"height":52,"width":370,"x":16,"y":380.333},
   "identifier":"com.apple.settings.general","index":0,"label":"General","type":"button","value":null},
  {"enabled":true,"frame":{"height":29,"width":101.667,"x":29.667,"y":392},"identifier":"","index":1,
   "label":"General","type":"staticText","value":null}],
- "count":2,"error":"2 elements match the selector; add conditions or an index","ok":false,"reason":"ambiguous"}
+ "code":"element_ambiguous","count":2,"error":"2 elements match the selector; add conditions or an index","ok":false,
+ "reason":"ambiguous"}
 ```
 
 （設定アプリのトップでは「一般」のセルが `button` と、その中の `staticText` の 2 つとして見えるので、`{"label":"General","type":"button"}` のように型も指定します。）

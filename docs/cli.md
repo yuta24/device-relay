@@ -51,7 +51,7 @@ relay record stop                              # 録画を止め、MP4 の絶対
 | `key` / `button` / `orientation` | `POST /key` / `/button` / `/orientation` | 名前（`key` は `--bundle-id` も可。`orientation` は `landscape` を `landscapeLeft` として送る） |
 | `launch` / `terminate` | `POST /launch` / `/terminate` | `<bundle-id>`（`host` も可） |
 | `shutdown` | `POST /shutdown` | – |
-| `status` | `GET /ping` と runner.json | `--json`。終了コードは「[バックグラウンドで動かす](setup.md#バックグラウンドで動かすrelay-start---background--status--stop)」 |
+| `status` | `GET /ping` と runner.json（ランナーの版も表示） | `--json`。終了コードは「[バックグラウンドで動かす](setup.md#バックグラウンドで動かすrelay-start---background--status--stop)」 |
 | `stop` | `relay start` への SIGTERM（なければ `POST /shutdown`） | – |
 | `run`（実験的） | 手順ごとに上のエンドポイント | `<file>` か `-` か `--step <手順>`（複数可）、`--runner`、`--quiet`。「シナリオの実行（relay run、実験的）」 |
 | `record start` / `stop` / `status` | –（シミュレータはホストの `simctl io recordVideo`、実機は Mac のキャプチャデバイス） | `-o <file>`、`--force`、`--max-duration <s>`（start）、`--json`（status）、`--port <n>`（stop・status）、`--runner`。「録画（relay record）」 |
@@ -75,6 +75,16 @@ relay record stop                              # 録画を止め、MP4 の絶対
 | `6` | `422`。XCUI で失敗（フォーカスがない、要素が見つからない・1 つに決まらないなど） |
 | `7` | `400` とその他の 4xx |
 | `8` | 5xx などそれ以外 |
+
+stderr に出るランナーの JSON には、機械向けの `code`（`no_keyboard_focus`、`element_ambiguous` など。一覧は「[エラーの形式と code](http-api.md#エラーの形式と-code)」）が入ります。終了コードはステータスだけで決まり、同じ終了コードの中の区別（たとえば `6` のうちフォーカスがないのか、要素が 1 つに決まらないのか）は `code` で行います。`relay:` のヒントは、`401`・`409` のほかに、次の code で出します。code を返さない古いランナーでは、`401`・`409` のヒントだけが出ます。
+
+| `code` | `relay:` のヒント |
+| --- | --- |
+| `no_keyboard_focus` | 入力欄を先にタップしてから送り直す |
+| `element_not_found` | `relay find --type …` / `relay source` で画面を確かめるか、`--timeout <秒>` で待つ |
+| `element_ambiguous` | `--type`・`--label`・`--id` を足すか、候補から `--index <n>` で選ぶ |
+| `touch_mode_unavailable` | `--mode` を外すか、エラーが示す経路で送り直す |
+| `not_found` | ランナーが relay より古いかもしれない（`relay start --rebuild` でビルドし直す） |
 
 ### 接続先（runner.json）の探し方
 
