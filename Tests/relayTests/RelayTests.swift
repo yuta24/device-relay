@@ -104,6 +104,11 @@ struct RunnerLauncherTests {
         #expect(RunnerLauncher.parseReadyLine(line) == ["192.168.1.5", "fd00::1"])
     }
 
+    @Test func parsesSimulatorReadyLine() {
+        // A simulator's runner listens on loopback only and reports just that address.
+        #expect(RunnerLauncher.parseReadyLine("RELAY_RUNNER_READY port=8100 addresses=lo0=127.0.0.1") == ["127.0.0.1"])
+    }
+
     @Test func ignoresOtherLines() {
         #expect(RunnerLauncher.parseReadyLine("Test Case started") == nil)
     }
