@@ -8,8 +8,8 @@
 
 | メソッド / パス | ボディ / クエリ | 説明 |
 | --- | --- | --- |
-| `GET /ping` | – | 生存確認。busy ゲートもメインスレッドも通らずに即答します（`{"ok":true,"busy":<bool>,"busyForMs":<ms or null>}`）。詳しくは「生存確認（/ping）」 |
-| `GET /health` | – | 端末情報、表示の向きでの画面サイズ（points / scale）、`orientation`、`touchSynthesis`、`foreground`、表示の一覧 `displays` と前面アプリの表示 `display`（下の「表示が複数ある端末」） |
+| `GET /ping` | – | 生存確認。busy ゲートもメインスレッドも通らずに即答します（`{"ok":true,"busy":<bool>,"busyForMs":<ms or null>,"runner":{…}}`）。詳しくは「生存確認（/ping）」と「ランナーの版（runner）」 |
+| `GET /health` | – | 端末情報、表示の向きでの画面サイズ（points / scale）、`orientation`、`touchSynthesis`、`foreground`、表示の一覧 `displays` と前面アプリの表示 `display`（下の「表示が複数ある端末」）、ランナーの版 `runner`（下の「ランナーの版（runner）」） |
 | `GET /foreground` | – | 前面アプリの `bundleId` と `pid`、取得経路 `source`（`private` / `fallback`）。詳しくは「前面アプリ」 |
 | `GET /screenshot` | `?format=png\|jpeg&quality=0.05–1.0&maxSize=<px>&scale=<px/pt>`（既定は png、jpeg の既定 quality は 0.7。範囲外・数値以外の quality と、png への quality の指定は 400。`maxSize`・`scale` は省略時は縮小なし） | 画面全体のスクリーンショット（表示の向きに正規化済み）。`maxSize`・`scale` で端末側で縮小します。画像と座標の関係を `X-Relay-*` ヘッダーで返します。詳しくは「[スクリーンショットの縮小](screen.md#スクリーンショットの縮小)」 |
 | `GET /source` | `?format=json\|text\|compact&filter=interactive&maxDepth=<n>&bundleId=`（既定は json、bundleId の既定は前面アプリ） | XCUI の要素ツリー。json は要素ごとの属性と frame、text は `debugDescription`、compact は 1 行 1 要素。`filter=interactive` で操作できる要素だけに絞ります。詳しくは「[要素ツリー（/source）](elements.md#要素ツリーsource)」 |
@@ -34,8 +34,11 @@
 ```json
 {"coordinateSpace":"points","device":{"model":"iPhone","simulator":true,"systemVersion":"27.0"},
  "foreground":{"bundleId":"com.apple.mobilesafari","pid":42390,"source":"private"},"ok":true,
- "orientation":"landscapeLeft","screen":{"height":402,"scale":3,"width":874},"touchSynthesis":"private"}
+ "orientation":"landscapeLeft","runner":{"sourceHash":"<64 桁>","version":"0.2.0"},
+ "screen":{"height":402,"scale":3,"width":874},"touchSynthesis":"private"}
 ```
+
+**ランナーの版（runner）**: `/ping` と `/health` の成功時の応答には `runner` が入ります。`version` はランナーをビルドした relay のバージョン、`sourceHash` はビルドしたランナーのソースのハッシュ（SHA-256 の 16 進 64 桁）です。どちらもビルドのときに Info.plist に埋め込んだもので（docs/setup.md の「[ランナーの版](setup.md#ランナーの版ソースのハッシュ)」）、起動のしかたでは変わりません。relay を通さずにビルドしたランナーでは両方 `null` です。この版を返す前にビルドしたランナーには `runner` がないので、クライアントはないことも扱ってください。
 
 **表示が複数ある端末**: iPhone Duo（外側と内側）では、`screen`・`/screenshot`・画面の外の判定・タッチ・要素の frame を、前面アプリが載っている表示に合わせます。`/health` には次のフィールドが加わります（既存のフィールドはそのままです）。
 
@@ -120,10 +123,10 @@ curl -s -H "$AUTH" -X POST $R/shutdown
 以前は `relay start` が ready の後も 3 秒ごとに `/health` を送っていました。`/health` は他のコマンドと同じくゲートを通ってメインスレッドで実行される（前面アプリの取得を含み、実機で p50 約 16 ms）ため、利用者のリクエストとたまたま重なると、利用者側に 409 が返っていました。いまは生存確認に `GET /ping` を使います。
 
 - `/ping` は HTTP キュー上で即答し、ゲートを取らず、メインスレッドにも入りません。コマンドの実行中でも `200` です。
-- 応答は `{"ok":true,"busy":<bool>,"busyForMs":<ms or null>}` です。`busy` はゲートを通ったコマンドが実行中かどうか、`busyForMs` はそのコマンドが受け付けられてからの経過ミリ秒（実行中でなければ `null`）です。
+- 応答は `{"ok":true,"busy":<bool>,"busyForMs":<ms or null>,"runner":{"version":…,"sourceHash":…}}` です（`runner` は「ランナーの版（runner）」）。`busy` はゲートを通ったコマンドが実行中かどうか、`busyForMs` はそのコマンドが受け付けられてからの経過ミリ秒（実行中でなければ `null`）です。
 - 認証は他のエンドポイントと同じく必須で、`401` の判定が先なので、トークンなしでは busy 状態はわかりません。
 - `/ping` はメインスレッドが止まっていても応答するので、「XCUI が動くこと」の確認にはなりません。そのため ready の判定（起動直後のアドレス探索）は、これまでどおり `/health` の `200` で行います。
-- 生存確認では `200` だけを生存扱いにします（`/ping` は 409 を返さないので、409 は失敗として数えます）。`--rebuild` を付けずに `/ping` のない古いランナーを使い回した場合は `404` が返るので、`relay start` は警告を出して `/health` に切り替えます（この場合だけ 409 も生存扱いで、利用者側の 409 も起こりえます）。
+- 生存確認では `200` だけを生存扱いにします（`/ping` は 409 を返さないので、409 は失敗として数えます）。`/ping` のない古いソースから作ったランナー（`/ping` より前に `relay install` したコピーなど。ソースが変われば relay は作り直すので、ほかの場合は起こりません）では `404` が返るので、`relay start` は警告を出して `/health` に切り替えます（この場合だけ 409 も生存扱いで、利用者側の 409 も起こりえます）。
 - 利用者のクライアントも、`/ping` の `busy` が `false` になるのを見てから送れば、実行中のコマンドとの重なりによる 409 を避けられます（ただし、ほかのクライアントが先に入ることはあります）。
 
 ## 前面アプリ

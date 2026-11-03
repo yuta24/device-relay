@@ -9,7 +9,7 @@ Runner の用意、端末の選択、環境の確認から、シミュレータ�
 - コピー元は `--project <path>` > `$RELAY_HOME` > カレントディレクトリとその親 > `relay` の実行ファイルの場所（シンボリックリンクを解決）とその親、の順に探した device-relay のチェックアウトです。`make install` したリンクからは元のチェックアウトが見つかります。（取り出し元は差し替えられるようにしてあり、将来 GitHub Release からのダウンロードにする予定です。）
 - コピーするのは `Runner/` と、プロジェクトが参照している CLI 側の共有ソース（`Sources/relay/RunnerAuth.swift` など、`project.pbxproj` の `../Sources/...` の参照）、それにエージェントスキル（`skills/device-relay`。「[エージェントスキル](cli.md#エージェントスキル)」を参照）です。リポジトリと同じ配置（`~/.relay/runner/Runner/RelayRunner.xcodeproj`、`~/.relay/runner/skills/device-relay`）にします。
 - 再実行すると上書き更新します。一時ディレクトリにコピーしてから入れ替えるので、途中で失敗しても前の Runner は残ります。入れ替えたときは、古いソースのビルド成果物（`~/.relay/build/installed`）を削除します。
-- `relay install --build` は、コピーの後にシミュレータ用の `build-for-testing`（`generic/platform=iOS Simulator`）を行い、初回の `relay start` でビルドを省きます。ビルドログは `relay start` と同じく `~/.relay/logs/` の `build-<時刻>.log`（ポートはないので付けません）に保存し、失敗したときはそのパスを示します（コピーした Runner は残ります）。`--verbose` を付けると xcodebuild の出力をそのまま表示します。
+- `relay install --build` は、コピーの後にシミュレータ用の `build-for-testing`（`generic/platform=iOS Simulator`）を行い、初回の `relay start` でビルドを省きます（下の「ランナーの版」の記録も書くので、ソースが同じなら `relay start` はそのビルドを使い回します）。ビルドログは `relay start` と同じく `~/.relay/logs/` の `build-<時刻>.log`（ポートはないので付けません）に保存し、失敗したときはそのパスを示します（コピーした Runner は残ります）。`--verbose` を付けると xcodebuild の出力をそのまま表示します。
 - `relay uninstall`（= `relay install --remove`）は `~/.relay/runner` とそのビルド成果物を削除します。`config.json`、`runner.json`、ログは残します。
 - `relay start` / `relay doctor` は、記録したバージョンが `relay` のバージョンと違う場合や、元のチェックアウトのコミットが記録と違う場合（`git pull` の後など）に「relay install を再実行して」と知らせます。止めはしません。
 
@@ -23,7 +23,17 @@ Runner の用意、端末の選択、環境の確認から、シミュレータ�
 
 対象アプリのリポジトリなど、チェックアウトの外から実行すると 4 の `~/.relay/runner` を使います。device-relay のリポジトリ内で実行すると 3 のチェックアウトを使うので、`relay install` 済みでも、編集中（未コミットを含む）の Runner がそのままビルドされます。
 
-1 と 2 で指定した場所にプロジェクトがなければ、ほかを探さずにエラーにします。どこにも見つからなければ、`relay install` などの設定方法を示して終了します。DerivedData は Runner プロジェクトごとに `~/.relay/build/installed`（インストールしたもの）か `~/.relay/build/<ディレクトリ名>-<パスのハッシュ>` に分けるので、別のソースでビルドした `.xctestrun` を使い回すことはありません。Xcode では分けないので、`DEVELOPER_DIR` で Xcode を切り替えてビルドすると、SDK のバージョン入りの名前（`RelayRunner_iphonesimulator27.2-….xctestrun` など）の `.xctestrun` が並びますが、指すビルド成果物（`Debug-iphonesimulator` など）は共有で、最後のビルドのものです。そのため relay は、ビルドした直後はそのビルドが書いた（更新日時が新しい）ものを、使い回すときは最後のビルドのもの（更新日時が最も新しいもの）を使い、その名前の SDK のバージョンが今の Xcode の SDK（`xcrun --sdk iphonesimulator|iphoneos --show-sdk-version`）と違えば `… is not for this Xcode's … SDK …; rebuilding` と出して再ビルドします（SDK のバージョンが取れないときや、名前から読めないときは、そのまま使い回します）。Xcode を切り替えるたびにビルドし直すことになりますが、同じ Xcode のままなら今までどおりビルドせずに使い回します。ランナーを起動する `xcodebuild test-without-building` にも同じ `-derivedDataPath` を渡すので、テストのログと xcresult も `~/.relay/build/…/DerivedData-*/Logs/Test` に入り、`~/Library/Developer/Xcode/DerivedData` には何も作りません。
+1 と 2 で指定した場所にプロジェクトがなければ、ほかを探さずにエラーにします。どこにも見つからなければ、`relay install` などの設定方法を示して終了します。DerivedData は Runner プロジェクトごとに `~/.relay/build/installed`（インストールしたもの）か `~/.relay/build/<ディレクトリ名>-<パスのハッシュ>` に分けるので、別のソースでビルドした `.xctestrun` を使い回すことはありません。Xcode では分けないので、`DEVELOPER_DIR` で Xcode を切り替えてビルドすると、SDK のバージョン入りの名前（`RelayRunner_iphonesimulator27.2-….xctestrun` など）の `.xctestrun` が並びますが、指すビルド成果物（`Debug-iphonesimulator` など）は共有で、最後のビルドのものです。そのため relay は、ビルドした直後はそのビルドが書いた（更新日時が新しい）ものを、使い回すときは最後のビルドのもの（更新日時が最も新しいもの）を使い、その名前の SDK のバージョンが今の Xcode の SDK（`xcrun --sdk iphonesimulator|iphoneos --show-sdk-version`）と違えば `… is not for this Xcode's … SDK …; rebuilding` と出して再ビルドします（SDK のバージョンが取れないときや、名前から読めないときは、そのまま使い回します）。Xcode を切り替えるたびにビルドし直すことになりますが、同じ Xcode のままなら今までどおりビルドせずに使い回します。SDK が同じでも、Runner のソースがビルドの後に変わっていれば作り直します（下の「ランナーの版」）。ランナーを起動する `xcodebuild test-without-building` にも同じ `-derivedDataPath` を渡すので、テストのログと xcresult も `~/.relay/build/…/DerivedData-*/Logs/Test` に入り、`~/Library/Developer/Xcode/DerivedData` には何も作りません。
+
+### ランナーの版（ソースのハッシュ）
+
+`git pull` や `relay install` の後に、古いソースでビルドしたランナーが黙って使われないよう、relay はランナーのソースのハッシュでビルドを見分けます。
+
+- **対象**: `Runner/` 以下のすべてのファイル（プロジェクト、スキーム、ランナーのソース、`Info.plist` など）と、プロジェクトが `../Sources/relay/*.swift` として参照する CLI との共有ファイル（`relay install` がコピーするものと同じ）です。Xcode の利用者ごとの状態（`xcuserdata`）と隠しファイル（`.DS_Store` など）は含めません。ファイルのパスと内容を、パスの順に SHA-256 にかけます（列挙の順には依りません）。`relay install` したコピーは元のチェックアウトと同じファイルなので、同じハッシュになります。計算は `relay start` のたびに行い、数 ms です。
+- **記録**: ビルドに成功すると、`.xctestrun` の横（`DerivedData-*/Build/Products/relay-runner-build.json`）にハッシュと relay のバージョンを記録します（`relay install --build` も同じ）。ビルドの前には消すので、失敗したビルドは記録を持ちません。
+- **使い回しの判断**: 最後のビルドが今の Xcode の SDK のものでも、記録がない（古い relay のビルド、失敗したビルド）、ハッシュが今のソースと違う、relay のバージョンが違う、のどれかなら、`runner sources changed since the last build (<前> -> <今>); rebuilding` などと出して `--rebuild` なしでも再ビルドします。ハッシュだけが変わった再ビルドは、Xcode の差分ビルドなので変わったファイルの分だけで済みます。
+- **ランナーが名乗る版**: ビルドのときに `RELAY_RUNNER_VERSION=<relay のバージョン>` と `RELAY_RUNNER_SOURCE_HASH=<ハッシュ>` をビルド設定として渡し、UI テストバンドルの Info.plist（`Runner/RelayRunnerUITests/Info.plist`。自動生成の Info.plist に足されます）に埋め込みます。ランナーは自分のバンドルから読み、`/ping` と `/health` の `runner`（`{"version":"0.2.0","sourceHash":"<64 桁>"}`）で返します。起動時の環境変数ではないので、ビルドしたものを表します。Xcode から直接ビルドしたランナーでは値が `null` です。
+- **照合**: `relay start` は ready の時点で `/health` の `runner` を確かめ、一致すれば `relay: runner 0.2.0 (sources <12 桁>)` と出します。違う、または名乗らない場合は `warning:` を出しますが、止めはしません（ソースは relay が今ビルドまたは確認したものなので、ずれているのは名乗る値だけです）。runner.json には期待する版（`runner`）を保存し、`relay status` は `/ping` の `runner` と並べて表示します。ランナー操作のコマンドはソースのハッシュを計算しません。版を名乗らない古いランナーにも、これまでどおり接続できます（`relay status` の `runner:` は `not reported`）。
 
 ## 端末の選択（relay devices）
 
@@ -93,9 +103,11 @@ relay start --device "iPhone 17 Pro"   # 停止中なら boot し、終了時に
 # relay: runner project: ~/.relay/runner (from relay install)
 # relay: using iPhone 17 Pro (iPhone 17 Pro, iOS 27.0, simulator, shutdown) <SIM_UDID> (--device; the newest iOS of 3 simulators named "iPhone 17 Pro")
 # relay: booting simulator iPhone 17 Pro (<SIM_UDID>); it is shut down when relay exits
-# relay: building runner (log: ~/.relay/logs/build-<時刻>-8100.log)   ← 初回か --rebuild 指定時だけ
+# relay: building runner from sources <ハッシュ 12 桁> (log: ~/.relay/logs/build-<時刻>-8100.log)   ← 初回、ソースが変わったとき、--rebuild 指定時
+#        （使い回すときは relay: reusing RelayRunner_iphonesimulator27.2-….xctestrun (runner sources <ハッシュ 12 桁>)）
 # relay: launching runner on <SIM_UDID> (log: ~/.relay/logs/runner-<時刻>-8100.log)
 # relay: runner listening; device addresses: 127.0.0.1   ← シミュレータのランナーは 127.0.0.1 だけで待ち受けます
+# relay: runner 0.2.0 (sources <ハッシュ 12 桁>)   ← ランナーが名乗る版（「ランナーの版」）
 # ready: http://127.0.0.1:8100/
 # token: ~/.relay/runner.json
 ```
@@ -110,7 +122,7 @@ relay bench --url http://127.0.0.1:8100 --count 5 --tap 200,120   # トークン
 
 Ctrl-C を押す（または別のターミナルで `relay stop` を実行する）と `relay` が `/shutdown` を送り、`runner.json` を削除します。ランナーがテストメソッドから抜けて `** TEST EXECUTE SUCCEEDED **` で終了し、`relay` も終了します（10 秒以内に終わらなければ xcodebuild を terminate します）。ランナーが ready になる前に Ctrl-C を押した場合は、`/shutdown` を送る先がないので xcodebuild をすぐに terminate します。ランナーの起動前（シミュレータの boot やビルドの途中）なら、そのビルドの xcodebuild を止め、relay が boot したシミュレータを shutdown して、`relay: stopped before launching the runner` と表示して終了コード 1 で終わります。
 
-ready の後も、`relay start` は 3 秒ごとに `/ping` を送ってランナーの生存を確認します（`200` だけが生存扱い）。`/ping` はコマンドの実行中でも busy ゲートを通らずに即答するので、生存確認が利用者のリクエストと重なって `409` を起こすことはありません。ready の判定（起動直後の探索）には、XCUI が動くことを確かめるため `/health` を使います。3 回続けて応答がなければ（`200` 以外が 3 回続けば）、ランナーが落ちたとみなしてエラーを表示し、xcodebuild を止めて `runner.json` を削除し、終了コード 1 で終わります。`--rebuild` なしで `/ping` のない古いランナーを使った場合は、`/ping` が `404` になるので警告を出し、以後は `/health` で確認します（このときは `409` も生存扱いで、利用者のリクエストが `409` になることがあります）。`runner.json` を書き出せなかった場合も、ランナーを止めてから終了コード 1 で終わります。
+ready の後も、`relay start` は 3 秒ごとに `/ping` を送ってランナーの生存を確認します（`200` だけが生存扱い）。`/ping` はコマンドの実行中でも busy ゲートを通らずに即答するので、生存確認が利用者のリクエストと重なって `409` を起こすことはありません。ready の判定（起動直後の探索）には、XCUI が動くことを確かめるため `/health` を使います。3 回続けて応答がなければ（`200` 以外が 3 回続けば）、ランナーが落ちたとみなしてエラーを表示し、xcodebuild を止めて `runner.json` を削除し、終了コード 1 で終わります。`/ping` のない古いソース（`/ping` より前に `relay install` したコピーなど。`relay start` はそのコピーが古いことも知らせます）から作ったランナーでは、`/ping` が `404` になるので警告を出し、以後は `/health` で確認します（このときは `409` も生存扱いで、利用者のリクエストが `409` になることがあります）。`runner.json` を書き出せなかった場合も、ランナーを止めてから終了コード 1 で終わります。
 
 オプション:
 
@@ -122,7 +134,7 @@ ready の後も、`relay start` は 3 秒ごとに `/ping` を送ってランナ
 | `--project <path>` | Runner プロジェクトの場所（「Runner の用意」）。`$RELAY_HOME` より優先します |
 | `--port 8100` | 端末側の待ち受けポート。xcodebuild には `TEST_RUNNER_RELAY_RUNNER_PORT` として渡され、ランナーからは `RELAY_RUNNER_PORT` として見えます |
 | `--team-id <TEAM_ID>` | 実機向けの署名チーム（「Team ID」。省略時は自動検出）。`-allowProvisioningUpdates RELAY_DEVELOPMENT_TEAM=<TEAM_ID>` を付けてビルドし、ランナーが起動できたら `~/.relay/config.json` に保存します |
-| `--rebuild` | `~/.relay/build/…/DerivedData-*` に既存の `.xctestrun` があっても再ビルドします（最後のビルドが今の Xcode の SDK と違うときは、付けなくても再ビルドします） |
+| `--rebuild` | `~/.relay/build/…/DerivedData-*` に既存の `.xctestrun` があっても再ビルドします（最後のビルドが今の Xcode の SDK と違うとき、Runner のソースが変わったとき、記録のない古いビルドのときは、付けなくても再ビルドします。「ランナーの版」） |
 | `--verbose` | xcodebuild の出力をそのまま表示します |
 | `--allow-wifi` | 実機で、CoreDevice トンネルに加えて Wi-Fi などのアドレスも探索します。トークンが同じネットワークに平文で流れるので、既定では無効です |
 | `--ready-timeout 180` | `/health` が応答するまで待つ秒数。xcodebuild の出力に `Failed to initialize for UI testing` やテストの失敗が出た場合は、待たずにエラー内容と対処のヒントを表示して非ゼロで終了します |
@@ -152,7 +164,7 @@ relay stop            # stopped
 - ready にならなかった場合は、子の `relay start` を止め（SIGTERM。ビルド中なら xcodebuild を止め、relay が boot したシミュレータは shutdown します。60 秒以内に終わらなければ子と、子が起動したプロセスを強制終了します）、ログの末尾と原因を表示して終了します。終了コードは、子が ready の前に終了した場合（ビルドの失敗、端末が見つからない、`Failed to initialize for UI testing` など）は `1`、時間切れは `3`（ランナーに届かない）です。時間切れは、ランナーの起動（ビルドの完了）から `--ready-timeout` + 15 秒、起動まで（シミュレータの boot とビルド）は 30 分です。待っている間に Ctrl-C を押した場合も子を止めて `1` で終わります。
 - 同じポートで動かせる `relay start` は 1 つだけです。`relay start`（フォアグラウンドのものと、`--background` が起動したもの）は、端末を選ぶ前から終了するまで（ランナーが動いている間も）`~/.relay/locks/start-<port>.lock` をロック（`flock`）します。そのポートでほかの `relay start` が起動中か実行中なら、boot もビルドもせずにエラー（終了コード `1`）にします。`--background` はロックを取ってから下の runner.json の確認を行い、起動した `relay start` にロックを引き継ぐので、ほぼ同時に 2 つ起動しても進むのは片方だけです。ロックはプロセスが終われば（強制終了でも）外れるので、ロックファイルが残っていても次の起動を妨げません。
 - 起動の前に `~/.relay/runner.json` を確認します。その URL のポートが新しく使うポート（`--port`、既定は `8100`）と違えば、衝突しないのでそのまま起動し、runner.json は後から起動したランナーで上書きされます（フォアグラウンドで複数起動するときと同じです）。ポートが同じ（または URL からポートが取れない）ときは、その URL へ `/ping` を送り、何かが HTTP で応答したら、新しいランナーはそのポートで待ち受けられないので起動せずにエラー（終了コード `1`）にします。`200` なら、ランナーが動いているので `relay stop` で止めるか、そのまま使うか、`--port` で別のポートに起動するように案内します。`401` なら、runner.json に書かれたものとは別のランナー（別のトークン）がその URL で動いている可能性があり、`404` などそれ以外の応答なら別の何かがそのポートで待ち受けています。どちらの場合も、それを止める（`relay stop`、またはそのランナーを起動した `relay start`）か、`--port` で別のポートを使うように案内します。ポートが同じでも、応答がない（接続できない・タイムアウトした）ときと、runner.json がないときは起動に進みます。
-- `relay status [--json]` は、runner.json（「[接続先（runner.json）の探し方](cli.md#接続先runnerjsonの探し方)」と同じ順に探します。`--runner <path>` も可）の URL・端末名と UDID・`relay start` の PID とそれがまだ動いているか・起動時刻・`/ping` の結果（`busy` を含む）を表示します。`--json` では 1 つの JSON オブジェクト（`alive`、`url`、`udid`、`name`、`pid`、`processRunning`、`startedAt`、`ping`、`runnerInfo`）を出します。ランナーが `/ping` に応答すれば `0`、runner.json がないか応答しなければ `3`、トークンが拒否されたら（`401`）`4` です。
+- `relay status [--json]` は、runner.json（「[接続先（runner.json）の探し方](cli.md#接続先runnerjsonの探し方)」と同じ順に探します。`--runner <path>` も可）の URL・端末名と UDID・`relay start` の PID とそれがまだ動いているか・起動時刻・`/ping` の結果（`busy` を含む）・ランナーが名乗る版（`runner: 0.2.0 (sources <12 桁>)`。runner.json の期待値と違えばその旨、名乗らない古いランナーなら `not reported`、応答がなければ runner.json の期待値）を表示します。`--json` では 1 つの JSON オブジェクト（`alive`、`url`、`udid`、`name`、`pid`、`processRunning`、`startedAt`、`ping`、`runner`（`/ping` が返した版。なければ `null`）、`expectedRunner`（runner.json の期待値。古い runner.json なら `null`）、`runnerInfo`）を出します。ランナーが `/ping` に応答すれば `0`、runner.json がないか応答しなければ `3`、トークンが拒否されたら（`401`）`4` です。
 - `relay stop` は、runner.json の `relay start` に SIGTERM を送り、終了を待ちます。フォアグラウンドの Ctrl-C と同じ経路で、ランナーの `/shutdown`、relay が boot したシミュレータの shutdown、runner.json の削除を行います。`stopped` と表示して `0` で終わります（60 秒以内に終わらなければ `1`）。`relay start` がもう動いていない場合（強制終了された場合など）は、runner.json の URL とトークンで `POST /shutdown` を送り、runner.json を削除します。何も動いていなければ `not running` と表示して `0` です。フォアグラウンドの `relay start` も同じように止められます。そのランナーの録画（`relay record`。docs/cli.md の「[録画](cli.md#録画relay-record)」）が残っていれば、ランナーを止める前に書き出し、保存先を stderr に出します。
 - runner.json には `relay start` の PID と起動時刻（秒単位）を記録します。`relay stop` は、その PID のプロセスの起動時刻が一致し、実行ファイルが `relay` で最初の引数が `start` の場合だけシグナルを送ります。`relay start` の終了後にその PID が別のプロセスに再利用されても、そのプロセスには何も送りません。
 

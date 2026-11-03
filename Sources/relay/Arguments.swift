@@ -427,8 +427,8 @@ enum Arguments {
     Usage:
     \(commandSynopses.map { $0.synopsis.split(separator: "\n").map { "  " + $0 }.joined(separator: "\n") }.joined(separator: "\n"))
 
-    start    Builds the RelayRunner XCTest runner if needed, launches it on the device or simulator,
-             and prints the runner URL once it answers /health. The URL and a per-launch access token
+    start    Builds the RelayRunner XCTest runner if needed (no build yet, its sources changed, or another
+             Xcode SDK), launches it on the device or simulator, and prints the runner URL once it answers /health. The URL and a per-launch access token
              are saved to ~/.relay/runner.json (mode 0600) and removed on exit. Ctrl-C shuts the runner down.
              Without --udid or --device it uses the only connected device, else the only booted simulator;
              --simulator leaves devices out (to try a simulator with a device connected), and --os 27 or
@@ -445,8 +445,8 @@ enum Arguments {
              --background runs it detached from the terminal (log: ~/.relay/logs/start-*.log) and exits once
              the runner is ready, printing ready: <url>; relay stop stops it. Agents and CI should use
              relay start --background, then the runner commands, then relay stop.
-    status   Shows the runner in runner.json (URL, device, relay start pid, start time) and whether /ping
-             answers. Exits 0 if it does, 3 if there is no runner or it does not answer, 4 if it answers 401
+    status   Shows the runner in runner.json (URL, device, relay start pid, start time), whether /ping
+             answers, and the build it reports (relay version and runner source hash). Exits 0 if it does, 3 if there is no runner or it does not answer, 4 if it answers 401
              (the token in runner.json is not that runner's).
     stop     Stops relay start (SIGTERM, like Ctrl-C), which shuts the runner down, shuts down a simulator
              it booted, and removes runner.json. Prints "not running" (exit 0) if nothing runs.

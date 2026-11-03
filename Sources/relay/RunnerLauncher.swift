@@ -10,9 +10,10 @@ struct StartupFailure: Equatable {
 /// Counts consecutive failed liveness checks once the runner is ready.
 ///
 /// The check is `GET /ping`, which the runner answers on its HTTP queue without the busy gate: it is 200
-/// even while a command runs, and it never makes a user's request fail with 409. A runner built before
-/// `/ping` (an old `.xctestrun` reused without `--rebuild`) answers 404; the monitor then falls back to
-/// `/health`, where 409 also means alive.
+/// even while a command runs, and it never makes a user's request fail with 409. A runner built from
+/// sources older than `/ping` answers 404; the monitor then falls back to `/health`, where 409 also means
+/// alive. relay rebuilds when the sources change (`RunnerBuildPlan`), so that takes an installed copy
+/// (`relay install`) older than `/ping`, which `relay start` already reports as out of date.
 struct LivenessMonitor {
     static let interval: TimeInterval = 3
     static let failureLimit = 3
@@ -100,43 +101,53 @@ final class RunnerLauncher {
 
         let xctestrun: URL
         let platform = XCTestRunSelection.platform(isSimulator: isSimulator)
-        let reusable: URL?
+        // A few milliseconds; computed on every start so a build of other sources is never reused.
+        let sourceHash = try RunnerSourceHash.compute(root: rootURL)
+        let plan: RunnerBuildPlan
         if options.rebuild {
-            reusable = nil
+            plan = .build(reason: nil)
         } else {
             let files = Self.xctestrunFiles(in: derivedData)
             let sdkVersion = files.isEmpty ? nil : Self.sdkVersion(platform: platform)
-            switch XCTestRunSelection.reusable(files, platform: platform, sdkVersion: sdkVersion) {
-            case .reuse(let url):
-                reusable = url
-            case .none:
-                reusable = nil
-            case .otherSDK(let file):
-                reusable = nil
-                info("\(file.lastPathComponent) (the last build) is not for this Xcode's \(platform) SDK \(sdkVersion ?? "?"); rebuilding")
-            }
+            plan = RunnerBuildPlan.decide(
+                rebuild: false,
+                selection: XCTestRunSelection.reusable(files, platform: platform, sdkVersion: sdkVersion),
+                platform: platform,
+                sdkVersion: sdkVersion,
+                stamp: RunnerBuildStamp.read(derivedData: derivedData),
+                sourceHash: sourceHash
+            )
         }
-        if let existing = reusable {
+        switch plan {
+        case .reuse(let existing):
             xctestrun = existing
-            info("reusing \(existing.lastPathComponent)")
-            if let data = try? Data(contentsOf: existing), !Self.passesApplicationStateTimeout(xctestrun: data) {
-                info("note: \(Self.staleApplicationStateTimeoutNote(root: rootURL))")
+            info("reusing \(existing.lastPathComponent) (runner sources \(RunnerSourceHash.short(sourceHash)))")
+        case .build(let reason):
+            if let reason {
+                info(reason)
             }
-        } else {
             let buildLogURL = try Self.createLog("build", in: logsURL, stamp: stamp, port: options.port)
-            info("building runner (log: \(buildLogURL.path))")
+            info("building runner from sources \(RunnerSourceHash.short(sourceHash)) (log: \(buildLogURL.path))")
             let buildLog = try FileHandle(forWritingTo: buildLogURL)
             defer { try? buildLog.close() }
             let buildArguments = Self.buildArguments(
                 projectURL: rootURL.appendingPathComponent(RunnerProject.projectPath),
                 destination: "id=\(udid)",
                 derivedData: derivedData,
-                teamID: options.teamID
+                teamID: options.teamID,
+                sourceHash: sourceHash
             )
+            RunnerBuildStamp.remove(derivedData: derivedData)
             let buildStart = Date()
             try Shell.xcrun(buildArguments, log: buildLog, echo: options.verbose)
             guard let built = XCTestRunSelection.built(Self.xctestrunFiles(in: derivedData), since: buildStart) else {
                 throw ArgumentError(description: "build succeeded but no .xctestrun was found under \(derivedData.path)")
+            }
+            do {
+                try RunnerBuildStamp(sourceHash: sourceHash, relayVersion: RelayVersion.current).write(derivedData: derivedData)
+            } catch {
+                // Only the next start's reuse depends on it: that start rebuilds.
+                info("cannot record the build in \(RunnerBuildStamp.url(derivedData: derivedData).path): \(error)")
             }
             xctestrun = built
         }
@@ -157,6 +168,7 @@ final class RunnerLauncher {
         let deadline = Date().addingTimeInterval(options.readyTimeout)
         var tunnelAddress: String?
         var lastTunnelLookup = Date.distantPast
+        var readyBody = Data()
         while process.isRunning, Date() < deadline, currentRunnerURL() == nil, currentStartupFailure() == nil {
             if !isSimulator, Date().timeIntervalSince(lastTunnelLookup) > 5 {
                 tunnelAddress = Self.tunnelAddress(udid: udid)
@@ -175,6 +187,7 @@ final class RunnerLauncher {
                 var client = RunnerClient(baseURL: url, token: token)
                 client.timeout = 1.5
                 if let response = try? client.get("/health"), response.status == 200 {
+                    readyBody = response.body
                     setRunnerURL(url)
                     break
                 }
@@ -197,9 +210,22 @@ final class RunnerLauncher {
 
         let infoURL = stateURL.appendingPathComponent(RunnerInfo.fileName)
         if let url = currentRunnerURL() {
+            let reported = RunnerBuildVersion.parse(responseBody: readyBody)
+            if let mismatch = RunnerBuildVersion.mismatch(reported: reported, expectedSourceHash: sourceHash) {
+                // A warning, not a failure: it answers and its sources are the current ones (relay just built or
+                // checked them); only what it reports is off. Old sources report nothing, and --rebuild can't fix that.
+                let hint = reported?.sourceHash == nil
+                    ? (RunnerProject.isInstalledRoot(rootURL) ? "relay install updates the installed copy" : "update the runner sources")
+                    : "relay start --rebuild builds it again"
+                info("warning: \(mismatch); \(hint)")
+            } else if let reported {
+                info("runner \(reported.summary)")
+            }
             // pid and startedAt let relay stop find this process, and tell it from one that reuses the pid.
+            // runner is what relay expects it to report, so runner commands never hash the sources.
             let runnerInfo = RunnerInfo(url: url.absoluteString, token: token, udid: udid, name: deviceName,
-                                        pid: getpid(), startedAt: RelayProcess.currentStartTime())
+                                        pid: getpid(), startedAt: RelayProcess.currentStartTime(),
+                                        runner: RunnerBuildVersion(version: RelayVersion.current, sourceHash: sourceHash))
             do {
                 // The token goes only to the 0600 file: stdout often ends up in CI logs and terminal scrollback.
                 try runnerInfo.write(to: infoURL)
@@ -263,7 +289,8 @@ final class RunnerLauncher {
                 return false
             }
             if !wasLegacy, monitor.usesLegacyHealth {
-                info("runner has no /ping (built before it); checking /health instead, which can make requests fail with 409. Restart with --rebuild")
+                info("runner has no /ping (its sources predate it); checking /health instead, which can make requests fail with 409. "
+                    + "Update the runner sources (relay install for the installed copy) and restart")
             }
         }
         return true
@@ -271,14 +298,16 @@ final class RunnerLauncher {
 
     // MARK: - Process
 
-    static func buildArguments(projectURL: URL, destination: String, derivedData: URL, teamID: String?) -> [String] {
+    /// `sourceHash` (`RunnerSourceHash`) and this relay's version go into the runner's Info.plist through
+    /// build settings (`RunnerBuildVersion`), for `/ping` and `/health` to report.
+    static func buildArguments(projectURL: URL, destination: String, derivedData: URL, teamID: String?, sourceHash: String) -> [String] {
         var args = [
             "xcodebuild", "build-for-testing",
             "-project", projectURL.path,
             "-scheme", scheme,
             "-destination", destination,
             "-derivedDataPath", derivedData.path
-        ]
+        ] + RunnerBuildVersion.buildSettings(sourceHash: sourceHash)
         if let teamID {
             args += ["-allowProvisioningUpdates", "RELAY_DEVELOPMENT_TEAM=\(teamID)"]
         }
@@ -468,45 +497,6 @@ final class RunnerLauncher {
             "on the device, turn on Settings > Developer > Enable UI Automation",
             "unlock the device and keep it unlocked until the runner is ready"
         ]
-    }
-
-    /// The note for a reused `.xctestrun` without `applicationStateTimeoutArgument`. `--rebuild` builds the
-    /// installed copy as it is, so that copy needs `relay install` first to get the current scheme. Decided
-    /// by the root, not how it was found: `--project` or `$RELAY_HOME` can point at the installed copy too.
-    static func staleApplicationStateTimeoutNote(root: URL, home: URL = UserHome.url) -> String {
-        let prefix = "this runner was built before relay waited longer for automation mode; "
-        if RunnerProject.isInstalledRoot(root, home: home) {
-            return prefix + "run relay install again, then relay start --rebuild to update it"
-        }
-        return prefix + "relay start --rebuild to update it"
-    }
-
-    /// The launch argument (set in the scheme's test action) that makes XCTest wait 120 s instead of 60 s
-    /// for testmanagerd to enable automation mode, which may wait for the passcode on the device. The runner
-    /// puts the 60 s default back once it is enabled.
-    static let applicationStateTimeoutArgument = "-XCUIApplicationStateTimeout"
-
-    /// Whether an `.xctestrun` passes `applicationStateTimeoutArgument` to the runner, i.e. was built from
-    /// a scheme that has it. Format 1 keeps test targets at the top level and format 2 under
-    /// `TestConfigurations[].TestTargets[]`, so any nested `CommandLineArguments` counts. False for a plist
-    /// that can't be read.
-    static func passesApplicationStateTimeout(xctestrun data: Data) -> Bool {
-        guard let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) else {
-            return false
-        }
-        func search(_ value: Any) -> Bool {
-            if let dictionary = value as? [String: Any] {
-                if let arguments = dictionary["CommandLineArguments"] as? [String], arguments.contains(applicationStateTimeoutArgument) {
-                    return true
-                }
-                return dictionary.values.contains(where: search)
-            }
-            if let array = value as? [Any] {
-                return array.contains(where: search)
-            }
-            return false
-        }
-        return search(plist)
     }
 
     /// Detects xcodebuild output that means the runner will never become ready, e.g.
