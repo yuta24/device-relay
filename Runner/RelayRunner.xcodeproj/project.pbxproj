@@ -20,6 +20,7 @@
 		11111111111111111111111B /* RunnerCommandGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222230 /* RunnerCommandGate.swift */; };
 		11111111111111111111111C /* RunnerElementSelector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222231 /* RunnerElementSelector.swift */; };
 		11111111111111111111111D /* RunnerDisplays.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222232 /* RunnerDisplays.swift */; };
+		11111111111111111111111E /* RunnerError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222233 /* RunnerError.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -49,6 +50,7 @@
 		222222222222222222222230 /* RunnerCommandGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/relay/RunnerCommandGate.swift; sourceTree = "<group>"; };
 		222222222222222222222231 /* RunnerElementSelector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/relay/RunnerElementSelector.swift; sourceTree = "<group>"; };
 		222222222222222222222232 /* RunnerDisplays.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/relay/RunnerDisplays.swift; sourceTree = "<group>"; };
+		222222222222222222222233 /* RunnerError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/relay/RunnerError.swift; sourceTree = "<group>"; };
 		222222222222222222222224 /* RelayRunnerHost.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RelayRunnerHost.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		222222222222222222222225 /* RelayRunnerUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RelayRunnerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -90,6 +92,7 @@
 				222222222222222222222230 /* RunnerCommandGate.swift */,
 				222222222222222222222231 /* RunnerElementSelector.swift */,
 				222222222222222222222232 /* RunnerDisplays.swift */,
+				222222222222222222222233 /* RunnerError.swift */,
 				777777777777777777777772 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -202,6 +205,7 @@
 				11111111111111111111111B /* RunnerCommandGate.swift in Sources */,
 				11111111111111111111111C /* RunnerElementSelector.swift in Sources */,
 				11111111111111111111111D /* RunnerDisplays.swift in Sources */,
+				11111111111111111111111E /* RunnerError.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

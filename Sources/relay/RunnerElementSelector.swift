@@ -212,9 +212,19 @@ struct RunnerElementLookupFailure: Error {
         }
     }
 
+    /// `reason` says more; the code groups the reasons by what to do next.
+    var code: RunnerErrorCode {
+        switch reason {
+        case .notFound, .indexOutOfRange: return .elementNotFound
+        case .ambiguous: return .elementAmbiguous
+        case .emptyFrame, .offscreen, .disabled: return .elementNotHittable
+        }
+    }
+
     var json: [String: Any] {
         [
             "ok": false,
+            "code": code.rawValue,
             "error": message,
             "reason": reason.rawValue,
             "count": count,

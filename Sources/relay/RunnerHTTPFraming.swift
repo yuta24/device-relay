@@ -22,7 +22,11 @@ enum RunnerHTTPFraming {
 
     struct Failure: Error, Equatable {
         var status: Int
+        var code: RunnerErrorCode
         var message: String
+
+        /// The response body.
+        var json: [String: Any] { code.body(message) }
     }
 
     enum Result: Equatable {
@@ -44,13 +48,13 @@ enum RunnerHTTPFraming {
             return .failure(headerTooLarge)
         }
         guard let text = String(data: buffer[buffer.startIndex..<terminator.lowerBound], encoding: .utf8) else {
-            return .failure(Failure(status: 400, message: "invalid request head"))
+            return .failure(Failure(status: 400, code: .httpMalformed, message: "invalid request head"))
         }
 
         var lines = text.components(separatedBy: "\r\n")
         let requestLine = lines.removeFirst().split(separator: " ")
         guard requestLine.count >= 2 else {
-            return .failure(Failure(status: 400, message: "invalid request line"))
+            return .failure(Failure(status: 400, code: .httpMalformed, message: "invalid request line"))
         }
         var headers: [String: String] = [:]
         var contentLengths: [String] = []
@@ -69,7 +73,7 @@ enum RunnerHTTPFraming {
         // Only Content-Length bodies are read. Treating a chunked body as empty would make its bytes
         // the next request on this connection, so any transfer coding is refused (RFC 9112, section 6.1).
         guard headers["transfer-encoding"] == nil else {
-            return .failure(Failure(status: 501, message: "Transfer-Encoding is not supported"))
+            return .failure(Failure(status: 501, code: .httpMalformed, message: "Transfer-Encoding is not supported"))
         }
         let contentLength: Int
         switch parseContentLength(contentLengths) {
@@ -88,7 +92,7 @@ enum RunnerHTTPFraming {
     /// Every value must be plain decimal digits (no sign), and repeated values must agree.
     static func parseContentLength(_ values: [String]) -> Swift.Result<Int, Failure> {
         guard !values.isEmpty else { return .success(0) }
-        let invalid = Failure(status: 400, message: "invalid Content-Length")
+        let invalid = Failure(status: 400, code: .httpMalformed, message: "invalid Content-Length")
         var length: Int?
         for value in values {
             guard !value.isEmpty, value.utf8.allSatisfy({ $0 >= UInt8(ascii: "0") && $0 <= UInt8(ascii: "9") }),
@@ -101,10 +105,10 @@ enum RunnerHTTPFraming {
             length = parsed
         }
         guard let length, length <= maxBodySize else {
-            return .failure(Failure(status: 413, message: "request too large"))
+            return .failure(Failure(status: 413, code: .requestTooLarge, message: "request too large"))
         }
         return .success(length)
     }
 
-    private static let headerTooLarge = Failure(status: 431, message: "request header too large")
+    private static let headerTooLarge = Failure(status: 431, code: .requestTooLarge, message: "request header too large")
 }
