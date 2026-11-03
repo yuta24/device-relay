@@ -214,6 +214,49 @@ struct RunnerLauncherTests {
         #expect(!RunnerLauncher.passesApplicationStateTimeout(xctestrun: Data("not a plist".utf8)))
     }
 
+    @Test func readsTheSDKVersionFromTheXCTestRunName() {
+        let name = "RelayRunner_iphonesimulator27.2-arm64-x86_64.xctestrun"
+        #expect(XCTestRunSelection.sdkVersion(ofFileNamed: name, platform: "iphonesimulator") == "27.2")
+        #expect(XCTestRunSelection.sdkVersion(ofFileNamed: "RelayRunner_iphoneos26.0.1-arm64.xctestrun", platform: "iphoneos") == "26.0.1")
+        #expect(XCTestRunSelection.sdkVersion(ofFileNamed: "RelayRunner_iphoneos27.0.xctestrun", platform: "iphoneos") == "27.0")
+        #expect(XCTestRunSelection.sdkVersion(ofFileNamed: name, platform: "iphoneos") == nil)
+        #expect(XCTestRunSelection.sdkVersion(ofFileNamed: "RelayRunner.xctestrun", platform: "iphonesimulator") == nil)
+        #expect(XCTestRunSelection.sameVersion("27.0", "27"))
+        #expect(!XCTestRunSelection.sameVersion("27.2", "27.20"))
+        #expect(XCTestRunSelection.isVersion("27.2") && !XCTestRunSelection.isVersion("27.") && !XCTestRunSelection.isVersion("xcrun: error"))
+    }
+
+    /// Xcode names the file after its SDK but builds both into the same, shared products, so the file to use is the
+    /// one the last build wrote, and only while that build's SDK is this Xcode's.
+    @Test func picksTheXCTestRunOfTheLastBuild() {
+        let products = URL(fileURLWithPath: "/build/DerivedData-sim/Build/Products")
+        func file(_ version: String, _ seconds: TimeInterval) -> XCTestRunFile {
+            XCTestRunFile(url: products.appendingPathComponent("RelayRunner_iphonesimulator\(version)-arm64-x86_64.xctestrun"),
+                          modified: Date(timeIntervalSinceReferenceDate: seconds))
+        }
+        let old = file("26.0", 100), current = file("27.2", 200), earlier = file("27.0", 50)
+        let files = [old, current, earlier]
+
+        // After a build: the file it wrote, though another sorts first by name.
+        #expect(XCTestRunSelection.built(files, since: Date(timeIntervalSinceReferenceDate: 150)) == current.url)
+        let rebuiltOld = file("26.0", 300)
+        #expect(XCTestRunSelection.built([rebuiltOld, current], since: Date(timeIntervalSinceReferenceDate: 299.5)) == rebuiltOld.url)
+        // A clock coarser than the build start still picks the newest.
+        #expect(XCTestRunSelection.built(files, since: Date(timeIntervalSinceReferenceDate: 1000)) == current.url)
+        #expect(XCTestRunSelection.built([], since: Date()) == nil)
+
+        // Reused: the last build, if it is for this SDK.
+        #expect(XCTestRunSelection.reusable(files, platform: "iphonesimulator", sdkVersion: "27.2") == .reuse(current.url))
+        // Another Xcode: even with a file named for its SDK, the products are the last build's, so rebuild.
+        #expect(XCTestRunSelection.reusable(files, platform: "iphonesimulator", sdkVersion: "27.0") == .otherSDK(current.url))
+        #expect(XCTestRunSelection.reusable(files, platform: "iphonesimulator", sdkVersion: "28.0") == .otherSDK(current.url))
+        // xcrun could not tell the SDK: reuse the last build, as before.
+        #expect(XCTestRunSelection.reusable(files, platform: "iphonesimulator", sdkVersion: nil) == .reuse(current.url))
+        #expect(XCTestRunSelection.reusable([], platform: "iphonesimulator", sdkVersion: "27.2") == XCTestRunSelection.Reuse.none)
+        // Written in the same instant: the higher version.
+        #expect(XCTestRunSelection.newest([file("27.0", 10), file("27.2", 10)])?.url == file("27.2", 10).url)
+    }
+
     /// XCTest waits `XCUIApplicationStateTimeout` (60 s by default) for automation mode, which a device may
     /// not enable until someone enters its passcode. The scheme passes a longer one to the runner as two arguments, so it
     /// reaches NSUserDefaults as a key and a value.
@@ -1451,6 +1494,24 @@ struct RunnerOperationTests {
         #expect(RunnerOperation.health.waitTime == 0)
         #expect(RunnerOperation.find(RunnerElementSelector(type: "cell"), limit: nil, timeout: 5, bundleID: nil).waitTime == 5)
         #expect(RunnerOperation.press(RunnerTouch(target: .point(RunnerPoint(x: 0, y: 0)), duration: 4, timeout: 2)).waitTime == 6)
+    }
+
+    /// The runner waits up to XCTest's application state timeout, 120 s when it cannot set it back to 60 s.
+    @Test func allowsForTheApplicationStateTimeout() {
+        #expect(RunnerOperation.launch(bundleID: "b").waitTime == 120)
+        #expect(RunnerOperation.terminate(bundleID: "b").waitTime == 120)
+        #expect(RunnerControl.baseTimeout + RunnerOperation.launch(bundleID: "b").waitTime > 120)
+    }
+
+    /// 0.1 s per Unicode scalar of text and 1 s per key, several times what was measured.
+    @Test func allowsForTypingByLength() {
+        #expect(RunnerOperation.type(text: "", keys: [], bundleID: nil).waitTime == 0)
+        #expect(RunnerOperation.type(text: nil, keys: ["return"], bundleID: nil).waitTime == 1)
+        #expect(abs(RunnerOperation.type(text: "hello", keys: ["delete", "return"], bundleID: nil).waitTime - 2.5) < 1e-9)
+        #expect(abs(RunnerOperation.type(text: String(repeating: "a", count: 2500), keys: [], bundleID: nil).waitTime - 250) < 1e-9)
+        // Counted in scalars: "é" as e + U+0301 is one character but two scalars.
+        #expect(abs(RunnerOperation.type(text: "e\u{301}日本", keys: [], bundleID: nil).waitTime - 0.4) < 1e-9)
+        #expect(RunnerOperation.key("return", bundleID: nil).waitTime == 1)
     }
 }
 

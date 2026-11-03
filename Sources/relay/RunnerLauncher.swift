@@ -99,7 +99,24 @@ final class RunnerLauncher {
         let stamp = Self.timestamp()
 
         let xctestrun: URL
-        if !options.rebuild, let existing = Self.findXCTestRun(in: derivedData) {
+        let platform = XCTestRunSelection.platform(isSimulator: isSimulator)
+        let reusable: URL?
+        if options.rebuild {
+            reusable = nil
+        } else {
+            let files = Self.xctestrunFiles(in: derivedData)
+            let sdkVersion = files.isEmpty ? nil : Self.sdkVersion(platform: platform)
+            switch XCTestRunSelection.reusable(files, platform: platform, sdkVersion: sdkVersion) {
+            case .reuse(let url):
+                reusable = url
+            case .none:
+                reusable = nil
+            case .otherSDK(let file):
+                reusable = nil
+                info("\(file.lastPathComponent) (the last build) is not for this Xcode's \(platform) SDK \(sdkVersion ?? "?"); rebuilding")
+            }
+        }
+        if let existing = reusable {
             xctestrun = existing
             info("reusing \(existing.lastPathComponent)")
             if let data = try? Data(contentsOf: existing), !Self.passesApplicationStateTimeout(xctestrun: data) {
@@ -116,8 +133,9 @@ final class RunnerLauncher {
                 derivedData: derivedData,
                 teamID: options.teamID
             )
+            let buildStart = Date()
             try Shell.xcrun(buildArguments, log: buildLog, echo: options.verbose)
-            guard let built = Self.findXCTestRun(in: derivedData) else {
+            guard let built = XCTestRunSelection.built(Self.xctestrunFiles(in: derivedData), since: buildStart) else {
                 throw ArgumentError(description: "build succeeded but no .xctestrun was found under \(derivedData.path)")
             }
             xctestrun = built
@@ -565,10 +583,24 @@ final class RunnerLauncher {
         return findTunnelAddress(inDevicectlJSON: data)
     }
 
-    private static func findXCTestRun(in derivedData: URL) -> URL? {
+    /// The `.xctestrun` files in `Build/Products` and when each was last written.
+    private static func xctestrunFiles(in derivedData: URL) -> [XCTestRunFile] {
         let products = derivedData.appendingPathComponent("Build/Products", isDirectory: true)
-        let files = (try? FileManager.default.contentsOfDirectory(at: products, includingPropertiesForKeys: nil)) ?? []
-        return files.filter { $0.pathExtension == "xctestrun" }.sorted { $0.path < $1.path }.first
+        let files = (try? FileManager.default.contentsOfDirectory(
+            at: products, includingPropertiesForKeys: [.contentModificationDateKey]
+        )) ?? []
+        return files.filter { $0.pathExtension == "xctestrun" }.map { url in
+            let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+            return XCTestRunFile(url: url, modified: modified ?? .distantPast)
+        }
+    }
+
+    /// The SDK version of this Xcode (`DEVELOPER_DIR`, else `xcode-select`'s), e.g. `27.2`; nil if xcrun
+    /// cannot tell.
+    private static func sdkVersion(platform: String) -> String? {
+        guard let output = try? Shell.xcrun(["--sdk", platform, "--show-sdk-version"]) else { return nil }
+        let version = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        return XCTestRunSelection.isVersion(version) ? version : nil
     }
 
     /// Creates the empty log `<kind>-<stamp>-<port>.log` in `directory` (`<kind>-<stamp>.log` without a port)

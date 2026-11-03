@@ -23,7 +23,7 @@ Runner の用意、端末の選択、環境の確認から、シミュレータ�
 
 対象アプリのリポジトリなど、チェックアウトの外から実行すると 4 の `~/.relay/runner` を使います。device-relay のリポジトリ内で実行すると 3 のチェックアウトを使うので、`relay install` 済みでも、編集中（未コミットを含む）の Runner がそのままビルドされます。
 
-1 と 2 で指定した場所にプロジェクトがなければ、ほかを探さずにエラーにします。どこにも見つからなければ、`relay install` などの設定方法を示して終了します。DerivedData は Runner プロジェクトごとに `~/.relay/build/installed`（インストールしたもの）か `~/.relay/build/<ディレクトリ名>-<パスのハッシュ>` に分けるので、別のソースでビルドした `.xctestrun` を使い回すことはありません。ランナーを起動する `xcodebuild test-without-building` にも同じ `-derivedDataPath` を渡すので、テストのログと xcresult も `~/.relay/build/…/DerivedData-*/Logs/Test` に入り、`~/Library/Developer/Xcode/DerivedData` には何も作りません。
+1 と 2 で指定した場所にプロジェクトがなければ、ほかを探さずにエラーにします。どこにも見つからなければ、`relay install` などの設定方法を示して終了します。DerivedData は Runner プロジェクトごとに `~/.relay/build/installed`（インストールしたもの）か `~/.relay/build/<ディレクトリ名>-<パスのハッシュ>` に分けるので、別のソースでビルドした `.xctestrun` を使い回すことはありません。Xcode では分けないので、`DEVELOPER_DIR` で Xcode を切り替えてビルドすると、SDK のバージョン入りの名前（`RelayRunner_iphonesimulator27.2-….xctestrun` など）の `.xctestrun` が並びますが、指すビルド成果物（`Debug-iphonesimulator` など）は共有で、最後のビルドのものです。そのため relay は、ビルドした直後はそのビルドが書いた（更新日時が新しい）ものを、使い回すときは最後のビルドのもの（更新日時が最も新しいもの）を使い、その名前の SDK のバージョンが今の Xcode の SDK（`xcrun --sdk iphonesimulator|iphoneos --show-sdk-version`）と違えば `… is not for this Xcode's … SDK …; rebuilding` と出して再ビルドします（SDK のバージョンが取れないときや、名前から読めないときは、そのまま使い回します）。Xcode を切り替えるたびにビルドし直すことになりますが、同じ Xcode のままなら今までどおりビルドせずに使い回します。ランナーを起動する `xcodebuild test-without-building` にも同じ `-derivedDataPath` を渡すので、テストのログと xcresult も `~/.relay/build/…/DerivedData-*/Logs/Test` に入り、`~/Library/Developer/Xcode/DerivedData` には何も作りません。
 
 ## 端末の選択（relay devices）
 
@@ -122,7 +122,7 @@ ready の後も、`relay start` は 3 秒ごとに `/ping` を送ってランナ
 | `--project <path>` | Runner プロジェクトの場所（「Runner の用意」）。`$RELAY_HOME` より優先します |
 | `--port 8100` | 端末側の待ち受けポート。xcodebuild には `TEST_RUNNER_RELAY_RUNNER_PORT` として渡され、ランナーからは `RELAY_RUNNER_PORT` として見えます |
 | `--team-id <TEAM_ID>` | 実機向けの署名チーム（「Team ID」。省略時は自動検出）。`-allowProvisioningUpdates RELAY_DEVELOPMENT_TEAM=<TEAM_ID>` を付けてビルドし、ランナーが起動できたら `~/.relay/config.json` に保存します |
-| `--rebuild` | `~/.relay/build/…/DerivedData-*` に既存の `.xctestrun` があっても再ビルドします |
+| `--rebuild` | `~/.relay/build/…/DerivedData-*` に既存の `.xctestrun` があっても再ビルドします（最後のビルドが今の Xcode の SDK と違うときは、付けなくても再ビルドします） |
 | `--verbose` | xcodebuild の出力をそのまま表示します |
 | `--allow-wifi` | 実機で、CoreDevice トンネルに加えて Wi-Fi などのアドレスも探索します。トークンが同じネットワークに平文で流れるので、既定では無効です |
 | `--ready-timeout 180` | `/health` が応答するまで待つ秒数。xcodebuild の出力に `Failed to initialize for UI testing` やテストの失敗が出た場合は、待たずにエラー内容と対処のヒントを表示して非ゼロで終了します |
