@@ -50,7 +50,7 @@ relay stop                 # ランナーを止める（relay が boot したシ
 ランナーと一緒に、操作を試すためのホストアプリ RelayRunnerHost がインストールされます。対象アプリの代わりに、起動・観察・操作・確認の流れを試せます。
 
 ```sh
-relay launch dev.yuta24.devicerelay.RelayRunnerHost
+relay launch host                                     # host は RelayRunnerHost のバンドル ID の別名
 relay source --format compact --filter interactive   # 操作できる要素を 1 行 1 要素で確かめる
 relay tap --id relay.input --timeout 3                # identifier で入力欄をタップ（現れるまで最大 3 秒待つ）
 relay type "hello" --key return                       # 文字を入力して Return

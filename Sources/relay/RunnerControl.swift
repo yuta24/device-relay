@@ -93,7 +93,12 @@ enum RunnerControl {
         let info = connection.info
         var client = RunnerClient(baseURL: connection.baseURL, token: info.token)
         client.timeout = baseTimeout + operation.waitTime
-        let request = operation.request
+        let request: RunnerHTTPRequest
+        do {
+            request = try operation.resolvingHostAlias(info.hostBundleID).request
+        } catch {
+            return fail("\(error)", code: .usage)
+        }
         let response: RunnerResponse
         do {
             response = try request.method == "GET" ? client.get(request.path) : client.post(request.path, json: request.body ?? [:])

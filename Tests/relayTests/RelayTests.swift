@@ -1036,10 +1036,10 @@ struct RunnerElementSelectorTests {
 
     @Test func buildsFindJSONWithALimit() throws {
         let matches = RunnerElementSelector(type: "textField").allMatches(in: tree)
-        let object = RunnerElementLookup.findJSON(matches, count: matches.count, limit: 1, bundleID: "dev.yuta24.devicerelay.RelayRunnerHost")
+        let object = RunnerElementLookup.findJSON(matches, count: matches.count, limit: 1, bundleID: "dev.devicerelay.local.RelayRunnerHost")
         let data = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
         #expect(String(decoding: data, as: UTF8.self) == """
-            {"bundleId":"dev.yuta24.devicerelay.RelayRunnerHost","count":2,"elements":[{"enabled":true,\
+            {"bundleId":"dev.devicerelay.local.RelayRunnerHost","count":2,"elements":[{"enabled":true,\
             "frame":{"height":34,"width":370,"x":16,"y":80},"identifier":"relay.input","index":0,"label":"",\
             "type":"textField","value":"hello"}],"ok":true,"truncated":true}
             """)

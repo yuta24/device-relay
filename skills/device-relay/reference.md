@@ -23,7 +23,7 @@
 | `--simulator` | シミュレータだけから選ぶ（実機がつながっていても）。`--device` なしでは起動中の 1 台。起動中がなければエラーになるので `--device` で名前を指定する |
 | `--os <version>` | OS で候補を絞る。`.` ごとの前方一致（`27` は 27.x、`26.5` は 26.5.x） |
 | `--port 8100` | 端末側の待ち受けポート。同じ Mac で別の `relay start` と同時に動かすときは分けます |
-| `--rebuild` | 既存のビルドがあってもランナーを再ビルド（Runner のソースや Xcode の SDK が変わったときは、付けなくても再ビルドする） |
+| `--rebuild` | 既存のビルドがあってもランナーを再ビルド（Runner のソース、Xcode の SDK、バンドル ID の接頭辞が変わったときは、付けなくても再ビルドする） |
 | `--ready-timeout 180` | ready まで待つ秒数 |
 | `--team-id <TEAM_ID>` | 実機の署名チーム（通常は自動検出） |
 | `--project <path>` | Runner プロジェクトの場所（通常は `relay install` したもの） |
@@ -284,10 +284,10 @@ relay find --label "Privacy" --type button
 
 ## 試し打ち用のアプリ
 
-ランナーと一緒に RelayRunnerHost（`dev.yuta24.devicerelay.RelayRunnerHost`）がインストールされます。対象アプリの代わりに操作を試せます。identifier: `relay.input` / `relay.input2`（入力欄）、`relay.password`（パスワード欄。`secureTextField`）、`relay.text`、`relay.passwordLength`、`relay.submitted`、`relay.events`（device-relay の docs/development.md の「検証用のホストアプリ」）。
+ランナーと一緒に RelayRunnerHost がインストールされます。バンドル ID は利用者ごとに違う（`<接頭辞>.RelayRunnerHost`）ので、relay のコマンドではバンドル ID の代わりに `host` と書きます（`relay launch host`、`--bundle-id host`）。実際の ID は `relay status` の `host app` に出ます。対象アプリの代わりに操作を試せます。identifier: `relay.input` / `relay.input2`（入力欄）、`relay.password`（パスワード欄。`secureTextField`）、`relay.text`、`relay.passwordLength`、`relay.submitted`、`relay.events`（device-relay の docs/development.md の「検証用のホストアプリ」）。
 
 ```sh
-relay launch dev.yuta24.devicerelay.RelayRunnerHost
+relay launch host
 relay tap --id relay.input --timeout 3
 relay type "hello" --key return
 relay find --id relay.submitted       # label が "submitted #1: hello"

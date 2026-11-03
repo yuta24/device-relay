@@ -128,6 +128,9 @@ enum RunnerStatus {
         if let startedAt = info.startedAt {
             rows.append(("started", formatted(startedAt, timeZone: timeZone)))
         }
+        if let host = info.hostBundleID {
+            rows.append(("host app", host))
+        }
         rows.append(("ping", report.ping.summary))
         if let runner = runnerSummary(report) {
             rows.append(("runner", runner))
@@ -164,7 +167,8 @@ enum RunnerStatus {
             "name": info.name ?? NSNull(),
             "pid": info.pid.map { NSNumber(value: $0) } ?? NSNull(),
             "processRunning": report.processRunning.map { NSNumber(value: $0) } ?? NSNull(),
-            "startedAt": info.startedAt.map { ISO8601DateFormatter().string(from: $0) } ?? NSNull()
+            "startedAt": info.startedAt.map { ISO8601DateFormatter().string(from: $0) } ?? NSNull(),
+            "hostBundleID": info.hostBundleID ?? NSNull()
         ]
         func build(_ version: RunnerBuildVersion?) -> Any {
             guard let version else { return NSNull() }

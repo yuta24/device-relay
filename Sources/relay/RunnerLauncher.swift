@@ -103,6 +103,7 @@ final class RunnerLauncher {
         let platform = XCTestRunSelection.platform(isSimulator: isSimulator)
         // A few milliseconds; computed on every start so a build of other sources is never reused.
         let sourceHash = try RunnerSourceHash.compute(root: rootURL)
+        let bundleIDPrefix = options.bundleIDPrefix ?? RunnerBundleID.prefix(configured: nil, teamID: options.teamID).prefix
         let plan: RunnerBuildPlan
         if options.rebuild {
             plan = .build(reason: nil)
@@ -115,7 +116,8 @@ final class RunnerLauncher {
                 platform: platform,
                 sdkVersion: sdkVersion,
                 stamp: RunnerBuildStamp.read(derivedData: derivedData),
-                sourceHash: sourceHash
+                sourceHash: sourceHash,
+                bundleIDPrefix: bundleIDPrefix
             )
         }
         switch plan {
@@ -135,7 +137,8 @@ final class RunnerLauncher {
                 destination: "id=\(udid)",
                 derivedData: derivedData,
                 teamID: options.teamID,
-                sourceHash: sourceHash
+                sourceHash: sourceHash,
+                bundleIDPrefix: bundleIDPrefix
             )
             RunnerBuildStamp.remove(derivedData: derivedData)
             let buildStart = Date()
@@ -144,7 +147,8 @@ final class RunnerLauncher {
                 throw ArgumentError(description: "build succeeded but no .xctestrun was found under \(derivedData.path)")
             }
             do {
-                try RunnerBuildStamp(sourceHash: sourceHash, relayVersion: RelayVersion.current).write(derivedData: derivedData)
+                try RunnerBuildStamp(sourceHash: sourceHash, relayVersion: RelayVersion.current, bundleIDPrefix: bundleIDPrefix)
+                    .write(derivedData: derivedData)
             } catch {
                 // Only the next start's reuse depends on it: that start rebuilds.
                 info("cannot record the build in \(RunnerBuildStamp.url(derivedData: derivedData).path): \(error)")
@@ -223,9 +227,13 @@ final class RunnerLauncher {
             }
             // pid and startedAt let relay stop find this process, and tell it from one that reuses the pid.
             // runner is what relay expects it to report, so runner commands never hash the sources.
+            // hostBundleID is read from the built app: a project that ignores the prefix (an old relay install
+            // copy) keeps its own ID.
             let runnerInfo = RunnerInfo(url: url.absoluteString, token: token, udid: udid, name: deviceName,
                                         pid: getpid(), startedAt: RelayProcess.currentStartTime(),
-                                        runner: RunnerBuildVersion(version: RelayVersion.current, sourceHash: sourceHash))
+                                        runner: RunnerBuildVersion(version: RelayVersion.current, sourceHash: sourceHash),
+                                        hostBundleID: RunnerBundleID.builtHost(xctestrun: xctestrun)
+                                            ?? RunnerBundleID.host(prefix: bundleIDPrefix))
             do {
                 // The token goes only to the 0600 file: stdout often ends up in CI logs and terminal scrollback.
                 try runnerInfo.write(to: infoURL)
@@ -299,8 +307,10 @@ final class RunnerLauncher {
     // MARK: - Process
 
     /// `sourceHash` (`RunnerSourceHash`) and this relay's version go into the runner's Info.plist through
-    /// build settings (`RunnerBuildVersion`), for `/ping` and `/health` to report.
-    static func buildArguments(projectURL: URL, destination: String, derivedData: URL, teamID: String?, sourceHash: String) -> [String] {
+    /// build settings (`RunnerBuildVersion`), for `/ping` and `/health` to report. `bundleIDPrefix` makes the
+    /// bundle IDs (`RunnerBundleID`).
+    static func buildArguments(projectURL: URL, destination: String, derivedData: URL, teamID: String?,
+                               sourceHash: String, bundleIDPrefix: String) -> [String] {
         var args = [
             "xcodebuild", "build-for-testing",
             "-project", projectURL.path,
@@ -311,6 +321,7 @@ final class RunnerLauncher {
         if let teamID {
             args += ["-allowProvisioningUpdates", "RELAY_DEVELOPMENT_TEAM=\(teamID)"]
         }
+        args.append(RunnerBundleID.buildArgument(prefix: bundleIDPrefix))
         return args
     }
 

@@ -17,6 +17,8 @@ struct RunnerInfo: Codable, Equatable {
     /// What the runner should report as its build (`/ping`'s `runner`): this relay's version and the
     /// sources relay built or reused. Saved so `relay status` compares without hashing the sources.
     var runner: RunnerBuildVersion?
+    /// The bundle ID of the runner's host app (see `RunnerBundleID`), which the runner commands take as `host`.
+    var hostBundleID: String?
 
     static func defaultURL(rootURL: URL = WorkingDirectory.url) -> URL {
         rootURL.appendingPathComponent(".relay", isDirectory: true).appendingPathComponent(fileName)

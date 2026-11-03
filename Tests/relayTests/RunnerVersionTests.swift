@@ -117,18 +117,19 @@ struct RunnerBuildPlanTests {
     private let xctestrun = URL(fileURLWithPath: "/build/DerivedData-sim/Build/Products/RelayRunner_iphonesimulator27.2-arm64.xctestrun")
     private let hash = String(repeating: "a", count: 64)
     private let otherHash = String(repeating: "b", count: 64)
+    private let prefix = "dev.devicerelay.local"
 
     private func decide(rebuild: Bool = false, selection: XCTestRunSelection.Reuse? = nil, stamp: RunnerBuildStamp?) -> RunnerBuildPlan {
         RunnerBuildPlan.decide(rebuild: rebuild, selection: selection ?? .reuse(xctestrun), platform: "iphonesimulator", sdkVersion: "27.2",
-                               stamp: stamp, sourceHash: hash, relayVersion: "0.2.0")
+                               stamp: stamp, sourceHash: hash, bundleIDPrefix: prefix, relayVersion: "0.2.0")
     }
 
     @Test func reusesABuildOfTheSameSourcesAndRelay() {
-        #expect(decide(stamp: RunnerBuildStamp(sourceHash: hash, relayVersion: "0.2.0")) == .reuse(xctestrun))
+        #expect(decide(stamp: RunnerBuildStamp(sourceHash: hash, relayVersion: "0.2.0", bundleIDPrefix: "dev.devicerelay.local")) == .reuse(xctestrun))
     }
 
     @Test func rebuildsWhenTheSourcesChanged() {
-        guard case .build(let reason?) = decide(stamp: RunnerBuildStamp(sourceHash: otherHash, relayVersion: "0.2.0")) else {
+        guard case .build(let reason?) = decide(stamp: RunnerBuildStamp(sourceHash: otherHash, relayVersion: "0.2.0", bundleIDPrefix: "dev.devicerelay.local")) else {
             Issue.record("expected a build with a reason")
             return
         }
@@ -146,7 +147,7 @@ struct RunnerBuildPlanTests {
     }
 
     @Test func rebuildsABuildOfAnotherRelay() {
-        guard case .build(let reason?) = decide(stamp: RunnerBuildStamp(sourceHash: hash, relayVersion: "0.1.0")) else {
+        guard case .build(let reason?) = decide(stamp: RunnerBuildStamp(sourceHash: hash, relayVersion: "0.1.0", bundleIDPrefix: "dev.devicerelay.local")) else {
             Issue.record("expected a build with a reason")
             return
         }
@@ -154,7 +155,7 @@ struct RunnerBuildPlanTests {
     }
 
     @Test func theSDKCheckAndRebuildComeFirst() {
-        let stamp = RunnerBuildStamp(sourceHash: hash, relayVersion: "0.2.0")
+        let stamp = RunnerBuildStamp(sourceHash: hash, relayVersion: "0.2.0", bundleIDPrefix: "dev.devicerelay.local")
         #expect(decide(rebuild: true, stamp: stamp) == .build(reason: nil))
         #expect(decide(selection: XCTestRunSelection.Reuse.none, stamp: stamp) == .build(reason: nil))
         guard case .build(let reason?) = decide(selection: .otherSDK(xctestrun), stamp: stamp) else {
@@ -168,7 +169,7 @@ struct RunnerBuildPlanTests {
         let derivedData = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: derivedData) }
         #expect(RunnerBuildStamp.read(derivedData: derivedData) == nil)
-        let stamp = RunnerBuildStamp(sourceHash: hash, relayVersion: "0.2.0")
+        let stamp = RunnerBuildStamp(sourceHash: hash, relayVersion: "0.2.0", bundleIDPrefix: "dev.devicerelay.local")
         try stamp.write(derivedData: derivedData)
         #expect(RunnerBuildStamp.url(derivedData: derivedData).deletingLastPathComponent().path.hasSuffix("Build/Products"))
         #expect(RunnerBuildStamp.read(derivedData: derivedData) == stamp)
@@ -178,7 +179,8 @@ struct RunnerBuildPlanTests {
 
     @Test func buildArgumentsCarryTheVersionIntoTheBuild() {
         let args = RunnerLauncher.buildArguments(projectURL: URL(fileURLWithPath: "/r/Runner/RelayRunner.xcodeproj"), destination: "id=SIM",
-                                                 derivedData: URL(fileURLWithPath: "/d"), teamID: nil, sourceHash: hash)
+                                                 derivedData: URL(fileURLWithPath: "/d"), teamID: nil, sourceHash: hash,
+                                                 bundleIDPrefix: "dev.devicerelay.local")
         #expect(args.contains("RELAY_RUNNER_SOURCE_HASH=\(hash)"))
         #expect(args.contains("RELAY_RUNNER_VERSION=\(RelayVersion.current)"))
     }

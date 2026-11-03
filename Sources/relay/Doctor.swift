@@ -84,9 +84,11 @@ enum Doctor {
             let locked = target.kind == .device ? DeviceChecks.lockState(udid: target.udid, commands: commands) : nil
             var targetChecks = DeviceChecks.checks(for: target, locked: locked, includeHints: true)
             targetChecks.append(signingCheck(for: target, commands: commands, configURL: configURL))
+            targetChecks.append(bundleIDCheck(simulator: options.simulator || target.kind == .simulator, commands: commands, configURL: configURL))
             section("Target: \(target.name)", targetChecks)
         } else {
-            section("Signing", [signingCheck(for: nil, commands: commands, configURL: configURL)])
+            section("Signing", [signingCheck(for: nil, commands: commands, configURL: configURL),
+                                bundleIDCheck(simulator: options.simulator, commands: commands, configURL: configURL)])
         }
 
         let problems = checks.filter { $0.status == .problem }.count
@@ -158,6 +160,43 @@ enum Doctor {
             return .ok("runner install", "\(detail) (not used: \(project.source.label) wins)")
         }
         return .ok("runner install", detail)
+    }
+
+    /// The prefix of the runner's bundle IDs `relay start` would build with, and where it comes from.
+    static func bundleIDCheck(simulator: Bool, commands: HostCommands, configURL: URL) -> Check {
+        let config: RelayConfig
+        do {
+            config = try RelayConfig.read(from: configURL)
+        } catch {
+            return .problem("bundle ID", "\(error)", fix: "fix or remove \(configURL.path)")
+        }
+        // The team relay start would use on a device; nil when it cannot tell (it then asks for --team-id).
+        let teamID = config.bundleIDPrefix == nil
+            ? (try? TeamIDResolver.resolve(explicit: nil, config: config) { try SigningIdentities.load(commands) })?.teamID
+            : nil
+        return bundleIDCheck(config: config, teamID: teamID, simulator: simulator)
+    }
+
+    /// Shown, not judged: the default works for anyone's team. Only an invalid prefix in config.json is ✗.
+    static func bundleIDCheck(config: RelayConfig, teamID: String?, simulator: Bool) -> Check {
+        let title = "bundle ID"
+        func shown(_ prefix: String, _ source: String) -> Check {
+            .ok(title, "prefix \(prefix) (\(source)); host app \(RunnerBundleID.host(prefix: prefix))")
+        }
+        if let configured = config.bundleIDPrefix {
+            guard RunnerBundleID.isValidPrefix(configured) else {
+                return .problem(title, "invalid bundleIDPrefix in config.json: \(configured)",
+                                fix: "relay config set bundleIDPrefix <prefix> (e.g. com.example.devicerelay), or relay config unset bundleIDPrefix")
+            }
+            return shown(configured, "from \(RunnerBundleID.Source.config.rawValue)")
+        }
+        if simulator {
+            return shown(RunnerBundleID.prefix(configured: nil, teamID: nil).prefix, "default; simulators need no signing")
+        }
+        guard let teamID else {
+            return .ok(title, "prefix dev.devicerelay.<team id in lowercase> (default; the Team ID is not known yet)")
+        }
+        return shown(RunnerBundleID.prefix(configured: nil, teamID: teamID).prefix, "default, from \(RunnerBundleID.Source.team.rawValue) \(teamID)")
     }
 
     /// The Team ID `relay start` would sign with. Needed for devices only, so a missing one is ✗ only then.

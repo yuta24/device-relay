@@ -189,7 +189,7 @@ curl -s -H "$AUTH" -X POST $R/shutdown
 | 状態 | シミュレータ | 実機 |
 | --- | --- | --- |
 | ホーム画面 | `com.apple.springboard` | `com.apple.springboard` |
-| `/launch` したアプリ | RelayRunnerHost、設定（シミュレータには計算機がありません） | `com.apple.calculator`、`dev.yuta24.devicerelay.RelayRunnerHost` |
+| `/launch` したアプリ | RelayRunnerHost、設定（シミュレータには計算機がありません） | `com.apple.calculator`、RelayRunnerHost |
 | relay を通さずに起動（`simctl launch` / `devicectl device process launch`） | `com.apple.mobilesafari`、`com.apple.Preferences`、RelayRunnerHost | `com.apple.calculator`、RelayRunnerHost |
 | タッチで切り替え（ステータスバーの「◀ Calculator」をタップ） | – | `com.apple.calculator` |
 

@@ -1024,7 +1024,9 @@ struct RunnerInstallTests {
         let sourceHash = try RunnerSourceHash.compute(root: tree.installed)
         #expect(builds.first?.args.contains("RELAY_RUNNER_SOURCE_HASH=\(sourceHash)") == true)
         let derivedData = RunnerProject.buildDirectory(root: tree.installed, home: tree.home).appendingPathComponent("DerivedData-sim")
-        #expect(RunnerBuildStamp.read(derivedData: derivedData) == RunnerBuildStamp(sourceHash: sourceHash, relayVersion: RelayVersion.current))
+        #expect(RunnerBuildStamp.read(derivedData: derivedData) == RunnerBuildStamp(sourceHash: sourceHash, relayVersion: RelayVersion.current,
+                                                                                          bundleIDPrefix: "dev.devicerelay.local"))
+        #expect(builds.first?.args.contains("RELAY_BUNDLE_ID_PREFIX=dev.devicerelay.local") == true)
         let files = try FileManager.default.contentsOfDirectory(atPath: logs.path)
         #expect(files.count == 1)
         #expect(files.first?.hasPrefix("build-") == true && files.first?.hasSuffix(".log") == true)
@@ -1104,5 +1106,69 @@ struct RunnerInstallTests {
         #expect(throws: ArgumentError.self) { try Arguments.parse(["install", "--remove", "--build"]) }
         #expect(throws: ArgumentError.self) { try Arguments.parse(["uninstall", "--build"]) }
         #expect(try Arguments.parse(["--version"]) == .version)
+    }
+}
+
+struct BundleIDSetupTests {
+    private let project: (String?) throws -> (root: URL, source: RunnerProject.Source) = { _ in (URL(fileURLWithPath: "/relay"), .environment) }
+
+    @Test func startUsesTheTeamPrefixUnlessTheConfigSetsOne() throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configURL = RelayConfig.defaultURL(home: directory)
+
+        var messages: [String] = []
+        var setup = try StartSetup.prepare(StartOptions(), commands: FakeHost().commands, configURL: configURL, resolveProject: project,
+                                           info: { messages.append($0) })
+        #expect(setup.options.bundleIDPrefix == "dev.devicerelay.team000001")
+        #expect(messages.contains("runner host app: dev.devicerelay.team000001.RelayRunnerHost (prefix from the Team ID)"))
+
+        try RelayConfig(bundleIDPrefix: "dev.yuta24.devicerelay").write(to: configURL)
+        setup = try StartSetup.prepare(StartOptions(), commands: FakeHost().commands, configURL: configURL, resolveProject: project, info: { _ in })
+        #expect(setup.options.bundleIDPrefix == "dev.yuta24.devicerelay")
+
+        // A simulator without a team.
+        let host = FakeHost()
+        host.devicectl = #"{"result":{"devices":[]}}"#
+        host.simctl = simctlList([(simulatorUDID, "iPhone 17 Pro", "Booted")])
+        try RelayConfig().write(to: configURL)
+        setup = try StartSetup.prepare(StartOptions(), commands: host.commands, configURL: configURL, resolveProject: project, info: { _ in })
+        #expect(setup.options.bundleIDPrefix == "dev.devicerelay.local")
+
+        // A hand-edited invalid prefix stops relay start before it builds.
+        try Data(#"{"bundleIDPrefix":"not valid"}"#.utf8).write(to: configURL)
+        #expect(throws: SetupError.self) {
+            try StartSetup.prepare(StartOptions(), commands: host.commands, configURL: configURL, resolveProject: project, info: { _ in })
+        }
+    }
+
+    @Test func doctorShowsTheDefaultPrefixForADevice() {
+        var lines: [String] = []
+        let status = Doctor.run(DoctorOptions(), commands: FakeHost().commands, configURL: URL(fileURLWithPath: "/nonexistent/config.json"),
+                                resolveProject: project, home: URL(fileURLWithPath: "/nonexistent"), output: { lines.append($0) })
+        #expect(status == RunnerExitCode.success.rawValue)
+        #expect(lines.contains("  ✓ bundle ID        prefix dev.devicerelay.team000001 (default, from the Team ID TEAM000001); "
+            + "host app dev.devicerelay.team000001.RelayRunnerHost"))
+    }
+
+    @Test func doctorOnlyShowsThePrefixWithSimulator() {
+        let host = FakeHost()
+        host.simctl = simctlList([(simulatorUDID, "iPhone 17 Pro", "Booted")])
+        var lines: [String] = []
+        _ = Doctor.run(DoctorOptions(simulator: true), commands: host.commands, configURL: URL(fileURLWithPath: "/nonexistent/config.json"),
+                       resolveProject: project, home: URL(fileURLWithPath: "/nonexistent"), output: { lines.append($0) })
+        #expect(lines.contains { $0.hasPrefix("  ✓ bundle ID        prefix dev.devicerelay.local (default; simulators need no signing)") })
+    }
+
+    @Test func doctorFailsForAnInvalidPrefix() throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configURL = RelayConfig.defaultURL(home: directory)
+        try RelayConfig(bundleIDPrefix: "devicerelay").write(to: configURL)
+        var lines: [String] = []
+        let status = Doctor.run(DoctorOptions(), commands: FakeHost().commands, configURL: configURL,
+                                resolveProject: project, home: URL(fileURLWithPath: "/nonexistent"), output: { lines.append($0) })
+        #expect(status == RunnerExitCode.usage.rawValue)
+        #expect(lines.contains { $0.hasPrefix("  ✗ bundle ID        invalid bundleIDPrefix in config.json: devicerelay") })
     }
 }

@@ -1,11 +1,20 @@
 import Foundation
 import Security
 
-/// Settings relay remembers between runs, in `~/.relay/config.json`. Only the signing team for now.
+/// Settings relay remembers between runs, in `~/.relay/config.json`: the signing team, and the prefix of
+/// the runner's bundle IDs (see `RunnerBundleID`).
 struct RelayConfig: Codable, Equatable {
-    static let keys = ["teamID"]
+    static let keys = ["teamID", "bundleIDPrefix"]
 
     var teamID: String?
+    var bundleIDPrefix: String?
+
+    subscript(key: String) -> String? {
+        get { key == "bundleIDPrefix" ? bundleIDPrefix : teamID }
+        set {
+            if key == "bundleIDPrefix" { bundleIDPrefix = newValue } else { teamID = newValue }
+        }
+    }
 
     static func defaultURL(home: URL = UserHome.url) -> URL {
         home.appendingPathComponent(".relay", isDirectory: true).appendingPathComponent("config.json")
@@ -170,19 +179,21 @@ enum ConfigCommand {
             switch options.action {
             case .show:
                 output("# \(url.path)")
-                output("teamID: \(config.teamID ?? "(not set)")")
-            case .get:
-                // teamID is the only key. Nothing on stdout when unset, so scripts can test the exit code.
-                guard let teamID = config.teamID else {
-                    FileHandle.standardError.write(Data("relay: teamID is not set\n".utf8))
+                for key in RelayConfig.keys {
+                    output("\(key): \(config[key] ?? "(not set)")")
+                }
+            case .get(let key):
+                // Nothing on stdout when unset, so scripts can test the exit code.
+                guard let value = config[key] else {
+                    FileHandle.standardError.write(Data("relay: \(key) is not set\n".utf8))
                     return RunnerExitCode.usage.rawValue
                 }
-                output(teamID)
-            case .set(_, let value):
-                config.teamID = value
+                output(value)
+            case .set(let key, let value):
+                config[key] = value
                 try config.write(to: url)
-            case .unset:
-                config.teamID = nil
+            case .unset(let key):
+                config[key] = nil
                 try config.write(to: url)
             }
             return RunnerExitCode.success.rawValue

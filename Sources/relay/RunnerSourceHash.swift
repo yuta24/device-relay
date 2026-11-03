@@ -121,6 +121,9 @@ struct RunnerBuildStamp: Codable, Equatable {
 
     var sourceHash: String
     var relayVersion: String
+    /// The `RunnerBundleID` prefix it was built with. Nil in a stamp from a relay before prefixes, which is
+    /// rebuilt: its bundle IDs are not known.
+    var bundleIDPrefix: String?
 
     static func url(derivedData: URL) -> URL {
         derivedData.appendingPathComponent("Build/Products", isDirectory: true).appendingPathComponent(fileName)
@@ -151,9 +154,11 @@ enum RunnerBuildPlan: Equatable {
     case build(reason: String?)
 
     /// The SDK check (`XCTestRunSelection`) comes first; a build for this SDK is then reused only while its
-    /// stamp names the current sources and this relay.
+    /// stamp names the bundle ID prefix, the current sources, and this relay. The prefix is checked before the
+    /// sources: its reason says the device gets new apps, which matters more than why the build is redone.
     static func decide(rebuild: Bool, selection: XCTestRunSelection.Reuse, platform: String, sdkVersion: String?,
-                       stamp: RunnerBuildStamp?, sourceHash: String, relayVersion: String = RelayVersion.current) -> RunnerBuildPlan {
+                       stamp: RunnerBuildStamp?, sourceHash: String, bundleIDPrefix: String,
+                       relayVersion: String = RelayVersion.current) -> RunnerBuildPlan {
         if rebuild { return .build(reason: nil) }
         switch selection {
         case .none:
@@ -163,6 +168,12 @@ enum RunnerBuildPlan: Equatable {
         case .reuse(let url):
             guard let stamp else {
                 return .build(reason: "the last build has no record of its runner sources (built by an older relay); rebuilding")
+            }
+            guard let builtPrefix = stamp.bundleIDPrefix else {
+                return .build(reason: "the last build has no record of its bundle ID prefix (built by an older relay); rebuilding")
+            }
+            if builtPrefix != bundleIDPrefix {
+                return .build(reason: RunnerBundleID.rebuildNote(from: builtPrefix, to: bundleIDPrefix))
             }
             if stamp.sourceHash != sourceHash {
                 return .build(reason: "runner sources changed since the last build (\(RunnerSourceHash.short(stamp.sourceHash)) -> "
