@@ -101,7 +101,7 @@ relay press --label "Photo" --type cell --duration 1.0
 | --- | --- | --- |
 | 0 | 成功 | – |
 | 1 | 引数の誤りやローカルの失敗（何も送っていない） | コマンドを直す。`relay <command> --help` |
-| 3 | ランナーに届かない（runner.json がない、接続できない） | `relay status`。runner.json がなければ `relay start --background …`。runner.json はあるが応答しない（`relay start` が強制終了されたなど）なら、`relay stop` で片付けてから起動。`the OS refused the connection` なら relay が sandbox の中にいる（上の「sandbox の中で動くとき」）ので、止めも起動もしない |
+| 3 | ランナーに届かない（runner.json がない、接続できない、`no response within <秒>s`） | `no response within` なら、ランナーは操作を続けているので `relay ping` の `busy` が `false` になるまで待つ（`launch` / `terminate` は最大 150 秒、長い `type` は 1 文字 0.1 秒ぶん待つので、自分のコマンドのタイムアウトをそれより長くする）。それ以外は `relay status`。runner.json がなければ `relay start --background …`。runner.json はあるが応答しない（`relay start` が強制終了されたなど）なら、`relay stop` で片付けてから起動。`the OS refused the connection` なら relay が sandbox の中にいる（上の「sandbox の中で動くとき」）ので、止めも起動もしない |
 | 4 | トークンが拒否された（401）。runner.json が古いか、別のランナーのもの | `relay status` で URL・端末・PID を確かめ、`--runner` / `$RELAY_RUNNER` / カレントディレクトリから親へ順にたどった `.relay/runner.json` も確認。自分で起動したものなら `relay stop` → 起動し直す。そうでなければ止めずに利用者に確認 |
 | 5 | busy（409）。別のコマンドを実行中 | 1 秒ほど待つか、`relay ping` が `"busy":false` になってから再試行 |
 | 6 | 操作の失敗（422）: 要素が見つからない・1 つに決まらない・無効・画面外、キーボードのフォーカスがない | stderr の `reason` と `candidates` を読み、観察し直してセレクタを直す |

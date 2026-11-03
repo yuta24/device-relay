@@ -263,6 +263,18 @@ struct ScenarioFindCheckTests {
         #expect(required == [false, true])
     }
 
+    /// `relay run` sends each step with `RunnerControl.perform`, so a step gets the timeout the command gets alone.
+    @Test func aStepWaitsAsLongAsTheCommandAlone() throws {
+        let steps = try Scenario.parse(Scenario.lines(of: "launch com.example\ntype hello --key return\nterminate com.example"))
+        let waits = steps.compactMap { step -> TimeInterval? in
+            if case .runner(let operation, _) = step.action { return operation.waitTime }
+            return nil
+        }
+        #expect(waits.count == 3)
+        #expect(waits[0] == 120 && waits[2] == 120)
+        #expect(abs(waits[1] - 1.5) < 1e-9)
+    }
+
     @Test func looksAtTheElementsNotTheCount() {
         #expect(RunnerControl.hasElements(Data(#"{"ok":true,"count":1,"elements":[{"type":"button"}]}"#.utf8)))
         #expect(!RunnerControl.hasElements(Data(#"{"ok":true,"count":0,"elements":[]}"#.utf8)))

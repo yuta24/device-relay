@@ -21,8 +21,8 @@
 | `POST /key` | `{"key":"return","bundleId":"…"}`（bundleId は省略可） | 特殊キー（`return` / `delete` / `space`）を 1 つ送ります。それ以外のキー名は 400。詳しくは「文字入力と特殊キー」 |
 | `POST /button` | `{"name":"home"}`（`volumeUp` / `volumeDown` は実機のみ） | ハードウェアボタン。`home` は実機では画面下端からのスワイプで代用します（「[既知の制約](limitations.md)」を参照） |
 | `POST /orientation` | `{"orientation":"portrait\|portraitUpsideDown\|landscapeLeft\|landscapeRight"}` | 端末の向き（`UIDeviceOrientation`）を設定 |
-| `POST /launch` | `{"bundleId":"com.apple.Preferences"}` | アプリの起動・前面化（`activate()`） |
-| `POST /terminate` | `{"bundleId":"com.apple.Preferences"}` | アプリの終了 |
+| `POST /launch` | `{"bundleId":"com.apple.Preferences"}` | アプリの起動・前面化（`activate()`）。前面になるまで XCTest のアプリの状態の待ち時間（60 秒、戻せないランナーでは 120 秒）まで待ってから応答します |
+| `POST /terminate` | `{"bundleId":"com.apple.Preferences"}` | アプリの終了。終了するまで `/launch` と同じだけ待ちます |
 | `POST /shutdown` | – | ランナーを停止（テストメソッドから抜ける） |
 
 **画面の外の座標**: `/tap`・`/press` の `x`・`y` と `/swipe` の `from`・`to` は、前面アプリの表示の向きでの画面（`/health` の `screen`）の中、つまり `0 ≤ x < screen.width` かつ `0 ≤ y < screen.height` でなければなりません（小数も可。`x = screen.width` は画面の外です）。外なら何も送らずに `400` と `{"ok":false,"error":"invalid field: x, y: (500, 100) is outside the screen, which is 402x874 points in portrait (0 <= x < 402, 0 <= y < 874; relay health shows the screen)"}` のように返します（`/swipe` では `from:` / `to:`）。以前は画面の外のタッチも `200` を返し、何も起きませんでした。`422`（XCUI で操作に失敗）ではなく `400` にしたのは、操作を試す前に値の範囲で判定でき、ほかの範囲外の値と同じ扱い（CLI では終了コード `7`）にするためです。画面は向きを変えると縦横が入れ替わるので、`relay orientation` の後は `/health` を読み直します。要素を指定したタップ（`element`）は、要素の frame の画面内の部分の中心に当たるので、この判定はありません（画面の外の要素は `422` の `offscreen`）。画面の大きさを SpringBoard から取れず `UIScreen` の値で代用している間（実機では 320×480 の互換モードの値になります）は、正しい座標を拒否しないよう判定を省きます。
@@ -178,4 +178,4 @@ RelayRunnerHost の入力欄（`relay.input`）で確認した結果（シミュ
 | `tab`（対応外、400） | 1 行の入力欄に `\t` の文字として入力されました（次の入力欄にフォーカスは移らない。ソフトウェアキーボードに Tab キーがないため） |
 | `escape`（対応外、400） | 何も起きませんでした（ソフトウェアキーボードに Esc キーがなく、キーイベントとしても届かない） |
 
-1 回の `/key` は、シミュレータで約 0.26 秒、実機で約 0.66 秒でした。
+1 回の `/key` は、シミュレータで約 0.26 秒、実機で約 0.66 秒でした。`/type` の `text` は、シミュレータで約 15 ms/文字（ASCII 1,000 文字で約 17 秒、日本語も同じくらい）かかり、応答は入力し終わってから返ります。長い文字列を送るクライアントは、その分 HTTP のタイムアウトを長くしてください（`relay type` は 1 文字 0.1 秒とキー 1 つ 1 秒を足します）。

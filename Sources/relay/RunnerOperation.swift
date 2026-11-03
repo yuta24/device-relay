@@ -70,16 +70,38 @@ enum RunnerOperation: Equatable {
         }
     }
 
-    /// How long the runner may legitimately take beyond a normal round trip: element waits and gesture
-    /// durations, which the HTTP timeout must not cut short.
+    /// How long the runner may legitimately take beyond a normal round trip: element waits, gesture
+    /// durations, app state waits, and typing, which the HTTP timeout must not cut short. A request cut
+    /// short leaves the runner busy with it, so the next command gets 409.
     var waitTime: TimeInterval {
         switch self {
         case .find(_, _, let timeout, _): return timeout ?? 0
         case .tap(let touch): return touch.timeout ?? 0
         case .press(let touch): return (touch.timeout ?? 0) + (touch.duration ?? 1)
         case .swipe(_, _, let duration, let hold, _): return (duration ?? 0.3) + (hold ?? 0.05)
+        case .launch, .terminate: return Self.applicationStateWait
+        case .type(let text, let keys, _): return Self.typingWait(text: text ?? "", keyCount: keys.count)
+        case .key: return Self.typingWait(text: "", keyCount: 1)
         default: return 0
         }
+    }
+
+    /// `activate()` and `terminate()` wait for the app to reach the state for up to XCTest's
+    /// application state timeout: 60 s once the runner restores it, but 120 s (the scheme's
+    /// `-XCUIApplicationStateTimeout`) when the runner cannot, which relay cannot tell from here.
+    static let applicationStateWait: TimeInterval = 120
+
+    /// Seconds per character for `typeText`. It typed about 15 ms per character on a simulator (1,000 ASCII
+    /// characters in 17 s, Japanese at the same rate); a device is slower (one `/key` took 0.66 s there
+    /// against 0.26 s on a simulator), so this leaves several times what was seen.
+    static let typingWaitPerCharacter: TimeInterval = 0.1
+    /// Seconds per key (`/key`, `/type` `keys`): a key took 0.26 s on a simulator and 0.66 s on a device.
+    static let typingWaitPerKey: TimeInterval = 1
+
+    /// Counted in Unicode scalars, not characters, since a character made of several scalars can take
+    /// several key events.
+    static func typingWait(text: String, keyCount: Int) -> TimeInterval {
+        Double(text.unicodeScalars.count) * typingWaitPerCharacter + Double(keyCount) * typingWaitPerKey
     }
 }
 

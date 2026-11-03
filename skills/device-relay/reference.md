@@ -155,14 +155,15 @@ Claude Code などがシェルコマンドを sandbox（macOS では Seatbelt）
 | `tap` | `relay tap (<x> <y> \| <selector>) [--mode private\|xcui] [--timeout <s>] [--bundle-id <id>]`。`--timeout`・`--bundle-id` はセレクタのときだけ |
 | `press` | `relay press (<x> <y> \| <selector>) [--duration 1.0] [--mode private\|xcui] [--timeout <s>] [--bundle-id <id>]` |
 | `swipe` | `relay swipe <x1> <y1> <x2> <y2> [--duration 0.3] [--hold 0.05] [--mode private\|xcui]`。始点で `--hold` 秒止まってから `--duration` 秒かけて終点へ |
-| `type` | `relay type [<text> \| --stdin] [--key return\|delete\|space]... [--bundle-id <id>]`。`--key` は複数可、文字の後に順に送ります |
+| `type` | `relay type [<text> \| --stdin] [--key return\|delete\|space]... [--bundle-id <id>]`。`--key` は複数可、文字の後に順に送ります。入力し終わるまで返らず（シミュレータで約 15 ms/文字）、応答を 30 秒 + 1 文字 0.1 秒 + キー 1 つ 1 秒まで待ちます |
 | `key` | `relay key return\|delete\|space [--bundle-id <id>]` |
 | `button` | `relay button home\|volumeUp\|volumeDown`（音量ボタンは実機のみ） |
 | `orientation` | `relay orientation portrait\|portraitUpsideDown\|landscapeLeft\|landscapeRight\|landscape`（`landscape` は `landscapeLeft` の別名） |
-| `launch` / `terminate` | `relay launch <bundle-id>` / `relay terminate <bundle-id>` |
+| `launch` / `terminate` | `relay launch <bundle-id>` / `relay terminate <bundle-id>`。アプリが起動・終了するまで返らず、応答を最大 150 秒（30 + 120 秒）待ちます |
 | `foreground` | 前面アプリの `bundleId` と `pid` |
 | `shutdown` | ランナーを止めます（`relay start` の後片付けは行いません。通常は `relay stop` を使う） |
 
+- 応答を待つのは 30 秒に、その操作が待ちうる時間（`--timeout`、`--duration`、`--hold`、上の `type` / `launch` / `terminate`、`key` は 1 秒）を足した長さです。自分のコマンド実行のタイムアウトはそれより長くします。時間切れ（`no response within <秒>s`、終了コード 3）でもランナーはその操作を続けていて、終わるまでほかのコマンドは 409（終了コード 5）なので、`relay ping` の `busy` が `false` になるのを待ってから続けます。
 - `--type` の名前、キー名、ボタン名、向き、数値の範囲は送る前に確認され、間違っていれば終了コード 1 で何も送りません（例: `relay key tab` → `unsupported key 'tab'`）。
 - `--mode` は通常指定しません（既定の `private` が速い。`xcui` はアプリのアイドルを待つので 1 回 1–2 秒）。
 
