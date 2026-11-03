@@ -75,6 +75,16 @@ relay record stop                              # 録画を止め、MP4 の絶対
 | `7` | `400` とその他の 4xx |
 | `8` | 5xx などそれ以外 |
 
+stderr に出るランナーの JSON には、機械向けの `code`（`no_keyboard_focus`、`element_ambiguous` など。一覧は「[エラーの形式と code](http-api.md#エラーの形式と-code)」）が入ります。終了コードはステータスだけで決まり、同じ終了コードの中の区別（たとえば `6` のうちフォーカスがないのか、要素が 1 つに決まらないのか）は `code` で行います。`relay:` のヒントは、`401`・`409` のほかに、次の code で出します。code を返さない古いランナーでは、`401`・`409` のヒントだけが出ます。
+
+| `code` | `relay:` のヒント |
+| --- | --- |
+| `no_keyboard_focus` | 入力欄を先にタップしてから送り直す |
+| `element_not_found` | `relay find --type …` / `relay source` で画面を確かめるか、`--timeout <秒>` で待つ |
+| `element_ambiguous` | `--type`・`--label`・`--id` を足すか、候補から `--index <n>` で選ぶ |
+| `touch_mode_unavailable` | `--mode` を外すか、エラーが示す経路で送り直す |
+| `not_found` | ランナーが relay より古いかもしれない（`relay start --rebuild` でビルドし直す） |
+
 ### 接続先（runner.json）の探し方
 
 URL とトークンは `runner.json` から読みます。トークンはコマンドライン引数では受け取りません（`ps` やシェルの履歴に残るため）。次の順に探し、最初に見つかったものを使います。

@@ -224,8 +224,10 @@ button label="General" id="com.apple.settings.general" frame=16,293,370,52
 stderr に JSON が出ます。
 
 ```json
-{"candidates":[…],"count":2,"error":"2 elements match the selector; add conditions or an index","ok":false,"reason":"ambiguous"}
+{"candidates":[…],"code":"element_ambiguous","count":2,"error":"2 elements match the selector; add conditions or an index","ok":false,"reason":"ambiguous"}
 ```
+
+要素の失敗の `code` は `element_not_found`（`notFound`・`indexOutOfRange`）、`element_ambiguous`（`ambiguous`）、`element_not_hittable`（`emptyFrame`・`offscreen`・`disabled`）で、`reason` がその詳細です。
 
 | `reason` | 意味 | 対処 |
 | --- | --- | --- |
@@ -236,7 +238,27 @@ stderr に JSON が出ます。
 | `offscreen` | 要素が画面の外 | `relay swipe` でスクロールしてから探し直す |
 | `disabled` | 要素が `enabled: false` | 前提の入力・操作が足りない。画面を確かめる |
 
-`relay type` / `relay key` で `no element has keyboard focus in <bundleId>` が出たら、入力欄をタップしてから送り直します（判定に 2–3 秒かかります）。
+`relay type` / `relay key` で `no_keyboard_focus`（`no element has keyboard focus in <bundleId>`）が出たら、入力欄をタップしてから送り直します（判定に 2–3 秒かかります）。
+
+### code の一覧
+
+失敗時の JSON は `{"ok":false,"code":"…","error":"…"}` です。`code` は変わらない文字列なので、これで分岐します（`error` の文言は変わりえます）。`code` がない応答は古いランナーのものです。
+
+| `code` | 終了コード | 対処 |
+| --- | --- | --- |
+| `invalid_request` | 7 | エラー文を読んで値を直す |
+| `point_offscreen` | 7 | `relay health` の `screen` を読み直して座標を直す |
+| `touch_mode_unavailable` | 7 / 6 | `--mode` を外して送り直す |
+| `http_malformed` / `request_too_large` | 7 / 8 | relay 経由では起きない。curl などのクライアントを直す |
+| `unauthorized` | 4 | 上の終了コード 4 と同じ |
+| `busy` | 5 | 待って再試行 |
+| `not_found` / `method_not_allowed` | 7 | パス・メソッドの誤り。relay のコマンドで出たらランナーが古い（自分で起動したものなら `relay stop` → `relay start --rebuild`） |
+| `element_not_found` / `element_ambiguous` / `element_not_hittable` | 6 | 上の `reason` の表 |
+| `no_keyboard_focus` | 6 | 入力欄をタップしてから送り直す |
+| `display_unknown` | 6 | 画面が暗い。利用者に確かめる |
+| `touch_failed` | 6 / 8 | 1 回だけ再試行。続くなら `relay status` とログ |
+| `xcui_failed` | 6 | エラー文（XCUI の文）を読み、前面アプリと画面を観察し直す |
+| `internal_error` | 8 | 1 回だけ再試行。続くなら `relay status` とログ |
 
 ## 座標と向き
 

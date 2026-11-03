@@ -69,7 +69,7 @@ relay press --label "Photo" --type cell --duration 1.0
 - 座標（`relay tap <x> <y>`、`relay swipe <x1> <y1> <x2> <y2>`）は、表示の向きでの画面左上を原点とするポイント単位です。画面の外（`0 ≤ x < screen.width`、`0 ≤ y < screen.height` の外）は何も送らずに終了コード 7 です。要素の `frame` や `relay health` の `screen.width` / `screen.height` から求めます。スクリーンショットから求めるときは、`--scale 1` の画像なら画素がそのままポイント、それ以外は画素を stderr の px/pt（フル解像度なら scale）で割ります。座標は、スクロールなど要素で指定できない操作だけに使います（例: `relay swipe 200 700 200 200` で下から上へ）。
 - 文字入力: 入力欄をタップしてから `relay type "text"`。確定は `--key return` を付けます。1 文字消すのは `relay key delete`。キーは `return`・`delete`・`space` だけです。`-` で始まる文字列は `relay type -- -text` のように `--` を挟みます。
 - **sleep せずに待つ。** 画面が変わる操作の後は、次の画面にある要素を `relay find <セレクタ> --timeout <秒>`（最大 10 秒。`count` を確認）で待つか、`tap` / `press` に `--timeout` を付けて要素が現れるのを待たせます。もっと長く待つときは短い timeout を繰り返します。
-- 表示が複数ある端末（iPhone Duo。外側と内側）では、`relay health` の `display` と `screen`、スクリーンショット、座標、要素の frame は、すべて前面アプリが載っている表示のものです。折りたたみを変えたら（変えるのは利用者です）`relay status` と `relay health` を読み直します（切り替えでランナーが止まることがあります）。終了コード 6 で `cannot tell which display` が出たら画面が暗いので利用者に確かめ、`xcui touches can't reach` が出たら `--mode` を外して（または `--mode private` で）送り直します。詳しくは reference.md の「座標と向き」。
+- 表示が複数ある端末（iPhone Duo。外側と内側）では、`relay health` の `display` と `screen`、スクリーンショット、座標、要素の frame は、すべて前面アプリが載っている表示のものです。折りたたみを変えたら（変えるのは利用者です）`relay status` と `relay health` を読み直します（切り替えでランナーが止まることがあります）。終了コード 6 で `display_unknown`（`cannot tell which display`）が出たら画面が暗いので利用者に確かめ、`touch_mode_unavailable`（`xcui touches can't reach`）が出たら `--mode` を外して（または `--mode private` で）送り直します。詳しくは reference.md の「座標と向き」。
 - **画面が変わったら観察し直す。** frame、index、前面アプリは変わります。前の画面のセレクタや座標を確かめずに使い回さないでください。
 - コマンドは 1 つずつ、前の結果を待ってから送ります。ランナーは一度に 1 コマンドしか実行せず、重なると busy（終了コード 5）になります。
 - `relay launch` の直後は前面アプリが切り替え前のまま返ることがあります。対象を確実にしたいときは `find` / `tap` / `type` / `source` に `--bundle-id <id>` を付けます。
@@ -104,11 +104,25 @@ relay press --label "Photo" --type cell --duration 1.0
 | 3 | ランナーに届かない（runner.json がない、接続できない、`no response within <秒>s`） | `no response within` なら、ランナーは操作を続けているので `relay ping` の `busy` が `false` になるまで待つ（`launch` / `terminate` は最大 150 秒、長い `type` は 1 文字 0.1 秒ぶん待つので、自分のコマンドのタイムアウトをそれより長くする）。それ以外は `relay status`。runner.json がなければ `relay start --background …`。runner.json はあるが応答しない（`relay start` が強制終了されたなど）なら、`relay stop` で片付けてから起動。`the OS refused the connection` なら relay が sandbox の中にいる（上の「sandbox の中で動くとき」）ので、止めも起動もしない |
 | 4 | トークンが拒否された（401）。runner.json が古いか、別のランナーのもの | `relay status` で URL・端末・PID を確かめ、`--runner` / `$RELAY_RUNNER` / カレントディレクトリから親へ順にたどった `.relay/runner.json` も確認。自分で起動したものなら `relay stop` → 起動し直す。そうでなければ止めずに利用者に確認 |
 | 5 | busy（409）。別のコマンドを実行中 | 1 秒ほど待つか、`relay ping` が `"busy":false` になってから再試行 |
-| 6 | 操作の失敗（422）: 要素が見つからない・1 つに決まらない・無効・画面外、キーボードのフォーカスがない | stderr の `reason` と `candidates` を読み、観察し直してセレクタを直す |
-| 7 | リクエストの拒否（400 などの 4xx） | エラー文を読む。多くは値の範囲や対応外の値。`is outside the screen` は座標が画面の外（`relay health` の `screen` を読み直す。向きを変えると縦横が入れ替わる） |
+| 6 | 操作の失敗（422）: 要素が見つからない・1 つに決まらない・無効・画面外、キーボードのフォーカスがない | stderr の JSON の `code` で分ける（下の表）。要素の失敗は `reason` と `candidates` を読み、観察し直してセレクタを直す |
+| 7 | リクエストの拒否（400 などの 4xx） | `code` が `point_offscreen` なら座標が画面の外（`relay health` の `screen` を読み直す。向きを変えると縦横が入れ替わる）。`touch_mode_unavailable` なら `--mode` を外して送り直す。`invalid_request` などはエラー文を読んで直す |
 | 8 | ランナーのエラー（5xx など） | 1 回だけ再試行。続くなら `relay status` とログを確認 |
 
-成功時はランナーの JSON が stdout に、失敗時は stderr に出ます。stderr の `relay:` で始まる行は人向けのヒントです。`reason` ごとの対処は [reference.md](reference.md#操作が失敗したとき終了コード-6) にあります。
+成功時はランナーの JSON が stdout に、失敗時は stderr に出ます。stderr の `relay:` で始まる行は人向けのヒントです。
+
+失敗時の JSON（`{"ok":false,"code":"…","error":"…"}`）の `code` は安定した文字列なので、英文の `error` ではなく `code` で分岐します。終了コード 6 でよく出るもの:
+
+| `code` | 対処 |
+| --- | --- |
+| `element_not_found` | `--timeout` で待つ、`relay foreground` で前面アプリを確かめる、`relay find --type …` で実際の値を確かめる |
+| `element_ambiguous` | `candidates` を見て `--type` などの条件か `--index` を足す（待っても直らない） |
+| `element_not_hittable` | `reason` が `offscreen` ならスクロール、`disabled` なら前提の操作、`emptyFrame` なら観察し直す |
+| `no_keyboard_focus` | 入力欄をタップしてから送り直す |
+| `touch_mode_unavailable` | `--mode` を外して送り直す |
+| `display_unknown` | 画面が暗い。利用者に確かめる |
+| `touch_failed` / `xcui_failed` | 1 回だけ再試行し、続くなら観察し直す |
+
+`code` がなければ古いランナーです（終了コードとエラー文で判断）。code の一覧は [reference.md](reference.md#操作が失敗したとき終了コード-6)、`reason` ごとの対処も同じ所にあります。
 
 ## 安全のために
 

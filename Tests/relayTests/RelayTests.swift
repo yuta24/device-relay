@@ -1082,7 +1082,7 @@ struct RunnerElementSelectorTests {
         #expect(String(decoding: data, as: UTF8.self) == """
             {"candidates":[{"enabled":true,"frame":{"height":40,"width":40,"x":20,"y":200},"identifier":"","index":0,\
             "label":"History","type":"button","value":null},{"enabled":false,"frame":{"height":40,"width":40,"x":20,"y":300},\
-            "identifier":"","index":1,"label":"History","type":"button","value":null}],"count":2,\
+            "identifier":"","index":1,"label":"History","type":"button","value":null}],"code":"element_ambiguous","count":2,\
             "error":"2 elements match the selector; add conditions or an index","ok":false,"reason":"ambiguous"}
             """)
     }
