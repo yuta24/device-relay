@@ -14,6 +14,8 @@ struct RunnerInfo: Codable, Equatable {
     /// When that process started (whole seconds). With `pid`, it tells the process apart from an
     /// unrelated one that reuses the pid later (see `RelayProcess`).
     var startedAt: Date?
+    /// The bundle ID of the runner's host app (see `RunnerBundleID`), which the runner commands take as `host`.
+    var hostBundleID: String?
 
     static func defaultURL(rootURL: URL = WorkingDirectory.url) -> URL {
         rootURL.appendingPathComponent(".relay", isDirectory: true).appendingPathComponent(fileName)

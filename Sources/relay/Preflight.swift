@@ -162,8 +162,8 @@ struct StartSetup {
         var resolved = options
         resolved.udid = device.udid
         var teamConfig: (config: RelayConfig, url: URL)?
+        let config = try RelayConfig.read(from: configURL)
         if device.kind == .device || options.teamID != nil {
-            let config = try RelayConfig.read(from: configURL)
             let team = try TeamIDResolver.resolve(explicit: options.teamID, config: config) {
                 try SigningIdentities.load(commands)
             }
@@ -175,6 +175,13 @@ struct StartSetup {
                 teamConfig = (updated, configURL)
             }
         }
+        if let configured = config.bundleIDPrefix, !RunnerBundleID.isValidPrefix(configured) {
+            throw SetupError(description: "invalid bundleIDPrefix in \(configURL.path): \(configured); "
+                + "relay config set bundleIDPrefix <prefix> replaces it")
+        }
+        let bundleID = RunnerBundleID.prefix(configured: config.bundleIDPrefix, teamID: resolved.teamID)
+        resolved.bundleIDPrefix = bundleID.prefix
+        info("runner host app: \(RunnerBundleID.host(prefix: bundleID.prefix)) (prefix from \(bundleID.source.rawValue))")
 
         var setup = StartSetup(options: resolved, root: project.root, device: device, teamConfig: teamConfig)
         if device.kind == .simulator, !device.isBooted {

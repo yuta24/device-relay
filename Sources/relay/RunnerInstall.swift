@@ -234,7 +234,11 @@ enum InstallCommand {
             projectURL: root.appendingPathComponent(RunnerProject.projectPath),
             destination: "generic/platform=iOS Simulator",
             derivedData: derivedData,
-            teamID: nil
+            teamID: nil,
+            // As relay start on a simulator builds it, so that reuses this build.
+            bundleIDPrefix: RunnerBundleID.prefix(
+                configured: (try? RelayConfig.read(from: RelayConfig.defaultURL(home: home)))?.bundleIDPrefix, teamID: nil
+            ).prefix
         )
         do {
             try build(arguments, buildLog, options.verbose)

@@ -34,6 +34,8 @@ struct StartOptions: Equatable {
     var project: String?
     var port: Int = 8100
     var teamID: String?
+    /// The prefix of the runner's bundle IDs (see `RunnerBundleID`). Set by `StartSetup`, not an option.
+    var bundleIDPrefix: String?
     var rebuild = false
     var verbose = false
     var readyTimeout: TimeInterval = 180
@@ -375,7 +377,8 @@ enum Arguments {
         case "get" where raw.count == 2:
             return ConfigOptions(action: .get(try key(raw[1])))
         case "set" where raw.count == 3:
-            return ConfigOptions(action: .set(try key(raw[1]), try teamID(raw[2])))
+            let name = try key(raw[1])
+            return ConfigOptions(action: .set(name, name == "bundleIDPrefix" ? try bundleIDPrefix(raw[2]) : try teamID(raw[2])))
         case "unset" where raw.count == 2:
             return ConfigOptions(action: .unset(try key(raw[1])))
         default:
@@ -386,6 +389,13 @@ enum Arguments {
     private static func teamID(_ value: String) throws -> String {
         guard RelayConfig.isValidTeamID(value) else {
             throw ArgumentError(description: "invalid Team ID: \(value) (10 uppercase letters and digits)")
+        }
+        return value
+    }
+
+    private static func bundleIDPrefix(_ value: String) throws -> String {
+        guard RunnerBundleID.isValidPrefix(value) else {
+            throw ArgumentError(description: "invalid bundle ID prefix: \(value) (letters, digits, and hyphens, separated by dots)")
         }
         return value
     }
@@ -436,7 +446,9 @@ enum Arguments {
              the only connected or booted one, else the simulator with the newest iOS, and prints which.
              A shut-down simulator named with --udid/--device is booted, and shut down again on exit.
              For devices, the Team ID defaults to teamID in ~/.relay/config.json, else the team of the
-             Apple Development certificates in the keychain; the one used is saved there.
+             Apple Development certificates in the keychain; the one used is saved there. The runner's host
+             app is <prefix>.RelayRunnerHost (prefix: bundleIDPrefix in config.json, else dev.devicerelay.<team
+             id in lowercase>, else dev.devicerelay.local); the runner commands take host for its bundle ID.
              The runner project is --project, else $RELAY_HOME, else a device-relay checkout around the
              current directory, else the copy relay install made in ~/.relay/runner, else the checkout of
              the relay executable. Builds and logs go to ~/.relay/build and ~/.relay/logs.
@@ -466,7 +478,8 @@ enum Arguments {
     doctor   Checks Xcode, the runner project, the agent skill, signing, and the device relay start would
              use (with the same --udid, --device, --simulator, and --os), marking each ✓ / ✗ / ! with a fix.
              Exits 1 if anything is ✗.
-    config   Shows or changes ~/.relay/config.json (key: teamID).
+    config   Shows or changes ~/.relay/config.json (keys: teamID, bundleIDPrefix). bundleIDPrefix replaces the
+             runner's default bundle ID prefix, dev.devicerelay.<team id in lowercase>.
     bench    Measures round-trip latency of /health, /screenshot, and optionally /tap.
              --mode forces the runner's touch path (private event synthesis or public XCUI).
              --token defaults to the token in the runner.json the runner commands use.

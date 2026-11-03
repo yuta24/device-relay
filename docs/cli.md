@@ -10,7 +10,7 @@
 relay start --background                       # ready: <URL> が出たら戻る（「[バックグラウンドで動かす](setup.md#バックグラウンドで動かすrelay-start---background--status--stop)」）
 relay status                                   # 生きていれば終了コード 0、いなければ 3
 relay health                                   # curl -s -H "$AUTH" $R/health
-relay launch dev.yuta24.devicerelay.RelayRunnerHost
+relay launch host                              # RelayRunnerHost（host はそのバンドル ID の別名）
 relay find --type textField                    # POST /find {"element":{"type":"textField"}}
 relay find --id home.title --timeout 5 --require   # 現れるまで待ち、現れなければ終了コード 6
 relay tap --id relay.input                     # POST /tap {"element":{"identifier":"relay.input"}}
@@ -49,13 +49,14 @@ relay record stop                              # 録画を止め、MP4 の絶対
 | `swipe` | `POST /swipe` | `<x1> <y1> <x2> <y2>`、`--duration`、`--hold`、`--mode` |
 | `type` | `POST /type` | `<text>` か `--stdin`、`--key <name>`（複数可、順に送る）、`--bundle-id` |
 | `key` / `button` / `orientation` | `POST /key` / `/button` / `/orientation` | 名前（`key` は `--bundle-id` も可。`orientation` は `landscape` を `landscapeLeft` として送る） |
-| `launch` / `terminate` | `POST /launch` / `/terminate` | `<bundle-id>` |
+| `launch` / `terminate` | `POST /launch` / `/terminate` | `<bundle-id>`（`host` も可） |
 | `shutdown` | `POST /shutdown` | – |
 | `status` | `GET /ping` と runner.json | `--json`。終了コードは「[バックグラウンドで動かす](setup.md#バックグラウンドで動かすrelay-start---background--status--stop)」 |
 | `stop` | `relay start` への SIGTERM（なければ `POST /shutdown`） | – |
 | `run`（実験的） | 手順ごとに上のエンドポイント | `<file>` か `-` か `--step <手順>`（複数可）、`--runner`、`--quiet`。「シナリオの実行（relay run、実験的）」 |
 | `record start` / `stop` / `status` | –（シミュレータはホストの `simctl io recordVideo`、実機は Mac のキャプチャデバイス） | `-o <file>`、`--force`、`--max-duration <s>`（start）、`--json`（status）、`--port <n>`（stop・status）、`--runner`。「録画（relay record）」 |
 
+- バンドル ID の代わりに `host` と書くと、ランナーのホストアプリ RelayRunnerHost のバンドル ID になります（`launch`・`terminate` と、`--bundle-id` を取るコマンド）。バンドル ID は利用者ごとに違う（「[バンドル ID の接頭辞](setup.md#バンドル-id-の接頭辞)」）ので、relay は `relay start` がビルドしたアプリの ID を runner.json の `hostBundleID` に書き、そこから置き換えます。`relay status` の `host app` にも出ます。古い relay の `relay start` が書いた runner.json にはないので、`host` は終了コード 1 になります（ランナーを起動し直します）。
 - セレクタは `--id`（= `identifier`）・`--label`・`--type`・`--value` を 1 つ以上と、任意の `--index <n>` です（「[要素セレクタ](elements.md#要素セレクタ)」と同じ完全一致・AND）。`--type` の名前、キー名、ボタン名、向きの名前、数値の範囲は送る前に確認し、間違っていれば終了コード 1 で何も送りません。
 - `relay find` は一致がなくても終了コード 0（`"count":0`）です。`--require` を付けると、一致する要素がないときに終了コード 6 で終わり、応答の JSON を stderr に、`relay: no element matched` を続けて出します（`--index` が範囲外のときも同じ）。`relay find <セレクタ> --timeout 5 --require` は「現れるまで待ち、現れなければ失敗する」確認になり、スクリプトは JSON を読まずに終了コードだけで判断できます。判定はホスト側で行い、ランナーへのリクエストは変わりません。
 - `-` で始まる文字列を入力するときは `relay type -- --text` のように `--` を挟みます。
@@ -165,7 +166,7 @@ screenshot --output about.png --scale 1
 
 ```sh
 relay record start                    # 保存先の絶対パスを出して戻る（既定は $TMPDIR/relay/relay-recording-<時刻>.mp4）
-relay launch dev.yuta24.devicerelay.RelayRunnerHost
+relay launch host
 relay tap --id relay.input --timeout 3
 relay type "hello" --key return
 relay record stop                     # 書き出しを待ち、MP4 の絶対パスを出す

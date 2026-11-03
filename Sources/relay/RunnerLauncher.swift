@@ -100,7 +100,7 @@ final class RunnerLauncher {
 
         let xctestrun: URL
         let platform = XCTestRunSelection.platform(isSimulator: isSimulator)
-        let reusable: URL?
+        var reusable: URL?
         if options.rebuild {
             reusable = nil
         } else {
@@ -115,6 +115,13 @@ final class RunnerLauncher {
                 reusable = nil
                 info("\(file.lastPathComponent) (the last build) is not for this Xcode's \(platform) SDK \(sdkVersion ?? "?"); rebuilding")
             }
+        }
+        let bundleIDPrefix = options.bundleIDPrefix ?? RunnerBundleID.prefix(configured: nil, teamID: options.teamID).prefix
+        let expectedHost = RunnerBundleID.host(prefix: bundleIDPrefix)
+        if let existing = reusable, let built = RunnerBundleID.builtHost(xctestrun: existing),
+           RunnerBundleID.needsRebuild(built: built, expected: expectedHost, projectUsesPrefix: projectUsesBundleIDPrefix()) {
+            info(RunnerBundleID.rebuildNote(built: built, expectedPrefix: bundleIDPrefix))
+            reusable = nil
         }
         if let existing = reusable {
             xctestrun = existing
@@ -131,7 +138,8 @@ final class RunnerLauncher {
                 projectURL: rootURL.appendingPathComponent(RunnerProject.projectPath),
                 destination: "id=\(udid)",
                 derivedData: derivedData,
-                teamID: options.teamID
+                teamID: options.teamID,
+                bundleIDPrefix: bundleIDPrefix
             )
             let buildStart = Date()
             try Shell.xcrun(buildArguments, log: buildLog, echo: options.verbose)
@@ -198,8 +206,10 @@ final class RunnerLauncher {
         let infoURL = stateURL.appendingPathComponent(RunnerInfo.fileName)
         if let url = currentRunnerURL() {
             // pid and startedAt let relay stop find this process, and tell it from one that reuses the pid.
-            let runnerInfo = RunnerInfo(url: url.absoluteString, token: token, udid: udid, name: deviceName,
+            var runnerInfo = RunnerInfo(url: url.absoluteString, token: token, udid: udid, name: deviceName,
                                         pid: getpid(), startedAt: RelayProcess.currentStartTime())
+            // What was built, which differs from expectedHost for a project that ignores the prefix.
+            runnerInfo.hostBundleID = RunnerBundleID.builtHost(xctestrun: xctestrun) ?? expectedHost
             do {
                 // The token goes only to the 0600 file: stdout often ends up in CI logs and terminal scrollback.
                 try runnerInfo.write(to: infoURL)
@@ -271,7 +281,7 @@ final class RunnerLauncher {
 
     // MARK: - Process
 
-    static func buildArguments(projectURL: URL, destination: String, derivedData: URL, teamID: String?) -> [String] {
+    static func buildArguments(projectURL: URL, destination: String, derivedData: URL, teamID: String?, bundleIDPrefix: String) -> [String] {
         var args = [
             "xcodebuild", "build-for-testing",
             "-project", projectURL.path,
@@ -282,7 +292,13 @@ final class RunnerLauncher {
         if let teamID {
             args += ["-allowProvisioningUpdates", "RELAY_DEVELOPMENT_TEAM=\(teamID)"]
         }
+        args.append(RunnerBundleID.buildArgument(prefix: bundleIDPrefix))
         return args
+    }
+
+    private func projectUsesBundleIDPrefix() -> Bool {
+        let pbxproj = rootURL.appendingPathComponent(RunnerProject.projectPath).appendingPathComponent("project.pbxproj")
+        return (try? String(contentsOf: pbxproj, encoding: .utf8)).map { RunnerBundleID.projectUsesPrefix(pbxproj: $0) } ?? false
     }
 
     /// `-derivedDataPath` is the build's: without it xcodebuild writes the test logs and the xcresult

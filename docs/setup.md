@@ -71,6 +71,42 @@ relay config set teamID <TEAM_ID>
 relay config unset teamID         # 忘れて、次回はキーチェーンから検出し直す
 ```
 
+## バンドル ID の接頭辞
+
+Runner のアプリのバンドル ID は `<接頭辞>.RelayRunnerHost`（ホストアプリ）と `<接頭辞>.RelayRunnerHost.UITests`（テストランナー）です。明示的な App ID は最初に登録したチームのものになり、ほかのチームでは登録できないので、接頭辞は既定で Team ごとに変わります。`relay start` は次の順に決めて、xcodebuild に `RELAY_BUNDLE_ID_PREFIX=<接頭辞>` を渡します。
+
+1. `~/.relay/config.json` の `bundleIDPrefix`（`relay config set bundleIDPrefix <接頭辞>`）
+2. 既定値: Team ID があれば `dev.devicerelay.<Team ID の小文字>`（例: `dev.devicerelay.abcde12345`）。Team ID は App ID の重複を避けつつ同じ人では変わらないので、そのまま実機で自動署名できます
+3. Team がない（シミュレータ）とき: `dev.devicerelay.local`。シミュレータは署名も App ID の登録もしないので、衝突しても困りません
+
+```sh
+relay config set bundleIDPrefix com.example.devicerelay   # 逆ドメイン形式（英数字とハイフンを . で 2 つ以上）。不正ならその場でエラー
+relay config get bundleIDPrefix
+relay config unset bundleIDPrefix                          # 既定値に戻す
+```
+
+起動時に `relay: runner host app: dev.devicerelay.abcde12345.RelayRunnerHost (prefix from the Team ID)` のように表示し、`relay doctor` も使われる接頭辞と出どころ（config / Team ID から作った既定値 / Team がまだ分からない）を表示します。config の値が不正なときだけ ✗ です。
+
+ホストアプリを relay のコマンドで指すときは、バンドル ID の代わりに `host` と書きます（`relay launch host`、`relay tap --id relay.input --bundle-id host`）。relay は `relay start` がビルドしたアプリの ID を runner.json の `hostBundleID` に書いて置き換えます（`relay status` の `host app` にも出ます）。HTTP API を直接呼ぶときは `jq -r .hostBundleID ~/.relay/runner.json` で読みます。
+
+接頭辞が前回のビルド（使い回す DerivedData）と違えば、`relay start` は `bundle ID prefix changed from X to Y; rebuilding, and the device gets new apps with the new IDs (the old ones stay)` と出して作り直します（`--rebuild` は要りません）。
+
+### 移行の注意（以前の relay を使っていた人）
+
+以前の relay は、バンドル ID を `dev.yuta24.devicerelay.RelayRunnerHost`（と `.UITests`）に固定していました。この版に上げてそのまま実機で `relay start` すると、接頭辞が既定値の `dev.devicerelay.<Team ID の小文字>` に変わるので、
+
+- 自動署名（`-allowProvisioningUpdates`）が新しい App ID をあなたの Apple Developer アカウントに登録し、
+- 端末には新しいバンドル ID の RelayRunner が入ります。古い ID のアプリは端末に残ります（不要ならホーム画面から削除します）。古い App ID も Apple Developer の Identifiers に残ります。
+
+今の App ID のまま使い続けたい（`dev.yuta24.devicerelay` を登録したチームで使っている）場合は、**更新後に最初の `relay start` をする前に** 旧接頭辞を設定します:
+
+```sh
+relay config set bundleIDPrefix dev.yuta24.devicerelay
+relay doctor            # bundle ID の行が prefix dev.yuta24.devicerelay (from bundleIDPrefix in ~/.relay/config.json) になる
+```
+
+ほかのチームでは `dev.yuta24.devicerelay` は登録できないので、この設定は元のチームで使う人だけのものです。`relay install` でコピーした Runner（`~/.relay/runner`）を使っている場合は、`relay install` をやり直してから起動します（古いコピーはバンドル ID が固定のままで、接頭辞を渡しても変わりません。relay はそれを見分けて、作り直しを繰り返しません）。
+
 ## 環境の確認（relay doctor）
 
 `relay doctor [--udid <UDID> | --device <名前>] [--simulator] [--os <version>] [--project <path>]` は、ビルドや起動をせずに次を確認し、各項目を ✓（問題なし）/ ✗（このままでは動かない）/ !（注意）で表示します。✗ と ! には直し方を 1 行添えます。✗ があれば終了コード 1（ローカルの失敗）、なければ 0 です。
@@ -81,6 +117,7 @@ relay config unset teamID         # 忘れて、次回はキーチェーンか�
 - 実機: OS のバージョン（17 以上）、接続状態、ペアリング、デベロッパモード（`devicectl list devices`）、DDI のマウント状態（`ddiServicesAvailable`）、ロック状態（`devicectl device info lockState` の `passcodeRequired`）。UI オートメーションの有効状態は Mac から読めないので、常に ! で確認を促します
 - シミュレータ: ランタイムが入っているか、起動状態
 - 署名: 証明書と Team ID（実機なら見つからなければ ✗、シミュレータなら !）
+- バンドル ID: `relay start` が使う接頭辞と出どころ（`bundleIDPrefix` の設定、Team ID から作った既定値、Team が分からない、シミュレータの既定値）。表示だけで、config の値が不正なときだけ ✗（「[バンドル ID の接頭辞](#バンドル-id-の接頭辞)」）
 - sandbox: 127.0.0.1 への接続と、`~/.relay`（あれば）へのファイルの作成を試します。OS に拒否された（`Operation not permitted`）ら、エージェントなどの sandbox の中で動いているようだとして ✗ にします（「[エージェントの sandbox から使う](#エージェントの-sandbox-から使う)」）
 - エージェントスキル: カレントディレクトリの git のルートの `.claude/skills/device-relay` と `~/.claude/skills/device-relay` の状態（`relay skill status` と同じ判定。古い・relay が入れたものでなければ !。入っていなくても問題にはしません）
 
@@ -198,6 +235,7 @@ Claude Code の設定の根拠: [Sandboxing](https://code.claude.com/docs/en/san
    relay start
    # relay: using <端末名> (iPhone 14 Pro, iOS 26.7.1, device, connected) <DEVICE_UDID> (selected automatically; the only connected device)
    # relay: signing team: <TEAM_ID> (from keychain)
+   # relay: runner host app: dev.devicerelay.<team id>.RelayRunnerHost (prefix from the Team ID)
    # ...
    # relay: saved the team to ~/.relay/config.json; relay config unset teamID forgets it   ← ランナーが起動できたとき
    # ready: http://<アドレス>:8100/

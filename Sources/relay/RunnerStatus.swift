@@ -117,6 +117,9 @@ enum RunnerStatus {
         if let startedAt = info.startedAt {
             rows.append(("started", formatted(startedAt, timeZone: timeZone)))
         }
+        if let host = info.hostBundleID {
+            rows.append(("host app", host))
+        }
         rows.append(("ping", report.ping.summary))
         rows.append(("runner.json", report.infoURL.path))
         let width = rows.map(\.0.count).max() ?? 0
@@ -133,7 +136,8 @@ enum RunnerStatus {
             "name": info.name ?? NSNull(),
             "pid": info.pid.map { NSNumber(value: $0) } ?? NSNull(),
             "processRunning": report.processRunning.map { NSNumber(value: $0) } ?? NSNull(),
-            "startedAt": info.startedAt.map { ISO8601DateFormatter().string(from: $0) } ?? NSNull()
+            "startedAt": info.startedAt.map { ISO8601DateFormatter().string(from: $0) } ?? NSNull(),
+            "hostBundleID": info.hostBundleID ?? NSNull()
         ]
         switch report.ping {
         case .alive(let busy, let busyForMs):

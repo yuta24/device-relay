@@ -109,7 +109,7 @@ searchField label="Search" placeholder="Search" frame=28,808,346,28
 ```json
 {"element":{"identifier":"relay.input"}}
 {"element":{"label":"History","type":"button"}}
-{"element":{"type":"textField","index":1},"bundleId":"dev.yuta24.devicerelay.RelayRunnerHost","timeout":3}
+{"element":{"type":"textField","index":1},"bundleId":"com.example.app","timeout":3}
 ```
 
 | キー | 内容 |
@@ -129,7 +129,7 @@ searchField label="Search" placeholder="Search" frame=28,808,346,28
 応答（`/tap`）には、実際に使った要素とタップ座標が入ります:
 
 ```json
-{"bundleId":"dev.yuta24.devicerelay.RelayRunnerHost","element":{"enabled":true,
+{"bundleId":"dev.devicerelay.local.RelayRunnerHost","element":{"enabled":true,
  "frame":{"height":34,"width":370,"x":16,"y":132},"identifier":"relay.input2","index":0,"label":"",
  "type":"textField","value":null},"mode":"private","ok":true,"point":{"x":201,"y":149}}
 ```
@@ -155,10 +155,10 @@ searchField label="Search" placeholder="Search" frame=28,808,346,28
 
 （設定アプリのトップでは「一般」のセルが `button` と、その中の `staticText` の 2 つとして見えるので、`{"label":"General","type":"button"}` のように型も指定します。）
 
-`/find` の例（`{"element":{"type":"textField"}}`、RelayRunnerHost）:
+`/find` の例（`{"element":{"type":"textField"}}`、シミュレータの RelayRunnerHost）:
 
 ```json
-{"bundleId":"dev.yuta24.devicerelay.RelayRunnerHost","count":2,"elements":[
+{"bundleId":"dev.devicerelay.local.RelayRunnerHost","count":2,"elements":[
  {"enabled":true,"frame":{"height":34,"width":370,"x":16,"y":86},"identifier":"relay.input","index":0,"label":"","type":"textField","value":null},
  {"enabled":true,"frame":{"height":34,"width":370,"x":16,"y":132},"identifier":"relay.input2","index":1,"label":"","type":"textField","value":null}],
  "ok":true,"truncated":false}

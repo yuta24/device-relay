@@ -261,10 +261,10 @@ relay find --label "Privacy" --type button
 
 ## 試し打ち用のアプリ
 
-ランナーと一緒に RelayRunnerHost（`dev.yuta24.devicerelay.RelayRunnerHost`）がインストールされます。対象アプリの代わりに操作を試せます。identifier: `relay.input` / `relay.input2`（入力欄）、`relay.password`（パスワード欄。`secureTextField`）、`relay.text`、`relay.passwordLength`、`relay.submitted`、`relay.events`（device-relay の docs/development.md の「検証用のホストアプリ」）。
+ランナーと一緒に RelayRunnerHost がインストールされます。バンドル ID は利用者ごとに違う（`<接頭辞>.RelayRunnerHost`）ので、relay のコマンドではバンドル ID の代わりに `host` と書きます（`relay launch host`、`--bundle-id host`）。実際の ID は `relay status` の `host app` に出ます。対象アプリの代わりに操作を試せます。identifier: `relay.input` / `relay.input2`（入力欄）、`relay.password`（パスワード欄。`secureTextField`）、`relay.text`、`relay.passwordLength`、`relay.submitted`、`relay.events`（device-relay の docs/development.md の「検証用のホストアプリ」）。
 
 ```sh
-relay launch dev.yuta24.devicerelay.RelayRunnerHost
+relay launch host
 relay tap --id relay.input --timeout 3
 relay type "hello" --key return
 relay find --id relay.submitted       # label が "submitted #1: hello"
