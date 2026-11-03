@@ -7,6 +7,14 @@ import XCTest
 /// The main queue is drained serially, so commands never run concurrently.
 final class RelayRunnerUITests: XCTestCase {
     static let readyMarker = "RELAY_RUNNER_READY"
+    /// The address the server binds to, or nil for every interface. A simulator shares the Mac's network, so
+    /// listening everywhere would open the runner to the Mac's LAN; relay reaches it at 127.0.0.1 only.
+    /// A device listens everywhere: relay reaches it over the CoreDevice tunnel, or Wi-Fi with --allow-wifi.
+    #if targetEnvironment(simulator)
+    private static let listenHost: String? = "127.0.0.1"
+    #else
+    private static let listenHost: String? = nil
+    #endif
     private static let springboardBundleID = "com.apple.springboard"
 
     private var shouldStop = false
@@ -46,7 +54,7 @@ final class RelayRunnerUITests: XCTestCase {
         let gate = CommandGate()
         // The server answers 401 itself before calling this, so unauthenticated clients learn nothing
         // about the busy state or command timing.
-        let server = try RunnerHTTPServer(port: port, tokenHash: tokenHash) { [weak self] request, respond in
+        let server = try RunnerHTTPServer(port: port, host: Self.listenHost, tokenHash: tokenHash) { [weak self] request, respond in
             if request.path == "/ping" {
                 // The liveness check: answered here, so it never takes the gate from a command and never
                 // waits for the main queue. Not logged, because relay sends it every few seconds.
@@ -76,7 +84,8 @@ final class RelayRunnerUITests: XCTestCase {
         var startupError: Error?
         server.start(
             onReady: {
-                let addresses = NetworkAddresses.current().map { "\($0.interface)=\($0.address)" }
+                let addresses = Self.listenHost.map { ["lo0=\($0)"] }
+                    ?? NetworkAddresses.current().map { "\($0.interface)=\($0.address)" }
                 Self.emit("\(Self.readyMarker) port=\(port) addresses=\(addresses.joined(separator: ","))")
             },
             onFailure: { error in

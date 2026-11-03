@@ -95,7 +95,7 @@ relay start --device "iPhone 17 Pro"   # 停止中なら boot し、終了時に
 # relay: booting simulator iPhone 17 Pro (<SIM_UDID>); it is shut down when relay exits
 # relay: building runner (log: ~/.relay/logs/build-<時刻>-8100.log)   ← 初回か --rebuild 指定時だけ
 # relay: launching runner on <SIM_UDID> (log: ~/.relay/logs/runner-<時刻>-8100.log)
-# relay: runner listening; device addresses: ...
+# relay: runner listening; device addresses: 127.0.0.1   ← シミュレータのランナーは 127.0.0.1 だけで待ち受けます
 # ready: http://127.0.0.1:8100/
 # token: ~/.relay/runner.json
 ```

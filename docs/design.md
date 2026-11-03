@@ -21,7 +21,7 @@ WebDriverAgent と同じ「常駐 XCTest ランナー」方式を使います。
 - 座標系は「前面アプリの表示の向き（interface orientation）での、画面左上を原点とするポイント単位」です。横向きなら幅 > 高さの座標で指定します（詳しくは「[座標系と画面の向き](screen.md#座標系と画面の向き)」）。
 - 全エンドポイントで `Authorization: Bearer <token>` が必要です。トークンは `relay start` が起動ごとに生成します（詳しくは「[認証](http-api.md#認証)」）。
 - XCUI の失敗（`record(_:)` に送られる issue）はテストを失敗させずに HTTP 422 として返し、ランナーはそのまま動き続けます。
-- ホストからの接続経路は、シミュレータでは `127.0.0.1` です。実機では CoreDevice トンネルのアドレス（`devicectl` の `tunnelIPAddress`）か `<udid>.coredevice.local` を使います。Wi-Fi の IP は `--allow-wifi` を付けたときだけ使います。usbmux は現時点では使いません。
+- ホストからの接続経路は、シミュレータでは `127.0.0.1` です。シミュレータは Mac とネットワークを共有するので、シミュレータのランナーは `127.0.0.1` だけで待ち受け、Mac の LAN 側のアドレスからは接続できません（IPv6 の `::1` でも待ち受けません）。実機のランナーはすべてのインターフェースで待ち受けます。実機では CoreDevice トンネルのアドレス（`devicectl` の `tunnelIPAddress`）か `<udid>.coredevice.local` を使います。Wi-Fi の IP は `--allow-wifi` を付けたときだけ使います。usbmux は現時点では使いません。
 - `relay` CLI（SwiftPM）は、ビルド、ランナーの起動、到達可能なアドレスの探索、Ctrl-C（または `relay stop`）での後片付けをまとめて行います。
 
 ```

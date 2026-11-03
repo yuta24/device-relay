@@ -39,13 +39,21 @@ final class RunnerHTTPServer {
     private let tokenHash: String
     private let handler: Handler
 
-    init(port: UInt16, tokenHash: String, handler: @escaping Handler) throws {
+    /// With `host`, listens only on that address (the simulator's `127.0.0.1`); without it, on every interface.
+    init(port: UInt16, host: String? = nil, tokenHash: String, handler: @escaping Handler) throws {
         let parameters = NWParameters.tcp
         parameters.allowLocalEndpointReuse = true
         guard let nwPort = NWEndpoint.Port(rawValue: port) else {
             throw RunnerError.invalidField("port")
         }
-        self.listener = try NWListener(using: parameters, on: nwPort)
+        if let host {
+            // Binds the socket to that address. `NWListener(using:on:)` rejects a required local endpoint
+            // (EINVAL), so the port goes in the endpoint instead.
+            parameters.requiredLocalEndpoint = .hostPort(host: NWEndpoint.Host(host), port: nwPort)
+            self.listener = try NWListener(using: parameters)
+        } else {
+            self.listener = try NWListener(using: parameters, on: nwPort)
+        }
         self.tokenHash = tokenHash
         self.handler = handler
     }

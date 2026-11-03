@@ -106,7 +106,7 @@ curl -s -H "$AUTH" -X POST $R/shutdown
 - ready になると `relay start` は `{"url","token","udid"}` を `~/.relay/runner.json` にパーミッション 0600 で書き出し、stdout には `ready: <url>` とファイルの場所（`token: <path>`）だけを出します。トークンそのものは stdout に出しません（CI のログやターミナルの履歴に残りやすいため）。停止時にファイルを削除します。
 - `relay bench` は `--token` を受け付け、省略時はランナー操作のコマンドと同じ探し方で見つけた `runner.json` から読みます。`relay start` 内部の `/health` 探索、`/ping` の生存確認、`/shutdown` もトークンを付けます。
 - ランナーのログ（`relay-runner GET /health -> 200 1ms`、busy で弾いた `relay-runner GET /screenshot -> 409` など）には、メソッドとパスしか出しません。`/ping` は数秒おきに届くのでログに出しません。
-- 脅威モデル: 同じネットワーク（Wi-Fi など）にいる第三者が、タップ、アプリの起動、スクリーンショットの取得をできないようにするためのものです。ランナーはすべてのインターフェースで待ち受けますが、トークンがなければ何もできません。通信は平文の HTTP です。既定では、`relay` は CoreDevice トンネル（USB などの Mac と端末の間の経路）にしかトークンを送りません。`--allow-wifi` を付けると、Wi-Fi 上にもトークンと画面が平文で流れ、同じネットワークで盗聴できる相手には守れません。
+- 脅威モデル: 同じネットワーク（Wi-Fi など）にいる第三者が、タップ、アプリの起動、スクリーンショットの取得をできないようにするためのものです。シミュレータのランナーは `127.0.0.1` だけで待ち受けるので、Mac の LAN 側のアドレスからは接続もできません（シミュレータは Mac とネットワークを共有するため、すべてのインターフェースで待ち受けると Mac の LAN に開いてしまいます）。実機のランナーはすべてのインターフェースで待ち受けますが、トークンがなければ何もできません。通信は平文の HTTP です。既定では、`relay` は CoreDevice トンネル（USB などの Mac と端末の間の経路）にしかトークンを送りません。`--allow-wifi` を付けると、Wi-Fi 上にもトークンと画面が平文で流れ、同じネットワークで盗聴できる相手には守れません。
 - xcodebuild は `TEST_RUNNER_` 環境変数を xcresult（`relay start` では `~/.relay/build/…/DerivedData-*/Logs/Test/*.xcresult`。以前の relay は `~/Library/Developer/Xcode/DerivedData/RelayRunner-*/Logs/Test/` に作っていました）に記録します。ここに残るのはトークンの SHA-256 だけで、トークンは 256 ビットのランダム値なので、ハッシュから求めることはできず、ハッシュ自体をトークンとして送っても `401` になります。
 
 ## 同時リクエスト
