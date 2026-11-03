@@ -21,8 +21,13 @@ struct RunnerHTTPResponse {
         return RunnerHTTPResponse(status: status, contentType: "application/json; charset=utf-8", body: data)
     }
 
-    static func error(_ message: String, status: Int) -> RunnerHTTPResponse {
-        .json(["ok": false, "error": message], status: status)
+    /// `{"ok":false,"code":…,"error":…}`; see `RunnerErrorCode`.
+    static func error(_ code: RunnerErrorCode, _ message: String, status: Int) -> RunnerHTTPResponse {
+        .json(code.body(message), status: status)
+    }
+
+    static func error(_ error: RunnerError) -> RunnerHTTPResponse {
+        .json(error.json, status: error.status)
     }
 }
 
@@ -129,7 +134,7 @@ private final class RunnerHTTPConnection {
         case .incomplete:
             return false
         case .failure(let failure):
-            reject(.error(failure.message, status: failure.status))
+            reject(.json(failure.json, status: failure.status))
             return true
         case .head(let parsed, let length):
             head = parsed
@@ -137,7 +142,7 @@ private final class RunnerHTTPConnection {
         }
         // Before reading the body, so unauthenticated clients can't make the runner buffer it.
         guard RunnerAuth.isAuthorized(authorizationHeader: head.headers["authorization"], tokenHash: tokenHash) else {
-            reject(.error("unauthorized", status: 401))
+            reject(.error(.unauthorized, "unauthorized", status: 401))
             return true
         }
 
