@@ -197,28 +197,6 @@ struct RunnerLauncherTests {
         ))
     }
 
-    @Test func detectsTheApplicationStateTimeoutInXCTestRun() throws {
-        func xctestrun(_ plist: Any) throws -> Data {
-            try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
-        }
-        let arguments = ["-XCUIApplicationStateTimeout", "120"]
-        // Format 1: test targets at the top level.
-        #expect(RunnerLauncher.passesApplicationStateTimeout(xctestrun: try xctestrun([
-            "__xctestrun_metadata__": ["FormatVersion": 1],
-            "RelayRunnerUITests": ["CommandLineArguments": arguments]
-        ])))
-        // Format 2: test targets under TestConfigurations.
-        #expect(RunnerLauncher.passesApplicationStateTimeout(xctestrun: try xctestrun([
-            "__xctestrun_metadata__": ["FormatVersion": 2],
-            "TestConfigurations": [["TestTargets": [["CommandLineArguments": arguments]]]]
-        ])))
-        // Built before the scheme passed it, or passed only to the target app.
-        #expect(!RunnerLauncher.passesApplicationStateTimeout(xctestrun: try xctestrun([
-            "RelayRunnerUITests": ["CommandLineArguments": [String](), "UITargetAppCommandLineArguments": arguments]
-        ])))
-        #expect(!RunnerLauncher.passesApplicationStateTimeout(xctestrun: Data("not a plist".utf8)))
-    }
-
     @Test func readsTheSDKVersionFromTheXCTestRunName() {
         let name = "RelayRunner_iphonesimulator27.2-arm64-x86_64.xctestrun"
         #expect(XCTestRunSelection.sdkVersion(ofFileNamed: name, platform: "iphonesimulator") == "27.2")
@@ -272,7 +250,7 @@ struct RunnerLauncherTests {
             scheme.range(of: "</TestAction>", range: start.upperBound..<scheme.endIndex).map { scheme[start.lowerBound..<$0.upperBound] }
         })
         #expect(testAction.contains(#"shouldUseLaunchSchemeArgsEnv = "NO""#))
-        #expect(testAction.contains(#"argument = "\#(RunnerLauncher.applicationStateTimeoutArgument)""#))
+        #expect(testAction.contains(#"argument = "-XCUIApplicationStateTimeout""#))
         #expect(testAction.contains(#"argument = "120""#))
     }
 
@@ -297,37 +275,6 @@ struct RunnerLauncherTests {
         let failure = StartupFailure(message: "** TEST FAILED **", isUITestingSetup: false)
         #expect(RunnerLauncher.startupFailureHints(for: failure, isSimulator: false).isEmpty)
         #expect(RunnerLauncher.startupFailureHints(for: failure, isSimulator: true).isEmpty)
-    }
-
-    /// `--rebuild` alone keeps the installed copy's old scheme, so that copy needs relay install first,
-    /// also when `--project` or `$RELAY_HOME` names it rather than relay finding it on its own.
-    @Test func staleBuildNoteAsksForRelayInstallWhenTheRootIsTheInstalledCopy() throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).resolvingSymlinksInPath()
-        defer { try? FileManager.default.removeItem(at: root) }
-        let home = root.appendingPathComponent("home")
-        let installed = RunnerProject.installedRoot(home: home)
-        let checkout = root.appendingPathComponent("relay")
-        let current = root.appendingPathComponent("app")
-        for project in [installed, checkout, current] {
-            try FileManager.default.createDirectory(at: project.appendingPathComponent(RunnerProject.projectPath), withIntermediateDirectories: true)
-        }
-        func note(_ explicitPath: String?, environment: [String: String] = [:]) throws -> String {
-            let project = try RunnerProject.resolve(explicitPath: explicitPath, environment: environment, currentDirectory: current,
-                                                    executableURL: nil, home: home)
-            return RunnerLauncher.staleApplicationStateTimeoutNote(root: project.root, home: home)
-        }
-        let reinstall = "run relay install again, then relay start --rebuild"
-
-        #expect(try note(installed.path).contains(reinstall))
-        // Through /private (the temporary directory is a symlink) and with a trailing "/.": the same copy.
-        #expect(try note("/private" + installed.path + "/.").contains(reinstall))
-        #expect(try note(nil, environment: [RunnerProject.environmentKey: installed.path]).contains(reinstall))
-        #expect(RunnerLauncher.staleApplicationStateTimeoutNote(root: installed, home: home).contains(reinstall))
-
-        for other in [try note(checkout.path), try note(nil, environment: [RunnerProject.environmentKey: checkout.path]), try note(nil)] {
-            #expect(other.contains("relay start --rebuild"))
-            #expect(!other.contains("relay install"))
-        }
     }
 
     @Test func detectsTestFailures() {

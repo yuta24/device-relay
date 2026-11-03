@@ -58,7 +58,9 @@ final class RelayRunnerUITests: XCTestCase {
             if request.path == "/ping" {
                 // The liveness check: answered here, so it never takes the gate from a command and never
                 // waits for the main queue. Not logged, because relay sends it every few seconds.
-                respond(request.method == "GET" ? .json(gate.pingBody()) : .error(RunnerError.methodNotAllowed))
+                var body = gate.pingBody()
+                body["runner"] = Self.buildVersion
+                respond(request.method == "GET" ? .json(body) : .error(RunnerError.methodNotAllowed))
                 return
             }
             if request.method == "POST" && request.path == "/shutdown" {
@@ -236,7 +238,8 @@ final class RelayRunnerUITests: XCTestCase {
             "orientation": Self.name(of: orientation),
             "coordinateSpace": "points",
             "touchSynthesis": (privateTouchIsDefault ? TouchMode.private : .xcui).rawValue,
-            "foreground": foregroundApplication().json
+            "foreground": foregroundApplication().json,
+            "runner": Self.buildVersion
         ]
         // `screen` is the display the foreground app is on; `display` names it (null when that can't be told on a
         // device with more than one, where `screen` falls back to the main display and touches answer 422).
@@ -1066,6 +1069,19 @@ final class RelayRunnerUITests: XCTestCase {
     private func ok(mode: TouchMode) -> RunnerHTTPResponse {
         .json(["ok": true, "mode": mode.rawValue])
     }
+
+    /// What this build was made from, as `/ping` and `/health` report it: relay passes its version and the
+    /// hash of the runner sources to xcodebuild as build settings, and the UI test target's Info.plist expands
+    /// them (`Info.plist` next to this file). Read from the bundle, so it describes the build, not the launch;
+    /// null for a build made without them (from Xcode, say).
+    private static let buildVersion: [String: Any] = {
+        let info = Bundle(for: RelayRunnerUITests.self).infoDictionary ?? [:]
+        func value(_ key: String) -> Any {
+            guard let string = info[key] as? String, !string.isEmpty else { return NSNull() }
+            return string
+        }
+        return ["version": value("RelayRunnerVersion"), "sourceHash": value("RelayRunnerSourceHash")]
+    }()
 
     private static var isSimulator: Bool {
         #if targetEnvironment(simulator)

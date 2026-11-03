@@ -269,6 +269,7 @@ struct RunnerStatusTests {
         pid:         1234 (relay start running)
         started:     2027-01-15 08:00:00 +0000
         ping:        ok (busy for 1200 ms)
+        runner:      not reported (the runner predates build reporting)
         runner.json: /home/.relay/runner.json
         """)
     }

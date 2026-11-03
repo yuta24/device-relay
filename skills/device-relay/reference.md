@@ -11,9 +11,9 @@
 | `relay stop [--runner <path>]` | runner.json の `relay start` を止めます（ランナー、relay が boot したシミュレータ、runner.json も片付く）。同上 |
 | `relay devices [--json] [--os <version>]` | 実機とシミュレータの一覧（NAME、UDID、KIND、OS、STATE）。`--os` でその OS のものだけ |
 | `relay doctor [--udid <UDID> \| --device <名前>] [--simulator] [--os <version>] [--project <path>]` | Xcode、Runner、署名、端末（同じ指定の `relay start` が使うもの）を確認。✗ があれば 1 |
-| `relay ping` | `{"ok":true,"busy":<bool>,"busyForMs":<ms or null>}`。busy でも即答します |
+| `relay ping` | `{"ok":true,"busy":<bool>,"busyForMs":<ms or null>,"runner":{"version":…,"sourceHash":…}}`。busy でも即答します。`runner` はランナーをビルドした relay とソースのハッシュ（古いランナーにはない） |
 | `relay skill status` | このスキルの取り出し元とインストール先（プロジェクト・グローバル）、relay とのバージョンのずれ（!）。入れ直しは `relay skill install [--global \| --dir <skills dir>]`（利用者に確認してから）。詳しくは `relay skill --help` |
-| `relay health` | 端末情報、表示の向きでの画面サイズ（`screen.width` / `height` / `scale`）、`orientation`、`foreground`、表示の一覧 `displays` と前面アプリの表示 `display` |
+| `relay health` | 端末情報、表示の向きでの画面サイズ（`screen.width` / `height` / `scale`）、`orientation`、`foreground`、表示の一覧 `displays` と前面アプリの表示 `display`、ランナーの版 `runner` |
 
 `relay start` の主なオプション（`--background` と組み合わせられます）:
 
@@ -23,7 +23,7 @@
 | `--simulator` | シミュレータだけから選ぶ（実機がつながっていても）。`--device` なしでは起動中の 1 台。起動中がなければエラーになるので `--device` で名前を指定する |
 | `--os <version>` | OS で候補を絞る。`.` ごとの前方一致（`27` は 27.x、`26.5` は 26.5.x） |
 | `--port 8100` | 端末側の待ち受けポート。同じ Mac で別の `relay start` と同時に動かすときは分けます |
-| `--rebuild` | 既存のビルドがあってもランナーを再ビルド |
+| `--rebuild` | 既存のビルドがあってもランナーを再ビルド（Runner のソースや Xcode の SDK が変わったときは、付けなくても再ビルドする） |
 | `--ready-timeout 180` | ready まで待つ秒数 |
 | `--team-id <TEAM_ID>` | 実機の署名チーム（通常は自動検出） |
 | `--project <path>` | Runner プロジェクトの場所（通常は `relay install` したもの） |
@@ -67,12 +67,13 @@ device:      <端末名> (<UDID>)
 pid:         <PID> (relay start running)
 started:     <日時>
 ping:        ok (idle)
+runner:      0.2.0 (sources <12 桁>)
 runner.json: /Users/<you>/.relay/runner.json
 ```
 
 `runner.json:` も絶対パスで出ます。
 
-`--json` は 1 つのオブジェクトです: `alive`（`/ping` が 200 か）、`url`、`udid`、`name`、`pid`、`processRunning`（その `relay start` がまだ動いているか）、`startedAt`（ISO 8601）、`ping`（`{"status":200,"busy":…,"busyForMs":…}`、`{"status":401}` など、応答がなければ `{"error":"…"}`）、`runnerInfo`（runner.json のパス）。値がないものは `null` です。runner.json がなければ `{"alive":false,"error":"…"}` だけを出します。
+`--json` は 1 つのオブジェクトです: `alive`（`/ping` が 200 か）、`url`、`udid`、`name`、`pid`、`processRunning`（その `relay start` がまだ動いているか）、`startedAt`（ISO 8601）、`ping`（`{"status":200,"busy":…,"busyForMs":…}`、`{"status":401}` など、応答がなければ `{"error":"…"}`）、`runner`（`/ping` が返したランナーの版 `{"version":…,"sourceHash":…}`。古いランナーや応答なしなら `null`）、`expectedRunner`（`relay start` が runner.json に保存した期待値）、`runnerInfo`（runner.json のパス）。値がないものは `null` です。runner.json がなければ `{"alive":false,"error":"…"}` だけを出します。
 
 | 終了コード | 場合 |
 | --- | --- |
@@ -296,7 +297,7 @@ relay find --id relay.submitted       # label が "submitted #1: hello"
 
 | 症状 | 原因と対処 | device-relay の文書 |
 | --- | --- | --- |
-| 起動時に `Failed to initialize for UI testing`（`Timed out while enabling automation mode.`） | 実機では、automation mode の有効化で端末がパスコードの入力を求め、入力されないまま時間切れになったことが多い（「UI オートメーション」が無効な場合も同じエラーになる）。利用者に、端末にパスコード入力画面が出ていたら入力してもらうよう依頼してから、`relay start` し直す（許可はしばらく有効なので、直後の起動は通りやすい）。`reusing …` の後に note が出ていたら、その指示どおり作り直す（チェックアウトなら `relay start --rebuild`、`relay install` で入れた Runner（`~/.relay/runner`。`--project` や `$RELAY_HOME` で指定した場合も）なら `relay install` をやり直してから `relay start --rebuild`）。それでも続くなら 設定 > デベロッパ >「UI オートメーションを有効にする」がオンか確認してもらう。シミュレータでは一時的なことが多いので 1 回だけ起動し直す | docs/setup.md の「実機」 |
+| 起動時に `Failed to initialize for UI testing`（`Timed out while enabling automation mode.`） | 実機では、automation mode の有効化で端末がパスコードの入力を求め、入力されないまま時間切れになったことが多い（「UI オートメーション」が無効な場合も同じエラーになる）。利用者に、端末にパスコード入力画面が出ていたら入力してもらうよう依頼してから、`relay start` し直す（許可はしばらく有効なので、直後の起動は通りやすい）。`relay start` が「relay install を再実行して」と知らせていたら、利用者に確認して先に `relay install` をやり直す（古いビルドは relay が自動で作り直す）。それでも続くなら 設定 > デベロッパ >「UI オートメーションを有効にする」がオンか確認してもらう。シミュレータでは一時的なことが多いので 1 回だけ起動し直す | docs/setup.md の「実機」 |
 | 実機で「信頼されていないデベロッパ」 | Personal Team などの証明書。設定 > 一般 > VPNとデバイス管理 で信頼してもらってから起動し直す | docs/setup.md の「実機」 |
 | `relay doctor` でロック中（`passcodeRequired`）、操作が効かない | 実機のロックを解除してもらう | docs/setup.md の「環境の確認（relay doctor）」 |
 | `--allow-wifi` で届かない | 端末の「ローカルネットワーク」の許可ダイアログで許可してもらう | docs/setup.md の「実機」、docs/limitations.md |
