@@ -8,7 +8,7 @@
 - 画面の外の座標（`0 ≤ x < screen.width`、`0 ≤ y < screen.height` の外）への `/tap`・`/press`・`/swipe` は、何も送らずに `400` になります（「[画面の外の座標](http-api.md#エンドポイント)」）。縦向きの (500, 100) は iPhone 17 Pro では画面の外ですが、横向き（874×402）では中です。
 - `/health` の `screen.width` / `screen.height` はこの向きでの値です。`orientation` は表示の向きを `/orientation` と同じ名前（`portrait` / `portraitUpsideDown` / `landscapeLeft` / `landscapeRight`）で返します。`/orientation landscapeLeft` の後は `"orientation":"landscapeLeft"` になります（UIKit の interface orientation としては `landscapeRight` にあたります。デバイスとインターフェースで左右の名前が逆になるためです）。
 - 表示の向きは、端末の向き（`XCUIDevice.orientation`）と一致するとは限りません。横向きの iPhone でもホーム画面は縦のままですし、iPhone のアプリは `portraitUpsideDown` に回転しません。そのため、端末の向きではなく、リクエストのたびに前面アプリの向きを読み直します。`/orientation` を使わずに端末を手で回した場合や、アプリを切り替えた場合にも追従します。
-- 向きの取得には非公開の `-[XCUIApplication interfaceOrientation]` を使います（SpringBoard 経由で呼んでも前面アプリの向きが返り、約 1 ms）。使えない場合は、スクリーンショットの `UIImage.imageOrientation` で代用します（約 90 ms）。
+- 向きの取得には非公開 API を使います（約 1 ms）。使えない場合は、スクリーンショットの向きで代用します（約 90 ms。「[表示の向き](private-api.md#表示の向き)」）。
 - `/screenshot` の画素も表示の向きにそろえます。横向きなら幅 > 高さになり、`width = screen.width × scale`、`height = screen.height × scale` です。ただし iPhone 14 Pro 実機では、XCUI のスクリーンショット自体が 1178×2556 px で、393 pt × 3 = 1179 より短辺が 1 px 足りません（向きの正規化を入れる前から同じです）。XCUI のスクリーンショットは画素が常に縦向きで、回転は向きのメタデータとしてだけ付いているので、縦向き以外では描き直します。そのぶん時間が増えます（p50 で、シミュレータは png +50 ms・jpeg +7 ms、実機は png +30 ms・jpeg はほぼ変わらず）。
 - `maxSize` / `scale` で縮小した画像では、画素 = ポイント × `X-Relay-Image-Scale` です（下の「スクリーンショットの縮小」）。タップなどの座標は、縮小してもポイントのままです。
 - タッチ: `xcui` 経路では、XCTest が SpringBoard 基準の座標を表示の向きで解釈します。`private` 経路の合成イベントは `XCSynthesizedEventRecord` の向きの指定では座標が変換されない（縦向きの画面座標として扱われる）ため、ランナーが表示の向きの座標を縦向きの画面座標に変換し、`portrait` として送ります。どちらの経路でも同じ座標が同じ位置に当たります。
@@ -52,7 +52,7 @@
 
 ## 表示が複数ある端末（iPhone Duo）
 
-iPhone Duo には表示が 2 つあります。外側（cover。`XCUIScreen.main`）と内側（inner）で、点くのは使っている方だけです。ランナーは、前面アプリが載っている表示（以下「アプリの表示」）に合わせて動きます。
+iPhone Duo には表示が 2 つあります。外側（cover。`XCUIScreen.main`）と内側（inner）で、点くのは使っている方だけです。ランナーは、前面アプリが載っている表示（以下「アプリの表示」）に合わせて動きます。そのための非公開 API は「[非公開 API の一覧](private-api.md)」にまとめています。
 
 - **要件**: Xcode 27.1 以上と、iOS 27.1 以上の iPhone Duo（シミュレータ）。Xcode 27.2 と iOS 27.2 の iPhone Duo シミュレータで確かめました。Xcode 27.2 が既定の Xcode でなければ、`DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer relay start --device "iPhone Duo"` のように、Xcode 27.2 の Developer ディレクトリを `DEVELOPER_DIR` で指定します（パスは Xcode を置いた場所に合わせます）。実機の Duo は確かめていません。
 - **表示**: `/health` の `displays` に一覧（ID、縦向きのポイント、scale、`main`）を、`display` にアプリの表示の ID を返します。iPhone Duo のシミュレータでは、外側が ID 1（466×678 pt、main）、内側が ID 3（669×951 pt）です。ID は `xcrun devicectl device info displays --device <udid>` の `displayId` と同じです。内側はふつう横向きで使うので、内側にいるときの `screen` は 951×669、`orientation` は `landscapeRight` になります。表示が 1 つの端末でも、`displays` は 1 件、`display` はその ID です。一覧は端末に組み込まれた表示だけで、ワイヤレス（AirPlay）の表示は含めません（iPhone 14 Pro 実機の `XCUIScreen.screens` には `wireless, airplay` の表示も並んでいました。非公開の `-[XCUIScreen traits]` で見分けます）。

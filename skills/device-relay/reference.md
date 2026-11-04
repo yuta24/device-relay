@@ -306,6 +306,7 @@ relay find --id relay.submitted       # label が "submitted #1: hello"
 | `relay install を再実行して` と出る | `relay install` の後に relay が更新された。利用者に `relay install` を頼む（動作は止まらない） | docs/setup.md の「Runner の用意（relay install）」 |
 | `unknown argument: '-target-arch-variant'`（relay のビルド時） | PATH の先頭に別の Swift がある。`make install` は `xcrun swift` を使うのでそちらで | README の「要件」 |
 | 1 回の操作が数分戻らず、その間 busy が続く | 別プロセスのシート（Apple Account のサインインなど）が出ていてスナップショットが詰まっている。待つか、利用者に閉じてもらう | docs/limitations.md |
+| Xcode や iOS の更新の後、`relay health` の `touchSynthesis` が `xcui`、`foreground.source` が `fallback` になった。要素の `hasKeyboardFocus` が `null` | ランナーが使う非公開 API が使えなくなった。多くは代わりの手段で動き続けるので、タッチが遅いことを見込み、対象は `--bundle-id` で指定する | docs/private-api.md |
 | 実機で `relay button home` が効かない | ホームボタンのある端末では、代用のスワイプでコントロールセンターが開く | docs/limitations.md |
 | `the OS refused the connection (Operation not permitted)`（終了コード 3） | relay がエージェントの sandbox の中にいて localhost に接続できない。ランナーは止まっていない。上の「sandbox の中から使う」の設定を利用者に頼む | docs/setup.md の「エージェントの sandbox から使う」 |
 | 終了コード 3 だが runner.json がある | `relay start` が強制終了され、ファイルだけ残っている（`relay status` の pid が `relay start not running`、ping が応答なし）。`relay stop` で片付けて（`not running`）から起動する | docs/setup.md の「バックグラウンドで動かす」、docs/limitations.md |

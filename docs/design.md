@@ -10,14 +10,14 @@ WebDriverAgent と同じ「常駐 XCTest ランナー」方式を使います。
  Mac (host)                                   iOS device / simulator
 ┌──────────────────────┐   HTTP/1.1 (JSON)   ┌──────────────────────────────────────┐
 │ relay start / tap …  │ ──────────────────▶ │ RelayRunnerUITests-Runner            │
-│ curl / 任意のクライアント │ ◀────────────────── │  testRelay() が NWListener で待ち受け │
+│ curl / 任意のクライアント │ ◀────────────────── │  testRunServer() が NWListener で待機 │
 └──────────────────────┘                     │  └─ XCUIApplication / XCUIDevice で   │
         │ xcodebuild test-without-building   │     SpringBoard や任意アプリを操作    │
         └──────────────────────────────────▶ └──────────────────────────────────────┘
 ```
 
 - `Runner/RelayRunner.xcodeproj` の UI テストメソッドが端末上で HTTP サーバ（Network.framework）を立ち上げ、`/shutdown` を受けるまで戻りません。
-- 操作は XCUITest の API（`XCUICoordinate`、`XCUIScreen`、`XCUIDevice` など）で行います。対象アプリ側の改修や SDK の組み込みは不要です。タッチ合成、表示の向き、前面アプリの取得には XCTest の非公開 API も使い、使えない場合は公開 API に落ちます。
+- 操作は XCUITest の API（`XCUICoordinate`、`XCUIScreen`、`XCUIDevice` など）で行います。対象アプリ側の改修や SDK の組み込みは不要です。タッチ合成、前面アプリの取得、表示の向きの取得などには XCTest の非公開 API も使います（「[非公開 API の一覧](private-api.md)」）。
 - 座標系は「前面アプリの表示の向き（interface orientation）での、画面左上を原点とするポイント単位」です。横向きなら幅 > 高さの座標で指定します（詳しくは「[座標系と画面の向き](screen.md#座標系と画面の向き)」）。
 - 全エンドポイントで `Authorization: Bearer <token>` が必要です。トークンは `relay start` が起動ごとに生成します（詳しくは「[認証](http-api.md#認証)」）。
 - XCUI の失敗（`record(_:)` に送られる issue）はテストを失敗させずに HTTP 422 として返し、ランナーはそのまま動き続けます。
@@ -47,13 +47,7 @@ skills/device-relay/               コーディングエージェント向けの
 | `private`（既定） | XCTest の非公開 API でタッチを直接合成（WebDriverAgent と同じ方式） | アプリのアイドル待ちをしない。完了 callback を待ってから応答する |
 | `xcui` | 公開 API の `XCUICoordinate.tap()` / `press(forDuration:)` / `press(forDuration:thenDragTo:…)` | 前後で quiescence を待つため遅い |
 
-`private` で使う非公開 API（Xcode 27 では `XCUIAutomation.framework` にあります）:
-
-- `XCPointerEventPath`: `-initForTouchAtPoint:offset:`、`-moveToPoint:atOffset:`、`-liftUpAtOffset:`
-- `XCSynthesizedEventRecord`: `-initWithName:interfaceOrientation:`、`-addPointerEventPath:`
-- `-[XCUIDevice eventSynthesizer]` が返すオブジェクトの `-synthesizeEvent:completion:`（completion は `^(BOOL, NSError *)`）
-
-クラスとセレクタはすべて実行時に `NSClassFromString` / `respondsToSelector:` で確認します（`Runner/RelayRunnerUITests/RelayTouchSynthesizer.m`）。1 つでも欠けていれば自動で `xcui` に落ち、`/health` は `"touchSynthesis":"xcui"` になります。`mode: "private"` を明示して使えない場合は 400 を返します。動作確認用に、ランナーの環境変数 `RELAY_DISABLE_PRIVATE_TOUCH=1`（xcodebuild には `TEST_RUNNER_RELAY_DISABLE_PRIVATE_TOUCH=1`）で `private` を無効にできます。
+`private` で使う非公開 API は「[タッチ合成](private-api.md#タッチ合成)」にまとめています。クラスとセレクタはすべて実行時に `NSClassFromString` / `respondsToSelector:` で確認します（`Runner/RelayRunnerUITests/RelayTouchSynthesizer.m`）。1 つでも欠けていれば自動で `xcui` に落ち、`/health` は `"touchSynthesis":"xcui"` になります。`mode: "private"` を明示して使えない場合は 400 を返します。
 
 ジェスチャーの組み立て: tap は 0.05 秒押して離す、press は `duration` 秒後に離す、swipe は `from` で `hold` 秒止まってから `duration` 秒かけて `to` へ移動し、すぐ離します。座標は前面アプリの表示の向きから縦向きの画面座標に変換して送ります（「[座標系と画面の向き](screen.md#座標系と画面の向き)」を参照）。
 
