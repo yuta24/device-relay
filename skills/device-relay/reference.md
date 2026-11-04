@@ -154,9 +154,9 @@ Claude Code などがシェルコマンドを sandbox（macOS では Seatbelt）
 | 分かれるもの | 内容 |
 | --- | --- |
 | runner.json | `~/.relay/sessions/<name>/runner.json`。`~/.relay/runner.json` には書かず、ほかのファイルへも進まない |
-| ポート | `--port` を省くと `8101`〜`8199` の空き。`ready:` の行に出る |
+| ポート | `--port` を省くと `8101`〜`8199` の空き。`ready:` の行に出る。予約は `relay start` どうしだけなので、ほかのプロセスが先に取るとランナーの起動に失敗する（ログに `Address already in use`）。もう一度起動すれば次の空きを選ぶ |
 | 端末 | 1 台に 1 ランナー（セッションなしも同じ）。使用中の端末を指定すると、持ち主つきのエラーで終了コード 1。端末を省くと使用中のものは候補から外す |
-| ビルド | 共有。同じ DerivedData へのビルドは 1 つずつで、`waiting for another relay start's build` と出して待つ |
+| ビルド | 共有。同じ DerivedData へのビルドは 1 つずつで、ほかの起動のビルド中と、同じビルドからの起動中（ready まで）は `waiting for another relay start's build` と出して待つ。数分かかることがあるが失敗ではない |
 | ログ | `~/.relay/logs/start-<時刻>-<name>-<port>.log` など |
 
 セッションなしのコマンドが 3・4 のファイルを使い、ほかにセッションが動いていれば、stderr に `relay: warning: no session selected; using <path>, while sessions <names> are running; pass --session or set RELAY_SESSION` が出ます。終了コードは変わりません。

@@ -61,7 +61,8 @@ relay stop --session agent-1                                           # 自分�
 - `relay: warning: no session selected; using <パス>, while sessions <名前> are running` が出たら、そのコマンドはセッションなしで動いています（失敗にはなりません）。自分のランナーを使うつもりなら `--session` を付け直し、その操作がどの端末に届いたかを確かめます。
 - セッションを指定すると、ほかの runner.json へは決して進みません。まだ起動していなければ終了コード 3 です。`RELAY_SESSION` と `RELAY_RUNNER` の両方があると終了コード 1 です。
 - 1 台の端末で動かせるランナーは 1 つです。使用中の端末を指定すると、持ち主つきのエラーで終わるので、別の端末を選びます。ほかのセッションのランナーは止めません（`relay stop --all` も同様に使いません）。
-- 同じソースのビルドは共有です。ほかの `relay start` がビルド中なら `waiting for another relay start's build` と出して待ちます（失敗ではありません）。
+- 同じソースのビルドは共有です。ほかの `relay start` がビルド中か、同じビルドからランナーを起動している間は `waiting for another relay start's build` と出して待ちます。先の起動が ready になるまで数分かかることがありますが、失敗ではないので、止めたり起動し直したりせずに待ちます。
+- セッションのポートはほかの `relay start` とは重なりませんが、ほかのプロセスが先に取ると、`relay start` はランナーの起動に失敗します（ログに `Address already in use`）。そのときはもう一度 `relay start` すれば、次の空きポートを選びます。
 
 ## 観察
 
