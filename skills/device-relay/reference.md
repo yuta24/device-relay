@@ -160,11 +160,11 @@ Claude Code などがシェルコマンドを sandbox（macOS では Seatbelt）
 | `key` | `relay key return\|delete\|space [--bundle-id <id>]` |
 | `button` | `relay button home\|volumeUp\|volumeDown`（音量ボタンは実機のみ） |
 | `orientation` | `relay orientation portrait\|portraitUpsideDown\|landscapeLeft\|landscapeRight\|landscape`（`landscape` は `landscapeLeft` の別名） |
-| `launch` / `terminate` | `relay launch <bundle-id>` / `relay terminate <bundle-id>`。アプリが起動・終了するまで返らず、応答を最大 150 秒（30 + 120 秒）待ちます |
+| `launch` / `terminate` | `relay launch <bundle-id>` / `relay terminate <bundle-id>`。アプリが起動・終了するまで返らず、応答を最大 150 秒（30 + 120 秒）待ちます。`launch` は入っていないアプリならランナーに送らず、すぐに終了コード 6（`app_not_installed`）。確かめられないときは `cannot tell whether …` を出して送ります |
 | `foreground` | 前面アプリの `bundleId` と `pid` |
 | `shutdown` | ランナーを止めます（`relay start` の後片付けは行いません。通常は `relay stop` を使う） |
 
-- 応答を待つのは 30 秒に、その操作が待ちうる時間（`--timeout`、`--duration`、`--hold`、上の `type` / `launch` / `terminate`、`key` は 1 秒）を足した長さです。自分のコマンド実行のタイムアウトはそれより長くします。時間切れ（`no response within <秒>s`、終了コード 3）でもランナーはその操作を続けていて、終わるまでほかのコマンドは 409（終了コード 5）なので、`relay ping` の `busy` が `false` になるのを待ってから続けます。
+- 応答を待つのは 30 秒に、その操作が待ちうる時間（`--timeout`、`--duration`、`--hold`、上の `type` / `launch` / `terminate`、`key` は 1 秒）を足した長さです。自分のコマンド実行のタイムアウトはそれより長くします。時間切れ（`no response within <秒>s`、終了コード 3）でもランナーはその操作を続けていて、終わるまでほかのコマンドは 409（終了コード 5）なので、`relay ping` の `busy` が `false` になるのを待ってから続けます。`launch` の時間切れは数分続くことがあります。busy の間も `relay stop` は効くので、自分で起動したランナーなら止めて起動し直すほうが早く戻ります。
 - `--type` の名前、キー名、ボタン名、向き、数値の範囲は送る前に確認され、間違っていれば終了コード 1 で何も送りません（例: `relay key tab` → `unsupported key 'tab'`）。
 - `--mode` は通常指定しません（既定の `private` が速い。`xcui` はアプリのアイドルを待つので 1 回 1–2 秒）。
 
@@ -259,6 +259,7 @@ stderr に JSON が出ます。
 | `display_unknown` | 6 | 画面が暗い。利用者に確かめる |
 | `touch_failed` | 6 / 8 | 1 回だけ再試行。続くなら `relay status` とログ |
 | `xcui_failed` | 6 | エラー文（XCUI の文）を読み、前面アプリと画面を観察し直す |
+| `app_not_installed` | 6 | relay が送る前に判定（ランナーは返さない）。バンドル ID を確かめるか、アプリをインストールする |
 | `internal_error` | 8 | 1 回だけ再試行。続くなら `relay status` とログ |
 
 ## 座標と向き

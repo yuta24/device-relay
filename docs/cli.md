@@ -62,7 +62,12 @@ relay record stop                              # 録画を止め、MP4 の絶対
 - `-` で始まる文字列を入力するときは `relay type -- --text` のように `--` を挟みます。
 - パスワードなど、`ps` やシェルの履歴に残したくない文字列は `relay type --stdin` で標準入力から渡します。末尾の改行 1 つ（`\n` か `\r\n`。`echo` が付けるもの）だけを除き、それ以外はそのまま入力します。`--key` と併用でき、`<text>` と同時に指定すると終了コード 1 で何も送りません。標準入力が空でも `--key` があればキーだけを送ります。
 - 成功時はランナーの JSON をそのまま stdout に出します（`source --format text` / `compact` はテキスト）。`screenshot` だけは画像をファイルに保存し、その絶対パスを 1 行出します。既定の保存先を `$TMPDIR` にしたのは、操作する側（対象アプリのリポジトリ）の作業ツリーを汚さないためです。`--max-size` / `--scale` で縮小したときは、stdout は同じくパス 1 行のままで、stderr に `relay: image 471x1024 px, screen 402x874 pt, 1.172 px/pt (tap in points: px / 1.172)` のように画像と画面の大きさを出します（「[スクリーンショットの縮小](screen.md#スクリーンショットの縮小)」）。
-- ランナーの応答を待つのは、30 秒に、その操作でランナーが待ちうる時間を足した長さです: `find` / `tap` / `press` の `--timeout`、`press` の `--duration`（既定 1 秒）、`swipe` の `--duration` と `--hold`、`launch` / `terminate` は 120 秒（アプリが起動・終了するまで XCTest が待つ時間。ランナーは 60 秒に戻しますが、戻せないランナーでは 120 秒のままです。「[既知の制約](limitations.md)」）、`type` は 1 文字（Unicode スカラー）0.1 秒とキー 1 つ 1 秒（シミュレータで測った約 15 ms/文字の数倍）、`key` は 1 秒。`relay run` の手順も同じです。時間内に応答がなければ `no response within <秒>s` で `3` になりますが、ランナーはその操作を続けていて終わるまで busy（`409`）なので、`relay ping` の `busy` が `false` になってから続けてください。
+- ランナーの応答を待つのは、30 秒に、その操作でランナーが待ちうる時間を足した長さです: `find` / `tap` / `press` の `--timeout`、`press` の `--duration`（既定 1 秒）、`swipe` の `--duration` と `--hold`、`launch` / `terminate` は 120 秒（アプリが起動・終了するまで XCTest が待つ時間。ランナーは 60 秒に戻しますが、戻せないランナーでは 120 秒のままです。「[既知の制約](limitations.md)」）、`type` は 1 文字（Unicode スカラー）0.1 秒とキー 1 つ 1 秒（シミュレータで測った約 15 ms/文字の数倍）、`key` は 1 秒。`relay run` の手順も同じです。時間内に応答がなければ `no response within <秒>s` で `3` になりますが、ランナーはその操作を続けていて終わるまで busy（`409`）なので、`relay ping` の `busy` が `false` になってから続けてください。`launch` の時間切れの後は、数分待つことがあります（入っていないアプリでは、ランナーが応答するまで全体で約 300 秒でした）。XCTest の待ちは中断できませんが、busy の間も `relay stop` は効くので、自分で起動したランナーなら `relay stop` → `relay start` のほうが早く戻せます（シミュレータで停止 11 秒、起動 13 秒）。
+- `relay launch` と `relay run` の `launch` は、送る前にアプリが端末に入っているかを `simctl` / `devicectl` で確かめ、入っていなければランナーに送らず、すぐに終了コード 6 で終わります。stderr に `{"code":"app_not_installed","error":"<id> is not installed on <端末>","ok":false}` と `relay: <id> is not installed on <端末>; …` を出します。ランナーは busy になりません。
+  - **確かめ方**: シミュレータは `simctl get_app_container`（約 0.3 秒）、実機は `devicectl device info apps --include-all-apps --bundle-id <id>`。`--include-all-apps` がないと開発者のアプリだけが対象で、Safari も見つかりません。`host` はランナーのホストアプリなので確かめません。`relay run` では、入っていると分かったアプリを同じ実行の中で再度確かめません。
+  - **確かめられないとき**: ツールが失敗した、シミュレータが起動していない、時間内（`simctl` 5 秒、`devicectl` 10 秒）に答えがない、といった場合は、`relay: cannot tell whether <id> is installed (…)` を出してこれまでどおりランナーに送ります。入っているアプリを断らないためです。
+  - **システムのアプリ**: シミュレータでは `simctl` が返すので同じように確かめます。実機では、一覧に載らないものがありうるので `com.apple.` で始まる ID を確かめずに送ります。
+  - **対象外**: `terminate` と `--bundle-id` は確かめません。入っていないアプリでもすぐ返るからです（`terminate` は成功、`find` などは `xcui_failed`）。
 - 失敗時はランナーの JSON を stderr に出し、ステータスごとに次の終了コードで終わります。`relay:` で始まる行は人向けのヒントです。
 
 | 終了コード | 意味 |
@@ -72,11 +77,11 @@ relay record stop                              # 録画を止め、MP4 の絶対
 | `3` | ランナーに届かない（runner.json がない、接続できない・タイムアウト、接続が OS に拒否された）。`relay status` で確認し、動いていなければ `relay start --background` で起動してください。`the OS refused the connection (Operation not permitted)` と出たら、ランナーではなく relay の側がエージェントなどの sandbox の中にいて localhost に接続できません（「[エージェントの sandbox から使う](setup.md#エージェントの-sandbox-から使う)」）。起動し直しても直りません |
 | `4` | `401`。runner.json のトークンが動いているランナーのものではない（古いファイル、別のランナー） |
 | `5` | `409`（busy）。再試行してよい |
-| `6` | `422`。XCUI で失敗（フォーカスがない、要素が見つからない・1 つに決まらないなど） |
+| `6` | `422`。XCUI で失敗（フォーカスがない、要素が見つからない・1 つに決まらないなど）。`relay launch` でアプリが入っていないとき（`app_not_installed`。relay 自身の判定で、ランナーには送りません） |
 | `7` | `400` とその他の 4xx |
 | `8` | 5xx などそれ以外 |
 
-stderr に出るランナーの JSON には、機械向けの `code`（`no_keyboard_focus`、`element_ambiguous` など。一覧は「[エラーの形式と code](http-api.md#エラーの形式と-code)」）が入ります。終了コードはステータスだけで決まり、同じ終了コードの中の区別（たとえば `6` のうちフォーカスがないのか、要素が 1 つに決まらないのか）は `code` で行います。`relay:` のヒントは、`401`・`409` のほかに、次の code で出します。code を返さない古いランナーでは、`401`・`409` のヒントだけが出ます。
+stderr に出るランナーの JSON には、機械向けの `code`（`no_keyboard_focus`、`element_ambiguous` など。一覧は「[エラーの形式と code](http-api.md#エラーの形式と-code)」）が入ります。終了コードは（ランナーに送らない `app_not_installed` を除いて）ステータスだけで決まり、同じ終了コードの中の区別（たとえば `6` のうちフォーカスがないのか、要素が 1 つに決まらないのか）は `code` で行います。`relay:` のヒントは、`401`・`409` のほかに、次の code で出します。code を返さない古いランナーでは、`401`・`409` のヒントだけが出ます。
 
 | `code` | `relay:` のヒント |
 | --- | --- |
