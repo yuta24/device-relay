@@ -93,12 +93,25 @@ enum RunnerControl {
         let info = connection.info
         var client = RunnerClient(baseURL: connection.baseURL, token: info.token)
         client.timeout = baseTimeout + operation.waitTime
-        let request: RunnerHTTPRequest
+        let resolved: RunnerOperation
         do {
-            request = try operation.resolvingHostAlias(info.hostBundleID).request
+            resolved = try operation.resolvingHostAlias(info.hostBundleID)
         } catch {
             return fail("\(error)", code: .usage)
         }
+        if case .launch(let bundleID) = resolved {
+            let device = info.name ?? info.udid
+            switch AppInstallCheck.state(of: bundleID, udid: info.udid, hostBundleID: info.hostBundleID) {
+            case .notInstalled:
+                write(AppInstallCheck.notInstalledBody(bundleID: bundleID, device: device), to: .standardError)
+                return fail(AppInstallCheck.notInstalledHint(bundleID: bundleID, device: device), code: .actionFailed)
+            case .unknown(let reason?):
+                FileHandle.standardError.write(Data("relay: \(AppInstallCheck.uncheckedHint(bundleID: bundleID, reason: reason))\n".utf8))
+            case .installed, .unknown(nil):
+                break
+            }
+        }
+        let request = resolved.request
         let response: RunnerResponse
         do {
             response = try request.method == "GET" ? client.get(request.path) : client.post(request.path, json: request.body ?? [:])
@@ -109,7 +122,7 @@ enum RunnerControl {
                             code: .unavailable)
             }
             let reason = (error as? URLError)?.code == .timedOut
-                ? "no response within \(Int(client.timeout))s; check it with relay ping"
+                ? timeoutReason(for: resolved, seconds: Int(client.timeout))
                 : "is relay start running?"
             return fail("cannot reach the runner at \(info.url) (\(error.localizedDescription)); \(reason) (runner info: \(infoURL.path))",
                         code: .unavailable)
@@ -144,6 +157,18 @@ enum RunnerControl {
             write(response.body, to: .standardOutput)
         }
         return code.rawValue
+    }
+
+    /// What follows "cannot reach the runner" when a request timed out. The runner is fine but still at the
+    /// operation, and every other command gets 409 until it ends. XCTest can't be interrupted, and after a
+    /// `/launch` it may hold on for minutes more (298 s in all for an app that isn't installed).
+    static func timeoutReason(for operation: RunnerOperation, seconds: Int) -> String {
+        guard case .launch = operation else {
+            return "no response within \(seconds)s; check it with relay ping"
+        }
+        return "no response within \(seconds)s; the runner is still waiting for the app and stays busy until XCTest gives up, "
+            + "which can take minutes more. Wait until relay ping shows \"busy\":false, or if you started this runner, "
+            + "relay stop and relay start again"
     }
 
     /// Whether a `/find` answer lists an element. Its `count` is not used: with `index` it stays the number
