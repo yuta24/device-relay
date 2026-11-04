@@ -73,6 +73,7 @@ relay press --label "Photo" --type cell --duration 1.0
 - **画面が変わったら観察し直す。** frame、index、前面アプリは変わります。前の画面のセレクタや座標を確かめずに使い回さないでください。
 - コマンドは 1 つずつ、前の結果を待ってから送ります。ランナーは一度に 1 コマンドしか実行せず、重なると busy（終了コード 5）になります。
 - `relay launch` の直後は前面アプリが切り替え前のまま返ることがあります。対象を確実にしたいときは `find` / `tap` / `type` / `source` に `--bundle-id <id>` を付けます。
+- `relay health` の `foreground.source` が `fallback` のときは、手で切り替えたアプリを追えないので `--bundle-id <id>` を付けます。`touchSynthesis` が `xcui` のときは、タッチが 1 回 1–2 秒かかります。どちらも非公開 API が使えない状態です（詳しくは device-relay の docs/private-api.md）。
 
 ## 手順の再生（relay run、実験的）
 

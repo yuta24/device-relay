@@ -14,7 +14,7 @@
 | `frame` | `{"x","y","width","height"}`。`/tap` と同じ、表示の向きでのポイント単位（小数点以下 3 桁） |
 | `enabled` / `selected` | 有効か / 選択されているか |
 | `hasFocus` | 公開 API の `hasFocus`。フォーカスエンジン（iPad のキーボード操作や tvOS）のフォーカスで、iPhone で入力中の欄でも `false` です |
-| `hasKeyboardFocus` | キーボードのフォーカスがあるか（非公開の `-[XCElementSnapshot hasKeyboardFocus]`。使えなければ `null`） |
+| `hasKeyboardFocus` | キーボードのフォーカスがあるか（非公開 API。使えなければ `null`。「[キーボードのフォーカス](private-api.md#キーボードのフォーカス)」） |
 | `children` | 子要素の配列 |
 | `truncated` | `maxDepth` で子要素を省いた要素にだけ付きます（`true`） |
 

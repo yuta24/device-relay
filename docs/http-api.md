@@ -27,7 +27,7 @@
 
 **画面の外の座標**: `/tap`・`/press` の `x`・`y` と `/swipe` の `from`・`to` は、前面アプリの表示の向きでの画面（`/health` の `screen`）の中、つまり `0 ≤ x < screen.width` かつ `0 ≤ y < screen.height` でなければなりません（小数も可。`x = screen.width` は画面の外です）。外なら何も送らずに `400` と `{"ok":false,"code":"point_offscreen","error":"invalid field: x, y: (500, 100) is outside the screen, which is 402x874 points in portrait (0 <= x < 402, 0 <= y < 874; relay health shows the screen)"}` のように返します（`/swipe` では `from:` / `to:`）。以前は画面の外のタッチも `200` を返し、何も起きませんでした。`422`（XCUI で操作に失敗）ではなく `400` にしたのは、操作を試す前に値の範囲で判定でき、ほかの範囲外の値と同じ扱い（CLI では終了コード `7`）にするためです。画面は向きを変えると縦横が入れ替わるので、`relay orientation` の後は `/health` を読み直します。要素を指定したタップ（`element`）は、要素の frame の画面内の部分の中心に当たるので、この判定はありません（画面の外の要素は `422` の `offscreen`）。画面の大きさを SpringBoard から取れず `UIScreen` の値で代用している間（実機では 320×480 の互換モードの値になります）は、正しい座標を拒否しないよう判定を省きます。
 
-`/tap` `/press` `/swipe` は `"mode": "private" | "xcui"` を受け付けます（省略時は使えれば `private`）。応答の `mode` に実際に使った経路が入り、`/health` の `touchSynthesis` で端末側の既定経路がわかります。詳しくは「[タッチ合成の経路](design.md#タッチ合成の経路)」を参照してください。
+`/tap` `/press` `/swipe` は `"mode": "private" | "xcui" | "auto"` を受け付けます（`auto` は省略と同じで、使えれば `private`。`relay` の `--mode` は `private` と `xcui` だけで、省略すると `auto` と同じになります）。応答の `mode` に実際に使った経路が入り、`/health` の `touchSynthesis` で端末側の既定経路がわかります。詳しくは「[タッチ合成の経路](design.md#タッチ合成の経路)」を参照してください。
 
 `/health` の例（横向きの Safari が前面のとき）:
 
@@ -164,7 +164,7 @@ curl -s -H "$AUTH" -X POST $R/shutdown
 
 ## 前面アプリ
 
-`/type`・`/key`・`/source` は、`bundleId` を省略すると前面アプリを対象にします。`/launch` を経由せずに手で切り替えたアプリ（ホーム画面のアイコン、ステータスバーの「◀ 戻る」、他アプリからの起動など）にも追従します。`GET /foreground` と `/health` の `foreground` で確認できます。
+`/type`・`/key`・`/source`・`/find` と、要素を指定した `/tap`・`/press` は、`bundleId` を省略すると前面アプリを対象にします。`/launch` を経由せずに手で切り替えたアプリ（ホーム画面のアイコン、ステータスバーの「◀ 戻る」、他アプリからの起動など）にも追従します。`GET /foreground` と `/health` の `foreground` で確認できます。
 
 ```json
 {"bundleId":"com.apple.springboard","ok":true,"pid":35,"source":"private"}
@@ -173,14 +173,9 @@ curl -s -H "$AUTH" -X POST $R/shutdown
 | `source` | 仕組み |
 | --- | --- |
 | `private` | XCTest の非公開 API で、アクセシビリティ上アクティブなアプリを取得します（WebDriverAgent の `fb_activeApplication` と同じ方式）。ホーム画面では SpringBoard（`com.apple.springboard`）になります |
-| `fallback` | 非公開 API が使えない場合。最後に `/launch` したアプリが公開 API の `XCUIApplication.state` でまだ `runningForeground` ならそのアプリ、そうでなければ SpringBoard です。`pid` は `null` です。手で切り替えたアプリは判別できません |
+| `fallback` | 非公開 API が使えない場合のほか、API があってもアプリを 1 つも取得できない場合や、取得で XCUI の失敗が記録された場合。最後に `/launch` したアプリが公開 API の `XCUIApplication.state` でまだ `runningForeground` ならそのアプリ、そうでなければ SpringBoard です。`pid` は `null` です。手で切り替えたアプリは判別できません |
 
-`private` で使う非公開 API（`Runner/RelayRunnerUITests/RelayActiveApplication.m`）:
-
-- `-[XCUIDevice accessibilityInterface]`（`XCAXClient_iOS`）の `-activeApplications` → `XCAccessibilityElement` の配列。各要素の `-processIdentifier` で PID を得ます
-- `-[XCUIDevice applicationMonitor]` の `-monitoredApplicationWithProcessIdentifier:` → `XCUIApplication`。その `-bundleID` でバンドル ID を得ます
-
-クラスとセレクタは実行時に確認し、欠けていれば `fallback` になります。動作確認用に、ランナーの環境変数 `RELAY_DISABLE_PRIVATE_FOREGROUND=1`（xcodebuild には `TEST_RUNNER_RELAY_DISABLE_PRIVATE_FOREGROUND=1`）で `private` を無効にできます。
+`private` で使う非公開 API は「[非公開 API の一覧](private-api.md#前面アプリ)」にまとめています。クラスとセレクタは実行時に確認し、欠けていれば `fallback` になります。
 
 `activeApplications` が返すのは通常 1 つです。アプリの切り替えの途中だけ 2 つ返ることがあり（実機で計算機 → RelayRunnerHost の切り替え直後に、切り替え先が先頭でした）、先頭のアプリを前面とみなします。ホーム画面に戻るジェスチャーの直後など、切り替えのアニメーション中は直前のアプリが返ることがあります。
 

@@ -21,6 +21,8 @@
 
 > **ツールチェーンに関する注意**: `swiftly` などで入れた別の Swift ツールチェーンが PATH の先頭にあると、Xcode SDK と食い違って `unknown argument: '-target-arch-variant'` のようなエラーになることがあります。その場合は `xcrun swift build` / `xcrun swift test` / `xcrun swift run` を使い、Xcode のツールチェーンでビルドしてください（Makefile も `xcrun swift` を使います）。
 
+> **非公開 API に関する注意**: ランナーは XCTest の非公開 API を使います。Xcode / iOS の更新で予告なく変わることがあります。使うのは端末上の UI テストバンドルの中だけで、対象アプリには何も入りません。何を使っていて、使えないときにどうなるかは [docs/private-api.md](docs/private-api.md) を参照してください。
+
 ## クイックスタート
 
 ```sh
@@ -113,6 +115,7 @@ relay screenshot --scale 1                            # 1 px = 1 pt に縮小し
 | [docs/screen.md](docs/screen.md) | 座標系と画面の向き、スクリーンショットの縮小 |
 | [docs/design.md](docs/design.md) | アーキテクチャとファイル配置、タッチ合成の経路、計測したレイテンシ |
 | [docs/limitations.md](docs/limitations.md) | 既知の制約 |
+| [docs/private-api.md](docs/private-api.md) | ランナーが使う Apple の非公開 API の一覧と、使えないときの挙動 |
 | [docs/development.md](docs/development.md) | 開発者向け: リポジトリ内での実行、ランナーの手動起動、検証用のホストアプリ |
 | [skills/device-relay/](skills/device-relay/) | コーディングエージェント向けのスキル（`SKILL.md` と `reference.md`） |
 
