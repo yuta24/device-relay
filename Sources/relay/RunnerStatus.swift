@@ -102,9 +102,9 @@ enum RunnerStatus {
         } catch let error as RunnerUnavailableError {
             return notRunning(error.description, json: options.json)
         } catch let error as SessionSelectionError {
-            return fail(error.description, code: .usage)
+            return CLIOutput.usageError(error.description, command: "status")
         } catch {
-            return fail("cannot read runner info: \(error)", code: .usage)
+            return fail("cannot read runner info: \(error)", code: .failure, json: options.json ? .runnerInfoInvalid : nil)
         }
         let check = RunnerPing.checkWithBuild(info)
         let report = Report(
@@ -211,19 +211,24 @@ enum RunnerStatus {
         return formatter.string(from: date)
     }
 
+    /// No runner.json: `not running` and the reason on stderr, or, with `--json`, one object on stdout
+    /// (`alive: false` and the failure's `code` and `error`; the reason is not repeated on stderr).
     private static func notRunning(_ reason: String, json: Bool) -> Int32 {
         if json {
-            let object: [String: Any] = ["alive": false, "error": reason]
-            let data = (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])) ?? Data()
-            FileHandle.standardOutput.write(data + Data("\n".utf8))
-        } else {
-            print("not running")
+            return fail(reason, code: .unavailable, json: .runnerUnavailable)
         }
+        print("not running")
         return fail(reason, code: .unavailable)
     }
 
-    static func fail(_ message: String, code: RunnerExitCode) -> Int32 {
-        FileHandle.standardError.write(Data("relay: \(message)\n".utf8))
+    /// A failure: `relay: <message>` on stderr, or, with `--json` (`json` names the failure's code), the failure
+    /// as one object on stdout.
+    static func fail(_ message: String, code: RunnerExitCode, json errorCode: RelayErrorCode? = nil) -> Int32 {
+        if let errorCode {
+            CLIOutput.writeLine(CLIOutput.failureBody(errorCode, message, extra: ["alive": false]))
+        } else {
+            CLIOutput.note(message)
+        }
         return code.rawValue
     }
 }
@@ -251,9 +256,9 @@ enum RunnerStop {
             print("not running")
             return RunnerExitCode.success.rawValue
         } catch let error as SessionSelectionError {
-            return RunnerStatus.fail(error.description, code: .usage)
+            return CLIOutput.usageError(error.description, command: "stop")
         } catch {
-            return RunnerStatus.fail("cannot read runner info: \(error)", code: .usage)
+            return RunnerStatus.fail("cannot read runner info: \(error)", code: .failure)
         }
         return stop(info, infoURL: infoURL)
     }
@@ -270,12 +275,12 @@ enum RunnerStop {
         }
         note("stopping relay start (pid \(pid)) of session \(session), which is still booting or building")
         guard kill(pid, SIGTERM) == 0 else {
-            return RunnerStatus.fail("cannot signal relay start (pid \(pid)): \(String(cString: strerror(errno)))", code: .usage)
+            return RunnerStatus.fail("cannot signal relay start (pid \(pid)): \(String(cString: strerror(errno)))", code: .failure)
         }
         let deadline = Date().addingTimeInterval(exitTimeout)
         while StartLock.holder(of: lockURL) != nil {
             guard Date() < deadline else {
-                return RunnerStatus.fail("relay start (pid \(pid)) did not exit within \(Int(exitTimeout))s; see its log in ~/.relay/logs", code: .usage)
+                return RunnerStatus.fail("relay start (pid \(pid)) did not exit within \(Int(exitTimeout))s; see its log in ~/.relay/logs", code: .failure)
             }
             Thread.sleep(forTimeInterval: 0.2)
         }
@@ -293,13 +298,13 @@ enum RunnerStop {
             if kill(pid, SIGTERM) != 0 {
                 let error = errno
                 let reason = error == EPERM ? "; relay may be running inside a sandbox (an AI agent's, for example); run relay stop outside it" : ""
-                return RunnerStatus.fail("cannot signal relay start (pid \(pid)): \(String(cString: strerror(error)))\(reason)", code: .usage)
+                return RunnerStatus.fail("cannot signal relay start (pid \(pid)): \(String(cString: strerror(error)))\(reason)", code: .failure)
             }
             let deadline = Date().addingTimeInterval(exitTimeout)
             while RelayProcess.runningRelayStart(info) != nil {
                 guard Date() < deadline else {
                     return RunnerStatus.fail("relay start (pid \(pid)) did not exit within \(Int(exitTimeout))s; see its log in ~/.relay/logs",
-                                             code: .usage)
+                                             code: .failure)
                 }
                 Thread.sleep(forTimeInterval: 0.2)
             }

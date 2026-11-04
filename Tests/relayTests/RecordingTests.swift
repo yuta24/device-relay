@@ -69,7 +69,7 @@ struct RecordArgumentsTests {
         #expect(usage.contains("Privacy & Security > Camera"))
         #expect(usage.contains("relay record start"))
         #expect(Arguments.usage.contains("record   Records the screen of the runner's simulator, or of its device connected with USB"))
-        #expect(Arguments.errorUsage(for: "record").contains("Run relay record --help"))
+        #expect(Arguments.helpCommand(for: "record") == "relay record --help")
         #expect(usage.contains("--force"))
         #expect(usage.contains("relay record stop [--runner <path> | --session <name> | --port <n>]"))
     }
@@ -454,7 +454,7 @@ struct RecordStateLookupTests {
             == first)
         // Several: listed by port.
         _ = try writeState(port: 8101, home: home)
-        let error = #expect(throws: ArgumentError.self) {
+        let error = #expect(throws: SetupError.self) {
             try Recording.stateURLOfRunner(runnerPath: nil, home: home, environment: [:], currentDirectory: current)
         }
         #expect(error?.description.contains("--port 8101: /tmp/8101.mp4 (ended)") == true)

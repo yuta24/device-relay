@@ -106,7 +106,7 @@ struct RunnerBundleIDTests {
         #expect(try RunnerBundleID.resolve(nil, host: host) == nil)
         #expect(try RunnerBundleID.resolve("com.example.app", host: nil) == "com.example.app")
         // runner.json from an older relay start has no host app.
-        #expect(throws: ArgumentError.self) { try RunnerBundleID.resolve("host", host: nil) }
+        #expect(throws: SetupError.self) { try RunnerBundleID.resolve("host", host: nil) }
 
         #expect(try RunnerOperation.launch(bundleID: "host").resolvingHostAlias(host) == .launch(bundleID: host))
         #expect(try RunnerOperation.terminate(bundleID: "host").resolvingHostAlias(host) == .terminate(bundleID: host))

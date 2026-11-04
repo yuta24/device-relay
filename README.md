@@ -110,7 +110,7 @@ RELAY_SESSION=agent-2 codex    # 別のターミナルで、別のセッショ�
 
 - まず `relay doctor`（シミュレータなら `relay doctor --simulator`）で環境を確かめます。✗ と ! の項目には直し方が 1 行添えてあります。
 - ログは `~/.relay/logs/` にあります（`start-*.log`、`build-*.log`、`runner-*.log`）。`relay start --background` は失敗したときに原因とログの末尾を表示します。
-- サブコマンドの終了コード（`3` = ランナーに届かない、`5` = busy、`6` = XCUI で失敗 など）は [docs/cli.md](docs/cli.md) にまとめています。
+- サブコマンドの終了コード（`2` = 書き方の誤り、`3` = ランナーに届かない、`5` = busy、`6` = XCUI で失敗 など）は [docs/cli.md](docs/cli.md) にまとめています。
 - 実機特有の問題（UI オートメーション、パスコード、ホームボタンなど）は [docs/limitations.md](docs/limitations.md) を参照してください。
 
 ## ドキュメント

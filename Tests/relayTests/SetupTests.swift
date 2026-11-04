@@ -756,7 +756,7 @@ struct DoctorTests {
         var lines: [String] = []
         let status = Doctor.run(DoctorOptions(udid: deviceUDID), commands: host.commands, configURL: URL(fileURLWithPath: "/nonexistent/config.json"),
                                 resolveProject: { _ in throw SetupError(description: "not found") }, home: URL(fileURLWithPath: "/nonexistent"), output: { lines.append($0) })
-        #expect(status == RunnerExitCode.usage.rawValue)
+        #expect(status == RunnerExitCode.failure.rawValue)
         let output = lines.joined(separator: "\n")
         #expect(output.contains("✗ runner project"))
         #expect(output.contains("✗ signing"))
@@ -802,7 +802,7 @@ struct DoctorTests {
         let status = Doctor.run(DoctorOptions(udid: simulatorUDID), commands: FakeHost().commands, configURL: URL(fileURLWithPath: "/nonexistent/config.json"),
                                 resolveProject: project, home: URL(fileURLWithPath: "/nonexistent"),
                                 sandbox: { _ in [SandboxProbe.localhostCheck(connectError: EPERM)] }, output: { lines.append($0) })
-        #expect(status == RunnerExitCode.usage.rawValue)
+        #expect(status == RunnerExitCode.failure.rawValue)
         #expect(lines.contains { $0.hasPrefix("  ✗ localhost        the OS refused a connection to 127.0.0.1 (Operation not permitted)") })
         #expect(lines.contains { $0.contains("→ run relay outside the sandbox (in Claude Code: sandbox.excludedCommands)") })
     }
@@ -1168,7 +1168,7 @@ struct BundleIDSetupTests {
         var lines: [String] = []
         let status = Doctor.run(DoctorOptions(), commands: FakeHost().commands, configURL: configURL,
                                 resolveProject: project, home: URL(fileURLWithPath: "/nonexistent"), output: { lines.append($0) })
-        #expect(status == RunnerExitCode.usage.rawValue)
+        #expect(status == RunnerExitCode.failure.rawValue)
         #expect(lines.contains { $0.hasPrefix("  ✗ bundle ID        invalid bundleIDPrefix in config.json: devicerelay") })
     }
 }

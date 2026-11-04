@@ -16,7 +16,7 @@ enum RunnerSourceHash {
         var paths: [String] = []
         let keys: [URLResourceKey] = [.isRegularFileKey, .isDirectoryKey]
         guard let enumerator = manager.enumerator(at: runner, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) else {
-            throw ArgumentError(description: "cannot read \(runner.path)")
+            throw SetupError(description: "cannot read \(runner.path)")
         }
         let prefix = runner.standardizedFileURL.path + "/"
         for case let url as URL in enumerator {

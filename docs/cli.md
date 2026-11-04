@@ -2,6 +2,16 @@
 
 `relay` のサブコマンドでランナーを操作する方法、シナリオの実行（実験的）、エージェントスキルについて説明します。全体の入口は [README](../README.md) です。
 
+## 0.2.0 からの変更（破壊的）
+
+公開前に CLI の約束事をそろえました。0.2.0 のコマンドラインを使っているスクリプトやエージェントのスキルは、次の点を直してください。
+
+- **終了コード `2` を追加**: 書き方の誤り（不明なオプション、値の不足・不正、両立しないオプション、不正なセッション名、`RELAY_RUNNER` と `RELAY_SESSION` の両方の設定、`relay run` の不正な手順）は `2` になりました。`1` はローカルの失敗（端末が使用中、ビルドの失敗、ファイルがない、`relay start --background` の「すでに動いている」など）だけです。
+- **失敗の JSON は stdout**: ランナー操作のコマンドで、失敗時のランナーの JSON を stderr ではなく stdout に出します。`2>&1` を付けて stderr の JSON を読んでいたなら、stdout を読んでください。runner.json がない・接続できない（`3`）などの relay 側の失敗も `{"ok":false,"code":"runner_unavailable","error":"…"}` で stdout に出ます。`launch` の `app_not_installed` と `find --require` の一致なしも stdout です。例外は `screenshot -o -`（stdout が画像なので、失敗の JSON は stderr）。
+- **書き方の誤りは 2 行だけ**: 使い方の全文は出さず、`relay: <誤り>` と `relay: see relay <command> --help` の 2 行を stderr に出します。
+- **`--json` を受け付ける**（ランナー操作のコマンド。出力は常に JSON なので何も変えません）。`status --json`・`record status --json`・`devices --json` は、失敗でも JSON を stdout に出し、stderr に同じ文を重ねません。
+- **`--opt=value`** がすべてのサブコマンドで書けます。
+
 ## CLI から操作する
 
 `relay` には、エンドポイントを 1 つずつ呼ぶサブコマンドがあります。ランナーは `relay start --background`（または別のターミナルの `relay start`）で起動しておき、使い終わったら `relay stop` で止めます。トークンを自分で扱わずに、人もスクリプトもエージェントも同じ形で操作できます。`relay <command> --help` で各コマンドの使い方を表示します。
@@ -23,6 +33,7 @@ relay key delete
 relay screenshot                               # 保存先の絶対パスを出力（既定は $TMPDIR/relay/screenshot-<時刻>.png）
 relay screenshot -o shot.jpg --quality 0.5     # 拡張子 .jpg / --quality で jpeg
 relay screenshot --scale 1                     # 端末側で 1 px = 1 pt に縮小（stderr に画像と画面の大きさ）
+relay tap --label=OK --type=button             # --opt=value の形でも書ける（すべてのサブコマンド）
 relay screenshot --max-size 1024 --format jpeg # 長辺 1024 px に縮小
 relay source --max-depth 3 | jq .tree
 relay source --format text --bundle-id com.apple.Preferences
@@ -56,24 +67,28 @@ relay record stop                              # 録画を止め、MP4 の絶対
 | `run`（実験的） | 手順ごとに上のエンドポイント | `<file>` か `-` か `--step <手順>`（複数可）、`--runner`、`--session`、`--quiet`。「シナリオの実行（relay run、実験的）」 |
 | `record start` / `stop` / `status` | –（シミュレータはホストの `simctl io recordVideo`、実機は Mac のキャプチャデバイス） | `-o <file>`、`--force`、`--max-duration <s>`（start）、`--json`（status）、`--port <n>`（stop・status）、`--runner`、`--session`。「録画（relay record）」 |
 
-- バンドル ID の代わりに `host` と書くと、ランナーのホストアプリ RelayRunnerHost のバンドル ID になります（`launch`・`terminate` と、`--bundle-id` を取るコマンド）。バンドル ID は利用者ごとに違う（「[バンドル ID の接頭辞](setup.md#バンドル-id-の接頭辞)」）ので、relay は `relay start` がビルドしたアプリの ID を runner.json の `hostBundleID` に書き、そこから置き換えます。`relay status` の `host app` にも出ます。古い relay の `relay start` が書いた runner.json にはないので、`host` は終了コード 1 になります（ランナーを起動し直します）。
-- セレクタは `--id`（= `identifier`）・`--label`・`--type`・`--value` を 1 つ以上と、任意の `--index <n>` です（「[要素セレクタ](elements.md#要素セレクタ)」と同じ完全一致・AND）。`--type` の名前、キー名、ボタン名、向きの名前、数値の範囲は送る前に確認し、間違っていれば終了コード 1 で何も送りません。
-- `relay find` は一致がなくても終了コード 0（`"count":0`）です。`--require` を付けると、一致する要素がないときに終了コード 6 で終わり、応答の JSON を stderr に、`relay: no element matched` を続けて出します（`--index` が範囲外のときも同じ）。`relay find <セレクタ> --timeout 5 --require` は「現れるまで待ち、現れなければ失敗する」確認になり、スクリプトは JSON を読まずに終了コードだけで判断できます。判定はホスト側で行い、ランナーへのリクエストは変わりません。
+- バンドル ID の代わりに `host` と書くと、ランナーのホストアプリ RelayRunnerHost のバンドル ID になります（`launch`・`terminate` と、`--bundle-id` を取るコマンド）。バンドル ID は利用者ごとに違う（「[バンドル ID の接頭辞](setup.md#バンドル-id-の接頭辞)」）ので、relay は `relay start` がビルドしたアプリの ID を runner.json の `hostBundleID` に書き、そこから置き換えます。`relay status` の `host app` にも出ます。古い relay の `relay start` が書いた runner.json にはないので、`host` は終了コード 1（`runner_info_invalid`）になります（ランナーを起動し直します）。
+- セレクタは `--id`（= `identifier`）・`--label`・`--type`・`--value` を 1 つ以上と、任意の `--index <n>` です（「[要素セレクタ](elements.md#要素セレクタ)」と同じ完全一致・AND）。`--type` の名前、キー名、ボタン名、向きの名前、数値の範囲は送る前に確認し、間違っていれば終了コード 2 で何も送りません。
+- `relay find` は一致がなくても終了コード 0（`"count":0`）です。`--require` を付けると、一致する要素がないときに終了コード 6 で終わり、応答（`count`・`elements`）に `"ok":false,"code":"element_not_found","error":"no element matched"` を足した JSON を stdout に出します（`--index` が範囲外のときも同じ）。`relay find <セレクタ> --timeout 5 --require` は「現れるまで待ち、現れなければ失敗する」確認になり、スクリプトは JSON を読まずに終了コードだけで判断できます。判定はホスト側で行い、ランナーへのリクエストは変わりません。
 - `-` で始まる文字列を入力するときは `relay type -- --text` のように `--` を挟みます。
-- パスワードなど、`ps` やシェルの履歴に残したくない文字列は `relay type --stdin` で標準入力から渡します。末尾の改行 1 つ（`\n` か `\r\n`。`echo` が付けるもの）だけを除き、それ以外はそのまま入力します。`--key` と併用でき、`<text>` と同時に指定すると終了コード 1 で何も送りません。標準入力が空でも `--key` があればキーだけを送ります。
+- パスワードなど、`ps` やシェルの履歴に残したくない文字列は `relay type --stdin` で標準入力から渡します。末尾の改行 1 つ（`\n` か `\r\n`。`echo` が付けるもの）だけを除き、それ以外はそのまま入力します。`--key` と併用でき、`<text>` と同時に指定すると終了コード 2 で何も送りません。標準入力が UTF-8 のテキストでなければ、ローカルの失敗として終了コード 1 です。標準入力が空でも `--key` があればキーだけを送ります。
 - 成功時はランナーの JSON をそのまま stdout に出します（`source --format text` / `compact` はテキスト）。`screenshot` だけは画像をファイルに保存し、その絶対パスを 1 行出します。既定の保存先を `$TMPDIR` にしたのは、操作する側（対象アプリのリポジトリ）の作業ツリーを汚さないためです。`--max-size` / `--scale` で縮小したときは、stdout は同じくパス 1 行のままで、stderr に `relay: image 471x1024 px, screen 402x874 pt, 1.172 px/pt (tap in points: px / 1.172)` のように画像と画面の大きさを出します（「[スクリーンショットの縮小](screen.md#スクリーンショットの縮小)」）。
 - ランナーの応答を待つのは、30 秒に、その操作でランナーが待ちうる時間を足した長さです: `find` / `tap` / `press` の `--timeout`、`press` の `--duration`（既定 1 秒）、`swipe` の `--duration` と `--hold`、`launch` / `terminate` は 120 秒（アプリが起動・終了するまで XCTest が待つ時間。ランナーは 60 秒に戻しますが、戻せないランナーでは 120 秒のままです。「[既知の制約](limitations.md)」）、`type` は 1 文字（Unicode スカラー）0.1 秒とキー 1 つ 1 秒（シミュレータで測った約 15 ms/文字の数倍）、`key` は 1 秒。`relay run` の手順も同じです。時間内に応答がなければ `no response within <秒>s` で `3` になりますが、ランナーはその操作を続けていて終わるまで busy（`409`）なので、`relay ping` の `busy` が `false` になってから続けてください。`launch` の時間切れの後は、数分待つことがあります（入っていないアプリでは、ランナーが応答するまで全体で約 300 秒でした）。XCTest の待ちは中断できませんが、busy の間も `relay stop` は効くので、自分で起動したランナーなら `relay stop` → `relay start` のほうが早く戻せます（シミュレータで停止 11 秒、起動 13 秒）。
-- `relay launch` と `relay run` の `launch` は、送る前にアプリが端末に入っているかを `simctl` / `devicectl` で確かめ、入っていなければランナーに送らず、すぐに終了コード 6 で終わります。stderr に `{"code":"app_not_installed","error":"<id> is not installed on <端末>","ok":false}` と `relay: <id> is not installed on <端末>; …` を出します。ランナーは busy になりません。
+- `relay launch` と `relay run` の `launch` は、送る前にアプリが端末に入っているかを `simctl` / `devicectl` で確かめ、入っていなければランナーに送らず、すぐに終了コード 6 で終わります。stdout に `{"code":"app_not_installed","error":"<id> is not installed on <端末>","ok":false}` を、stderr に `relay: <id> is not installed on <端末>; …` を出します。ランナーは busy になりません。
   - **確かめ方**: シミュレータは `simctl get_app_container`（約 0.3 秒）、実機は `devicectl device info apps --include-all-apps --bundle-id <id>`。`--include-all-apps` がないと開発者のアプリだけが対象で、Safari も見つかりません。`host` はランナーのホストアプリなので確かめません。`relay run` では、入っていると分かったアプリを同じ実行の中で再度確かめません。
   - **確かめられないとき**: ツールが失敗した、シミュレータが起動していない、時間内（`simctl` 5 秒、`devicectl` 10 秒）に答えがない、といった場合は、`relay: cannot tell whether <id> is installed (…)` を出してこれまでどおりランナーに送ります。入っているアプリを断らないためです。
   - **システムのアプリ**: シミュレータでは `simctl` が返すので同じように確かめます。実機では、一覧に載らないものがありうるので `com.apple.` で始まる ID を確かめずに送ります。
   - **対象外**: `terminate` と `--bundle-id` は確かめません。入っていないアプリでもすぐ返るからです（`terminate` は成功、`find` などは `xcui_failed`）。
-- 失敗時はランナーの JSON を stderr に出し、ステータスごとに次の終了コードで終わります。`relay:` で始まる行は人向けのヒントです。
+- **出力の規則**: ランナー操作のコマンドの出力は常に JSON です（`--json` は受け付けますが何も変えません。ほかのツール向けに書いたコマンドラインをそのまま通すためです）。**JSON を出すコマンドは、成功でも失敗でも JSON を stdout に 1 つ出し**、`relay:` で始まる人向けの行（ヒント・警告）は stderr に出します。失敗時は、ランナーの JSON をそのまま stdout に出し、relay 側で起きた失敗（runner.json がない、接続できない、アプリが入っていない、保存できないなど）も同じ形 `{"ok":false,"code":"<snake_case>","error":"…"}` で stdout に出します。ステータスごとの終了コードは次のとおりです。
+  - 例外 1: `relay screenshot` の成功時は JSON ではなく保存先のパス 1 行です。`-o -` のときは stdout が画像そのものなので、失敗時の JSON は stderr に出します。
+  - 例外 2: 書き方の誤り（終了コード 2）は JSON にしません。stderr に `relay: <誤りの内容>` と `relay: see relay <command> --help`（そのコマンドに `--help` がなければ `relay --help`）の 2 行だけを出し、stdout には何も出しません。使い方の全文は出しません。
+- **`--opt=value`**: すべてのサブコマンドで、値を取るオプションは `--port=8101` のように書けます（`--port 8101` と同じ）。最初の `=` で分け、`--` で始まる引数だけが対象です（`-o=file` や `a=b` のような位置引数は分けません）。値を取らないフラグに `=` を付ける（`--json=true`）と書き方の誤りです。`--` より後ろは分けないので、`relay type -- --x=y` は `--x=y` という文字列を入力します。`--` を挟まない `relay type --x=y` は、以前と同じく不明なオプションです。`relay run` の手順の中も同じです。
 
 | 終了コード | 意味 |
 | --- | --- |
 | `0` | 成功（2xx） |
-| `1` | 引数の誤り、runner.json が読めない、スクリーンショットを保存できないなど、ローカルの失敗 |
+| `1` | ローカルの失敗: runner.json が読めない、スクリーンショットを保存できない、端末が使用中・ビルドの失敗・シミュレータがない・ファイルがない、`relay start --background` で「すでに動いている」「ポートを握られている」、`relay doctor` が問題を見つけた、など |
+| `2` | 書き方の誤り: 不明なオプション、値の不足・不正、両立しないオプション、不正なセッション名、`RELAY_RUNNER` と `RELAY_SESSION` の両方の設定、`relay run` の不正な手順（何も実行しない）など |
 | `3` | ランナーに届かない（runner.json がない、接続できない・タイムアウト、接続が OS に拒否された）。`relay status` で確認し、動いていなければ `relay start --background` で起動してください。`the OS refused the connection (Operation not permitted)` と出たら、ランナーではなく relay の側がエージェントなどの sandbox の中にいて localhost に接続できません（「[エージェントの sandbox から使う](setup.md#エージェントの-sandbox-から使う)」）。起動し直しても直りません |
 | `4` | `401`。runner.json のトークンが動いているランナーのものではない（古いファイル、別のランナー） |
 | `5` | `409`（busy）。再試行してよい |
@@ -81,7 +96,21 @@ relay record stop                              # 録画を止め、MP4 の絶対
 | `7` | `400` とその他の 4xx |
 | `8` | 5xx などそれ以外 |
 
-stderr に出るランナーの JSON には、機械向けの `code`（`no_keyboard_focus`、`element_ambiguous` など。一覧は「[エラーの形式と code](http-api.md#エラーの形式と-code)」）が入ります。終了コードは（ランナーに送らない `app_not_installed` を除いて）ステータスだけで決まり、同じ終了コードの中の区別（たとえば `6` のうちフォーカスがないのか、要素が 1 つに決まらないのか）は `code` で行います。`relay:` のヒントは、`401`・`409` のほかに、次の code で出します。code を返さない古いランナーでは、`401`・`409` のヒントだけが出ます。
+失敗の JSON には、機械向けの `code` が入ります。ランナーの `code`（`no_keyboard_focus`、`element_ambiguous` など。一覧は「[エラーの形式と code](http-api.md#エラーの形式と-code)」）のほかに、relay 自身が出す次の `code` があります（ランナーは返しません。名前は変えません）。
+
+| `code` | 終了コード | 意味 |
+| --- | --- | --- |
+| `runner_unavailable` | `3` | runner.json がない、接続できない、接続が OS に拒否された |
+| `runner_timeout` | `3` | 時間内に応答がない（ランナーは操作を続けていて、終わるまで busy） |
+| `runner_info_invalid` | `1` | runner.json が読めない、url が不正、`host` を解決できない |
+| `runner_bad_response` | ランナーのステータスによる（`8` など） | ランナーが JSON でない本文のエラーを返した（古いランナー、別のサーバー）。`status` に HTTP ステータスが入ります |
+| `screenshot_save_failed` | `1` | 画像を受け取ったが、ファイルに保存できない |
+| `app_not_installed` | `6` | `launch` で、アプリが端末に入っていない（ランナーには送らない） |
+| `element_not_found` | `6` | `find --require` で一致なし（ランナーの `code` と同じ。`count`・`elements` も付く） |
+
+`relay status --json` の失敗は `alive:false` を足した同じ形、`relay record status --json` の失敗は `runner_unavailable` か `recording_unavailable`、`relay devices --json` の失敗は `devices_unavailable`（終了コード 1）の `{"ok":false,"code":…,"error":…}` を stdout に 1 つ出します（stderr に同じ文は出しません）。
+
+終了コードは（ランナーに送らない `app_not_installed` を除いて）ステータスだけで決まり、同じ終了コードの中の区別（たとえば `6` のうちフォーカスがないのか、要素が 1 つに決まらないのか）は `code` で行います。`relay:` のヒントは、`401`・`409` のほかに、次の code で出します。code を返さない古いランナーでは、`401`・`409` のヒントだけが出ます。
 
 | `code` | `relay:` のヒント |
 | --- | --- |
@@ -96,13 +125,13 @@ stderr に出るランナーの JSON には、機械向けの `code`（`no_keybo
 URL とトークンは `runner.json` から読みます。トークンはコマンドライン引数では受け取りません（`ps` やシェルの履歴に残るため）。次の順に探し、最初に見つかったものを使います。
 
 1. `--runner <path>` か `--session <名前>`（両方は指定できません）
-2. 環境変数 `RELAY_RUNNER`（runner.json のパス）か `RELAY_SESSION`（セッション名）。両方が設定されていると、どちらを指すのか決められないのでエラー（終了コード 1）です
+2. 環境変数 `RELAY_RUNNER`（runner.json のパス）か `RELAY_SESSION`（セッション名）。両方が設定されていると、どちらを指すのか決められないので書き方の誤り（終了コード 2）です
 3. カレントディレクトリから親へ順に `.relay/runner.json`
 4. `~/.relay/runner.json`
 
 オプションは環境変数より優先するので、`RELAY_SESSION` が設定された環境でも `--runner` で別のファイルを指定できます。セッションの runner.json は `~/.relay/sessions/<名前>/runner.json` です。
 
-1 と 2 で指定したファイルやセッションがなければ、3・4 や他のセッションに進まずに終了コード 3 で終わります（意図しない別の端末を操作しないため）。不正なセッション名は終了コード 1 です。`relay status`・`relay stop`・`relay record`・`relay run`・`relay bench` も同じ順に探します（`relay bench` は `--url` を省くと、セッションの URL を使います）。
+1 と 2 で指定したファイルやセッションがなければ、3・4 や他のセッションに進まずに終了コード 3 で終わります（意図しない別の端末を操作しないため）。不正なセッション名は終了コード 2 です。`relay status`・`relay stop`・`relay record`・`relay run`・`relay bench` も同じ順に探します（`relay bench` は `--url` を省くと、セッションの URL を使います）。
 
 3・4 で見つけたファイルを使うとき、ほかにセッションが動いていれば（`~/.relay/sessions/*/runner.json` があるか、`session.lock` が握られていれば）、`relay: warning: no session selected; using <パス>, while sessions <名前> are running; pass --session or set RELAY_SESSION` を stderr に出します。エージェントのコマンドがセッションの指定を失って、別のランナーを操作している恐れがあるためです。失敗にはせず、終了コードも変えません。ランナーには問い合わせません。
 
@@ -139,16 +168,16 @@ screenshot --output about.png --scale 1
 
 （「情報」の identifier は iOS のバージョンで違うので、ラベルと型で指定しています。「一般」が画面外にある端末では、`tap` の前に `swipe` と `sleep 2` が要ります（下の「スワイプの後は固定の待ちが要ります」）。）
 
-- **入力**は `<file>`、`-`（標準入力）、`--step <手順>`（複数可）のどれか 1 つです。2 つ以上や、どれもないときは使用法エラー（終了コード 1）です。ファイルと標準入力は UTF-8 で、先頭の BOM（U+FEFF）は取り除き、CRLF の改行も読めます。ファイルの相対パスと、手順の中の `--output` の相対パスは、どちらもカレントディレクトリが基準です。
+- **入力**は `<file>`、`-`（標準入力）、`--step <手順>`（複数可）のどれか 1 つです。2 つ以上や、どれもないときは書き方の誤り（終了コード 2）です。ファイルが読めない、標準入力が UTF-8 でない、はローカルの失敗（終了コード 1）です。ファイルと標準入力は UTF-8 で、先頭の BOM（U+FEFF）は取り除き、CRLF の改行も読めます。ファイルの相対パスと、手順の中の `--output` の相対パスは、どちらもカレントディレクトリが基準です。
 - **1 行 1 手順**で、`relay` を付けずにサブコマンドをそのまま書きます。空行と、`#` で始まる行（前の空白は無視）は飛ばします。行の途中の `#` はコメントではなく文字です。`--step` は 1 つが 1 手順で、改行を含められません。
 - **語の区切り**はシェルに似た最小限のものです。空白とタブで区切り、`'...'` は中身をそのまま、`"..."` は `\"` と `\\` だけを解釈し、引用符の外の `\` は次の 1 文字をそのまま使います。変数展開やグロブはありません。
-- **使える手順**: `ping` `health` `foreground` `screenshot` `source` `find` `tap` `press` `swipe` `type` `key` `button` `orientation` `launch` `terminate` と、疑似手順の `sleep <秒>`（0 < 秒 ≤ 60）。オプションと値の確認は単独のコマンドと同じです。
+- **使える手順**: `ping` `health` `foreground` `screenshot` `source` `find` `tap` `press` `swipe` `type` `key` `button` `orientation` `launch` `terminate` と、疑似手順の `sleep <秒>`（0 < 秒 ≤ 60）。オプションと値の確認は単独のコマンドと同じで、`--json`（何も変えません）と `--opt=value` も書けます。
 - **使えない手順**: `start` `stop` `status` `install` `doctor` `devices` `skill` `bench` `config` `run` など、ランナーへの操作でないものと、`shutdown`（以降の手順が実行できないため。後片付けは `relay stop`）。手順の中の `--runner`（接続先は `relay run` に 1 回だけ指定）、`--help`、`type --stdin`（標準入力はシナリオのもの）も使えません。`screenshot` は `--output <file>` が必須です（stdout はほかの手順の出力に使うので、`-o -` も不可）。
 - **形式の版**: 最初の手順より前に `# relay-run: 1` と書くと、そのシナリオが形式 1 で書かれたことを示せます（任意。書かなければ今の形式として読みます）。形式が変わったとき、古いシナリオが黙って違う意味で動かないようにするためのものです。`1` 以外の値、値のないもの、最初の手順より後にあるものは、その行のエラーとして何も実行しません。コメント行の形なので、この行を知らない relay では読み飛ばされます。保存して使い回すシナリオには書いておくことをおすすめします。
-- **事前検証**: 実行の前に全手順を確かめ、1 つでも不正なら何も実行せずに、不正な行ごとに `relay: line <N>: <理由>` を出して終了コード 1 で終わります（`--step` では何番目かを行番号とします）。`--check` を付けると、この検証だけを行って終わります。runner.json を読まず何も実行しないので、ランナーが動いていなくても使えます。問題がなければ stderr に `relay: 7 steps checked; nothing was run` を出して終了コード 0（`--quiet` なら何も出しません）。エージェントが書いたシナリオを流す前の確認に使えます。
+- **事前検証**: 実行の前に全手順を確かめ、1 つでも不正なら何も実行せずに、不正な行ごとに `relay: line <N>: <理由>` を stderr に出し、続けて `relay: see relay run --help` を出して終了コード 2 で終わります（`--step` では何番目かを行番号とします）。`--check` を付けると、この検証だけを行って終わります。runner.json を読まず何も実行しないので、ランナーが動いていなくても使えます。問題がなければ stderr に `relay: 7 steps checked; nothing was run` を出して終了コード 0（`--quiet` なら何も出しません）。エージェントが書いたシナリオを流す前の確認に使えます。
 - **実行**: runner.json は最初に 1 回だけ探して読み（「接続先（runner.json）の探し方」と同じ順。`--runner` は `relay run` に付けます）、手順は同じプロセスの中で順に送ります。手順ごとに `relay` を起動し直さないので、そのぶん速くなります。
-- **出力**: 各手順の stdout（`find` の JSON、`screenshot` の保存先など）は、単独で実行したときと同じものが stdout にそのまま出ます。stderr には手順ごとに `relay: [3/7] tap --id com.apple.settings.general --timeout 5 --bundle-id com.apple.Preferences ... ok (448 ms)` を、最後に `relay: 7 of 7 steps succeeded in 7672 ms` を出します（失敗したときは `relay: 3 of 7 steps succeeded in … ms; exit status 6`）。`--quiet`（`-q`）でこの 2 種類を消せます。進行行と失敗行では、`type` の文字列を `***` に伏せます（`relay: [4/9] type *** --key return ... ok`）。シナリオでは `--stdin` が使えず、パスワードを書くならシナリオに書くしかないためです。ファイル自体は利用者が管理してください。
-- **失敗**: 最初に失敗した手順で止めます。stderr には、その手順の通常のエラー（ランナーの JSON や `relay:` のヒント）に続いて `relay: step 4/7 (line 5) failed: find --label About --type button --timeout 5 --require --bundle-id com.apple.Preferences` を出し、その手順の終了コード（3・4・5・6・7・8、スクリーンショットを保存できなければ 1）で終わります。すべて成功すれば 0 です。失敗しても続ける `--continue-on-error` はありません。
+- **出力**: 各手順の stdout（`find` の JSON、`screenshot` の保存先など）は、単独で実行したときと同じものが stdout にそのまま順に出ます。失敗した手順の JSON（`{"ok":false,"code":…}`）も同じ規則で stdout に出るので、stdout の最後の JSON が失敗の内容です。stderr には手順ごとに `relay: [3/7] tap --id com.apple.settings.general --timeout 5 --bundle-id com.apple.Preferences ... ok (448 ms)` を、最後に `relay: 7 of 7 steps succeeded in 7672 ms` を出します（失敗したときは `relay: 3 of 7 steps succeeded in … ms; exit status 6`）。`--quiet`（`-q`）でこの 2 種類を消せます。進行行と失敗行では、`type` の文字列を `***` に伏せます（`relay: [4/9] type *** --key return ... ok`）。シナリオでは `--stdin` が使えず、パスワードを書くならシナリオに書くしかないためです。ファイル自体は利用者が管理してください。
+- **失敗**: 最初に失敗した手順で止めます。その手順の通常のエラーの JSON は stdout に、`relay:` のヒントは stderr に出て、stderr にはそれに続いて `relay: step 4/7 (line 5) failed: find --label About --type button --timeout 5 --require --bundle-id com.apple.Preferences` を出し、その手順の終了コード（3・4・5・6・7・8、スクリーンショットを保存できなければ 1）で終わります。すべて成功すれば 0 です。失敗しても続ける `--continue-on-error` はありません。
 - **待ちは `find --timeout` / `--timeout` で。** 画面が変わる操作の後は、次の画面の要素を `find <セレクタ> --timeout <秒>` で待つか、`tap` / `press` の `--timeout` で要素が現れるのを待たせます。要素が現れた時点で次に進むので、固定の `sleep` より速く、遅い環境でも崩れにくくなります。`sleep` は、要素で表せない待ち（アニメーションの終わりなど）のための最後の手段です。
 - **確認は `find --require` で。** 手順は単独のコマンドと同じ意味なので、`find` は一致がなくても成功（`"count":0`）で、シナリオは先に進みます。`find <セレクタ> --timeout 5 --require` と書くと「現れるまで待ち、現れなければそこで止める」確認になります（終了コード 6）。観察のためだけの `find`（結果を後で読む）には `--require` を付けません。
 
@@ -208,7 +237,7 @@ relay record stop --port 8101         # runner.json によらず、そのポー�
 - **1 つのランナーに 1 つ**: 録画の状態（録画するプロセス（simctl、実機なら `relay record supervise`）の PID と起動時刻、保存先、UDID、開始時刻、ポート、ログ、シミュレータか実機か）を `~/.relay/recording-<port>.json`（パーミッション 0600。runner.json と同じ書き方）に保存します。ポートは runner.json の URL のものです。録画中にもう一度 `record start` すると、`a recording is already running for the runner at … ; stop it with relay record stop …` で `1` です。録画するプロセスがもう動いていない状態ファイル（自動停止した、強制終了されたなど）は次の `record start` を妨げず、削除して新しく始めます（動画ファイルは残ります）。PID は起動時刻と実行ファイル名・引数（simctl の recordVideo、実機なら relay の record supervise）も一致したときだけ録画中とみなすので、PID が再利用されても誤りません。
 - **自動停止**: `--max-duration <秒>`（既定 600 秒）で録画を止めます。止め忘れてディスクを使い続けないためです。切り離したプロセス（`relay record supervise`。内部用）が時間を数え、シミュレータなら simctl に SIGINT を送り、実機なら自分で書き出しを終えます（時間は録画プロセスの開始から数えるので、実機では最初のフレームまでの 1 秒ほど動画が短くなります）。自動停止した後も状態ファイルは残り、`record stop` で `relay: the recording had already ended (reached --max-duration of …)` を stderr に、保存先を stdout に出します。
 - **停止**: `record stop` は録画するプロセス（simctl、実機なら `relay record supervise`）に SIGINT を送り、終了（MP4 の書き出し）を最大 30 秒待ち（実機では、書き出した後もキャプチャを止めてから 3.5 秒待ってから終わるので、`record stop` は 4 秒ほどかかります。直後の `record start` が画面を見つけられるようにするためです）、ファイルが存在して空でないことを確かめてから、絶対パスを stdout に出して `0` で終わり、状態ファイルを削除します。録画していなければ `not recording` で `0` です（`relay stop` と同じ考え方）。30 秒以内に終わらなければ状態ファイルを残して `1`（もう一度 `record stop` できます）、動画が空・ないときは `1` です。`--runner` か `$RELAY_RUNNER` で指定した runner.json がなければ、ほかのコマンドと同じく `--runner … does not exist; is relay start running?` で `3` です。runner.json がなくなった後（ランナーが止まった後）でも、`--runner` も `$RELAY_RUNNER` もなければ、`~/.relay` に状態ファイルが 1 つだけならそれを止めます。複数あるときは、ポートごとに保存先と録画中か（`recording` / `ended`）を一覧にして `choose one with --port <n>` で `1` です。
-- **ポートで選ぶ**: `record stop` と `record status` は、`--port <n>` を付けると runner.json を探さずに、そのポートの状態ファイル（`~/.relay/recording-<n>.json`）を直接使います。runner.json がなくても、複数のランナーを別のポートで動かしていても使えます。そのポートに録画がなければ `not recording` で `0` です。`--runner` と同時には指定できません（`1`）。
+- **ポートで選ぶ**: `record stop` と `record status` は、`--port <n>` を付けると runner.json を探さずに、そのポートの状態ファイル（`~/.relay/recording-<n>.json`）を直接使います。runner.json がなくても、複数のランナーを別のポートで動かしていても使えます。そのポートに録画がなければ `not recording` で `0` です。`--runner` と同時には指定できません（書き方の誤りなので `2`）。
 - **状態**: `record status` は、録画中か（`recording: yes (12s; stops by itself after 600s)`、自動停止などで終わっていれば `ended`）、保存先、UDID、録画するプロセスの PID、開始時刻、ログを出します。実機の録画でフレームが止まっている間は、`frames: no frame for 5s (the device may be locked, …)` の行も出します（下の「実機のフレームが止まったとき」）。`--json` では 1 つの JSON オブジェクト（`kind`（`simulator` / `device`）、`recording`、`output`、`udid`、`port`、`pid`、`startedAt`、`elapsedSeconds`、`maxDuration`、`log`、`state`。フレームが止まっている間は `stall` も）、録画していなければ `{"recording":false}` です。終了コードは録画の有無によらず `0` です。
 - **後片付け**: `relay stop` は、ランナーを止める前に、そのランナー（runner.json のポート）の録画を止めて書き出し、`relay: saved the recording: <path>` を stderr に出します（stdout は今までどおり `stopped` / `not running`）。`relay start` も、Ctrl-C や SIGTERM で終わるとき、boot したシミュレータを shutdown する前に、自分のポートの録画を同じように書き出します。実機でも同じです。
 - **シミュレータが先に shutdown されたとき**: simctl は録画を続けたまま終わりません（自動停止までそのまま）。`record stop` は通常どおり SIGINT を送り、shutdown した時点までの動画を書き出して保存先を出し、`relay: the simulator … is no longer booted; the video ends where it shut down` を stderr に添えます。

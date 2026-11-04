@@ -83,7 +83,7 @@ enum RunnerBundleID {
     static func resolve(_ bundleID: String?, host: String?) throws -> String? {
         guard bundleID == hostAlias else { return bundleID }
         guard let host else {
-            throw ArgumentError(description: "runner.json does not name the runner's host app (written by an older relay start); "
+            throw SetupError(description: "runner.json does not name the runner's host app (written by an older relay start); "
                 + "restart the runner with relay start, or pass the bundle ID")
         }
         return host

@@ -410,7 +410,7 @@ struct StartLogTests {
 
         // relay install --build has no port.
         #expect(try RunnerLauncher.createLog("build", in: directory, stamp: stamp, port: nil).lastPathComponent == "build-20261029-120000.log")
-        #expect(throws: ArgumentError.self) {
+        #expect(throws: SetupError.self) {
             try RunnerLauncher.createLog("start", in: directory.appendingPathComponent("missing"), stamp: stamp, port: 8100)
         }
     }

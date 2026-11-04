@@ -12,7 +12,7 @@ description: relay CLI（device-relay）で iOS のシミュレータや実機�
 ## セットアップ（初回だけ）
 
 1. `command -v relay` で確認します。なければ、device-relay のチェックアウトで `make install`（`~/.local/bin/relay` にリンク。`~/.local/bin` が PATH にあること）→ `relay install`（Runner プロジェクトとこのスキルを `~/.relay/runner` にコピー）を実行するよう利用者に頼みます。利用者のホームに書き込むので、断りなく実行しないでください。
-2. `relay doctor [--udid <UDID> | --device <名前>] [--simulator] [--os <version>]` で環境を確かめます（`relay start` に付けるのと同じ指定で、その端末を確認します）。✗ があれば終了コード 1 で、各行に直し方が出ます。! は注意で、起動は止めません。
+2. `relay doctor [--udid <UDID> | --device <名前>] [--simulator] [--os <version>]` で環境を確かめます（`relay start` に付けるのと同じ指定で、その端末を確認します）。✗ があれば終了コード 1（ローカルの失敗）で、各行に直し方が出ます。! は注意で、起動は止めません。
 3. このスキル自体は `relay skill install`（対象アプリのリポジトリの `.claude/skills/device-relay` にコピー。`--global` なら `~/.claude/skills`）で入ります。`relay skill status` で ! が出たら（relay の更新でスキルが古い）、`relay skill install` で更新するよう利用者に伝えます。リポジトリやホームのファイルを書き換えるので、断りなく実行しないでください。
 
 ### sandbox の中で動くとき
@@ -59,7 +59,7 @@ relay stop --session agent-1                                           # 自分�
 ```
 
 - `relay: warning: no session selected; using <パス>, while sessions <名前> are running` が出たら、そのコマンドはセッションなしで動いています（失敗にはなりません）。自分のランナーを使うつもりなら `--session` を付け直し、その操作がどの端末に届いたかを確かめます。
-- セッションを指定すると、ほかの runner.json へは決して進みません。まだ起動していなければ終了コード 3 です。`RELAY_SESSION` と `RELAY_RUNNER` の両方があると終了コード 1 です。
+- セッションを指定すると、ほかの runner.json へは決して進みません。まだ起動していなければ終了コード 3 です。`RELAY_SESSION` と `RELAY_RUNNER` の両方があると書き方の誤りで終了コード 2 です。
 - 1 台の端末で動かせるランナーは 1 つです。使用中の端末を指定すると、持ち主つきのエラーで終わるので、別の端末を選びます。ほかのセッションのランナーは止めません（`relay stop --all` も同様に使いません）。
 - 同じソースのビルドは共有です。ほかの `relay start` がビルド中か、同じビルドからランナーを起動している間は `waiting for another relay start's build` と出して待ちます。先の起動が ready になるまで数分かかることがありますが、失敗ではないので、止めたり起動し直したりせずに待ちます。
 - セッションのポートはほかの `relay start` とは重なりませんが、ほかのプロセスが先に取ると、`relay start` はランナーの起動に失敗します（ログに `Address already in use`）。そのときはもう一度 `relay start` すれば、次の空きポートを選びます。
@@ -123,17 +123,18 @@ relay press --label "Photo" --type cell --duration 1.0
 | コード | 意味 | 対処 |
 | --- | --- | --- |
 | 0 | 成功 | – |
-| 1 | 引数の誤りやローカルの失敗（何も送っていない） | コマンドを直す。`relay <command> --help` |
+| 1 | ローカルの失敗（runner.json が読めない、端末が使用中、ビルドの失敗、`relay start --background` で「すでに動いている」など。何も送っていない） | stdout の JSON か stderr の `relay:` 行の理由を読んで直す |
+| 2 | 書き方の誤り（不明なオプション、値の不足・不正、両立しないオプション、不正なセッション名など）。stderr に `relay: <誤り>` と `relay: see relay <command> --help` の 2 行だけが出る（JSON も stdout もない） | コマンドを直す。`relay <command> --help` |
 | 3 | ランナーに届かない（runner.json がない、接続できない、`no response within <秒>s`） | `no response within` なら、ランナーは操作を続けているので `relay ping` の `busy` が `false` になるまで待つ（`launch` / `terminate` は最大 150 秒、長い `type` は 1 文字 0.1 秒ぶん待つので、自分のコマンドのタイムアウトをそれより長くする）。`launch` の時間切れは、busy がさらに数分続くことがあるので、自分で起動したランナーなら `relay stop` → 起動し直すほうが早い。それ以外は `relay status`。runner.json がなければ `relay start --background …`。runner.json はあるが応答しない（`relay start` が強制終了されたなど）なら、`relay stop` で片付けてから起動。`the OS refused the connection` なら relay が sandbox の中にいる（上の「sandbox の中で動くとき」）ので、止めも起動もしない |
 | 4 | トークンが拒否された（401）。runner.json が古いか、別のランナーのもの | `relay status` で URL・端末・PID を確かめ、`--runner` / `--session` / `$RELAY_RUNNER` / `$RELAY_SESSION` / カレントディレクトリから親へ順にたどった `.relay/runner.json` も確認。自分で起動したものなら `relay stop` → 起動し直す。そうでなければ止めずに利用者に確認 |
 | 5 | busy（409）。別のコマンドを実行中 | 1 秒ほど待つか、`relay ping` が `"busy":false` になってから再試行 |
-| 6 | 操作の失敗（422）: 要素が見つからない・1 つに決まらない・無効・画面外、キーボードのフォーカスがない。`relay launch` のアプリが入っていない | stderr の JSON の `code` で分ける（下の表）。要素の失敗は `reason` と `candidates` を読み、観察し直してセレクタを直す |
+| 6 | 操作の失敗（422）: 要素が見つからない・1 つに決まらない・無効・画面外、キーボードのフォーカスがない。`relay launch` のアプリが入っていない | stdout の JSON の `code` で分ける（下の表）。要素の失敗は `reason` と `candidates` を読み、観察し直してセレクタを直す |
 | 7 | リクエストの拒否（400 などの 4xx） | `code` が `point_offscreen` なら座標が画面の外（`relay health` の `screen` を読み直す。向きを変えると縦横が入れ替わる）。`touch_mode_unavailable` なら `--mode` を外して送り直す。`invalid_request` などはエラー文を読んで直す |
 | 8 | ランナーのエラー（5xx など） | 1 回だけ再試行。続くなら `relay status` とログを確認 |
 
-成功時はランナーの JSON が stdout に、失敗時は stderr に出ます。stderr の `relay:` で始まる行は人向けのヒントです。
+ランナー操作のコマンドの出力は常に JSON で、成功でも失敗でも stdout に 1 つ出ます（`--json` は付けても付けなくても同じです）。stderr の `relay:` で始まる行は人向けのヒントで、`2>&1` で混ぜる必要はありません。例外は `relay screenshot`（成功時は保存先のパス 1 行。`-o -` のときは画像が stdout なので、失敗の JSON は stderr）と、書き方の誤り（終了コード 2。JSON なし）です。`--port=8101` のような `--opt=value` の形も書けます。
 
-失敗時の JSON（`{"ok":false,"code":"…","error":"…"}`）の `code` は安定した文字列なので、英文の `error` ではなく `code` で分岐します。終了コード 6 でよく出るもの:
+失敗時の JSON（`{"ok":false,"code":"…","error":"…"}`）は、ランナーの応答のほか、relay 側の失敗（`runner_unavailable`・`runner_timeout`＝終了コード 3、`runner_info_invalid`・`screenshot_save_failed`＝1、`app_not_installed`＝6 など）も同じ形です。`code` は安定した文字列なので、英文の `error` ではなく `code` で分岐します。終了コード 6 でよく出るもの:
 
 | `code` | 対処 |
 | --- | --- |

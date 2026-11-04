@@ -96,13 +96,50 @@ struct ConfigOptions: Equatable {
     var action: Action
 }
 
+/// A command line that is wrong, found while reading the arguments (or, for a `relay run` scenario, its steps):
+/// exit status 2, and two lines on stderr (see `CLIOutput.usageError`). A failure that is not about how the
+/// command was written is a `SetupError`.
 struct ArgumentError: Error, CustomStringConvertible {
     let description: String
 }
 
 enum Arguments {
+    /// Every option that takes no value, whichever command it belongs to: `--opt=value` on one of them is an error.
+    static let valuelessOptions: Set<String> = [
+        "--json", "--simulator", "--rebuild", "--verbose", "--allow-wifi", "--background", "--all", "--stdin",
+        "--require", "--quiet", "--check", "--force", "--build", "--remove", "--link", "--global", "--help", "--version"
+    ]
+
+    /// Rewrites `--opt=value` as `--opt value`, the one form the parsers read, before any of them looks at the
+    /// arguments. Only an argument that starts with `--` and has a name before the first `=` is split, so
+    /// `-o=file`, a positional such as `a=b`, and everything after a bare `--` (text to type) stay as given.
+    /// A flag with a value (`--json=true`) is an error rather than a flag followed by an argument.
+    static func splittingEquals(_ arguments: [String]) throws -> [String] {
+        var result: [String] = []
+        var rest = arguments[...]
+        while let argument = rest.popFirst() {
+            if argument == "--" {
+                result.append(argument)
+                result += rest
+                break
+            }
+            guard argument.hasPrefix("--"), let equals = argument.firstIndex(of: "="), argument.distance(from: argument.startIndex, to: equals) > 2 else {
+                result.append(argument)
+                continue
+            }
+            let name = String(argument[..<equals])
+            guard !valuelessOptions.contains(name) else {
+                throw ArgumentError(description: "\(name) does not take a value (got \(argument))")
+            }
+            result.append(name)
+            result.append(String(argument[argument.index(after: equals)...]))
+        }
+        return result
+    }
+
     /// `standardInput` is read only by `relay type --stdin`; tests pass their own.
     static func parse(_ raw: [String], standardInput: () -> Data = { FileHandle.standardInput.readDataToEndOfFile() }) throws -> Command {
+        let raw = try splittingEquals(raw)
         guard let subcommand = raw.first else { return .help }
         var rest = Array(raw.dropFirst())
 

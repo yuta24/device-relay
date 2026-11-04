@@ -79,7 +79,7 @@ runner.json: /Users/<you>/.relay/runner.json
 | 終了コード | 場合 |
 | --- | --- |
 | 0 | `/ping` に応答した |
-| 3 | runner.json がない、または応答しない（stderr に「relay stop で片付け、relay start --background で起動」の案内） |
+| 3 | runner.json がない、または応答しない（stderr に「relay stop で片付け、relay start --background で起動」の案内。`--json` なら `{"alive":false,"ok":false,"code":"runner_unavailable",…}` も stdout に出る） |
 | 4 | トークンが拒否された（401）。runner.json が、そのアドレスで動いているランナーのものではない（別の `relay start`、古いファイル、`--runner` / `$RELAY_RUNNER` / カレントディレクトリから親へ順にたどった `.relay/runner.json`）。自分で起動したものでなければ利用者に確認する |
 | ほか | `/ping` がそれ以外の HTTP 状態を返した（ランナー操作のコマンドと同じ対応: 404 などは 7、5xx は 8） |
 
@@ -141,7 +141,7 @@ Claude Code などがシェルコマンドを sandbox（macOS では Seatbelt）
 ランナー操作のコマンドは、URL とトークンを次の順に探した runner.json から読みます（トークンはコマンドラインでは渡せません）。
 
 1. `--runner <path>` か `--session <name>`（両方は不可）
-2. 環境変数 `RELAY_RUNNER` か `RELAY_SESSION`（両方あると終了コード 1）
+2. 環境変数 `RELAY_RUNNER` か `RELAY_SESSION`（両方あると書き方の誤りで終了コード 2）
 3. カレントディレクトリから親へ順に `.relay/runner.json`
 4. `~/.relay/runner.json`（セッションなしの `relay start` が書く場所）
 
@@ -182,7 +182,7 @@ Claude Code などがシェルコマンドを sandbox（macOS では Seatbelt）
 | `shutdown` | ランナーを止めます（`relay start` の後片付けは行いません。通常は `relay stop` を使う） |
 
 - 応答を待つのは 30 秒に、その操作が待ちうる時間（`--timeout`、`--duration`、`--hold`、上の `type` / `launch` / `terminate`、`key` は 1 秒）を足した長さです。自分のコマンド実行のタイムアウトはそれより長くします。時間切れ（`no response within <秒>s`、終了コード 3）でもランナーはその操作を続けていて、終わるまでほかのコマンドは 409（終了コード 5）なので、`relay ping` の `busy` が `false` になるのを待ってから続けます。`launch` の時間切れは数分続くことがあります。busy の間も `relay stop` は効くので、自分で起動したランナーなら止めて起動し直すほうが早く戻ります。
-- `--type` の名前、キー名、ボタン名、向き、数値の範囲は送る前に確認され、間違っていれば終了コード 1 で何も送りません（例: `relay key tab` → `unsupported key 'tab'`）。
+- `--type` の名前、キー名、ボタン名、向き、数値の範囲は送る前に確認され、間違っていれば書き方の誤りで終了コード 2、何も送りません（例: `relay key tab` → `unsupported key 'tab'`）。
 - `--mode` は通常指定しません（既定の `private` が速い。`xcui` はアプリのアイドルを待つので 1 回 1–2 秒）。
 
 ## シナリオの実行（relay run、実験的）
@@ -199,10 +199,10 @@ relay run steps.relay --check   # 検証だけ（ランナー不要、何も実�
 - 手順は `relay` を除いたランナー操作のコマンド（`tap`・`press`・`swipe`・`type`・`key`・`button`・`orientation`・`launch`・`terminate`・`find`・`source`・`screenshot`・`health`・`foreground`・`ping`）と `sleep <秒>`（60 秒まで）です。`start` / `stop` / `shutdown` などは書けません。
 - 語の区切りはシェル風（空白、`'...'`、`"..."`、`\`）です。`--runner` は `relay run` 側に付け、手順には書けません。`type --stdin` も使えません。`screenshot` は `--output <file>` が必須です。
 - 保存するシナリオは、最初の行に `# relay-run: 1`（形式の版）を書きます。対応しない版なら、その行のエラーで何も実行しません。
-- 実行前に全行を確かめ、不正な行があれば `relay: line <N>: <理由>` を出して何も実行せず終了コード 1。書いたシナリオは、流す前に `--check` で確かめられます。
+- 実行前に全行を確かめ、不正な行があれば `relay: line <N>: <理由>` を出して何も実行せず終了コード 2（stderr のみ）。書いたシナリオは、流す前に `--check` で確かめられます。
 - 実行中は最初に失敗した手順で止まり、その手順のエラーと `relay: step i/n (line N) failed: <手順>` を出して、その手順の終了コード（1・3〜8。1 はスクリーンショットを保存できなかったとき）で終わります。
 - 手順は単独のコマンドと同じ意味です。確認したい要素は `find <セレクタ> --timeout <秒> --require` で待ち、現れなければそこで止めます（終了コード 6）。`--require` のない `find` は一致がなくても先に進みます。固定の `sleep` は最後の手段です。
-- 各手順の stdout はそのまま stdout に、手順ごとの進行（`relay: [i/n] … ok (… ms)`）と合計は stderr に出ます（`--quiet` で消える）。進行行と失敗行では `type` の文字列を `***` に伏せますが、シナリオのファイルには書いたまま残ります。利用者から渡されたパスワードをシナリオに書かないでください（1 コマンドずつ `relay type --stdin` を使う）。
+- 各手順の stdout（失敗した手順の `{"ok":false,"code":…}` も）はそのまま stdout に、手順ごとの進行（`relay: [i/n] … ok (… ms)`）と合計は stderr に出ます（`--quiet` で消える）。進行行と失敗行では `type` の文字列を `***` に伏せますが、シナリオのファイルには書いたまま残ります。利用者から渡されたパスワードをシナリオに書かないでください（1 コマンドずつ `relay type --stdin` を使う）。
 
 ## 要素ツリーの形式
 
@@ -239,7 +239,7 @@ button label="General" id="com.apple.settings.general" frame=16,293,370,52
 
 ## 操作が失敗したとき（終了コード 6）
 
-stderr に JSON が出ます。
+stdout に JSON が出ます（`relay screenshot -o -` だけは stderr）。
 
 ```json
 {"candidates":[…],"code":"element_ambiguous","count":2,"error":"2 elements match the selector; add conditions or an index","ok":false,"reason":"ambiguous"}

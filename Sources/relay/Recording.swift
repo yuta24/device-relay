@@ -62,7 +62,7 @@ struct RecordingState: Codable, Equatable {
         unlink(url.path)
         let fd = open(url.path, O_WRONLY | O_CREAT | O_EXCL, 0o600)
         guard fd >= 0 else {
-            throw ArgumentError(description: "cannot create \(url.path): \(String(cString: strerror(errno)))")
+            throw SetupError(description: "cannot create \(url.path): \(String(cString: strerror(errno)))")
         }
         let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
         try handle.write(contentsOf: data)
@@ -295,9 +295,9 @@ enum Recording {
         } catch let error as RunnerUnavailableError {
             return fail(error.description, code: .unavailable)
         } catch let error as SessionSelectionError {
-            return fail(error.description, code: .usage)
+            return CLIOutput.usageError(error.description, command: "record")
         } catch {
-            return fail("cannot read runner info: \(error)", code: .usage)
+            return fail("cannot read runner info: \(error)", code: .failure)
         }
         let ping = RunnerPing.check(info)
         guard ping.isAlive else {
@@ -309,7 +309,7 @@ enum Recording {
         do {
             simulators = try DeviceList.parseSimctl(Data(Shell.xcrun(["simctl", "list", "devices", "--json"]).utf8))
         } catch {
-            return fail("cannot list the simulators: \(error)", code: .usage)
+            return fail("cannot list the simulators: \(error)", code: .failure)
         }
         let recorded: Device
         switch target(udid: info.udid, devices: simulators) {
@@ -317,7 +317,7 @@ enum Recording {
             // simctl also "records" a shut-down simulator, into an empty file.
             guard simulator.isBooted else {
                 return fail("the simulator \(simulator.name) (\(simulator.udid)) is \(simulator.state); recording needs it booted",
-                            code: .usage)
+                            code: .failure)
             }
             recorded = simulator
         case .device, .notFound:
@@ -327,14 +327,14 @@ enum Recording {
                 devices = try DeviceList.parseDevicectl(HostCommands.live.devicectlJSON(["list", "devices"]))
             } catch {
                 return fail("the runner runs on \(info.name.map { "\($0) (\(info.udid))" } ?? info.udid), which is not a simulator, "
-                    + "and devicectl cannot list the devices: \(error)", code: .usage)
+                    + "and devicectl cannot list the devices: \(error)", code: .failure)
             }
             guard case .device(let device) = target(udid: info.udid, devices: devices) else {
                 return fail("the runner runs on \(info.name.map { "\($0) (\(info.udid))" } ?? info.udid), which is neither a simulator "
-                    + "nor a device devicectl lists (relay devices shows them)", code: .usage)
+                    + "nor a device devicectl lists (relay devices shows them)", code: .failure)
             }
             if let problem = DeviceCapture.connectionProblem(device) {
-                return fail(problem, code: .usage)
+                return fail(problem, code: .failure)
             }
             recorded = device
         }
@@ -344,7 +344,7 @@ enum Recording {
             try? FileManager.default.createDirectory(at: outputURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         }
         if let problem = outputProblem(outputURL, force: force) {
-            return fail(problem, code: .usage)
+            return fail(problem, code: .failure)
         }
 
         let port = port(of: info)
@@ -353,17 +353,17 @@ enum Recording {
         try? FileManager.default.createDirectory(at: lockURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         let lockFD = open(lockURL.path, O_RDWR | O_CREAT | O_CLOEXEC, 0o644)
         guard lockFD >= 0 else {
-            return fail("cannot open \(lockURL.path): \(String(cString: strerror(errno)))", code: .usage)
+            return fail("cannot open \(lockURL.path): \(String(cString: strerror(errno)))", code: .failure)
         }
         defer { close(lockFD) }
         guard flock(lockFD, LOCK_EX | LOCK_NB) == 0 else {
-            return fail("another relay record start for the runner at \(info.url) is starting; check it with relay record status", code: .usage)
+            return fail("another relay record start for the runner at \(info.url) is starting; check it with relay record status", code: .failure)
         }
 
         let stateURL = stateURL(port: port, home: home)
         if let existing = try? RecordingState.read(from: stateURL) {
             if isRecording(existing) {
-                return fail(alreadyRecordingMessage(existing, url: info.url), code: .usage)
+                return fail(alreadyRecordingMessage(existing, url: info.url), code: .failure)
             }
             unlink(stateURL.path)
             note("removed the state of a recording that has ended (\(existing.output) stays)")
@@ -376,13 +376,13 @@ enum Recording {
                 note("recording a device needs camera access; allow it in the dialog macOS shows for the app relay runs in")
                 switch DeviceCapture.requestAccess() {
                 case .some(true): break
-                case .some(false): return fail(DeviceCapture.accessProblem(.denied) ?? "camera access was denied", code: .usage)
+                case .some(false): return fail(DeviceCapture.accessProblem(.denied) ?? "camera access was denied", code: .failure)
                 case .none: return fail("no answer to the camera access dialog within \(Int(DeviceCapture.accessTimeout))s; "
-                    + "allow the app relay runs in, in System Settings > Privacy & Security > Camera, and try again", code: .usage)
+                    + "allow the app relay runs in, in System Settings > Privacy & Security > Camera, and try again", code: .failure)
                 }
             }
             if let problem = DeviceCapture.accessProblem(DeviceCapture.access) {
-                return fail(problem, code: .usage)
+                return fail(problem, code: .failure)
             }
         }
 
@@ -396,7 +396,7 @@ enum Recording {
             logURL = try RunnerLauncher.createLog("record", in: logsURL, stamp: RunnerLauncher.timestamp(), port: port, session: info.session)
             supervisor = try BackgroundStart.spawnDetached(arguments: arguments, logURL: logURL)
         } catch {
-            return fail("cannot start the recording: \(error)", code: .usage)
+            return fail("cannot start the recording: \(error)", code: .failure)
         }
 
         // Ctrl-C while waiting stops the recording rather than leaving it to run until --max-duration.
@@ -430,7 +430,7 @@ enum Recording {
                     try state.write(to: stateURL)
                 } catch {
                     kill(pid, SIGINT)
-                    return fail("cannot save the recording state: \(error); stopped the recording", code: .usage)
+                    return fail("cannot save the recording state: \(error); stopped the recording", code: .failure)
                 }
                 print(outputURL.path)
                 note("recording \(recorded.name) (\(info.udid)) for at most \(Int(maxDuration))s; relay record stop finishes the video "
@@ -448,7 +448,7 @@ enum Recording {
                     do {
                         supervisor = try BackgroundStart.spawnDetached(arguments: arguments, logURL: logURL)
                     } catch {
-                        return fail("cannot start the recording: \(error)", code: .usage)
+                        return fail("cannot start the recording: \(error)", code: .failure)
                     }
                     progress = Progress()
                     deadline = Date().addingTimeInterval(timeout)
@@ -474,8 +474,10 @@ enum Recording {
             found = try locateState(runnerPath: runnerPath, session: session, port: port, home: home)
         } catch let error as RunnerUnavailableError {
             return fail(error.description, code: .unavailable)
+        } catch let error as SessionSelectionError {
+            return CLIOutput.usageError(error.description, command: "record")
         } catch {
-            return fail("\(error)", code: .usage)
+            return fail("\(error)", code: .failure)
         }
         guard let found else {
             print("not recording")
@@ -504,7 +506,7 @@ enum Recording {
             while isRecording(state) {
                 guard Date() < deadline else {
                     return .failed("\(state.recorder) (pid \(state.pid)) did not finish writing \(state.output) within \(Int(stopTimeout))s; "
-                        + "run relay record stop again, or see \(state.log)", .usage)
+                        + "run relay record stop again, or see \(state.log)", .failure)
                 }
                 Thread.sleep(forTimeInterval: 0.2)
             }
@@ -521,7 +523,7 @@ enum Recording {
         let size = (try? FileManager.default.attributesOfItem(atPath: state.output)[.size] as? NSNumber)?.intValue ?? 0
         guard size > 0 else {
             let what = FileManager.default.fileExists(atPath: state.output) ? "is empty" : "was not written"
-            return .failed("the video \(state.output) \(what); see \(state.log)", .usage)
+            return .failed("the video \(state.output) \(what); see \(state.log)", .failure)
         }
         return .saved(state.output)
     }
@@ -545,9 +547,11 @@ enum Recording {
         do {
             found = try locateState(runnerPath: runnerPath, session: session, port: port, home: home)
         } catch let error as RunnerUnavailableError {
-            return fail(error.description, code: .unavailable)
+            return failStatus(error.description, code: .unavailable, errorCode: .runnerUnavailable, json: json)
+        } catch let error as SessionSelectionError {
+            return CLIOutput.usageError(error.description, command: "record")
         } catch {
-            return fail("\(error)", code: .usage)
+            return failStatus("\(error)", code: .failure, errorCode: .recordingUnavailable, json: json)
         }
         guard let found else {
             if json {
@@ -619,7 +623,7 @@ enum Recording {
         do {
             return (url, try RecordingState.read(from: url))
         } catch {
-            throw ArgumentError(description: "cannot read \(url.path): \(error)")
+            throw SetupError(description: "cannot read \(url.path): \(error)")
         }
     }
 
@@ -644,7 +648,7 @@ enum Recording {
             }
             let candidates = stateURLs(home: home)
             guard candidates.count <= 1 else {
-                throw ArgumentError(description: severalRecordingsMessage(candidates.compactMap { url in
+                throw SetupError(description: severalRecordingsMessage(candidates.compactMap { url in
                     let state = try? RecordingState.read(from: url)
                     return port(ofStateURL: url).map { Candidate(port: $0, output: state?.output, recording: state.map { isRecording($0) } ?? false) }
                 }))
@@ -674,7 +678,14 @@ enum Recording {
             note("\(recorder)'s output (\(logURL.path)):")
             FileHandle.standardError.write(Data((lines.suffix(BackgroundStart.tailLineCount).map { "  \($0)" }.joined(separator: "\n") + "\n").utf8))
         }
-        return fail(reason, code: .usage)
+        return fail(reason, code: .failure)
+    }
+
+    /// A failure of `record status`: with `--json`, one object on stdout (and nothing on stderr), else a `relay:` line.
+    private static func failStatus(_ message: String, code: RunnerExitCode, errorCode: RelayErrorCode, json: Bool) -> Int32 {
+        guard json else { return fail(message, code: code) }
+        CLIOutput.writeLine(CLIOutput.failureBody(errorCode, message))
+        return code.rawValue
     }
 
     private static func note(_ message: String) {
