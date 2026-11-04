@@ -2,10 +2,14 @@ import Foundation
 
 enum Bench {
     static func run(_ options: BenchOptions) throws {
-        guard let baseURL = URL(string: options.url) else {
-            throw ArgumentError(description: "invalid --url: \(options.url)")
+        // A session's runner.json only: the search below could find another runner's.
+        let sessionURL = try sessionInfoURL(options)
+        let sessionInfo = try sessionURL.map { try RunnerInfo.read(from: $0) }
+        let url = options.url.isEmpty ? (sessionInfo?.url ?? "") : options.url
+        guard let baseURL = URL(string: url), !url.isEmpty else {
+            throw ArgumentError(description: "invalid --url: \(url)")
         }
-        let client = RunnerClient(baseURL: baseURL, token: try token(options))
+        let client = RunnerClient(baseURL: baseURL, token: try token(options, infoURL: sessionURL))
 
         var cases: [(name: String, request: () throws -> RunnerResponse)] = [
             ("GET /health", { try client.get("/health") }),
@@ -37,6 +41,17 @@ enum Bench {
             }
             print(format(benchCase.name, samples: samples, bytes: bytes))
         }
+    }
+
+    /// The runner.json of `--session` or `$RELAY_SESSION`, unless `--runner`-like `$RELAY_RUNNER` is what selects
+    /// the runner (`RunnerLocator.selection`); nil without a session. Nothing is read with both `--url` and `--token`.
+    static func sessionInfoURL(_ options: BenchOptions, environment: [String: String] = ProcessInfo.processInfo.environment,
+                               home: URL = UserHome.url) throws -> URL? {
+        guard options.url.isEmpty || options.token == nil,
+              case .session = try RunnerLocator.selection(explicitPath: nil, session: options.session, environment: environment) else {
+            return nil
+        }
+        return try RunnerLocator.locate(explicitPath: nil, session: options.session, environment: environment, home: home)
     }
 
     /// `--token`, or the token `relay start` saved in the runner.json the runner commands find (`RunnerLocator`).

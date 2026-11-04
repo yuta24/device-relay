@@ -59,7 +59,10 @@ final class RunnerLauncher {
     /// `~/.relay`: logs and runner.json. Nothing goes to the current directory, which is usually the
     /// app's repository.
     private let stateURL: URL
+    /// The file `relay start` writes: `runner.json` in `stateURL`, or the session's (see `RelaySession`).
+    private let infoURL: URL
     /// The copy of `runner.json` for runner commands run in other directories (see `RunnerLocator`).
+    /// A session has none: its file is the only one that names its runner.
     private let userInfoURL: URL?
     /// Called once the runner answers and runner.json is written, before `ready:` is printed.
     var onReady: (() -> Void)?
@@ -90,7 +93,13 @@ final class RunnerLauncher {
         self.buildURL = buildURL
         self.deviceName = deviceName
         self.stateURL = stateURL
-        self.userInfoURL = userInfoURL
+        if let session = options.session {
+            self.infoURL = RelaySession.infoURL(name: session, home: stateURL.deletingLastPathComponent())
+            self.userInfoURL = nil
+        } else {
+            self.infoURL = stateURL.appendingPathComponent(RunnerInfo.fileName)
+            self.userInfoURL = userInfoURL
+        }
     }
 
     func run() throws -> Int32 {
@@ -98,19 +107,21 @@ final class RunnerLauncher {
         let logsURL = stateURL.appendingPathComponent("logs", isDirectory: true)
         try FileManager.default.createDirectory(at: logsURL, withIntermediateDirectories: true)
         let stamp = Self.timestamp()
+        if let session = options.session {
+            info("session \(session) (\(infoURL.path)), port \(options.port)")
+        }
 
-        let xctestrun: URL
         let platform = XCTestRunSelection.platform(isSimulator: isSimulator)
         // A few milliseconds; computed on every start so a build of other sources is never reused.
         let sourceHash = try RunnerSourceHash.compute(root: rootURL)
         let bundleIDPrefix = options.bundleIDPrefix ?? RunnerBundleID.prefix(configured: nil, teamID: options.teamID).prefix
-        let plan: RunnerBuildPlan
-        if options.rebuild {
-            plan = .build(reason: nil)
-        } else {
+        func decidePlan(rebuild: Bool) -> RunnerBuildPlan {
+            if rebuild {
+                return .build(reason: nil)
+            }
             let files = Self.xctestrunFiles(in: derivedData)
             let sdkVersion = files.isEmpty ? nil : Self.sdkVersion(platform: platform)
-            plan = RunnerBuildPlan.decide(
+            return RunnerBuildPlan.decide(
                 rebuild: false,
                 selection: XCTestRunSelection.reusable(files, platform: platform, sdkVersion: sdkVersion),
                 platform: platform,
@@ -120,6 +131,25 @@ final class RunnerLauncher {
                 bundleIDPrefix: bundleIDPrefix
             )
         }
+
+        // Shared while this start reads the build, exclusive while it writes one: starts reusing a build run
+        // side by side, and a build waits until no start is launching from these products (see BuildLock).
+        let buildLock = try BuildLock(derivedData: derivedData, relayDirectory: stateURL)
+        let waitStarted = Date()
+        // A build finished since this start began (the one it just waited for) satisfies --rebuild too: the
+        // products are newer than this start, and decidePlan still checks that they are of these sources.
+        func rebuildIsNeeded() -> Bool {
+            options.rebuild && RunnerBuildStamp.modified(derivedData: derivedData).map { $0 >= waitStarted } != true
+        }
+        try buildLock.wait(for: .shared, info: info)
+        var plan = decidePlan(rebuild: rebuildIsNeeded())
+        if case .build = plan {
+            // Going to exclusive gives the shared lock up first, so another start may have finished a build by now.
+            try buildLock.wait(for: .exclusive, info: info)
+            plan = decidePlan(rebuild: rebuildIsNeeded())
+        }
+
+        let xctestrun: URL
         switch plan {
         case .reuse(let existing):
             xctestrun = existing
@@ -128,7 +158,7 @@ final class RunnerLauncher {
             if let reason {
                 info(reason)
             }
-            let buildLogURL = try Self.createLog("build", in: logsURL, stamp: stamp, port: options.port)
+            let buildLogURL = try Self.createLog("build", in: logsURL, stamp: stamp, port: options.port, session: options.session)
             info("building runner from sources \(RunnerSourceHash.short(sourceHash)) (log: \(buildLogURL.path))")
             let buildLog = try FileHandle(forWritingTo: buildLogURL)
             defer { try? buildLog.close() }
@@ -155,14 +185,15 @@ final class RunnerLauncher {
             }
             xctestrun = built
         }
+        try buildLock.wait(for: .shared, info: info)
 
         if StartCancellation.isRequested {
             info("stopped before launching the runner")
             return 1
         }
-        let runnerLogURL = try Self.createLog("runner", in: logsURL, stamp: stamp, port: options.port)
+        let runnerLogURL = try Self.createLog("runner", in: logsURL, stamp: stamp, port: options.port, session: options.session)
         info("launching runner on \(udid) (log: \(runnerLogURL.path))")
-        let process = try launch(xctestrun: xctestrun, derivedData: derivedData, logURL: runnerLogURL)
+        let process = try launch(xctestrun: xctestrun, testData: Self.testDataURL(buildURL: buildURL, port: options.port), logURL: runnerLogURL)
         installSignalHandlers()
         if StartCancellation.isRequested {
             // SIGTERM arrived before the handlers above were installed.
@@ -199,6 +230,9 @@ final class RunnerLauncher {
             Thread.sleep(forTimeInterval: 0.5)
         }
 
+        // The runner answered, or won't: nothing reads the build from here on, so a rebuild may start.
+        buildLock.release()
+
         if currentRunnerURL() == nil, let failure = currentStartupFailure() {
             info("runner failed to start: \(failure.message)")
             for hint in Self.startupFailureHints(for: failure, isSimulator: isSimulator) {
@@ -212,7 +246,6 @@ final class RunnerLauncher {
             return process.terminationReason == .exit && process.terminationStatus != 0 ? process.terminationStatus : 1
         }
 
-        let infoURL = stateURL.appendingPathComponent(RunnerInfo.fileName)
         if let url = currentRunnerURL() {
             let reported = RunnerBuildVersion.parse(responseBody: readyBody)
             if let mismatch = RunnerBuildVersion.mismatch(reported: reported, expectedSourceHash: sourceHash) {
@@ -233,7 +266,8 @@ final class RunnerLauncher {
                                         pid: getpid(), startedAt: RelayProcess.currentStartTime(),
                                         runner: RunnerBuildVersion(version: RelayVersion.current, sourceHash: sourceHash),
                                         hostBundleID: RunnerBundleID.builtHost(xctestrun: xctestrun)
-                                            ?? RunnerBundleID.host(prefix: bundleIDPrefix))
+                                            ?? RunnerBundleID.host(prefix: bundleIDPrefix),
+                                        session: options.session)
             do {
                 // The token goes only to the 0600 file: stdout often ends up in CI logs and terminal scrollback.
                 try runnerInfo.write(to: infoURL)
@@ -325,8 +359,8 @@ final class RunnerLauncher {
         return args
     }
 
-    /// `-derivedDataPath` is the build's: without it xcodebuild writes the test logs and the xcresult
-    /// bundle to `~/Library/Developer/Xcode/DerivedData/RelayRunner-*`, outside `~/.relay`.
+    /// Without `-derivedDataPath` xcodebuild writes the test logs and the xcresult bundle to
+    /// `~/Library/Developer/Xcode/DerivedData/RelayRunner-*`, outside `~/.relay`. It is `testDataURL`.
     static func testArguments(xctestrun: URL, udid: String, derivedData: URL) -> [String] {
         [
             "xcodebuild", "test-without-building",
@@ -336,12 +370,19 @@ final class RunnerLauncher {
         ]
     }
 
-    private func launch(xctestrun: URL, derivedData: URL, logURL: URL) throws -> Process {
+    /// Where the test run of the runner on `port` writes its logs and xcresult bundle. One directory per port,
+    /// next to the build rather than in it: test runs last as long as their runners and may overlap with each
+    /// other and with a build, and one port has one `relay start` at a time (`StartLock`).
+    static func testDataURL(buildURL: URL, port: Int) -> URL {
+        buildURL.appendingPathComponent("TestData", isDirectory: true).appendingPathComponent("port-\(port)", isDirectory: true)
+    }
+
+    private func launch(xctestrun: URL, testData: URL, logURL: URL) throws -> Process {
         let log = try FileHandle(forWritingTo: logURL)
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
-        process.arguments = Self.testArguments(xctestrun: xctestrun, udid: udid, derivedData: derivedData)
+        process.arguments = Self.testArguments(xctestrun: xctestrun, udid: udid, derivedData: testData)
         // xcodebuild forwards TEST_RUNNER_-prefixed variables to the test process without the prefix.
         var environment = ProcessInfo.processInfo.environment
         environment["TEST_RUNNER_RELAY_RUNNER_PORT"] = "\(options.port)"
@@ -604,12 +645,12 @@ final class RunnerLauncher {
         return XCTestRunSelection.isVersion(version) ? version : nil
     }
 
-    /// Creates the empty log `<kind>-<stamp>-<port>.log` in `directory` (`<kind>-<stamp>.log` without a port)
-    /// and returns it. A name that is taken gets `-2`, `-3`, ...: a log is only ever written by the relay
-    /// that created it. Two starts in the same second differ by port (one start per port, see `StartLock`),
-    /// and a restart on the same port within that second gets the next number.
-    static func createLog(_ kind: String, in directory: URL, stamp: String, port: Int?) throws -> URL {
-        let base = "\(kind)-\(stamp)\(port.map { "-\($0)" } ?? "")"
+    /// Creates the empty log `<kind>-<stamp>-<port>.log` in `directory` (`<kind>-<stamp>.log` without a port,
+    /// `<kind>-<stamp>-<session>-<port>.log` in a session) and returns it. A name that is taken gets `-2`, `-3`,
+    /// ...: a log is only ever written by the relay that created it. Two starts in the same second differ by
+    /// port (one start per port, see `StartLock`), and a restart on the same port within that second gets the next number.
+    static func createLog(_ kind: String, in directory: URL, stamp: String, port: Int?, session: String? = nil) throws -> URL {
+        let base = "\(kind)-\(stamp)\(session.map { "-\($0)" } ?? "")\(port.map { "-\($0)" } ?? "")"
         var attempt = 1
         while true {
             let url = directory.appendingPathComponent(attempt == 1 ? "\(base).log" : "\(base)-\(attempt).log")

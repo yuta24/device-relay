@@ -132,7 +132,9 @@ struct StartSetup {
         resolveProject: (String?) throws -> (root: URL, source: RunnerProject.Source) = { try RunnerProject.resolve(explicitPath: $0) },
         staleness: (URL, RunnerProject.Source) -> String? = { RunnerInstaller.staleness(root: $0, source: $1) },
         isCancelled: () -> Bool = { StartCancellation.isRequested },
-        info: (String) -> Void = StartSetup.info
+        info: (String) -> Void = StartSetup.info,
+        inUse: ([Device]) -> [String: String] = { _ in [:] },
+        claimDevice: (Device) throws -> Void = { _ in }
     ) throws -> StartSetup {
         let project = try resolveProject(options.project)
         info("runner project: \(project.root.path) (from \(project.source.label))")
@@ -144,9 +146,11 @@ struct StartSetup {
         let (devices, warnings) = try DeviceList.load(commands, udid: options.udid, simulator: options.simulator)
         warnings.forEach(info)
         let selection = try DeviceSelector.select(from: devices, udid: options.udid, name: options.device,
-                                                  simulator: options.simulator, os: options.os)
+                                                  simulator: options.simulator, os: options.os, inUse: inUse(devices))
         let device = selection.device
         info("using \(device.summary) (\(selection.isAutomatic ? "selected automatically; " : "")\(selection.reason))")
+        // Before booting it or building: two runners on one device stop each other's XCTest session.
+        try claimDevice(device)
 
         let locked = device.kind == .device ? DeviceChecks.lockState(udid: device.udid, commands: commands) : nil
         let checks = DeviceChecks.checks(for: device, locked: locked, includeHints: false)

@@ -21,6 +21,8 @@ struct BackgroundArgumentsTests {
         options.os = "27.0"
         options.project = "/tmp/device relay"
         options.port = 8123
+        options.portGiven = true
+        options.session = "agent-1"
         options.teamID = "TEAM000001"
         options.rebuild = true
         options.verbose = true
@@ -56,7 +58,7 @@ struct BackgroundArgumentsTests {
         #expect(Arguments.usage(for: "status").contains("relay status [--json]"))
         #expect(Arguments.usage(for: "stop").contains("not running"))
         #expect(Arguments.usage.contains("relay start --background"))
-        #expect(Arguments.usage.contains("relay stop [--runner <PATH>]"))
+        #expect(Arguments.usage.contains("relay stop [--runner <PATH> | --session <NAME> | --all]"))
     }
 }
 

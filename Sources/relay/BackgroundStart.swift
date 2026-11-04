@@ -68,29 +68,51 @@ enum BackgroundStart {
         }
     }
 
+    /// Why `session` must not start, given its runner.json and that runner's `/ping` answer: its lock is free
+    /// (the session's `relay start` was killed) but the runner it launched still answers, and a new one would
+    /// fight it for the device. Any other answer means that port went to something else since: not this runner.
+    static func conflict(session: String, with existing: RunnerInfo, ping: RunnerPing) -> String? {
+        guard ping.isAlive else { return nil }
+        return "session \(session) already has a runner at \(existing.url) (\(existing.name ?? existing.udid)); "
+            + "use it as it is, stop it with relay stop --session \(session), or pick another session name"
+    }
+
+    /// `conflict(session:with:ping:)` for the session of `options`, if it has one.
+    static func sessionConflict(_ options: StartOptions, home: URL = UserHome.url) -> String? {
+        guard let session = options.session,
+              let existing = try? RunnerInfo.read(from: RelaySession.infoURL(name: session, home: home)) else { return nil }
+        return conflict(session: session, with: existing, ping: RunnerPing.check(existing))
+    }
+
     static func run(_ options: StartOptions, home: URL = UserHome.url) -> Int32 {
         // Taken before the check, so a second start at the same moment cannot pass it too, and handed to the
-        // detached relay start, which holds it while its runner runs (see StartLock).
-        let lock: StartLock
+        // detached relay start, which holds them while its runner runs (see StartLock). A session's port is
+        // picked here, and passed on with --port.
+        var options = options
+        let locks: StartLocks
         do {
-            lock = try StartLock.acquire(port: options.port, home: home)
+            locks = try StartLocks.acquire(for: &options, home: home)
         } catch {
             return fail("\(error)", code: .usage)
         }
-        let infoURL = RunnerLocator.userURL(home: home)
-        if let existing = try? RunnerInfo.read(from: infoURL),
-           let conflict = conflict(with: existing, port: options.port, ping: RunnerPing.check(existing),
-                                   owner: RelayProcess.runningRelayStart(existing)) {
+        let infoURL = options.session.map { RelaySession.infoURL(name: $0, home: home) } ?? RunnerLocator.userURL(home: home)
+        if options.session != nil {
+            if let conflict = sessionConflict(options, home: home) {
+                return fail(conflict, code: .usage)
+            }
+        } else if let existing = try? RunnerInfo.read(from: infoURL),
+                  let conflict = conflict(with: existing, port: options.port, ping: RunnerPing.check(existing),
+                                          owner: RelayProcess.runningRelayStart(existing)) {
             return fail(conflict, code: .usage)
         }
 
-        let logsURL = infoURL.deletingLastPathComponent().appendingPathComponent("logs", isDirectory: true)
+        let logsURL = home.appendingPathComponent(".relay/logs", isDirectory: true)
         let logURL: URL
         let pid: pid_t
         do {
             try FileManager.default.createDirectory(at: logsURL, withIntermediateDirectories: true)
-            logURL = try RunnerLauncher.createLog("start", in: logsURL, stamp: RunnerLauncher.timestamp(), port: options.port)
-            pid = try spawnDetached(arguments: options.foregroundArguments, logURL: logURL, lock: lock)
+            logURL = try RunnerLauncher.createLog("start", in: logsURL, stamp: RunnerLauncher.timestamp(), port: options.port, session: options.session)
+            pid = try spawnDetached(arguments: options.foregroundArguments, logURL: logURL, locks: locks.inheritable)
         } catch {
             return fail("cannot start relay start in the background: \(error)", code: .usage)
         }
@@ -163,6 +185,9 @@ enum BackgroundStart {
     private static func ready(url: String, pid: pid_t, udid: String?, logURL: URL, infoURL: URL) -> Int32 {
         let runnerInfo = try? RunnerInfo.read(from: infoURL)
         print("ready: \(url)")
+        if let session = runnerInfo?.session {
+            print("session: \(session)")
+        }
         if let device = device(runnerInfo: runnerInfo, pid: pid, udid: udid) {
             print("device: \(device)")
         }
@@ -173,7 +198,8 @@ enum BackgroundStart {
             info("\(infoURL.path) now names the runner of relay start pid \(other), started at about the same time on another port; "
                 + "runner commands go to that one")
         }
-        info("the runner keeps running after this terminal closes; relay status shows it, relay stop stops it")
+        info("the runner keeps running after this terminal closes; relay status shows it, relay stop stops it"
+            + (runnerInfo?.session.map { " (with --session \($0) or RELAY_SESSION=\($0))" } ?? ""))
         return RunnerExitCode.success.rawValue
     }
 
@@ -189,8 +215,8 @@ enum BackgroundStart {
 
     /// Runs this executable with `arguments` as a new session, with stdin from /dev/null and stdout and
     /// stderr appended to `logURL`, which must exist. Signals ignored here (SIGINT while waiting) are reset in the child.
-    /// The child inherits `lock` and finds it through `StartLock.inheritedEnvironmentKey`.
-    static func spawnDetached(arguments: [String], logURL: URL, lock: StartLock? = nil) throws -> pid_t {
+    /// The child inherits `locks` and finds each through its key (`StartLocks.inheritable`).
+    static func spawnDetached(arguments: [String], logURL: URL, locks: [(key: String, lock: StartLock)] = []) throws -> pid_t {
         let executable = RelayProcess.currentExecutable
         var attributes: posix_spawnattr_t?
         posix_spawnattr_init(&attributes)
@@ -212,12 +238,13 @@ enum BackgroundStart {
         posix_spawn_file_actions_addopen(&actions, 0, "/dev/null", O_RDONLY, 0)
         posix_spawn_file_actions_addopen(&actions, 1, logURL.path, O_WRONLY | O_APPEND, 0)
         posix_spawn_file_actions_adddup2(&actions, 1, 2)
-        if let lock {
-            posix_spawn_file_actions_addinherit_np(&actions, lock.fileDescriptor)
-        }
-
         var environment = ProcessInfo.processInfo.environment
-        environment[StartLock.inheritedEnvironmentKey] = lock.map { "\($0.fileDescriptor)" }
+        environment[StartLock.inheritedEnvironmentKey] = nil
+        environment[StartLock.inheritedSessionEnvironmentKey] = nil
+        for (key, lock) in locks {
+            posix_spawn_file_actions_addinherit_np(&actions, lock.fileDescriptor)
+            environment[key] = "\(lock.fileDescriptor)"
+        }
         let argv = ([executable] + arguments).map { strdup($0) } + [nil]
         let envp = environment.map { strdup("\($0.key)=\($0.value)") } + [nil]
         defer {

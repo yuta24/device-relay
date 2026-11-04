@@ -169,7 +169,8 @@ ready の後も、`relay start` は 3 秒ごとに `/ping` を送ってランナ
 | `--simulator` | シミュレータだけから選びます（「端末の選択」）。実機が接続されていてもシミュレータを使えます |
 | `--os <version>` | OS のバージョン（`27`、`27.0`、`26.5` など）で候補を絞ります（「端末の選択」） |
 | `--project <path>` | Runner プロジェクトの場所（「Runner の用意」）。`$RELAY_HOME` より優先します |
-| `--port 8100` | 端末側の待ち受けポート。xcodebuild には `TEST_RUNNER_RELAY_RUNNER_PORT` として渡され、ランナーからは `RELAY_RUNNER_PORT` として見えます |
+| `--port 8100` | 端末側の待ち受けポート。xcodebuild には `TEST_RUNNER_RELAY_RUNNER_PORT` として渡され、ランナーからは `RELAY_RUNNER_PORT` として見えます。セッションでは省略すると空きポートを選びます |
+| `--session <名前>` | セッション名（環境変数 `RELAY_SESSION` でも可）。ほかのランナーと状態ファイルとポートを分けます（「複数のセッションを並列に動かす」） |
 | `--team-id <TEAM_ID>` | 実機向けの署名チーム（「Team ID」。省略時は自動検出）。`-allowProvisioningUpdates RELAY_DEVELOPMENT_TEAM=<TEAM_ID>` を付けてビルドし、ランナーが起動できたら `~/.relay/config.json` に保存します |
 | `--rebuild` | `~/.relay/build/…/DerivedData-*` に既存の `.xctestrun` があっても再ビルドします（最後のビルドが今の Xcode の SDK と違うとき、Runner のソースやバンドル ID の接頭辞が変わったとき、記録のない古いビルドのときは、付けなくても再ビルドします。「ランナーの版」） |
 | `--verbose` | xcodebuild の出力をそのまま表示します |
@@ -204,6 +205,68 @@ relay stop            # stopped
 - `relay status [--json]` は、runner.json（「[接続先（runner.json）の探し方](cli.md#接続先runnerjsonの探し方)」と同じ順に探します。`--runner <path>` も可）の URL・端末名と UDID・`relay start` の PID とそれがまだ動いているか・起動時刻・`/ping` の結果（`busy` を含む）・ランナーが名乗る版（`runner: 0.2.0 (sources <12 桁>)`。runner.json の期待値と違えばその旨、名乗らない古いランナーなら `not reported`、応答がなければ runner.json の期待値）を表示します。`--json` では 1 つの JSON オブジェクト（`alive`、`url`、`udid`、`name`、`pid`、`processRunning`、`startedAt`、`ping`、`runner`（`/ping` が返した版。なければ `null`）、`expectedRunner`（runner.json の期待値。古い runner.json なら `null`）、`runnerInfo`）を出します。ランナーが `/ping` に応答すれば `0`、runner.json がないか応答しなければ `3`、トークンが拒否されたら（`401`）`4` です。
 - `relay stop` は、runner.json の `relay start` に SIGTERM を送り、終了を待ちます。フォアグラウンドの Ctrl-C と同じ経路で、ランナーの `/shutdown`、relay が boot したシミュレータの shutdown、runner.json の削除を行います。`stopped` と表示して `0` で終わります（60 秒以内に終わらなければ `1`）。`relay start` がもう動いていない場合（強制終了された場合など）は、runner.json の URL とトークンで `POST /shutdown` を送り、runner.json を削除します。何も動いていなければ `not running` と表示して `0` です。フォアグラウンドの `relay start` も同じように止められます。そのランナーの録画（`relay record`。docs/cli.md の「[録画](cli.md#録画relay-record)」）が残っていれば、ランナーを止める前に書き出し、保存先を stderr に出します。
 - runner.json には `relay start` の PID と起動時刻（秒単位）を記録します。`relay stop` は、その PID のプロセスの起動時刻が一致し、実行ファイルが `relay` で最初の引数が `start` の場合だけシグナルを送ります。`relay start` の終了後にその PID が別のプロセスに再利用されても、そのプロセスには何も送りません。
+
+## 複数のセッションを並列に動かす（relay start --session）
+
+複数のエージェントがそれぞれ別の端末を操作するときは、名前付きのセッションを使います。エージェントを起動するときに環境変数 `RELAY_SESSION` を渡すのが基本です。エージェントが実行するコマンドのシェルはこの値を引き継ぐので、すべてのコマンドがそのセッションのランナーに届き、ほかのセッションと干渉しません。
+
+```sh
+# ターミナル 1
+RELAY_SESSION=agent-1 claude
+
+# ターミナル 2（同時に）
+RELAY_SESSION=agent-2 codex
+```
+
+エージェントの中では、`--session` を付けなくても次のように動きます。
+
+```sh
+relay start --background --device "iPhone 17 Pro"   # agent-2 なら別の端末を指定する
+relay tap --id relay.input
+relay stop
+```
+
+環境変数を渡さずに起動したエージェントは、relay の各コマンドに毎回 `--session <名前>` を付けます。
+
+```sh
+relay start --background --session agent-1 --device "iPhone 17 Pro"
+relay tap --session agent-1 --id relay.input
+relay stop --session agent-1
+
+relay status --all   # 全セッションの一覧
+relay stop --all     # 全部止める（ほかのエージェントのものも）
+```
+
+`export RELAY_SESSION=...` は、同じシェルでコマンドを続けて実行するときだけ効きます。Claude Code の Bash ツールや Codex のようにコマンドごとに新しいシェルになる環境では次のコマンドに残らず、そのコマンドはセッションなしになります。セッションなしのコマンドは、`~/.relay/runner.json` がなければ終了コード 3 で終わり、あれば別の誰かのランナーを操作してしまいます。後者を見逃さないよう、探索で runner.json を使ったときにセッションが動いていれば、次の警告を stderr に出します（下記）。
+
+```
+relay: warning: no session selected; using /Users/you/.relay/runner.json, while sessions agent-1, agent-2 are running; pass --session or set RELAY_SESSION
+```
+
+名前は英数字で始まる、英数字と `.`・`_`・`-` の 64 文字までです（パスの一部になるため）。大文字と小文字を区別しないボリューム（APFS の既定）では `A` と `a` は同じセッションになります。`--session <名前>` は `RELAY_SESSION` より優先し、`relay start`・ランナー操作のコマンド・`relay status`・`relay stop`・`relay record`・`relay run`・`relay bench` で使えます。セッションなしの使い方は今までどおりで、`~/.relay/runner.json` とセッションは互いに読み書きしません。
+
+- **状態ファイル**: `~/.relay/sessions/<名前>/runner.json`（0600）に書き、`~/.relay/runner.json` には書きません。探す順は「[接続先（runner.json）の探し方](cli.md#接続先runnerjsonの探し方)」のとおりで、セッションを指定したときは、そのファイルがなければ終了コード 3 で終わり、ほかのファイルへは進みません。`relay start` は `~/.relay/sessions/<名前>/session.lock` を終了まで `flock` するので、同じセッションを 2 つは起動できません。`relay start` が強制終了されてランナーだけが応答し続けている場合も、`relay stop --session <名前>` を案内するエラーにします。
+- **ポート**: `--port` を省くと、`8101`〜`8199` を順に見て、`~/.relay/locks/start-<port>.lock` を取れて、かつ Mac の `127.0.0.1` で bind できる最初のポートを使います。既定の `8100` はセッションなしの `relay start` のために空けておきます。ロックを取ってから調べて、ランナーが待ち受けるまで保持するので、同時に起動しても同じポートにはなりません。選んだポートは runner.json に入るので、利用者が知る必要はありません（`relay status` や `ready:` の行に出ます）。`--port` を指定すればそれを使います。
+- **端末の排他**: 1 台の端末で動かせるランナーは 1 つです（2 つ目の XCTest がテストのセッションを奪います）。これはセッションなしの `relay start` にも適用されます。`relay start` は端末を選んだ直後、boot とビルドの前に `~/.relay/locks/device-<UDID>.lock` を終了まで `flock` します。使用中の端末を `--udid` や `--device` で指定すると、使っているセッションと PID、止め方を示すエラー（終了コード `1`）になります。指定した端末が使用中のときに別の端末へ移ることはありません。
+- **端末の自動選択**: `--udid` も `--device` もないときは、ほかの `relay start` が使用中の端末を候補から外して、「接続中の実機が 1 台ならそれ、なければ起動中のシミュレータが 1 台ならそれ」で選びます。空いている候補が複数あれば、これまでどおり候補つきのエラーです。空きがなければ、使用中の端末とその持ち主も示します。
+- **ビルド**: ビルド成果物（`~/.relay/build/…/DerivedData-*`）は共有のままで、同じソースのビルドを使い回します。同時に起動しても同じ DerivedData へのビルドは 1 つだけで、後のものは `relay: waiting for another relay start's build …` と出して待ち、終わったらそのビルドを使い回します（待っている間に同じソースのビルドが終われば `--rebuild` も満たされたものとします）。ビルドしない起動どうしは並列に進みます。`~/.relay/locks/build-<ハッシュ>.lock` を、ビルド中は排他で、成果物からランナーを起動して ready になるまでは共有で持つので、起動の途中で成果物が書き換えられることもありません。待っている間も Ctrl-C と `relay stop` で止められます。`relay install --build` も同じロックを取ります。
+- **テスト実行の出力**: xcodebuild の `test-without-building` が書くログと xcresult は、ポートごとの `~/.relay/build/…/TestData/port-<port>/` に分けます。同じ `-derivedDataPath` を共有すると、同じ秒に始まったテストの xcresult の名前が同じになり、`Logs/Test/LogStoreManifest.plist` も同時に書き換えられるためです。
+- **ログ**: `~/.relay/logs` の `start-`・`build-`・`runner-`・`record-` のログは `<種類>-<時刻>-<セッション>-<port>.log` という名前になります。既定の出力先のスクリーンショットと録画の名前にもセッション名が入ります。
+- **セッションなしのコマンドへの警告**: セッションも `--runner` も `RELAY_RUNNER` もないコマンド（ランナー操作、`relay run`、`relay status`、`relay stop`、`relay record`、`relay bench` のトークン）が探索で runner.json を見つけたとき、`~/.relay/sessions/*/runner.json` があるか `session.lock` が握られているセッションがあれば、警告を stderr に出します。失敗にはせず、終了コードも変えません。セッションなしのランナーを意図して使っているなら無視でき、警告を消すには `--runner` で指定します。調べるのはファイルとロックだけでランナーには問い合わせないので、コマンドは遅くなりません。その代わり、強制終了で残った runner.json も「動いている」と数えます（`relay stop --session <名前>` で片付きます）。
+- **録画**: 録画の状態はこれまでどおりポートごとです（ポートはランナーごとに違います）。セッションを指定した `relay record stop` / `status` は、そのセッションの runner.json がなければ終了コード 3 で、ほかのセッションの録画には進みません。止まったランナーの録画は `--port <n>` で指定できます。
+
+一覧（`relay status --all`）は、`~/.relay/runner.json` のランナー（SESSION は `(default)`）と全セッションを 1 行ずつ表示します。終わったセッション（runner.json がなく、ロックも持たれていないもの）は出ません。終了コードは状態によらず `0` です。
+
+```
+SESSION  STATE      DEVICE                        URL                     PID
+agent-1  running    iPhone 17 Pro (<SIM_UDID_1>)  http://127.0.0.1:8101/  12345
+agent-2  starting   -                             -                       12346
+agent-3  no answer  iPhone 17 (<SIM_UDID_2>)      http://127.0.0.1:8103/  12347 (exited)
+```
+
+STATE は `starting`（boot かビルドの途中で、まだ runner.json がない）、`running`、`busy`（コマンドの実行中）、`no answer`（応答がない。`relay stop --session <名前>` で片付く）、`rejected`（そのポートで別のランナーが応答している）、`unknown`（sandbox などで接続が拒否された）です。`--json` は 1 つの配列で、各要素は `session`（`~/.relay/runner.json` なら `null`）、`state`、`alive`、`url`、`udid`、`name`、`pid`、`processRunning`、`runnerInfo` です。トークンは含みません。
+
+`relay stop --all` は一覧の全部を順に止め、`<セッション>: stopped` を 1 行ずつ出します。ほかのエージェントのランナーも止めるので、エージェントは通常、自分のセッションだけを止めます。`relay stop --session <名前>` は、boot やビルドの途中でまだ runner.json がないセッションも止めます。
 
 ## エージェントの sandbox から使う
 

@@ -18,6 +18,8 @@ struct RecordOptions: Equatable {
     var action: Action
     /// `--runner <path>`; nil searches as `RunnerLocator` describes.
     var runnerPath: String?
+    /// `--session <name>` (see `RelaySession`); nil uses `$RELAY_SESSION` or searches.
+    var session: String?
     /// `--port <n>` of `record stop` and `record status`: the state file of that runner port, without runner.json.
     var port: Int?
 }
@@ -106,10 +108,12 @@ enum Recording {
     }
 
     /// `--output` resolved against the current directory, or `$TMPDIR/relay/relay-recording-<time>.mp4`,
-    /// outside the working tree like the screenshots (`RunnerControl.screenshotURL`).
+    /// outside the working tree like the screenshots (`RunnerControl.screenshotURL`), with a session's name
+    /// in front of the time.
     static func outputURL(
         _ output: String?,
         now: Date = Date(),
+        session: String? = nil,
         currentDirectory: URL = WorkingDirectory.url,
         temporaryDirectory: URL = FileManager.default.temporaryDirectory
     ) -> URL {
@@ -121,7 +125,7 @@ enum Recording {
         formatter.dateFormat = "yyyyMMdd-HHmmss-SSS"
         return temporaryDirectory
             .appendingPathComponent("relay", isDirectory: true)
-            .appendingPathComponent("relay-recording-\(formatter.string(from: now)).mp4")
+            .appendingPathComponent("relay-recording-\(session.map { "\($0)-" } ?? "")\(formatter.string(from: now)).mp4")
             .standardizedFileURL
     }
 
@@ -271,11 +275,11 @@ enum Recording {
     static func run(_ options: RecordOptions) -> Int32 {
         switch options.action {
         case .start(let output, let maxDuration, let force):
-            return start(output: output, maxDuration: maxDuration, force: force, runnerPath: options.runnerPath)
+            return start(output: output, maxDuration: maxDuration, force: force, runnerPath: options.runnerPath, session: options.session)
         case .stop:
-            return stop(runnerPath: options.runnerPath, port: options.port)
+            return stop(runnerPath: options.runnerPath, session: options.session, port: options.port)
         case .status(let json):
-            return status(json: json, runnerPath: options.runnerPath, port: options.port)
+            return status(json: json, runnerPath: options.runnerPath, session: options.session, port: options.port)
         case .supervise(let udid, let output, let maxDuration, let deviceName):
             if let deviceName {
                 return DeviceRecordSupervisor.run(name: deviceName, output: output, maxDuration: maxDuration)
@@ -284,12 +288,14 @@ enum Recording {
         }
     }
 
-    private static func start(output: String?, maxDuration: TimeInterval, force: Bool, runnerPath: String?, home: URL = UserHome.url) -> Int32 {
+    private static func start(output: String?, maxDuration: TimeInterval, force: Bool, runnerPath: String?, session: String?, home: URL = UserHome.url) -> Int32 {
         let info: RunnerInfo
         do {
-            info = try RunnerInfo.read(from: try RunnerLocator.locate(explicitPath: runnerPath, home: home))
+            info = try RunnerInfo.read(from: try RunnerLocator.locate(explicitPath: runnerPath, session: session, home: home))
         } catch let error as RunnerUnavailableError {
             return fail(error.description, code: .unavailable)
+        } catch let error as SessionSelectionError {
+            return fail(error.description, code: .usage)
         } catch {
             return fail("cannot read runner info: \(error)", code: .usage)
         }
@@ -333,7 +339,7 @@ enum Recording {
             recorded = device
         }
 
-        let outputURL = outputURL(output)
+        let outputURL = outputURL(output, session: info.session)
         if output == nil {
             try? FileManager.default.createDirectory(at: outputURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         }
@@ -387,7 +393,7 @@ enum Recording {
                                            deviceName: isDevice ? recorded.name : nil)
         do {
             try FileManager.default.createDirectory(at: logsURL, withIntermediateDirectories: true)
-            logURL = try RunnerLauncher.createLog("record", in: logsURL, stamp: RunnerLauncher.timestamp(), port: port)
+            logURL = try RunnerLauncher.createLog("record", in: logsURL, stamp: RunnerLauncher.timestamp(), port: port, session: info.session)
             supervisor = try BackgroundStart.spawnDetached(arguments: arguments, logURL: logURL)
         } catch {
             return fail("cannot start the recording: \(error)", code: .usage)
@@ -462,10 +468,10 @@ enum Recording {
         }
     }
 
-    private static func stop(runnerPath: String?, port: Int?, home: URL = UserHome.url) -> Int32 {
+    private static func stop(runnerPath: String?, session: String?, port: Int?, home: URL = UserHome.url) -> Int32 {
         let found: (url: URL, state: RecordingState)?
         do {
-            found = try locateState(runnerPath: runnerPath, port: port, home: home)
+            found = try locateState(runnerPath: runnerPath, session: session, port: port, home: home)
         } catch let error as RunnerUnavailableError {
             return fail(error.description, code: .unavailable)
         } catch {
@@ -534,10 +540,10 @@ enum Recording {
         }
     }
 
-    private static func status(json: Bool, runnerPath: String?, port: Int?, home: URL = UserHome.url) -> Int32 {
+    private static func status(json: Bool, runnerPath: String?, session: String?, port: Int?, home: URL = UserHome.url) -> Int32 {
         let found: (url: URL, state: RecordingState)?
         do {
-            found = try locateState(runnerPath: runnerPath, port: port, home: home)
+            found = try locateState(runnerPath: runnerPath, session: session, port: port, home: home)
         } catch let error as RunnerUnavailableError {
             return fail(error.description, code: .unavailable)
         } catch {
@@ -603,10 +609,10 @@ enum Recording {
     }
 
     /// The recording of `--port`, else of the runner in runner.json, or nil when there is none. Without
-    /// runner.json (the runner stopped) and without `--runner` or `$RELAY_RUNNER`, the only state file in
-    /// `~/.relay`, if there is one; several are an error that lists them by port.
-    private static func locateState(runnerPath: String?, port: Int?, home: URL) throws -> (url: URL, state: RecordingState)? {
-        guard let url = try port.map({ stateURL(port: $0, home: home) }) ?? stateURLOfRunner(runnerPath: runnerPath, home: home) else {
+    /// runner.json (the runner stopped) and without `--runner`, `--session`, or their variables, the only state
+    /// file in `~/.relay`, if there is one; several are an error that lists them by port.
+    private static func locateState(runnerPath: String?, session: String?, port: Int?, home: URL) throws -> (url: URL, state: RecordingState)? {
+        guard let url = try port.map({ stateURL(port: $0, home: home) }) ?? stateURLOfRunner(runnerPath: runnerPath, session: session, home: home) else {
             return nil
         }
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
@@ -617,22 +623,23 @@ enum Recording {
         }
     }
 
-    /// The state file of the runner in runner.json. A runner.json given with `--runner` or `$RELAY_RUNNER` must
-    /// exist, as for the other commands (`RunnerUnavailableError`, exit 3); one that was searched for and not
-    /// found falls back to the state files in `~/.relay`.
+    /// The state file of the runner in runner.json. A runner.json given with `--runner`, `--session`, or their
+    /// variables must exist, as for the other commands (`RunnerUnavailableError`, exit 3): another session's
+    /// recording is not this one's. One that was searched for and not found falls back to the state files in `~/.relay`.
     static func stateURLOfRunner(
         runnerPath: String?,
+        session: String? = nil,
         home: URL,
         environment: [String: String] = ProcessInfo.processInfo.environment,
         currentDirectory: URL = WorkingDirectory.url
     ) throws -> URL? {
         do {
             let info = try RunnerInfo.read(from: try RunnerLocator.locate(
-                explicitPath: runnerPath, environment: environment, currentDirectory: currentDirectory, home: home
+                explicitPath: runnerPath, session: session, environment: environment, currentDirectory: currentDirectory, home: home
             ))
             return stateURL(port: port(of: info), home: home)
         } catch let error as RunnerUnavailableError {
-            if runnerPath != nil || !(environment[RunnerLocator.environmentKey] ?? "").isEmpty {
+            guard try RunnerLocator.selection(explicitPath: runnerPath, session: session, environment: environment) == .search else {
                 throw error
             }
             let candidates = stateURLs(home: home)

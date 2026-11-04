@@ -43,6 +43,27 @@ relay stop                                      # 自分で起動したときだ
 - 対象アプリは端末にインストール済みである必要があります（プロジェクトのやり方で Xcode や `xcodebuild` / `xcrun simctl install` でビルド・インストールする）。`relay launch` は起動・前面化だけで、入っていなければランナーに送らず、すぐに終了コード 6（`app_not_installed`）で終わります。
 - バンドル ID はプロジェクトの `PRODUCT_BUNDLE_IDENTIFIER` で調べるか、アプリを前面にして `relay foreground` で確かめます。
 
+### 並列に使うとき
+
+ほかのエージェントも relay を使っている（または使うかもしれない）ときは、セッションを使います。
+
+**まず `echo "$RELAY_SESSION"` で確かめます。** 利用者がエージェントの起動時に渡していれば（`RELAY_SESSION=agent-1 claude` など）値が出て、どのコマンドもそのセッションを使うので、そのまま進めます。空なら、自分のセッション名を決めて、relay の各コマンドに毎回 `--session <name>` を付けます。
+
+**`export` に頼りません。** コマンドごとに新しいシェルになる環境では次のコマンドに残らず、そのコマンドはセッションなしになって、終了コード 3 で失敗するか、別の誰かのランナーを操作します。
+
+```sh
+relay status --all                                                     # 全セッションの一覧（どの端末が使用中か）
+relay start --background --session agent-1 --device "<名前>" --os 27.0  # 端末はセッションごとに分ける。ポートは自動
+relay tap --session agent-1 --id <id>                                  # 自分のランナーだけに届く
+relay stop --session agent-1                                           # 自分のセッションだけ止まる
+```
+
+- `relay: warning: no session selected; using <パス>, while sessions <名前> are running` が出たら、そのコマンドはセッションなしで動いています（失敗にはなりません）。自分のランナーを使うつもりなら `--session` を付け直し、その操作がどの端末に届いたかを確かめます。
+- セッションを指定すると、ほかの runner.json へは決して進みません。まだ起動していなければ終了コード 3 です。`RELAY_SESSION` と `RELAY_RUNNER` の両方があると終了コード 1 です。
+- 1 台の端末で動かせるランナーは 1 つです。使用中の端末を指定すると、持ち主つきのエラーで終わるので、別の端末を選びます。ほかのセッションのランナーは止めません（`relay stop --all` も同様に使いません）。
+- 同じソースのビルドは共有です。ほかの `relay start` がビルド中か、同じビルドからランナーを起動している間は `waiting for another relay start's build` と出して待ちます。先の起動が ready になるまで数分かかることがありますが、失敗ではないので、止めたり起動し直したりせずに待ちます。
+- セッションのポートはほかの `relay start` とは重なりませんが、ほかのプロセスが先に取ると、`relay start` はランナーの起動に失敗します（ログに `Address already in use`）。そのときはもう一度 `relay start` すれば、次の空きポートを選びます。
+
 ## 観察
 
 - **ふだんは縮小したスクリーンショットと絞り込んだツリーを使います。** フル解像度の画像や全体のツリーは大きく（設定のトップで画像 1206×2622 px、ツリー 37 KB）、読むたびにコンテキストを使います。
@@ -104,7 +125,7 @@ relay press --label "Photo" --type cell --duration 1.0
 | 0 | 成功 | – |
 | 1 | 引数の誤りやローカルの失敗（何も送っていない） | コマンドを直す。`relay <command> --help` |
 | 3 | ランナーに届かない（runner.json がない、接続できない、`no response within <秒>s`） | `no response within` なら、ランナーは操作を続けているので `relay ping` の `busy` が `false` になるまで待つ（`launch` / `terminate` は最大 150 秒、長い `type` は 1 文字 0.1 秒ぶん待つので、自分のコマンドのタイムアウトをそれより長くする）。`launch` の時間切れは、busy がさらに数分続くことがあるので、自分で起動したランナーなら `relay stop` → 起動し直すほうが早い。それ以外は `relay status`。runner.json がなければ `relay start --background …`。runner.json はあるが応答しない（`relay start` が強制終了されたなど）なら、`relay stop` で片付けてから起動。`the OS refused the connection` なら relay が sandbox の中にいる（上の「sandbox の中で動くとき」）ので、止めも起動もしない |
-| 4 | トークンが拒否された（401）。runner.json が古いか、別のランナーのもの | `relay status` で URL・端末・PID を確かめ、`--runner` / `$RELAY_RUNNER` / カレントディレクトリから親へ順にたどった `.relay/runner.json` も確認。自分で起動したものなら `relay stop` → 起動し直す。そうでなければ止めずに利用者に確認 |
+| 4 | トークンが拒否された（401）。runner.json が古いか、別のランナーのもの | `relay status` で URL・端末・PID を確かめ、`--runner` / `--session` / `$RELAY_RUNNER` / `$RELAY_SESSION` / カレントディレクトリから親へ順にたどった `.relay/runner.json` も確認。自分で起動したものなら `relay stop` → 起動し直す。そうでなければ止めずに利用者に確認 |
 | 5 | busy（409）。別のコマンドを実行中 | 1 秒ほど待つか、`relay ping` が `"busy":false` になってから再試行 |
 | 6 | 操作の失敗（422）: 要素が見つからない・1 つに決まらない・無効・画面外、キーボードのフォーカスがない。`relay launch` のアプリが入っていない | stderr の JSON の `code` で分ける（下の表）。要素の失敗は `reason` と `candidates` を読み、観察し直してセレクタを直す |
 | 7 | リクエストの拒否（400 などの 4xx） | `code` が `point_offscreen` なら座標が画面の外（`relay health` の `screen` を読み直す。向きを変えると縦横が入れ替わる）。`touch_mode_unavailable` なら `--mode` を外して送り直す。`invalid_request` などはエラー文を読んで直す |

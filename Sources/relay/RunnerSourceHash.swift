@@ -141,6 +141,11 @@ struct RunnerBuildStamp: Codable, Equatable {
         try encoder.encode(self).write(to: url, options: .atomic)
     }
 
+    /// When the last successful build finished; nil when there is no record of one.
+    static func modified(derivedData: URL) -> Date? {
+        (try? url(derivedData: derivedData).resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+    }
+
     /// Removed before a build: products a failed build may have half rewritten are not the stamp's anymore.
     static func remove(derivedData: URL) {
         try? FileManager.default.removeItem(at: url(derivedData: derivedData))

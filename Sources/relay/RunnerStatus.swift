@@ -5,10 +5,16 @@ struct RunnerStatusOptions: Equatable {
     var json = false
     /// `--runner <path>`; nil searches as `RunnerLocator` describes.
     var runnerPath: String?
+    /// `--session <name>` (see `RelaySession`); nil uses `$RELAY_SESSION` or searches.
+    var session: String?
+    /// `--all`: every session and the runner of `~/.relay/runner.json` (see `RunnerSessions`).
+    var all = false
 }
 
 struct RunnerStopOptions: Equatable {
     var runnerPath: String?
+    var session: String?
+    var all = false
 }
 
 /// The answer of `GET /ping`.
@@ -85,13 +91,18 @@ enum RunnerStatus {
     }
 
     static func run(_ options: RunnerStatusOptions) -> Int32 {
+        if options.all {
+            return RunnerSessions.status(json: options.json)
+        }
         let infoURL: URL
         let info: RunnerInfo
         do {
-            infoURL = try RunnerLocator.locate(explicitPath: options.runnerPath)
+            infoURL = try RunnerLocator.locate(explicitPath: options.runnerPath, session: options.session)
             info = try RunnerInfo.read(from: infoURL)
         } catch let error as RunnerUnavailableError {
             return notRunning(error.description, json: options.json)
+        } catch let error as SessionSelectionError {
+            return fail(error.description, code: .usage)
         } catch {
             return fail("cannot read runner info: \(error)", code: .usage)
         }
@@ -119,7 +130,8 @@ enum RunnerStatus {
 
     static func text(_ report: Report, timeZone: TimeZone = .current) -> String {
         let info = report.info
-        var rows: [(String, String)] = [("url", info.url)]
+        var rows: [(String, String)] = info.session.map { [("session", $0)] } ?? []
+        rows.append(("url", info.url))
         rows.append(("device", info.name.map { "\($0) (\(info.udid))" } ?? info.udid))
         if let pid = info.pid {
             let state = report.processRunning == true ? "relay start running" : "relay start not running"
@@ -168,7 +180,8 @@ enum RunnerStatus {
             "pid": info.pid.map { NSNumber(value: $0) } ?? NSNull(),
             "processRunning": report.processRunning.map { NSNumber(value: $0) } ?? NSNull(),
             "startedAt": info.startedAt.map { ISO8601DateFormatter().string(from: $0) } ?? NSNull(),
-            "hostBundleID": info.hostBundleID ?? NSNull()
+            "hostBundleID": info.hostBundleID ?? NSNull(),
+            "session": info.session ?? NSNull()
         ]
         func build(_ version: RunnerBuildVersion?) -> Any {
             guard let version else { return NSNull() }
@@ -222,17 +235,56 @@ enum RunnerStop {
     static let exitTimeout: TimeInterval = 60
 
     static func run(_ options: RunnerStopOptions) -> Int32 {
+        if options.all {
+            return RunnerSessions.stopAll()
+        }
         let infoURL: URL
         let info: RunnerInfo
         do {
-            infoURL = try RunnerLocator.locate(explicitPath: options.runnerPath)
+            infoURL = try RunnerLocator.locate(explicitPath: options.runnerPath, session: options.session)
             info = try RunnerInfo.read(from: infoURL)
         } catch is RunnerUnavailableError {
+            // A session that is still booting or building has no runner.json yet, but it can be stopped.
+            if case .session(_, let name)? = try? RunnerLocator.selection(explicitPath: options.runnerPath, session: options.session) {
+                return stopStarting(session: name)
+            }
             print("not running")
             return RunnerExitCode.success.rawValue
+        } catch let error as SessionSelectionError {
+            return RunnerStatus.fail(error.description, code: .usage)
         } catch {
             return RunnerStatus.fail("cannot read runner info: \(error)", code: .usage)
         }
+        return stop(info, infoURL: infoURL)
+    }
+
+    /// Stops the `relay start` holding `session`'s lock (booting or building: it has written no runner.json), or
+    /// prints `not running` when nothing holds it. The pid must be a relay start, as for runner.json.
+    static func stopStarting(session: String, home: URL = UserHome.url, prefix: String = "") -> Int32 {
+        let lockURL = RelaySession.lockURL(name: session, home: home)
+        guard let holder = StartLock.holder(of: lockURL), let pid = holder.pid, let snapshot = RelayProcess.snapshot(pid: pid),
+              URL(fileURLWithPath: snapshot.executable).lastPathComponent == RelayProcess.currentExecutableName,
+              snapshot.arguments.dropFirst().first == "start" else {
+            print("\(prefix)not running")
+            return RunnerExitCode.success.rawValue
+        }
+        note("stopping relay start (pid \(pid)) of session \(session), which is still booting or building")
+        guard kill(pid, SIGTERM) == 0 else {
+            return RunnerStatus.fail("cannot signal relay start (pid \(pid)): \(String(cString: strerror(errno)))", code: .usage)
+        }
+        let deadline = Date().addingTimeInterval(exitTimeout)
+        while StartLock.holder(of: lockURL) != nil {
+            guard Date() < deadline else {
+                return RunnerStatus.fail("relay start (pid \(pid)) did not exit within \(Int(exitTimeout))s; see its log in ~/.relay/logs", code: .usage)
+            }
+            Thread.sleep(forTimeInterval: 0.2)
+        }
+        print("\(prefix)stopped")
+        return RunnerExitCode.success.rawValue
+    }
+
+    /// Stops the runner `info` names. `prefix` goes before the `stopped` / `not running` line (`relay stop --all`).
+    static func stop(_ info: RunnerInfo, infoURL: URL, prefix: String = "") -> Int32 {
         // While the simulator still runs, so the video is complete; its path goes to stderr.
         Recording.cleanUp(port: Recording.port(of: info))
 
@@ -253,7 +305,7 @@ enum RunnerStop {
             }
             // relay start removes it itself unless it was killed.
             RunnerInfo.remove(at: infoURL, ifTokenIs: info.token)
-            print("stopped")
+            print("\(prefix)stopped")
             return RunnerExitCode.success.rawValue
         }
 
@@ -261,7 +313,7 @@ enum RunnerStop {
         guard let url = URL(string: info.url) else {
             RunnerInfo.remove(at: infoURL, ifTokenIs: info.token)
             note("removed \(infoURL.path), which had an invalid url")
-            print("not running")
+            print("\(prefix)not running")
             return RunnerExitCode.success.rawValue
         }
         var client = RunnerClient(baseURL: url, token: info.token)
@@ -280,11 +332,11 @@ enum RunnerStop {
         RunnerInfo.remove(at: infoURL, ifTokenIs: info.token)
         if status == 200 {
             note("relay start is not running; sent /shutdown to the runner at \(info.url) and removed \(infoURL.path)")
-            print("stopped")
+            print("\(prefix)stopped")
         } else {
             let reason = status.map { "it answered \($0)" } ?? "nothing answered at \(info.url)"
             note("removed the stale \(infoURL.path) (\(reason))")
-            print("not running")
+            print("\(prefix)not running")
         }
         return RunnerExitCode.success.rawValue
     }

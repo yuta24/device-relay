@@ -51,10 +51,10 @@ relay record stop                              # 録画を止め、MP4 の絶対
 | `key` / `button` / `orientation` | `POST /key` / `/button` / `/orientation` | 名前（`key` は `--bundle-id` も可。`orientation` は `landscape` を `landscapeLeft` として送る） |
 | `launch` / `terminate` | `POST /launch` / `/terminate` | `<bundle-id>`（`host` も可） |
 | `shutdown` | `POST /shutdown` | – |
-| `status` | `GET /ping` と runner.json（ランナーの版も表示） | `--json`。終了コードは「[バックグラウンドで動かす](setup.md#バックグラウンドで動かすrelay-start---background--status--stop)」 |
+| `status` | `GET /ping` と runner.json（ランナーの版も表示） | `--json`、`--all`（全セッションの一覧）。終了コードは「[バックグラウンドで動かす](setup.md#バックグラウンドで動かすrelay-start---background--status--stop)」 |
 | `stop` | `relay start` への SIGTERM（なければ `POST /shutdown`） | – |
-| `run`（実験的） | 手順ごとに上のエンドポイント | `<file>` か `-` か `--step <手順>`（複数可）、`--runner`、`--quiet`。「シナリオの実行（relay run、実験的）」 |
-| `record start` / `stop` / `status` | –（シミュレータはホストの `simctl io recordVideo`、実機は Mac のキャプチャデバイス） | `-o <file>`、`--force`、`--max-duration <s>`（start）、`--json`（status）、`--port <n>`（stop・status）、`--runner`。「録画（relay record）」 |
+| `run`（実験的） | 手順ごとに上のエンドポイント | `<file>` か `-` か `--step <手順>`（複数可）、`--runner`、`--session`、`--quiet`。「シナリオの実行（relay run、実験的）」 |
+| `record start` / `stop` / `status` | –（シミュレータはホストの `simctl io recordVideo`、実機は Mac のキャプチャデバイス） | `-o <file>`、`--force`、`--max-duration <s>`（start）、`--json`（status）、`--port <n>`（stop・status）、`--runner`、`--session`。「録画（relay record）」 |
 
 - バンドル ID の代わりに `host` と書くと、ランナーのホストアプリ RelayRunnerHost のバンドル ID になります（`launch`・`terminate` と、`--bundle-id` を取るコマンド）。バンドル ID は利用者ごとに違う（「[バンドル ID の接頭辞](setup.md#バンドル-id-の接頭辞)」）ので、relay は `relay start` がビルドしたアプリの ID を runner.json の `hostBundleID` に書き、そこから置き換えます。`relay status` の `host app` にも出ます。古い relay の `relay start` が書いた runner.json にはないので、`host` は終了コード 1 になります（ランナーを起動し直します）。
 - セレクタは `--id`（= `identifier`）・`--label`・`--type`・`--value` を 1 つ以上と、任意の `--index <n>` です（「[要素セレクタ](elements.md#要素セレクタ)」と同じ完全一致・AND）。`--type` の名前、キー名、ボタン名、向きの名前、数値の範囲は送る前に確認し、間違っていれば終了コード 1 で何も送りません。
@@ -95,14 +95,20 @@ stderr に出るランナーの JSON には、機械向けの `code`（`no_keybo
 
 URL とトークンは `runner.json` から読みます。トークンはコマンドライン引数では受け取りません（`ps` やシェルの履歴に残るため）。次の順に探し、最初に見つかったものを使います。
 
-1. `--runner <path>`
-2. 環境変数 `RELAY_RUNNER`（runner.json のパス）
+1. `--runner <path>` か `--session <名前>`（両方は指定できません）
+2. 環境変数 `RELAY_RUNNER`（runner.json のパス）か `RELAY_SESSION`（セッション名）。両方が設定されていると、どちらを指すのか決められないのでエラー（終了コード 1）です
 3. カレントディレクトリから親へ順に `.relay/runner.json`
 4. `~/.relay/runner.json`
 
-1 と 2 で指定したファイルがなければ、3・4 に進まずに終了コード 3 で終わります（意図しない別の端末を操作しないため）。
+オプションは環境変数より優先するので、`RELAY_SESSION` が設定された環境でも `--runner` で別のファイルを指定できます。セッションの runner.json は `~/.relay/sessions/<名前>/runner.json` です。
 
-`relay start` は、どのディレクトリで実行しても `~/.relay/runner.json`（パーミッション 0600）だけに書き出します。カレントディレクトリ（対象アプリのリポジトリなど）には `.relay/` を作らないので、3 で見つかるのは、自分で置いた `.relay/runner.json` か、以前の版の `relay start` が書いたものだけです。停止時には、まだ自分のトークンが書かれている場合だけ削除します（`relay stop` が片付けるときも同じです）。複数の `relay start` を同時に動かすこと（`--port` を分けて）はできますが、`~/.relay/runner.json` は最後に起動したものになり、前のランナーには `relay health` などのコマンドが届かなくなります（前のランナーのトークンはファイルに残りません）。
+1 と 2 で指定したファイルやセッションがなければ、3・4 や他のセッションに進まずに終了コード 3 で終わります（意図しない別の端末を操作しないため）。不正なセッション名は終了コード 1 です。`relay status`・`relay stop`・`relay record`・`relay run`・`relay bench` も同じ順に探します（`relay bench` は `--url` を省くと、セッションの URL を使います）。
+
+3・4 で見つけたファイルを使うとき、ほかにセッションが動いていれば（`~/.relay/sessions/*/runner.json` があるか、`session.lock` が握られていれば）、`relay: warning: no session selected; using <パス>, while sessions <名前> are running; pass --session or set RELAY_SESSION` を stderr に出します。エージェントのコマンドがセッションの指定を失って、別のランナーを操作している恐れがあるためです。失敗にはせず、終了コードも変えません。ランナーには問い合わせません。
+
+使い方は「[複数のセッションを並列に動かす](setup.md#複数のセッションを並列に動かすrelay-start---session)」を参照してください。
+
+`relay start` は、どのディレクトリで実行しても、セッションがなければ `~/.relay/runner.json`（パーミッション 0600）だけに書き出します。カレントディレクトリ（対象アプリのリポジトリなど）には `.relay/` を作らないので、3 で見つかるのは、自分で置いた `.relay/runner.json` か、以前の版の `relay start` が書いたものだけです。停止時には、まだ自分のトークンが書かれている場合だけ削除します（`relay stop` が片付けるときも同じです）。複数の `relay start` を同時に動かすこと（`--port` を分けて）はできますが、`~/.relay/runner.json` は最後に起動したものになり、前のランナーには `relay health` などのコマンドが届かなくなります（前のランナーのトークンはファイルに残りません）。同時に動かすならセッションを使ってください。
 
 ### シナリオの実行（relay run、実験的）
 
@@ -115,6 +121,7 @@ relay run about.relay                     # ファイルから
 relay run - < about.relay                 # 標準入力から
 relay run --step "launch com.apple.Preferences" --step "tap --label General --type button --timeout 5"
 relay run about.relay --runner path/to/runner.json --quiet
+relay run about.relay --session agent-1   # そのセッションのランナーで
 relay run about.relay --check             # 検証だけ（runner.json を読まず、何も実行しない）
 ```
 

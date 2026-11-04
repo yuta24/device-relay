@@ -84,7 +84,7 @@ relay screenshot --scale 1                            # 1 px = 1 pt に縮小し
 | `relay doctor` | Xcode・Runner・端末・署名などの環境を確認する |
 | `relay devices` | 実機とシミュレータを一覧表示する |
 | `relay start [--background]` | ランナーをビルドして起動する（`--background` なら ready で戻る） |
-| `relay status` / `relay stop` | 動いているランナーを確認する / 止める |
+| `relay status` / `relay stop` | 動いているランナーを確認する / 止める（`--all` で全セッション） |
 | `relay screenshot` | スクリーンショットを保存してパスを出力する（`--scale 1` で縮小） |
 | `relay source` | 要素ツリーを取得する（`--format compact --filter interactive` で操作できる要素だけ） |
 | `relay find` | セレクタに一致する要素を探す（`--timeout` で待つ、`--require` で必須にする） |
@@ -96,6 +96,15 @@ relay screenshot --scale 1                            # 1 px = 1 pt に縮小し
 | `relay record start` / `relay record stop` | シミュレータか実機（USB 接続）の画面を MP4 に録画する / 止めて保存先を出力する（実機は初回にカメラの許可が要る） |
 | `relay skill install` | コーディングエージェント向けのスキルを対象アプリのリポジトリなどに入れる |
 | `relay config` | 設定（Team ID）を表示・変更する |
+
+複数のエージェントを並列に動かすときは、エージェントを起動するときに `RELAY_SESSION` を環境変数で渡し、端末を分けます。エージェントが実行するコマンドのシェルはこの値を引き継ぐので、状態ファイルとポートはセッションごとに分かれ、ほかのセッションと干渉しません（[docs/setup.md](docs/setup.md#複数のセッションを並列に動かすrelay-start---session)）。
+
+```sh
+RELAY_SESSION=agent-1 claude   # このエージェントの relay はすべて agent-1 を使う
+RELAY_SESSION=agent-2 codex    # 別のターミナルで、別のセッションとして
+```
+
+環境変数を渡せないときは、各コマンドに `--session <名前>` を付けます。コマンドごとに新しいシェルになるエージェントでは、コマンドの中の `export` は次のコマンドに残りません。
 
 ## うまくいかないとき
 
@@ -109,7 +118,7 @@ relay screenshot --scale 1                            # 1 px = 1 pt に縮小し
 | 文書 | 内容 |
 | --- | --- |
 | [docs/setup.md](docs/setup.md) | Runner の用意（`relay install`）、端末の選択、Team ID、環境の確認（`relay doctor`）、シミュレータ、バックグラウンドでの起動、実機 |
-| [docs/cli.md](docs/cli.md) | CLI のサブコマンドと終了コード、接続先（runner.json）の探し方、シナリオの実行（`relay run`、実験的）、録画（`relay record`。シミュレータと USB 接続の実機）、エージェントスキル |
+| [docs/cli.md](docs/cli.md) | CLI のサブコマンドと終了コード、接続先（runner.json、セッション）の探し方、シナリオの実行（`relay run`、実験的）、録画（`relay record`。シミュレータと USB 接続の実機）、エージェントスキル |
 | [docs/http-api.md](docs/http-api.md) | HTTP API のエンドポイントとステータスコード、認証、同時リクエストと生存確認（`/ping`）、前面アプリ、文字入力と特殊キー |
 | [docs/elements.md](docs/elements.md) | 要素ツリー（`/source`、compact、interactive）、要素セレクタ、待機（timeout） |
 | [docs/screen.md](docs/screen.md) | 座標系と画面の向き、スクリーンショットの縮小 |

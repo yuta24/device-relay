@@ -3,7 +3,7 @@ import Foundation
 /// Arguments of the runner commands (`relay tap`, `relay screenshot`, ...), which send one request each
 /// to the runner `relay start` launched.
 extension Arguments {
-    /// Options of each runner command; every one also takes `--runner`. `-o` is short for `--output`.
+    /// Options of each runner command; every one also takes `--runner` and `--session`. `-o` is short for `--output`.
     static let runnerOptions: [String: Set<String>] = [
         "screenshot": ["--output", "--format", "--quality", "--max-size", "--scale"],
         "source": ["--format", "--max-depth", "--filter", "--bundle-id"],
@@ -30,7 +30,7 @@ extension Arguments {
     /// Parses `relay <command> [arguments] [options]`. Every option but the `runnerFlags` takes a value,
     /// and options and arguments may come in any order; `--` ends the options, for text that starts with `-`.
     static func parseRunnerCommand(_ name: String, _ raw: [String], standardInput: () -> Data) throws -> Command {
-        let allowed = (runnerOptions[name] ?? []).union(["--runner"])
+        let allowed = (runnerOptions[name] ?? []).union(["--runner", "--session"])
         let flags = runnerFlags[name] ?? []
         var rest = raw
         var values: [String: [String]] = [:]
@@ -73,7 +73,12 @@ extension Arguments {
             parser.standardInputText = try text(fromStandardInput: standardInput())
         }
         let operation = try parser.operation()
-        return .runner(RunnerControlOptions(operation: operation, runnerPath: try parser.string("--runner"),
+        let runnerPath = try parser.string("--runner")
+        let session = try parser.string("--session")
+        guard runnerPath == nil || session == nil else {
+            throw ArgumentError(description: "\(name) takes either --runner or --session, not both")
+        }
+        return .runner(RunnerControlOptions(operation: operation, runnerPath: runnerPath, session: try session.map(sessionName),
                                             requireMatch: givenFlags.contains("--require")))
     }
 
@@ -185,28 +190,34 @@ extension Arguments {
     /// than send it one.
     static let lifecycleUsages: [String: (synopsis: String, details: String)] = [
         "status": (
-            "relay status [--json] [--runner <path>]",
+            "relay status [--json] [--runner <path> | --session <name> | --all]",
             """
             Shows the runner in runner.json: URL, device, the relay start that owns it (pid, whether it still runs,
             start time), and the /ping result (busy included). --json prints one JSON object.
             Exit status: 0 the runner answers /ping, 3 no runner.json or no answer, 4 the token was rejected (401).
+            --all lists every session and the runner of ~/.relay/runner.json instead, one line each: session
+            ((default) for that runner), state (starting, running, busy, no answer, rejected, unknown), device,
+            URL, and the relay start's pid; --json prints one array. It exits 0 whatever the states are.
             """
         ),
         "stop": (
-            "relay stop [--runner <path>]",
+            "relay stop [--runner <path> | --session <name> | --all]",
             """
             Sends SIGTERM to the relay start in runner.json (like Ctrl-C: it shuts the runner down, shuts down a
             simulator it booted, and removes runner.json) and waits for it to exit. Without that process, it sends
             /shutdown to the runner and removes the stale runner.json. Prints "stopped", or "not running" if nothing
             runs; both exit 0. Exits 1 if relay start does not exit within 60 seconds.
             A recording of that runner (relay record) is finished first; its path goes to stderr.
+            A session still booting or building (no runner.json yet) is stopped too. --all stops every session and
+            the runner of ~/.relay/runner.json, one after the other, printing <session>: stopped for each; it
+            also stops other agents' runners, so an agent normally stops only its own session.
             """
         ),
         "record": (
             """
-            relay record start [-o <file>] [--force] [--max-duration 600] [--runner <path>]
-              relay record stop [--runner <path> | --port <n>]
-              relay record status [--json] [--runner <path> | --port <n>]
+            relay record start [-o <file>] [--force] [--max-duration 600] [--runner <path> | --session <name>]
+              relay record stop [--runner <path> | --session <name> | --port <n>]
+              relay record status [--json] [--runner <path> | --session <name> | --port <n>]
             """,
             """
             Records the screen of the simulator or device the runner in runner.json runs on, to show what
@@ -235,9 +246,9 @@ extension Arguments {
             recording. A device that sends no frame for 5 seconds (locked, for example) keeps recording: the log
             and status note it (the video holds the last frame), and the log notes when frames come again.
             stop and status use the recording of the runner in runner.json; --port <n> uses the one of that runner
-            port directly (also without runner.json; not with --runner). A --runner or $RELAY_RUNNER that does not
-            exist is exit 3, as for the other commands. Without them and without runner.json, the only recording
-            is used, and several are listed by port to choose one with --port.
+            port directly (also without runner.json; not with --runner or --session). A --runner, $RELAY_RUNNER, or
+            session that does not exist is exit 3, as for the other commands. Without them and without runner.json,
+            the only recording is used, and several are listed by port to choose one with --port.
             status shows whether it records, the video, the elapsed time, and a device's frames having stopped
             (--json: one object); it exits 0.
             Exit status: 0 ok, 1 not a booted simulator, a device not connected with USB, no camera access, a
@@ -248,7 +259,7 @@ extension Arguments {
             """
         ),
         "run": (
-            "relay run (<file> | - | --step <step>...) [--check] [--runner <path>] [--quiet]",
+            "relay run (<file> | - | --step <step>...) [--check] [--runner <path> | --session <name>] [--quiet]",
             """
             Experimental: the format and behavior may change. Runs a scenario: runner commands, one per line,
             written as after relay (tap --label General --type button --timeout 5), read from <file>, from
@@ -258,13 +269,13 @@ extension Arguments {
             sleep <s> waits a fixed time (0 < s <= \(Int(Scenario.maxSleep))); prefer find --timeout or tap --timeout,
             which wait only as long as needed; find --require also stops the run (exit 6) when nothing matches,
             while find without it succeeds either way, as it does alone. screenshot needs --output <file>;
-            type --stdin, --runner, and --help cannot be in a step.
+            type --stdin, --runner, --session, and --help cannot be in a step.
             A line # relay-run: 1 before the first step states the format the scenario is written for; another
             version is refused, so a scenario never runs with a meaning it was not written for.
             Every step is checked first: each bad one prints relay: line <n>: <reason> and nothing runs (exit 1;
             the n of a --step is its position). --check stops there: it reads no runner.json and runs nothing,
             and prints relay: <n> steps checked; nothing was run (exit 0; --quiet: nothing).
-            Otherwise runner.json is read once (--runner, else $RELAY_RUNNER, ...) and the steps run in this
+            Otherwise runner.json is read once (--runner or --session, else $RELAY_RUNNER or $RELAY_SESSION, ...) and the steps run in this
             process. Each step's output goes to stdout as the command alone prints it; stderr gets
             relay: [i/n] <step> ... ok (<ms> ms) per step and a total at the end (--quiet: neither);
             these lines show the text of type steps as ***.
@@ -284,8 +295,9 @@ extension Arguments {
     <selector>: one or more of --id <identifier> --label <label> --type <type> --value <value>, which must all
       match exactly (the attributes relay source reports), plus --index <n> to pick one of several matches.
     Runner commands read the runner URL and token from runner.json, never from the command line:
-      --runner <path>, else $RELAY_RUNNER, else .relay/runner.json in the current directory or a parent,
-      else ~/.relay/runner.json (where relay start writes it).
+      --runner <path> or --session <name>, else $RELAY_RUNNER or $RELAY_SESSION (both set is an error), else
+      .relay/runner.json in the current directory or a parent, else ~/.relay/runner.json (where relay start
+      without a session writes it). A session is ~/.relay/sessions/<name>/runner.json, with no fallback.
     The runner's JSON is printed to stdout on success and to stderr on failure.
     Exit status: 0 ok, 1 usage or local error, 3 runner unavailable (no runner.json or no connection),
       4 unauthorized (401), 5 busy (409; retry), 6 action failed (422), 7 bad request (other 4xx), 8 runner error.

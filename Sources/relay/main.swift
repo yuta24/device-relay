@@ -6,14 +6,22 @@ setvbuf(stdout, nil, _IOLBF, 0)
 let arguments = Array(CommandLine.arguments.dropFirst())
 do {
     switch try Arguments.parse(arguments) {
-    case .start(let options):
+    case .start(var options):
+        options.session = try RelaySession.resolve(flag: options.session)
         if options.background {
             exit(BackgroundStart.run(options))
         }
         // Held until this process exits, after the runner stopped (see StartLock).
-        _ = try StartLock.acquireForStart(port: options.port)
+        _ = try StartLocks.acquire(for: &options)
+        if let conflict = BackgroundStart.sessionConflict(options) {
+            throw SetupError(description: conflict)
+        }
         StartCancellation.install()
-        let setup = try StartSetup.prepare(options)
+        let setup = try StartSetup.prepare(
+            options,
+            inUse: { StartLock.devicesInUse($0) },
+            claimDevice: { [session = options.session] in _ = try StartLock.acquire(device: $0, session: session) }
+        )
         if StartCancellation.isRequested {
             setup.finish()
             exit(1)
@@ -79,6 +87,13 @@ do {
 } catch let error as SetupError {
     FileHandle.standardError.write(Data("relay: \(error)\n".utf8))
     exit(1)
+} catch let error as SessionSelectionError {
+    FileHandle.standardError.write(Data("relay: \(error)\n".utf8))
+    exit(1)
+} catch let error as RunnerUnavailableError {
+    // relay bench with a session that has no runner; the usage text is no help there.
+    FileHandle.standardError.write(Data("relay: \(error)\n".utf8))
+    exit(RunnerExitCode.unavailable.rawValue)
 } catch let error as ShellError {
     // A failed xcodebuild or simctl: the usage text would bury its output.
     FileHandle.standardError.write(Data("relay: \(error)\n".utf8))

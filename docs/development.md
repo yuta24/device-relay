@@ -32,7 +32,7 @@ xcodebuild build-for-testing -project Runner/RelayRunner.xcodeproj -scheme Relay
   -allowProvisioningUpdates RELAY_DEVELOPMENT_TEAM=<TEAM_ID>   # App ID dev.devicerelay.<team id>.RelayRunnerHost を登録します
 ```
 
-（`test-without-building` にも `-derivedDataPath` を付けると、テストのログと xcresult が `~/Library/Developer/Xcode/DerivedData` ではなくそこに入ります。`relay start` も同じようにしています。）
+（`test-without-building` にも `-derivedDataPath` を付けると、テストのログと xcresult が `~/Library/Developer/Xcode/DerivedData` ではなくそこに入ります。`relay start` はテスト実行が重ならないよう、ポートごとの `~/.relay/build/…/TestData/port-<port>` を渡します。）
 
 xcodebuild の出力に `RELAY_RUNNER_READY port=8100 addresses=en0=…,utun3=…` が出たら待ち受け開始です。シミュレータでは `127.0.0.1` だけで待ち受けるので `addresses=lo0=127.0.0.1` になり、`http://127.0.0.1:<port>/` で接続します（Mac の LAN 側のアドレスや `[::1]` では届きません。`localhost` は `127.0.0.1` に落ちて届きます）。`TEST_RUNNER_RELAY_RUNNER_TOKEN_SHA256` を渡さずに起動した場合は、ランナーがトークンを生成して `relay-runner: RELAY_RUNNER_TOKEN_SHA256 is not set; generated token: <token>` と 1 回だけ出力します。認証なしでは待ち受けません。自分で決めたトークンを使う場合は、そのトークンの SHA-256（hex 64 文字、例: `printf %s "$TOKEN" | shasum -a 256`）を渡します。64 文字の hex でない値を渡すと、ランナーは待ち受けずに失敗します。
 

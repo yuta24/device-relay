@@ -54,9 +54,9 @@ struct RecordArgumentsTests {
             #expect(throws: ArgumentError.self, "\(arguments)") { try Arguments.parse(arguments) }
         }
         let stopError = #expect(throws: ArgumentError.self) { try Arguments.parse(["record", "stop", "--runner", "r.json", "--port", "8100"]) }
-        #expect(stopError?.description == "record stop takes either --runner or --port, not both")
+        #expect(stopError?.description == "record stop takes one of --runner, --session, and --port")
         let error = #expect(throws: ArgumentError.self) { try Arguments.parse(["record", "status", "--port", "8100", "--runner", "r.json"]) }
-        #expect(error?.description == "record status takes either --runner or --port, not both")
+        #expect(error?.description == "record status takes one of --runner, --session, and --port")
     }
 
     @Test func help() throws {
@@ -71,7 +71,7 @@ struct RecordArgumentsTests {
         #expect(Arguments.usage.contains("record   Records the screen of the runner's simulator, or of its device connected with USB"))
         #expect(Arguments.errorUsage(for: "record").contains("Run relay record --help"))
         #expect(usage.contains("--force"))
-        #expect(usage.contains("relay record stop [--runner <path> | --port <n>]"))
+        #expect(usage.contains("relay record stop [--runner <path> | --session <name> | --port <n>]"))
     }
 
     @Test func superviseArgumentsParseBack() throws {

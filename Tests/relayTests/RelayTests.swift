@@ -6,7 +6,7 @@ import Testing
 struct ArgumentsTests {
     @Test func parsesStartOptions() throws {
         let command = try Arguments.parse(["start", "--udid", "ABC", "--port", "9000", "--team-id", "ABCDE12345", "--rebuild"])
-        var expected = StartOptions(udid: "ABC", port: 9000, teamID: "ABCDE12345")
+        var expected = StartOptions(udid: "ABC", port: 9000, portGiven: true, teamID: "ABCDE12345")
         expected.rebuild = true
         #expect(command == .start(expected))
     }
