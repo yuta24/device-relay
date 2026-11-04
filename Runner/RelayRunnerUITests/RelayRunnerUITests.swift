@@ -26,6 +26,8 @@ final class RelayRunnerUITests: XCTestCase {
     private var cachedDisplays: [RunnerDisplay]?
     /// The display the running command acts on, looked up once per command; `handle` clears it.
     private var commandDisplay: DisplayLookup?
+    /// Where the app's window is, from the command's latest element tree on iPad; nil when nothing was looked up.
+    private var commandWindow: RunnerWindowLookup?
 
     private lazy var springboard = XCUIApplication(bundleIdentifier: Self.springboardBundleID)
 
@@ -124,9 +126,11 @@ final class RelayRunnerUITests: XCTestCase {
         let startedAt = DispatchTime.now().uptimeNanoseconds
         capturedIssues = []
         commandDisplay = nil
+        commandWindow = nil
         defer {
             capturedIssues = nil
             commandDisplay = nil
+            commandWindow = nil
         }
 
         var response: RunnerHTTPResponse
@@ -279,16 +283,16 @@ final class RelayRunnerUITests: XCTestCase {
     ///
     /// The private accessibility client (WebDriverAgent's `fb_activeApplication`) reports the active
     /// applications, SpringBoard on the home screen. It reports one, except in the middle of an app
-    /// switch, when both apps are listed with the new one first, so the first is used. Without it,
-    /// fall back to the last `/launch`ed app if the public `state` still says it is in the foreground,
-    /// and to SpringBoard otherwise.
+    /// switch, when both apps are listed with the new one first, and on iPad with windowed apps, when
+    /// every app on screen and SpringBoard are listed with the focused one first, so the first is used
+    /// (`RunnerWindows.foregroundIndex` leaves out the Dock's folder service). Without it, fall back to
+    /// the last `/launch`ed app if the public `state` still says it is in the foreground, and to
+    /// SpringBoard otherwise.
     private func foregroundApplication() -> ForegroundApplication {
-        if RelayActiveApplication.isAvailable {
-            // /health calls this too, so a failed lookup must not turn into a 422.
-            let (applications, failed) = ignoringIssues { try? RelayActiveApplication.activeApplications() }
-            if !failed, let active = applications?.first {
-                return ForegroundApplication(bundleID: active.bundleIdentifier, pid: active.processIdentifier, source: .private)
-            }
+        if let applications = activeApplications(),
+           let index = RunnerWindows.foregroundIndex(activeBundleIDs: applications.map(\.bundleIdentifier)) {
+            let active = applications[index]
+            return ForegroundApplication(bundleID: active.bundleIdentifier, pid: active.processIdentifier, source: .private)
         }
         if let bundleID = lastActivatedBundleID {
             let (state, failed) = ignoringIssues { XCUIApplication(bundleIdentifier: bundleID).state }
@@ -297,6 +301,14 @@ final class RelayRunnerUITests: XCTestCase {
             }
         }
         return ForegroundApplication(bundleID: Self.springboardBundleID, pid: nil, source: .fallback)
+    }
+
+    /// The active applications, or nil when they can't be read. /health needs them too, so a failed lookup
+    /// must not turn into a 422.
+    private func activeApplications() -> [RelayActiveApplicationInfo]? {
+        guard RelayActiveApplication.isAvailable else { return nil }
+        let (applications, failed) = ignoringIssues { try? RelayActiveApplication.activeApplications() }
+        return failed ? nil : applications
     }
 
     // MARK: - Keyboard
@@ -350,19 +362,27 @@ final class RelayRunnerUITests: XCTestCase {
             maxDepth = depth
         }
         let root = try elementTree(application, bundleID: bundleID, maxDepth: maxDepth)
+        let warning = RunnerWindows.compactWarning(lookup: commandWindow)
         guard let filter else {
             if format == "compact" {
-                return Self.text(RunnerElementTree.compactText(root))
+                return Self.text(warning + RunnerElementTree.compactText(root))
             }
-            return .json(["ok": true, "bundleId": bundleID, "tree": RunnerElementTree.json(root)])
+            return annotated(["ok": true, "bundleId": bundleID, "tree": RunnerElementTree.json(root)])
         }
         // Filtering runs here, next to the snapshot, so only the short list is serialized and sent.
         let screen = CGRect(origin: .zero, size: self.screen(in: interfaceOrientation()).size)
         let elements = RunnerElementTree.interactiveElements(in: root, screen: screen)
         if format == "compact" {
-            return Self.text(RunnerElementTree.compactText(elements))
+            return Self.text(warning + RunnerElementTree.compactText(elements))
         }
-        return .json(RunnerElementTree.filteredJSON(elements, filter: filter, bundleID: bundleID))
+        return annotated(RunnerElementTree.filteredJSON(elements, filter: filter, bundleID: bundleID))
+    }
+
+    /// `body` with what it should say about the app's window (`RunnerWindows.annotate`).
+    private func annotated(_ body: [String: Any]) -> RunnerHTTPResponse {
+        var body = body
+        RunnerWindows.annotate(&body, lookup: commandWindow)
+        return .json(body)
     }
 
     private static func text(_ text: String) -> RunnerHTTPResponse {
@@ -378,7 +398,7 @@ final class RelayRunnerUITests: XCTestCase {
         }
         let root = Self.elementNode(snapshot, depth: 0, maxDepth: maxDepth)
         let displays = self.displays()
-        guard displays.count > 1 else { return root }
+        guard displays.count > 1 else { return onScreen(root, bundleID: bundleID) }
         // The windows' display IDs say where the app is, so a command that snapshots needs no second snapshot
         // to look its display up. SpringBoard has windows on every display, so it is looked up by `appDisplay`.
         let windowDisplayIDs = snapshot.children.map(Self.displayID(of:))
@@ -389,6 +409,72 @@ final class RelayRunnerUITests: XCTestCase {
         guard case .found(let display) = appDisplay() else { return root }
         return RunnerDisplays.tree(root, windowDisplayIDs: windowDisplayIDs, display: display,
                                    orientation: Self.runnerOrientation(interfaceOrientation()))
+    }
+
+    // MARK: - Windows
+
+    /// On iPad, `root` (in the coordinates of the app's window) in screen coordinates, and `commandWindow`
+    /// says how. Other devices have no windows and pay for nothing here.
+    private func onScreen(_ root: RunnerElementNode, bundleID: String) -> RunnerElementNode {
+        commandWindow = nil
+        guard Self.isPad, bundleID != Self.springboardBundleID else { return root }
+        let orientation = interfaceOrientation()
+        let runnerOrientation = Self.runnerOrientation(orientation)
+        let screen = self.screen(in: orientation).size
+        let portraitSize = displayScreen().size
+        let active = activeApplications()?.map(\.bundleIdentifier)
+        guard RunnerWindows.mayBeWindowed(appFrame: root.frame, screen: screen, activeBundleIDs: active) else {
+            return RunnerWindows.fullScreenTree(root, orientation: runnerOrientation, portraitSize: portraitSize)
+        }
+        let lookup = RunnerWindows.lookup(bundleID: bundleID, appFrame: root.frame,
+                                          cards: windowCards(of: bundleID, orientation: orientation), screen: screen)
+        commandWindow = lookup
+        switch lookup {
+        case .placed(let placement):
+            return placement.onScreen(root: root, screen: screen, orientation: runnerOrientation, portraitSize: portraitSize)
+        case .fullScreen:
+            return RunnerWindows.fullScreenTree(root, orientation: runnerOrientation, portraitSize: portraitSize)
+        case .unknown:
+            return root
+        }
+    }
+
+    /// The frames in the displayed orientation of the app's windows in SpringBoard's tree, front one first; nil
+    /// when the tree can't be read. The window that holds them is read first since it is much smaller. Only the
+    /// first such window (about 13 ms): resolving all of them takes about 33 ms, no faster than all of SpringBoard,
+    /// which is read when that window has no card of the app and so finds the cards in any other.
+    private func windowCards(of bundleID: String, orientation: UIInterfaceOrientation) -> [CGRect]? {
+        let (switcher, switcherFailed) = ignoringIssues {
+            try? springboard.windows.matching(RunnerWindows.switcherWindowPredicate).firstMatch.snapshot()
+        }
+        var cards = switcherFailed ? nil : switcher.map { Self.cards(of: bundleID, in: $0) }
+        var container = switcher?.frame
+        if cards?.isEmpty ?? true {
+            let (whole, failed) = ignoringIssues { try? springboard.snapshot() }
+            if !failed, let whole {
+                cards = Self.cards(of: bundleID, in: whole)
+                container = whole.frame
+            }
+        }
+        guard let cards, let container else { return nil }
+        let portraitSize = displayScreen().size
+        return cards.map {
+            RunnerWindows.displayedFrame(card: $0, container: container, orientation: Self.runnerOrientation(orientation),
+                                         portraitSize: portraitSize)
+        }
+    }
+
+    private static func cards(of bundleID: String, in snapshot: XCUIElementSnapshot) -> [CGRect] {
+        var frames: [CGRect] = []
+        func visit(_ element: XCUIElementSnapshot) {
+            guard !RunnerWindows.isCard(identifier: element.identifier, of: bundleID) else {
+                frames.append(element.frame)
+                return
+            }
+            element.children.forEach(visit)
+        }
+        visit(snapshot)
+        return frames
     }
 
     // MARK: - Elements
@@ -407,7 +493,13 @@ final class RelayRunnerUITests: XCTestCase {
         let timeout = try body.elementTimeout()
         let mode = try touchMode(body)
         let bundleID = body.optionalString("bundleId") ?? foregroundApplication().bundleID
-        let target = try waitForElements(bundleID: bundleID, timeout: timeout) { root, isLastAttempt in
+        let target = try waitForElements(bundleID: bundleID, timeout: timeout) { root, isLastAttempt -> RunnerElementTarget? in
+            // Without the window's position a frame says nothing about the screen, and a touch would miss
+            // while reporting success. It can be passing, as while a window moves, so it is waited out too.
+            if case .unknown(let message)? = self.commandWindow {
+                guard isLastAttempt else { return nil }
+                throw RunnerError.windowPositionUnknown(RunnerWindows.touchError(message))
+            }
             let screen = CGRect(origin: .zero, size: self.screen(in: self.interfaceOrientation()).size)
             switch selector.resolve(in: root, screen: screen) {
             case .success(let target):
@@ -418,7 +510,7 @@ final class RelayRunnerUITests: XCTestCase {
             }
         }
         let x = Double(target.point.x), y = Double(target.point.y)
-        return .json([
+        return annotated([
             "ok": true,
             "mode": try touch(x: x, y: y, duration: duration, mode: mode).rawValue,
             "bundleId": bundleID,
@@ -473,7 +565,7 @@ final class RelayRunnerUITests: XCTestCase {
             let matches = selector.picked(from: all)
             return matches.isEmpty && !isLastAttempt ? nil : (matches, all.count)
         }
-        return .json(RunnerElementLookup.findJSON(matches, count: count, limit: limit, bundleID: bundleID))
+        return annotated(RunnerElementLookup.findJSON(matches, count: count, limit: limit, bundleID: bundleID))
     }
 
     /// Snapshots `bundleID` until `attempt` returns a value, every `pollInterval` for up to `timeout`
@@ -506,8 +598,8 @@ final class RelayRunnerUITests: XCTestCase {
         }
     }
 
-    /// Snapshot frames of the foreground app are already in its interface orientation, the same
-    /// space as `/tap`, so they are used as is.
+    /// Snapshot frames of the foreground app are already in its interface orientation. They are the same
+    /// space as `/tap`, except in an iPad window, which `onScreen(_:bundleID:)` converts afterwards.
     private static func elementNode(_ snapshot: XCUIElementSnapshot, depth: Int, maxDepth: Int) -> RunnerElementNode {
         let children = snapshot.children
         let expand = depth < maxDepth
@@ -1082,6 +1174,9 @@ final class RelayRunnerUITests: XCTestCase {
         }
         return ["version": value("RelayRunnerVersion"), "sourceHash": value("RelayRunnerSourceHash")]
     }()
+
+    /// The device, not the runner's idiom: only iPads have app windows.
+    private static let isPad = UIDevice.current.model.hasPrefix("iPad")
 
     private static var isSimulator: Bool {
         #if targetEnvironment(simulator)

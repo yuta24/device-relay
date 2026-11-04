@@ -257,6 +257,7 @@ stderr に JSON が出ます。
 | `element_not_found` / `element_ambiguous` / `element_not_hittable` | 6 | 上の `reason` の表 |
 | `no_keyboard_focus` | 6 | 入力欄をタップしてから送り直す |
 | `display_unknown` | 6 | 画面が暗い。利用者に確かめる |
+| `window_position_unknown` | 6 | iPad のウィンドウの位置が不明。ウィンドウを 1 つにするか、スクリーンショットから座標で指定する |
 | `touch_failed` | 6 / 8 | 1 回だけ再試行。続くなら `relay status` とログ |
 | `xcui_failed` | 6 | エラー文（XCUI の文）を読み、前面アプリと画面を観察し直す |
 | `app_not_installed` | 6 | relay が送る前に判定（ランナーは返さない）。バンドル ID を確かめるか、アプリをインストールする |
@@ -270,8 +271,9 @@ stderr に JSON が出ます。
 - タップやスワイプの座標は、どの画像を使っても常にポイントです。
 - 座標は `0 ≤ x < screen.width`、`0 ≤ y < screen.height`（表示の向き）の中でなければなりません。外なら何も送らずに 400（終了コード 7）で、`invalid field: x, y: (500, 100) is outside the screen, which is 402x874 points in portrait (...)` のように画面の大きさと向きが出ます。`swipe` は始点（`from:`）と終点（`to:`）の両方を確かめます。端ぎりぎりではなく、数ポイント内側を使います。
 - `relay orientation` の後は `relay health` の `orientation` と `screen` を読み直します。iPhone のアプリの多くは `portraitUpsideDown` に回転しません。
+- iPad のウィンドウ表示（ウィンドウ表示のアプリ、Stage Manager、Slide Over）でも、座標は画面全体のものです。`find`・`source`（`--format text` を除く）の frame と要素指定のタップの `point` も画面の座標に変換され、応答の `window`（`x`・`y`・`width`・`height`・`scale`）にウィンドウの位置と倍率が出ます。全画面のアプリには付きません。位置が決まらないと、タップは何も送らずに終了コード 6（`window_position_unknown`）、`find`・`source` は frame がウィンドウの中の座標のままで `window: null` と `warning` が付きます（`--format compact` は先頭の `warning …` の行）。
 - 表示が複数ある端末（iPhone Duo。Xcode 27.1 以上、iOS 27.1 以上）では、`relay health` の `displays` に表示の一覧（外側が ID 1 で 466×678、内側が ID 3 で 669×951。縦向きのポイント）、`display` に前面アプリの表示の ID が出ます。`screen`、スクリーンショット（応答ヘッダー `X-Relay-Display`）、座標、要素の frame はその表示のものです。内側はふつう横向きで、`screen` は 951×669 です。折りたたみを変えたら `relay health` を読み直します（シミュレータが起動し直してランナーが止まることがあるので、先に `relay status`。止まっていれば `relay start` し直す）。Duo では `relay orientation` で画面は回転しません（外側は portrait、内側は landscapeRight のまま）。前面アプリの表示を判定できない（`display` が `null`、タッチとスクリーンショットは終了コード 6 で `cannot tell which display`）ときは、どちらの表示も暗いので利用者に確かめます。内側で SpringBoard や回転しないアプリが前面のとき、`--mode xcui` の座標タッチは `xcui touches can't reach` で断られるので、`--mode` を外して送り直します。
-- 詳しくは device-relay の docs/screen.md の「座標系と画面の向き」と「表示が複数ある端末（iPhone Duo）」。
+- 詳しくは device-relay の docs/screen.md の「座標系と画面の向き」「iPad のウィンドウ表示」「表示が複数ある端末（iPhone Duo）」。
 
 ## スクロールの例
 

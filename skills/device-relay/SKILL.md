@@ -69,6 +69,7 @@ relay press --label "Photo" --type cell --duration 1.0
 - 座標（`relay tap <x> <y>`、`relay swipe <x1> <y1> <x2> <y2>`）は、表示の向きでの画面左上を原点とするポイント単位です。画面の外（`0 ≤ x < screen.width`、`0 ≤ y < screen.height` の外）は何も送らずに終了コード 7 です。要素の `frame` や `relay health` の `screen.width` / `screen.height` から求めます。スクリーンショットから求めるときは、`--scale 1` の画像なら画素がそのままポイント、それ以外は画素を stderr の px/pt（フル解像度なら scale）で割ります。座標は、スクロールなど要素で指定できない操作だけに使います（例: `relay swipe 200 700 200 200` で下から上へ）。
 - 文字入力: 入力欄をタップしてから `relay type "text"`。確定は `--key return` を付けます。1 文字消すのは `relay key delete`。キーは `return`・`delete`・`space` だけです。`-` で始まる文字列は `relay type -- -text` のように `--` を挟みます。
 - **sleep せずに待つ。** 画面が変わる操作の後は、次の画面にある要素を `relay find <セレクタ> --timeout <秒>`（最大 10 秒。`count` を確認）で待つか、`tap` / `press` に `--timeout` を付けて要素が現れるのを待たせます。もっと長く待つときは短い timeout を繰り返します。
+- iPad のウィンドウ表示でも、要素の frame と `point` は画面の座標です。`relay find --type window` の `window` でウィンドウの位置と倍率がわかります。同じアプリのウィンドウが複数あるなどで位置が決まらないと、要素指定のタップは終了コード 6 で `window_position_unknown` になり（何も送りません）、`find` と `source` には `warning` が付きます。そのときはスクリーンショットから座標で指定します。
 - 表示が複数ある端末（iPhone Duo。外側と内側）では、`relay health` の `display` と `screen`、スクリーンショット、座標、要素の frame は、すべて前面アプリが載っている表示のものです。折りたたみを変えたら（変えるのは利用者です）`relay status` と `relay health` を読み直します（切り替えでランナーが止まることがあります）。終了コード 6 で `display_unknown`（`cannot tell which display`）が出たら画面が暗いので利用者に確かめ、`touch_mode_unavailable`（`xcui touches can't reach`）が出たら `--mode` を外して（または `--mode private` で）送り直します。詳しくは reference.md の「座標と向き」。
 - **画面が変わったら観察し直す。** frame、index、前面アプリは変わります。前の画面のセレクタや座標を確かめずに使い回さないでください。
 - コマンドは 1 つずつ、前の結果を待ってから送ります。ランナーは一度に 1 コマンドしか実行せず、重なると busy（終了コード 5）になります。
@@ -121,6 +122,7 @@ relay press --label "Photo" --type cell --duration 1.0
 | `no_keyboard_focus` | 入力欄をタップしてから送り直す |
 | `touch_mode_unavailable` | `--mode` を外して送り直す |
 | `display_unknown` | 画面が暗い。利用者に確かめる |
+| `window_position_unknown` | iPad のウィンドウの位置が不明。ウィンドウを 1 つにするか、スクリーンショットから座標で指定する |
 | `touch_failed` / `xcui_failed` | 1 回だけ再試行し、続くなら観察し直す |
 | `app_not_installed` | バンドル ID を確かめる（大文字小文字も区別される）か、アプリをインストールしてから送り直す。待っても直らない |
 
