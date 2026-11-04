@@ -104,7 +104,7 @@ enum RunnerStatus {
         } catch let error as SessionSelectionError {
             return CLIOutput.usageError(error.description, command: "status")
         } catch {
-            return fail("cannot read runner info: \(error)", code: .failure, json: options.json, errorCode: .runnerInfoInvalid)
+            return fail("cannot read runner info: \(error)", code: .failure, json: options.json ? .runnerInfoInvalid : nil)
         }
         let check = RunnerPing.checkWithBuild(info)
         let report = Report(
@@ -215,15 +215,16 @@ enum RunnerStatus {
     /// (`alive: false` and the failure's `code` and `error`; the reason is not repeated on stderr).
     private static func notRunning(_ reason: String, json: Bool) -> Int32 {
         if json {
-            return fail(reason, code: .unavailable, json: true, errorCode: .runnerUnavailable)
+            return fail(reason, code: .unavailable, json: .runnerUnavailable)
         }
         print("not running")
         return fail(reason, code: .unavailable)
     }
 
-    /// A failure: `relay: <message>` on stderr, or, with `--json`, the failure as one object on stdout.
-    static func fail(_ message: String, code: RunnerExitCode, json: Bool = false, errorCode: RelayErrorCode = .failed) -> Int32 {
-        if json {
+    /// A failure: `relay: <message>` on stderr, or, with `--json` (`json` names the failure's code), the failure
+    /// as one object on stdout.
+    static func fail(_ message: String, code: RunnerExitCode, json errorCode: RelayErrorCode? = nil) -> Int32 {
+        if let errorCode {
             CLIOutput.writeLine(CLIOutput.failureBody(errorCode, message, extra: ["alive": false]))
         } else {
             CLIOutput.note(message)

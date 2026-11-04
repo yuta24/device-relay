@@ -172,8 +172,7 @@ struct FailureJSONTests {
             .screenshotSaveFailed: "screenshot_save_failed",
             .appNotInstalled: "app_not_installed",
             .devicesUnavailable: "devices_unavailable",
-            .recordingUnavailable: "recording_unavailable",
-            .failed: "failed"
+            .recordingUnavailable: "recording_unavailable"
         ]
         #expect(RelayErrorCode.allCases.count == expected.count)
         for code in RelayErrorCode.allCases {

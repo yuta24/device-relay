@@ -20,8 +20,6 @@ enum RelayErrorCode: String, CaseIterable {
     case devicesUnavailable = "devices_unavailable"
     /// Exit 1: `relay record status` could not find or read the recording state.
     case recordingUnavailable = "recording_unavailable"
-    /// Exit 1: the local part of a host command failed in a way that has no code of its own.
-    case failed
 }
 
 /// What relay prints for people and for scripts, and where.
