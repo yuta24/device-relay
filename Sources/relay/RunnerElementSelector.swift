@@ -121,7 +121,7 @@ struct RunnerElementSelector: Equatable {
         guard frame.width > 0, frame.height > 0, frame.origin.x.isFinite, frame.origin.y.isFinite else {
             return .failure(RunnerElementLookupFailure(reason: .emptyFrame, count: matches.count, candidates: [match]))
         }
-        let visible = frame.intersection(screen)
+        let visible = match.node.visibleFrame(in: screen)
         guard !visible.isNull, visible.width > 0, visible.height > 0 else {
             return .failure(RunnerElementLookupFailure(reason: .offscreen, count: matches.count, candidates: [match]))
         }

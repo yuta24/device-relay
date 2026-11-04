@@ -11,7 +11,7 @@
 | `type` | `XCUIElement.ElementType` のケース名（`application`、`button`、`textField`、`staticText` など） |
 | `identifier` / `label` | accessibilityIdentifier / ラベル（なければ空文字列） |
 | `value` / `placeholder` | 値 / プレースホルダ（なければ `null`。値は文字列に変換） |
-| `frame` | `{"x","y","width","height"}`。`/tap` と同じ、表示の向きでのポイント単位（小数点以下 3 桁） |
+| `frame` | `{"x","y","width","height"}`。`/tap` と同じ、表示の向きでのポイント単位（小数点以下 3 桁）。iPad のウィンドウ表示でも画面の座標です（「[iPad のウィンドウ表示](screen.md#ipad-のウィンドウ表示)」） |
 | `enabled` / `selected` | 有効か / 選択されているか |
 | `hasFocus` | 公開 API の `hasFocus`。フォーカスエンジン（iPad のキーボード操作や tvOS）のフォーカスで、iPhone で入力中の欄でも `false` です |
 | `hasKeyboardFocus` | キーボードのフォーカスがあるか（非公開 API。使えなければ `null`。「[キーボードのフォーカス](private-api.md#キーボードのフォーカス)」） |
@@ -35,7 +35,7 @@
 ```
 
 - `maxDepth=<n>` で深さを制限します（`0` はルートだけ）。ただし XCTest は常にツリー全体を取得するので、短くなるのは応答の大きさだけで、時間はほとんど変わりません。`format=compact` と `filter` にも効きます（深さで切ったツリーを絞ります）。
-- `format=text` は従来の `debugDescription` のテキストです。`filter` とは組み合わせられません（`400`）。
+- `format=text` は従来の `debugDescription` のテキストです。`filter` とは組み合わせられません（`400`）。XCUI の値そのままなので、iPad のウィンドウ表示でも画面の座標に変換しません。
 - 既定を JSON にしたのは、プログラムから扱う用途が主で、計測ではテキストより速かったためです（`debugDescription` はツリーの取得に加えて文字列の整形に時間がかかります）。テキストは人が読むとき用に残しています。
 - 横向きでも `frame` は表示の向きの座標です（シミュレータの landscapeLeft / landscapeRight と実機の landscapeLeft で、`relay.input2` の frame の中心を `/tap` するとその欄にフォーカスが移ることを確認しました）。
 
@@ -123,7 +123,7 @@ searchField label="Search" placeholder="Search" frame=28,808,346,28
 
 - 条件（`identifier`・`label`・`type`・`value`）は AND で組み合わせ、少なくとも 1 つ必要です。空文字列・文字列以外・未知のキー（`id` など）は `400` です。打ち間違いで条件が黙って消え、意図より広く一致するのを防ぐためです。
 - 部分一致・正規表現は入れていません。完全一致なら同じセレクタが常に同じ要素を指し、一致の理由が説明しやすいためです。部分一致は複数一致が増え、`index` の意味が画面の内容で変わりやすくなります。曖昧な名前で探したいときは、`/find` を `type` などで絞って一覧から選び、その `identifier` や `index` を使ってください。
-- 解決には `/source` と同じ `snapshot()` を使い、frame は表示の向きのポイント（`/tap` と同じ座標系）なので、横向きでもそのまま使えます。タップ位置は「frame と画面の重なる部分」の中心です（画面端で一部が切れたセルも、見えている部分の中心を押します）。タッチは座標指定と同じ経路（`private`、だめなら `xcui`。`mode` も同じ）で送ります。
+- 解決には `/source` と同じ `snapshot()` を使い、frame は表示の向きのポイント（`/tap` と同じ座標系）なので、横向きでもそのまま使えます。タップ位置は「frame と画面の重なる部分」の中心です（画面端で一部が切れたセルも、見えている部分の中心を押します）。iPad のウィンドウでは、frame を画面の座標に変換したうえで、見えているウィンドウとの重なりの中心を押します。タッチは座標指定と同じ経路（`private`、だめなら `xcui`。`mode` も同じ）で送ります。
 - `x`・`y` と `element` を両方指定すると `400` です。
 
 応答（`/tap`）には、実際に使った要素とタップ座標が入ります:
@@ -134,6 +134,17 @@ searchField label="Search" placeholder="Search" frame=28,808,346,28
  "type":"textField","value":null},"mode":"private","ok":true,"point":{"x":201,"y":149}}
 ```
 
+iPad のウィンドウでは、応答（`/tap`・`/press`・`/find`・`/source` の JSON）に `window` が付きます。frame と `point` は変換した後の画面の座標です。
+
+```json
+{"bundleId":"dev.devicerelay.local.RelayRunnerHost","element":{"enabled":true,
+ "frame":{"height":34,"width":343,"x":395,"y":152},"identifier":"relay.input2","index":0,"label":"",
+ "type":"textField","value":null},"mode":"private","ok":true,"point":{"x":566.5,"y":169},
+ "window":{"height":486,"scale":1,"width":375,"x":379,"y":72}}
+```
+
+ウィンドウの位置が決まらないときは、`/tap`・`/press` は何も送らずに `422`、`window_position_unknown` です。`/find`・`/source` は成功のままで、`window: null` と `warning` が付き、frame はウィンドウの中の座標です（「[iPad のウィンドウ表示](screen.md#ipad-のウィンドウ表示)」）。
+
 要素が 1 つに決まらない・触れない場合は `422` で、`code`、`reason`、一致した総数 `count`、候補（最大 5 件）`candidates` を返します。`code`（「[エラーの形式と code](http-api.md#エラーの形式と-code)」）は次の行動ごとに `reason` をまとめたもので、`reason` はその詳細です。
 
 | `reason` | `code` | 条件 | `candidates` |
@@ -142,7 +153,7 @@ searchField label="Search" placeholder="Search" frame=28,808,346,28
 | `ambiguous` | `element_ambiguous` | 2 件以上一致して `index` がない | 一致した要素（先頭 5 件） |
 | `indexOutOfRange` | `element_not_found` | `index` が一致件数以上 | 一致した要素（先頭 5 件） |
 | `emptyFrame` | `element_not_hittable` | 選んだ要素の frame の幅か高さが 0 | 選んだ要素 |
-| `offscreen` | `element_not_hittable` | 選んだ要素の frame が画面と重ならない | 選んだ要素 |
+| `offscreen` | `element_not_hittable` | 選んだ要素の frame が画面（iPad のウィンドウでは、見えているウィンドウ）と重ならない | 選んだ要素 |
 | `disabled` | `element_not_hittable` | 選んだ要素が `enabled: false` | 選んだ要素 |
 
 ```json

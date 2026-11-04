@@ -36,6 +36,8 @@ enum RunnerErrorCode: String, CaseIterable {
     case noKeyboardFocus = "no_keyboard_focus"
     /// 422: on a device with more than one display, the foreground app's display can't be told; nothing was sent.
     case displayUnknown = "display_unknown"
+    /// 422: on iPad, where the app's window is on the screen can't be told; nothing was sent.
+    case windowPositionUnknown = "window_position_unknown"
     /// 422 or 500: a synthesized touch failed or did not complete in time.
     case touchFailed = "touch_failed"
     /// 422: XCUI reported a failure (a recorded test issue, a snapshot that failed).
@@ -80,6 +82,8 @@ enum RunnerError: Error, CustomStringConvertible {
     case noKeyboardFocus(bundleID: String)
     /// The app's display can't be told, or is gone (422).
     case displayUnknown(String)
+    /// Where the app's window is can't be told, so an element's frame says nothing about the screen (422).
+    case windowPositionUnknown(String)
     /// A selector that didn't lead to one touchable element; answered with the failure's JSON.
     case elementNotResolved(RunnerElementLookupFailure)
 
@@ -91,7 +95,8 @@ enum RunnerError: Error, CustomStringConvertible {
         case .notFound: return "not found"
         case .methodNotAllowed: return "method not allowed"
         case .internalError(let message), .touchFailed(let message), .touchSynthesisError(let message),
-             .actionFailed(let message), .touchUnreachable(let message), .displayUnknown(let message):
+             .actionFailed(let message), .touchUnreachable(let message), .displayUnknown(let message),
+             .windowPositionUnknown(let message):
             return message
         case .noKeyboardFocus(let bundleID): return RunnerTyping.missingKeyboardFocusMessage(bundleID: bundleID)
         case .elementNotResolved(let failure): return failure.message
@@ -104,7 +109,8 @@ enum RunnerError: Error, CustomStringConvertible {
         case .notFound: return 404
         case .methodNotAllowed: return 405
         case .internalError, .touchSynthesisError: return 500
-        case .touchFailed, .actionFailed, .touchUnreachable, .noKeyboardFocus, .displayUnknown, .elementNotResolved: return 422
+        case .touchFailed, .actionFailed, .touchUnreachable, .noKeyboardFocus, .displayUnknown, .windowPositionUnknown,
+             .elementNotResolved: return 422
         }
     }
 
@@ -120,6 +126,7 @@ enum RunnerError: Error, CustomStringConvertible {
         case .actionFailed: return .xcuiFailed
         case .noKeyboardFocus: return .noKeyboardFocus
         case .displayUnknown: return .displayUnknown
+        case .windowPositionUnknown: return .windowPositionUnknown
         case .elementNotResolved(let failure): return failure.code
         }
     }

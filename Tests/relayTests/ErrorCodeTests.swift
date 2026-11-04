@@ -21,6 +21,7 @@ struct RunnerErrorCodeTests {
             .elementNotHittable: "element_not_hittable",
             .noKeyboardFocus: "no_keyboard_focus",
             .displayUnknown: "display_unknown",
+            .windowPositionUnknown: "window_position_unknown",
             .touchFailed: "touch_failed",
             .xcuiFailed: "xcui_failed",
             .internalError: "internal_error"
@@ -49,6 +50,7 @@ struct RunnerErrorCodeTests {
             (.actionFailed("failed to snapshot com.example"), 422, .xcuiFailed),
             (.noKeyboardFocus(bundleID: "com.example"), 422, .noKeyboardFocus),
             (.displayUnknown("cannot tell which display com.example is on"), 422, .displayUnknown),
+            (.windowPositionUnknown("cannot tell where the window of com.example is"), 422, .windowPositionUnknown),
             (.elementNotResolved(lookup), 422, .elementAmbiguous)
         ]
         for (error, status, code) in cases {

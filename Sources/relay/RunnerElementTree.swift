@@ -21,6 +21,15 @@ struct RunnerElementNode {
     var children: [RunnerElementNode]
     /// True when `children` was cut off by `maxDepth`; the element has more descendants than shown.
     var truncated = false
+    /// The part of the screen where this element can be touched, when that is less than the whole screen:
+    /// the visible part of an iPad window. Not in the JSON.
+    var clip: CGRect?
+
+    /// The part of the frame that can be touched in `screen`, null when there is none.
+    func visibleFrame(in screen: CGRect) -> CGRect {
+        let visible = frame.intersection(screen)
+        return clip.map(visible.intersection) ?? visible
+    }
 }
 
 enum RunnerElementTree {
@@ -143,7 +152,7 @@ extension RunnerElementTree {
 
         /// Where a selector taps: the center of the part of the frame on screen, as `resolve` computes it.
         func tapPoint(_ node: RunnerElementNode) -> CGPoint? {
-            let visible = node.frame.intersection(screen)
+            let visible = node.visibleFrame(in: screen)
             guard !visible.isNull, visible.width > 0, visible.height > 0 else { return nil }
             let center = CGPoint(x: visible.midX, y: visible.midY)
             return keyboards.contains { $0.contains(center) } ? nil : center

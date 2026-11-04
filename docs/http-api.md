@@ -130,6 +130,7 @@ curl -s -H "$AUTH" -X POST $R/shutdown
 | `element_not_hittable` | 422 | 要素はあるが触れない: frame が空、画面の外、`enabled: false`（`reason` は `emptyFrame` / `offscreen` / `disabled`） | スクロールする、前提の操作をする、画面を観察し直す |
 | `no_keyboard_focus` | 422 | `/type`・`/key` でキーボードのフォーカスがある要素がない | 入力欄をタップしてから送り直す |
 | `display_unknown` | 422 | 表示が複数ある端末で、前面アプリの表示を判定できない（どの表示も暗いなど）。何も送っていない | 画面の状態を利用者に確かめる |
+| `window_position_unknown` | 422 | iPad で、アプリのウィンドウが画面のどこにあるかわからない（同じアプリのウィンドウが複数あるなど）。何も送っていない | ウィンドウを 1 つにするか、スクリーンショットから座標で指定する |
 | `touch_failed` | 422 / 500 | 合成したタッチが失敗した、時間内に終わらなかった、合成を始められなかった（500） | 1 回だけ再試行する。続くならランナーのログを見る |
 | `xcui_failed` | 422 | XCUI が失敗を報告した（XCTest の issue、要素ツリーの取得の失敗など）。`error` に XCUI の文 | `error` を読み、前面アプリと画面を観察し直す |
 | `internal_error` | 500 | ランナーの内部エラー（JPEG エンコードの失敗、終了処理中など） | 1 回だけ再試行する。続くならランナーのログを見る |
@@ -172,7 +173,7 @@ curl -s -H "$AUTH" -X POST $R/shutdown
 
 | `source` | 仕組み |
 | --- | --- |
-| `private` | XCTest の非公開 API で、アクセシビリティ上アクティブなアプリを取得します（WebDriverAgent の `fb_activeApplication` と同じ方式）。ホーム画面では SpringBoard（`com.apple.springboard`）になります |
+| `private` | XCTest の非公開 API で、アクセシビリティ上アクティブなアプリを取得します（WebDriverAgent の `fb_activeApplication` と同じ方式）。ホーム画面では SpringBoard（`com.apple.springboard`）になります。iPad のウィンドウ表示では、画面にあるアプリと SpringBoard が並ぶので先頭を使います。Dock のフォルダのサービス（`com.apple.DocumentManager.DockFolderViewService`）は除きます |
 | `fallback` | 非公開 API が使えない場合のほか、API があってもアプリを 1 つも取得できない場合や、取得で XCUI の失敗が記録された場合。最後に `/launch` したアプリが公開 API の `XCUIApplication.state` でまだ `runningForeground` ならそのアプリ、そうでなければ SpringBoard です。`pid` は `null` です。手で切り替えたアプリは判別できません |
 
 `private` で使う非公開 API は「[非公開 API の一覧](private-api.md#前面アプリ)」にまとめています。クラスとセレクタは実行時に確認し、欠けていれば `fallback` になります。
