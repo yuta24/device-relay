@@ -176,7 +176,7 @@ extension Arguments {
             "relay orientation portrait|portraitUpsideDown|landscapeLeft|landscapeRight|landscape",
             "Sets the device orientation. landscape is short for landscapeLeft."
         ),
-        "launch": ("relay launch <bundle-id>", "Launches the app, or brings it to the foreground."),
+        "launch": ("relay launch <bundle-id>", "Launches the app, or brings it to the foreground. An app that is not installed fails at once (exit 6)."),
         "terminate": ("relay terminate <bundle-id>", "Terminates the app."),
         "shutdown": ("relay shutdown", "Stops the runner; relay start then exits.")
     ]

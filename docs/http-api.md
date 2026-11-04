@@ -21,7 +21,7 @@
 | `POST /key` | `{"key":"return","bundleId":"…"}`（bundleId は省略可） | 特殊キー（`return` / `delete` / `space`）を 1 つ送ります。それ以外のキー名は 400。詳しくは「文字入力と特殊キー」 |
 | `POST /button` | `{"name":"home"}`（`volumeUp` / `volumeDown` は実機のみ） | ハードウェアボタン。`home` は実機では画面下端からのスワイプで代用します（「[既知の制約](limitations.md)」を参照） |
 | `POST /orientation` | `{"orientation":"portrait\|portraitUpsideDown\|landscapeLeft\|landscapeRight"}` | 端末の向き（`UIDeviceOrientation`）を設定 |
-| `POST /launch` | `{"bundleId":"com.apple.Preferences"}` | アプリの起動・前面化（`activate()`）。前面になるまで XCTest のアプリの状態の待ち時間（60 秒、戻せないランナーでは 120 秒）まで待ってから応答します |
+| `POST /launch` | `{"bundleId":"com.apple.Preferences"}` | アプリの起動・前面化（`activate()`）。前面になるまで XCTest のアプリの状態の待ち時間（60 秒、戻せないランナーでは 120 秒）まで待ってから応答します。入っていないアプリでは、XCTest があきらめるまで約 300 秒 busy になり、`422` を返します（「[既知の制約](limitations.md)」）。`relay launch` は送る前に確かめますが、直接呼ぶ場合はこの確認がありません |
 | `POST /terminate` | `{"bundleId":"com.apple.Preferences"}` | アプリの終了。終了するまで `/launch` と同じだけ待ちます |
 | `POST /shutdown` | – | ランナーを停止（テストメソッドから抜ける） |
 
@@ -113,6 +113,7 @@ curl -s -H "$AUTH" -X POST $R/shutdown
 - `code` は「次に何をするか」が変わる単位です。1 つの code に複数の文言（ときには複数のステータス）が対応します。ステータスと code の対応は下の表のとおりで、ステータスは code を足す前から変えていません。
 - 要素の解決の失敗には、ほかに `reason`・`count`・`candidates` が付きます（「[要素セレクタ](elements.md#要素セレクタ)」）。`reason` は code より細かい区別です。
 - `code` がない応答は、code を返す前の古いランナーのものです。そのときはステータスで判断します。知らない `code` も同じく、ステータスで判断します。
+- `app_not_installed` は `relay` が出す code で、ランナーは返しません（「[CLI](cli.md)」）。
 
 | `code` | ステータス | 意味 | 推奨する対処 |
 | --- | --- | --- | --- |

@@ -28,13 +28,15 @@ enum Shell {
 
     /// Runs `xcrun <args>` to completion. stdout and stderr are merged and appended to `log` when given.
     @discardableResult
-    static func xcrun(_ args: [String], log: FileHandle? = nil, echo: Bool = false) throws -> String {
-        try run("/usr/bin/xcrun", args, log: log, echo: echo)
+    static func xcrun(_ args: [String], log: FileHandle? = nil, echo: Bool = false, timeout: TimeInterval? = nil) throws -> String {
+        try run("/usr/bin/xcrun", args, log: log, echo: echo, timeout: timeout)
     }
 
-    /// Runs `executable <args>` to completion, like `xcrun(_:log:echo:)`.
+    /// Runs `executable <args>` to completion, like `xcrun(_:log:echo:)`. After `timeout` seconds the process
+    /// gets SIGTERM (SIGKILL a second later if it is still there), and this throws `ShellError` as for any
+    /// other nonzero status.
     @discardableResult
-    static func run(_ executable: String, _ args: [String], log: FileHandle? = nil, echo: Bool = false) throws -> String {
+    static func run(_ executable: String, _ args: [String], log: FileHandle? = nil, echo: Bool = false, timeout: TimeInterval? = nil) throws -> String {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = args
@@ -67,7 +69,19 @@ enum Shell {
             running[ObjectIdentifier(process)] = nil
             runningLock.unlock()
         }
+        let stop = DispatchWorkItem {
+            process.terminate()
+            DispatchQueue.global().asyncAfter(deadline: .now() + 1) {
+                if process.isRunning {
+                    kill(process.processIdentifier, SIGKILL)
+                }
+            }
+        }
+        if let timeout {
+            DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: stop)
+        }
         process.waitUntilExit()
+        stop.cancel()
         pipe.fileHandleForReading.readabilityHandler = nil
         let remaining = pipe.fileHandleForReading.readDataToEndOfFile()
         lock.lock()

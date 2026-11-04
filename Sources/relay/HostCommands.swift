@@ -13,14 +13,17 @@ struct HostCommands {
 
     static let live = HostCommands(
         xcrun: { try Shell.xcrun($0) },
-        devicectlJSON: { args in
-            let output = FileManager.default.temporaryDirectory.appendingPathComponent("relay-devicectl-\(UUID().uuidString).json")
-            defer { try? FileManager.default.removeItem(at: output) }
-            try Shell.xcrun(["devicectl"] + args + ["--json-output", output.path, "--quiet"])
-            return try Data(contentsOf: output)
-        },
+        devicectlJSON: { try devicectlJSON($0) },
         run: { try Shell.run($0, $1) }
     )
+
+    /// `xcrun devicectl <args> --json-output <file>`, returning the JSON document devicectl wrote.
+    static func devicectlJSON(_ args: [String], timeout: TimeInterval? = nil) throws -> Data {
+        let output = FileManager.default.temporaryDirectory.appendingPathComponent("relay-devicectl-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: output) }
+        try Shell.xcrun(["devicectl"] + args + ["--json-output", output.path, "--quiet"], timeout: timeout)
+        return try Data(contentsOf: output)
+    }
 }
 
 /// A setup problem found before anything is built or launched (no device, no Team ID, ...). Printed

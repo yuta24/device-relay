@@ -40,7 +40,7 @@ relay stop                                      # 自分で起動したときだ
 - **端末は明示する。** `--udid` / `--device` がないと、`relay start` は接続中の実機が 1 台ならそれ、なければ起動中のシミュレータが 1 台ならそれを選び、決まらなければ候補つきでエラーにします。実機がつながっているとシミュレータより実機が選ばれるので、利用者に実機を指定されていない限り、`relay devices` で選んだシミュレータを `--device` / `--udid` で指定します（起動中のシミュレータを使うなら `--simulator` でも、実機を除いて選べます）。同じ名前のシミュレータが複数ある（ランタイム違い）ときは、`--device` が最も新しい iOS のものを選び、`relay: using …` に OS を出します。特定の iOS が要るときは `--os 26.5` のように絞るか `--udid` を使います。停止中のシミュレータを指定すると boot し、`relay stop` で shutdown します。
 - `relay start --background` の進行状況（boot、ビルド、起動）は stderr の `relay:` 行に出ます。初回はランナーのビルドで数分かかるので、コマンドのタイムアウトを長めにします（起動まで最大 30 分、起動後は `--ready-timeout`（既定 180 秒）+ 15 秒待ちます）。
 - 起動に失敗すると、子の `relay start` を止め、stderr にログの末尾と原因（ログのパス付き）を出して非ゼロで終わります。終了コードは、ready の前に子が終了した（ビルドの失敗、端末が見つからない、`Failed to initialize for UI testing` など）なら 1、時間切れなら 3、同じポートですでにランナーが応答しているなら 1 です。ログの末尾と、必要ならログファイル（`~/.relay/logs/start-<時刻>-<port>.log`）を読んでから対処します（[トラブルシューティング](reference.md#トラブルシューティング)）。
-- 対象アプリは端末にインストール済みである必要があります（プロジェクトのやり方で Xcode や `xcodebuild` / `xcrun simctl install` でビルド・インストールする）。`relay launch` は起動・前面化だけです。
+- 対象アプリは端末にインストール済みである必要があります（プロジェクトのやり方で Xcode や `xcodebuild` / `xcrun simctl install` でビルド・インストールする）。`relay launch` は起動・前面化だけで、入っていなければランナーに送らず、すぐに終了コード 6（`app_not_installed`）で終わります。
 - バンドル ID はプロジェクトの `PRODUCT_BUNDLE_IDENTIFIER` で調べるか、アプリを前面にして `relay foreground` で確かめます。
 
 ## 観察
@@ -103,10 +103,10 @@ relay press --label "Photo" --type cell --duration 1.0
 | --- | --- | --- |
 | 0 | 成功 | – |
 | 1 | 引数の誤りやローカルの失敗（何も送っていない） | コマンドを直す。`relay <command> --help` |
-| 3 | ランナーに届かない（runner.json がない、接続できない、`no response within <秒>s`） | `no response within` なら、ランナーは操作を続けているので `relay ping` の `busy` が `false` になるまで待つ（`launch` / `terminate` は最大 150 秒、長い `type` は 1 文字 0.1 秒ぶん待つので、自分のコマンドのタイムアウトをそれより長くする）。それ以外は `relay status`。runner.json がなければ `relay start --background …`。runner.json はあるが応答しない（`relay start` が強制終了されたなど）なら、`relay stop` で片付けてから起動。`the OS refused the connection` なら relay が sandbox の中にいる（上の「sandbox の中で動くとき」）ので、止めも起動もしない |
+| 3 | ランナーに届かない（runner.json がない、接続できない、`no response within <秒>s`） | `no response within` なら、ランナーは操作を続けているので `relay ping` の `busy` が `false` になるまで待つ（`launch` / `terminate` は最大 150 秒、長い `type` は 1 文字 0.1 秒ぶん待つので、自分のコマンドのタイムアウトをそれより長くする）。`launch` の時間切れは、busy がさらに数分続くことがあるので、自分で起動したランナーなら `relay stop` → 起動し直すほうが早い。それ以外は `relay status`。runner.json がなければ `relay start --background …`。runner.json はあるが応答しない（`relay start` が強制終了されたなど）なら、`relay stop` で片付けてから起動。`the OS refused the connection` なら relay が sandbox の中にいる（上の「sandbox の中で動くとき」）ので、止めも起動もしない |
 | 4 | トークンが拒否された（401）。runner.json が古いか、別のランナーのもの | `relay status` で URL・端末・PID を確かめ、`--runner` / `$RELAY_RUNNER` / カレントディレクトリから親へ順にたどった `.relay/runner.json` も確認。自分で起動したものなら `relay stop` → 起動し直す。そうでなければ止めずに利用者に確認 |
 | 5 | busy（409）。別のコマンドを実行中 | 1 秒ほど待つか、`relay ping` が `"busy":false` になってから再試行 |
-| 6 | 操作の失敗（422）: 要素が見つからない・1 つに決まらない・無効・画面外、キーボードのフォーカスがない | stderr の JSON の `code` で分ける（下の表）。要素の失敗は `reason` と `candidates` を読み、観察し直してセレクタを直す |
+| 6 | 操作の失敗（422）: 要素が見つからない・1 つに決まらない・無効・画面外、キーボードのフォーカスがない。`relay launch` のアプリが入っていない | stderr の JSON の `code` で分ける（下の表）。要素の失敗は `reason` と `candidates` を読み、観察し直してセレクタを直す |
 | 7 | リクエストの拒否（400 などの 4xx） | `code` が `point_offscreen` なら座標が画面の外（`relay health` の `screen` を読み直す。向きを変えると縦横が入れ替わる）。`touch_mode_unavailable` なら `--mode` を外して送り直す。`invalid_request` などはエラー文を読んで直す |
 | 8 | ランナーのエラー（5xx など） | 1 回だけ再試行。続くなら `relay status` とログを確認 |
 
@@ -124,6 +124,7 @@ relay press --label "Photo" --type cell --duration 1.0
 | `display_unknown` | 画面が暗い。利用者に確かめる |
 | `window_position_unknown` | iPad のウィンドウの位置が不明。ウィンドウを 1 つにするか、スクリーンショットから座標で指定する |
 | `touch_failed` / `xcui_failed` | 1 回だけ再試行し、続くなら観察し直す |
+| `app_not_installed` | バンドル ID を確かめる（大文字小文字も区別される）か、アプリをインストールしてから送り直す。待っても直らない |
 
 `code` がなければ古いランナーです（終了コードとエラー文で判断）。code の一覧は [reference.md](reference.md#操作が失敗したとき終了コード-6)、`reason` ごとの対処も同じ所にあります。
 
