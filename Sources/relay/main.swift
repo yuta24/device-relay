@@ -43,7 +43,16 @@ do {
         setup.finish()
         exit(status)
     case .devices(let json, let os):
-        var (devices, warnings) = try DeviceList.load()
+        var devices: [Device]
+        var warnings: [String]
+        do {
+            (devices, warnings) = try DeviceList.load()
+        } catch {
+            guard json else { throw error }
+            // --json: the failure is the one object on stdout, as the list is on success.
+            CLIOutput.writeLine(CLIOutput.failureBody(.devicesUnavailable, "\(error)"))
+            exit(RunnerExitCode.failure.rawValue)
+        }
         if let os {
             devices = devices.filter { $0.matches(os: os) }
         }
@@ -82,23 +91,19 @@ do {
     }
 } catch where StartCancellation.isRequested {
     // Ctrl-C or SIGTERM stopped the boot or the build; what failed because of it is not worth showing.
-    FileHandle.standardError.write(Data("relay: stopped before launching the runner\n".utf8))
-    exit(1)
-} catch let error as SetupError {
-    FileHandle.standardError.write(Data("relay: \(error)\n".utf8))
-    exit(1)
+    CLIOutput.note("stopped before launching the runner")
+    exit(RunnerExitCode.failure.rawValue)
+} catch let error as ArgumentError {
+    // A command line that is wrong: the problem and where the help is, not the whole usage text.
+    exit(CLIOutput.usageError(error.description, command: arguments.first))
 } catch let error as SessionSelectionError {
-    FileHandle.standardError.write(Data("relay: \(error)\n".utf8))
-    exit(1)
+    exit(CLIOutput.usageError(error.description, command: arguments.first))
 } catch let error as RunnerUnavailableError {
-    // relay bench with a session that has no runner; the usage text is no help there.
-    FileHandle.standardError.write(Data("relay: \(error)\n".utf8))
+    // relay bench with a session that has no runner.
+    CLIOutput.note(error.description)
     exit(RunnerExitCode.unavailable.rawValue)
-} catch let error as ShellError {
-    // A failed xcodebuild or simctl: the usage text would bury its output.
-    FileHandle.standardError.write(Data("relay: \(error)\n".utf8))
-    exit(1)
 } catch {
-    FileHandle.standardError.write(Data("relay: \(error)\n\n\(Arguments.errorUsage(for: arguments.first))\n".utf8))
-    exit(1)
+    // SetupError, a failed xcodebuild or simctl, ...: a local failure, whose message is all there is to say.
+    CLIOutput.note("\(error)")
+    exit(RunnerExitCode.failure.rawValue)
 }

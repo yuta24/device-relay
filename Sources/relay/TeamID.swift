@@ -186,7 +186,7 @@ enum ConfigCommand {
                 // Nothing on stdout when unset, so scripts can test the exit code.
                 guard let value = config[key] else {
                     FileHandle.standardError.write(Data("relay: \(key) is not set\n".utf8))
-                    return RunnerExitCode.usage.rawValue
+                    return RunnerExitCode.failure.rawValue
                 }
                 output(value)
             case .set(let key, let value):
@@ -199,7 +199,7 @@ enum ConfigCommand {
             return RunnerExitCode.success.rawValue
         } catch {
             FileHandle.standardError.write(Data("relay: \(error)\n".utf8))
-            return RunnerExitCode.usage.rawValue
+            return RunnerExitCode.failure.rawValue
         }
     }
 }

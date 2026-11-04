@@ -35,7 +35,7 @@ enum Bench {
                 samples.append(Double(DispatchTime.now().uptimeNanoseconds - startedAt) / 1_000_000)
                 guard response.status == 200 else {
                     let body = String(decoding: response.body.prefix(300), as: UTF8.self)
-                    throw ArgumentError(description: "\(benchCase.name) returned \(response.status): \(body)")
+                    throw SetupError(description: "\(benchCase.name) returned \(response.status): \(body)")
                 }
                 bytes = response.body.count
             }
@@ -61,7 +61,7 @@ enum Bench {
         }
         let infoURL = infoURL ?? (try? RunnerLocator.locate(explicitPath: nil)) ?? RunnerLocator.userURL()
         guard let info = try? RunnerInfo.read(from: infoURL) else {
-            throw ArgumentError(description: "no runner token: pass --token or start the runner with relay start (reads \(infoURL.path))")
+            throw SetupError(description: "no runner token: pass --token or start the runner with relay start (reads \(infoURL.path))")
         }
         return info.token
     }

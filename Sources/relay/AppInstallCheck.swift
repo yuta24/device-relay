@@ -32,8 +32,8 @@ struct AppInstallProbe {
 /// wait. So only an answer that says so outright counts, and anything else is `unknown` and is sent.
 enum AppInstallCheck {
     /// The `code` of the JSON relay prints for an app that isn't installed. relay answers this itself; the
-    /// runner never does, so it is not a `RunnerErrorCode`. Part of the CLI's output: never rename it.
-    static let notInstalledCode = "app_not_installed"
+    /// runner never does, so it is not a `RunnerErrorCode` (see `RelayErrorCode`). Never rename it.
+    static let notInstalledCode = RelayErrorCode.appNotInstalled.rawValue
 
     /// `simctl get_app_container` took about 0.3 s.
     static let simctlTimeout: TimeInterval = 5
@@ -151,10 +151,9 @@ enum AppInstallCheck {
     }
 
     /// What relay prints instead of sending `/launch`: the same JSON a failure from the runner has, for
-    /// stderr, then the `relay:` line.
+    /// stdout (see `RunnerControl`); the `relay:` line of `notInstalledHint` goes to stderr.
     static func notInstalledBody(bundleID: String, device: String) -> Data {
-        let body: [String: Any] = ["ok": false, "code": notInstalledCode, "error": "\(bundleID) is not installed on \(device)"]
-        return (try? JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])) ?? Data()
+        CLIOutput.failureBody(.appNotInstalled, "\(bundleID) is not installed on \(device)")
     }
 
     static func notInstalledHint(bundleID: String, device: String) -> String {

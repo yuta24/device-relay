@@ -305,9 +305,6 @@ enum SkillCommand {
     status shows where the skill is installed, marking with ! one that is out of date.
     """
 
-    /// What a parse error prints, like a runner command's: the synopsis and a pointer to --help.
-    static let errorUsage = usage.components(separatedBy: "\n\n")[0] + "\nRun relay skill --help for details."
-
     static func run(
         _ options: SkillOptions,
         commands: HostCommands = .live,

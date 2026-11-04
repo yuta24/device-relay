@@ -3,8 +3,12 @@ import Foundation
 /// Exit status of the runner commands, so scripts and agents can tell failures apart without parsing.
 enum RunnerExitCode: Int32 {
     case success = 0
-    /// Invalid arguments, an unreadable runner.json, or a screenshot that could not be saved.
-    case usage = 1
+    /// A local failure: a device in use, a failed build, no simulator, a missing file, an unreadable runner.json,
+    /// a screenshot that could not be saved.
+    case failure = 1
+    /// A command line that is wrong: an unknown option, a missing or invalid value, options that do not go
+    /// together, an invalid session name, `$RELAY_RUNNER` with `$RELAY_SESSION`, a scenario step that is wrong.
+    case usage = 2
     /// No runner.json, or nothing answered at its URL (connection refused or timed out, or this Mac
     /// refused the connection, as a sandbox that blocks localhost does).
     case unavailable = 3
@@ -48,43 +52,61 @@ struct RunnerConnection {
     let baseURL: URL
 }
 
-/// `RunnerControl.connect` failed; the reason is already on stderr.
+/// `RunnerControl.connect` failed; the reason is already printed (see `RunnerControl`).
 struct RunnerControlFailure: Error {
     let code: Int32
 }
 
 /// Runs one runner command: finds runner.json, sends the operation, and prints the result.
 ///
-/// The runner's JSON goes to stdout as is on success and to stderr otherwise; `relay:` lines on stderr
-/// are hints for people. A screenshot is saved to a file whose absolute path is printed instead.
+/// The output is JSON, on success and on failure: the runner's JSON as it came, or, for a failure on this
+/// side (no runner.json, no connection, an app that is not installed, ...), `{"ok":false,"code":"<code>",
+/// "error":"..."}` with a `code` of `RelayErrorCode`. It goes to stdout; `relay:` lines on stderr are hints
+/// for people. Exceptions: a screenshot is saved to a file whose absolute path is printed instead, and with
+/// `-o -` the image is the stdout, so a failure's JSON goes to stderr then. A usage error (exit 2) prints
+/// no JSON, only two `relay:` lines (see `CLIOutput.usageError`).
 enum RunnerControl {
     /// Allowance for a request on top of the operation's own waiting (`RunnerOperation.waitTime`).
     static let baseTimeout: TimeInterval = 30
 
     static func run(_ options: RunnerControlOptions) -> Int32 {
-        switch connect(runnerPath: options.runnerPath, session: options.session) {
+        let command = options.operation.commandName
+        switch connect(runnerPath: options.runnerPath, session: options.session, command: command,
+                       failureOutput: failureHandle(for: options.operation)) {
         case .success(let connection): return perform(options.operation, on: connection, requireMatch: options.requireMatch)
         case .failure(let failure): return failure.code
         }
     }
 
-    /// Finds and reads runner.json. On failure the reason is already on stderr and the error carries the exit status.
-    /// Split from `perform` so `relay run` reads the file once for all its steps.
-    static func connect(runnerPath: String?, session: String? = nil) -> Result<RunnerConnection, RunnerControlFailure> {
+    /// Where the JSON of a failure goes: stdout, except for `screenshot -o -`, whose stdout is the image.
+    static func failureHandle(for operation: RunnerOperation) -> FileHandle {
+        if case .screenshot(let screenshot) = operation, screenshot.output == "-" {
+            return .standardError
+        }
+        return .standardOutput
+    }
+
+    /// Finds and reads runner.json. On failure the reason is already printed and the error carries the exit status.
+    /// Split from `perform` so `relay run` reads the file once for all its steps. `command` names the command for
+    /// the "see relay <command> --help" line of a usage error.
+    static func connect(
+        runnerPath: String?, session: String? = nil, command: String? = nil, failureOutput: FileHandle = .standardOutput
+    ) -> Result<RunnerConnection, RunnerControlFailure> {
         let infoURL: URL
         let info: RunnerInfo
         do {
             infoURL = try RunnerLocator.locate(explicitPath: runnerPath, session: session)
             info = try RunnerInfo.read(from: infoURL)
         } catch let error as RunnerUnavailableError {
-            return .failure(RunnerControlFailure(code: fail(error.description, code: .unavailable)))
+            return .failure(RunnerControlFailure(code: fail(.runnerUnavailable, error.description, exit: .unavailable, to: failureOutput)))
         } catch let error as SessionSelectionError {
-            return .failure(RunnerControlFailure(code: fail(error.description, code: .usage)))
+            return .failure(RunnerControlFailure(code: CLIOutput.usageError(error.description, command: command)))
         } catch {
-            return .failure(RunnerControlFailure(code: fail("cannot read runner info: \(error)", code: .usage)))
+            return .failure(RunnerControlFailure(code: fail(.runnerInfoInvalid, "cannot read runner info: \(error)", exit: .failure, to: failureOutput)))
         }
         guard let baseURL = URL(string: info.url) else {
-            return .failure(RunnerControlFailure(code: fail("invalid url in \(infoURL.path): \(info.url)", code: .usage)))
+            return .failure(RunnerControlFailure(code: fail(.runnerInfoInvalid, "invalid url in \(infoURL.path): \(info.url)", exit: .failure,
+                                                            to: failureOutput)))
         }
         return .success(RunnerConnection(infoURL: infoURL, info: info, baseURL: baseURL))
     }
@@ -92,25 +114,29 @@ enum RunnerControl {
     /// Sends one operation and prints the result; returns the exit status.
     /// `requireMatch` (`find --require`): a `/find` that returns no element fails with exit 6, as a tap of a
     /// missing element does, so `find --timeout` checks the screen as well as waits for it.
-    static func perform(_ operation: RunnerOperation, on connection: RunnerConnection, requireMatch: Bool = false) -> Int32 {
+    /// `failureOutput` replaces where the JSON of a failure goes (`failureHandle(for:)`), for tests.
+    static func perform(_ operation: RunnerOperation, on connection: RunnerConnection, requireMatch: Bool = false,
+                        failureOutput: FileHandle? = nil) -> Int32 {
         let infoURL = connection.infoURL
         let info = connection.info
+        let failureOutput = failureOutput ?? failureHandle(for: operation)
         var client = RunnerClient(baseURL: connection.baseURL, token: info.token)
         client.timeout = baseTimeout + operation.waitTime
         let resolved: RunnerOperation
         do {
             resolved = try operation.resolvingHostAlias(info.hostBundleID)
         } catch {
-            return fail("\(error)", code: .usage)
+            return fail(.runnerInfoInvalid, "\(error)", exit: .failure, to: failureOutput)
         }
         if case .launch(let bundleID) = resolved {
             let device = info.name ?? info.udid
             switch AppInstallCheck.state(of: bundleID, udid: info.udid, hostBundleID: info.hostBundleID) {
             case .notInstalled:
-                write(AppInstallCheck.notInstalledBody(bundleID: bundleID, device: device), to: .standardError)
-                return fail(AppInstallCheck.notInstalledHint(bundleID: bundleID, device: device), code: .actionFailed)
+                CLIOutput.writeLine(AppInstallCheck.notInstalledBody(bundleID: bundleID, device: device), to: failureOutput)
+                CLIOutput.note(AppInstallCheck.notInstalledHint(bundleID: bundleID, device: device))
+                return RunnerExitCode.actionFailed.rawValue
             case .unknown(let reason?):
-                FileHandle.standardError.write(Data("relay: \(AppInstallCheck.uncheckedHint(bundleID: bundleID, reason: reason))\n".utf8))
+                CLIOutput.note(AppInstallCheck.uncheckedHint(bundleID: bundleID, reason: reason))
             case .installed, .unknown(nil):
                 break
             }
@@ -122,28 +148,29 @@ enum RunnerControl {
         } catch {
             if RunnerConnectionError.isRefusedByOS(error) {
                 // Not "is relay start running?": the runner may be fine, and restarting it would not help.
-                return fail("cannot reach the runner at \(info.url): \(RunnerConnectionError.refusedByOSHint) (runner info: \(infoURL.path))",
-                            code: .unavailable)
+                return fail(.runnerUnavailable,
+                            "cannot reach the runner at \(info.url): \(RunnerConnectionError.refusedByOSHint) (runner info: \(infoURL.path))",
+                            exit: .unavailable, to: failureOutput)
             }
-            let reason = (error as? URLError)?.code == .timedOut
-                ? timeoutReason(for: resolved, seconds: Int(client.timeout))
-                : "is relay start running?"
-            return fail("cannot reach the runner at \(info.url) (\(error.localizedDescription)); \(reason) (runner info: \(infoURL.path))",
-                        code: .unavailable)
+            let timedOut = (error as? URLError)?.code == .timedOut
+            let reason = timedOut ? timeoutReason(for: resolved, seconds: Int(client.timeout)) : "is relay start running?"
+            return fail(timedOut ? .runnerTimeout : .runnerUnavailable,
+                        "cannot reach the runner at \(info.url) (\(error.localizedDescription)); \(reason) (runner info: \(infoURL.path))",
+                        exit: .unavailable, to: failureOutput)
         }
 
         let code = RunnerExitCode(status: response.status)
         guard code == .success else {
-            write(response.body, to: .standardError)
+            CLIOutput.writeLine(failureBody(of: response), to: failureOutput)
             if let hint = hint(for: code, errorCode: RunnerErrorCode.parse(body: response.body), infoURL: infoURL) {
-                FileHandle.standardError.write(Data("relay: \(hint)\n".utf8))
+                CLIOutput.note(hint)
             }
             return code.rawValue
         }
 
         if requireMatch, !hasElements(response.body) {
-            write(response.body, to: .standardError)
-            return fail("no element matched", code: .actionFailed)
+            CLIOutput.writeLine(noMatchBody(response.body), to: failureOutput)
+            return RunnerExitCode.actionFailed.rawValue
         }
 
         if case .screenshot(let screenshot) = operation {
@@ -152,15 +179,35 @@ enum RunnerControl {
                     print(path)
                 }
             } catch {
-                return fail("cannot save the screenshot: \(error)", code: .usage)
+                return fail(.screenshotSaveFailed, "cannot save the screenshot: \(error)", exit: .failure, to: failureOutput)
             }
             if screenshot.isResized, let summary = screenshotSummary(response.headers) {
-                FileHandle.standardError.write(Data("relay: \(summary)\n".utf8))
+                CLIOutput.note(summary)
             }
         } else {
-            write(response.body, to: .standardOutput)
+            CLIOutput.writeLine(response.body, to: .standardOutput)
         }
         return code.rawValue
+    }
+
+    /// The body of a runner error as the runner sent it, or, when it is not a JSON object (an older runner, or
+    /// something else on the port), one in the same shape that says what came.
+    static func failureBody(of response: RunnerResponse) -> Data {
+        if (try? JSONSerialization.jsonObject(with: response.body)) is [String: Any] {
+            return response.body
+        }
+        let text = String(decoding: response.body.prefix(200), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        return CLIOutput.failureBody(.runnerBadResponse, "the runner answered HTTP \(response.status)" + (text.isEmpty ? "" : ": \(text)"),
+                                     extra: ["status": response.status])
+    }
+
+    /// `find --require` with no match: the `/find` answer (its `count`, `elements`) as an `element_not_found` failure.
+    static func noMatchBody(_ body: Data) -> Data {
+        var object = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] ?? [:]
+        object["ok"] = false
+        object["code"] = RunnerErrorCode.elementNotFound.rawValue
+        object["error"] = "no element matched"
+        return (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])) ?? body
     }
 
     /// What follows "cannot reach the runner" when a request timed out. The runner is fine but still at the
@@ -258,15 +305,9 @@ enum RunnerControl {
             .standardizedFileURL
     }
 
-    private static func write(_ body: Data, to handle: FileHandle) {
-        handle.write(body)
-        if body.last != UInt8(ascii: "\n") {
-            handle.write(Data("\n".utf8))
-        }
-    }
-
-    private static func fail(_ message: String, code: RunnerExitCode) -> Int32 {
-        FileHandle.standardError.write(Data("relay: \(message)\n".utf8))
-        return code.rawValue
+    /// Prints a failure of this side as JSON to `output`, and returns the exit status.
+    private static func fail(_ code: RelayErrorCode, _ message: String, exit: RunnerExitCode, to output: FileHandle) -> Int32 {
+        CLIOutput.writeLine(CLIOutput.failureBody(code, message), to: output)
+        return exit.rawValue
     }
 }

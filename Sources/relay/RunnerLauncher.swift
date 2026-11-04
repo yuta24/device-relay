@@ -174,7 +174,7 @@ final class RunnerLauncher {
             let buildStart = Date()
             try Shell.xcrun(buildArguments, log: buildLog, echo: options.verbose)
             guard let built = XCTestRunSelection.built(Self.xctestrunFiles(in: derivedData), since: buildStart) else {
-                throw ArgumentError(description: "build succeeded but no .xctestrun was found under \(derivedData.path)")
+                throw SetupError(description: "build succeeded but no .xctestrun was found under \(derivedData.path)")
             }
             do {
                 try RunnerBuildStamp(sourceHash: sourceHash, relayVersion: RelayVersion.current, bundleIDPrefix: bundleIDPrefix)
@@ -661,7 +661,7 @@ final class RunnerLauncher {
             }
             let error = errno
             guard error == EEXIST else {
-                throw ArgumentError(description: "cannot create \(url.path): \(String(cString: strerror(error)))")
+                throw SetupError(description: "cannot create \(url.path): \(String(cString: strerror(error)))")
             }
             attempt += 1
         }

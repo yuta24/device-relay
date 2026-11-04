@@ -22,6 +22,28 @@ enum RunnerOperation: Equatable {
     case terminate(bundleID: String)
     case shutdown
 
+    /// The name of the `relay` command that sends it.
+    var commandName: String {
+        switch self {
+        case .ping: return "ping"
+        case .health: return "health"
+        case .foreground: return "foreground"
+        case .screenshot: return "screenshot"
+        case .source: return "source"
+        case .find: return "find"
+        case .tap: return "tap"
+        case .press: return "press"
+        case .swipe: return "swipe"
+        case .type: return "type"
+        case .key: return "key"
+        case .button: return "button"
+        case .orientation: return "orientation"
+        case .launch: return "launch"
+        case .terminate: return "terminate"
+        case .shutdown: return "shutdown"
+        }
+    }
+
     var request: RunnerHTTPRequest {
         switch self {
         case .ping: return .get("/ping")

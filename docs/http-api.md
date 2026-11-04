@@ -113,7 +113,7 @@ curl -s -H "$AUTH" -X POST $R/shutdown
 - `code` は「次に何をするか」が変わる単位です。1 つの code に複数の文言（ときには複数のステータス）が対応します。ステータスと code の対応は下の表のとおりで、ステータスは code を足す前から変えていません。
 - 要素の解決の失敗には、ほかに `reason`・`count`・`candidates` が付きます（「[要素セレクタ](elements.md#要素セレクタ)」）。`reason` は code より細かい区別です。
 - `code` がない応答は、code を返す前の古いランナーのものです。そのときはステータスで判断します。知らない `code` も同じく、ステータスで判断します。
-- `app_not_installed` は `relay` が出す code で、ランナーは返しません（「[CLI](cli.md)」）。
+- `app_not_installed`・`runner_unavailable`・`runner_timeout`・`runner_info_invalid`・`runner_bad_response`・`screenshot_save_failed` は `relay` が出す code で、ランナーは返しません（「[CLI](cli.md)」）。CLI は失敗のとき、ランナーの本文もこれらも、同じ形で stdout に出します。
 
 | `code` | ステータス | 意味 | 推奨する対処 |
 | --- | --- | --- | --- |

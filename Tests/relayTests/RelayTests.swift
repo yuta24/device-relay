@@ -380,7 +380,7 @@ struct BenchTests {
 
         #expect(try Bench.token(BenchOptions(url: "http://127.0.0.1:8100"), infoURL: infoURL) == "from-file")
         RunnerInfo.remove(at: infoURL)
-        #expect(throws: ArgumentError.self) { try Bench.token(BenchOptions(url: "http://127.0.0.1:8100"), infoURL: infoURL) }
+        #expect(throws: SetupError.self) { try Bench.token(BenchOptions(url: "http://127.0.0.1:8100"), infoURL: infoURL) }
     }
 }
 
@@ -483,7 +483,7 @@ struct RunnerInfoTests {
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         FileManager.default.createFile(atPath: marker.path, contents: Data())
 
-        #expect(throws: ArgumentError.self) {
+        #expect(throws: SetupError.self) {
             try RunnerInfo(url: "http://127.0.0.1:8100/", token: "t", udid: "SIM").write(to: url)
         }
         RunnerInfo.remove(at: url)
@@ -1358,7 +1358,7 @@ struct RunnerArgumentsTests {
         #expect(try parse(["type", "--stdin", "--key", "return"], input: "") == type(nil, keys: ["return"]))
         #expect(throws: ArgumentError.self) { try parse(["type", "--stdin"], input: "\n") }
         #expect(throws: ArgumentError.self) { try parse(["type", "--stdin", "text"], input: "secret") }
-        #expect(throws: ArgumentError.self) { try Arguments.parse(["type", "--stdin"], standardInput: { Data([0xff, 0xfe]) }) }
+        #expect(throws: SetupError.self) { try Arguments.parse(["type", "--stdin"], standardInput: { Data([0xff, 0xfe]) }) }
         // Standard input is read only for --stdin, and --stdin is only a flag of type.
         #expect(try Arguments.parse(["type", "hello"], standardInput: { Issue.record("read stdin"); return Data() }) == type("hello"))
         #expect(throws: ArgumentError.self) { try parse(["key", "return", "--stdin"], input: "") }

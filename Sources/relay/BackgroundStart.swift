@@ -93,17 +93,17 @@ enum BackgroundStart {
         do {
             locks = try StartLocks.acquire(for: &options, home: home)
         } catch {
-            return fail("\(error)", code: .usage)
+            return fail("\(error)", code: .failure)
         }
         let infoURL = options.session.map { RelaySession.infoURL(name: $0, home: home) } ?? RunnerLocator.userURL(home: home)
         if options.session != nil {
             if let conflict = sessionConflict(options, home: home) {
-                return fail(conflict, code: .usage)
+                return fail(conflict, code: .failure)
             }
         } else if let existing = try? RunnerInfo.read(from: infoURL),
                   let conflict = conflict(with: existing, port: options.port, ping: RunnerPing.check(existing),
                                           owner: RelayProcess.runningRelayStart(existing)) {
-            return fail(conflict, code: .usage)
+            return fail(conflict, code: .failure)
         }
 
         let logsURL = home.appendingPathComponent(".relay/logs", isDirectory: true)
@@ -114,7 +114,7 @@ enum BackgroundStart {
             logURL = try RunnerLauncher.createLog("start", in: logsURL, stamp: RunnerLauncher.timestamp(), port: options.port, session: options.session)
             pid = try spawnDetached(arguments: options.foregroundArguments, logURL: logURL, locks: locks.inheritable)
         } catch {
-            return fail("cannot start relay start in the background: \(error)", code: .usage)
+            return fail("cannot start relay start in the background: \(error)", code: .failure)
         }
         info("started relay start in the background (pid \(pid), log: \(logURL.path))")
 
@@ -159,12 +159,12 @@ enum BackgroundStart {
                 processes.terminateLeftovers()
                 return failed(
                     "relay start exited (\(describe(status))) before the runner was ready",
-                    logURL: logURL, code: .usage
+                    logURL: logURL, code: .failure
                 )
             }
             if interrupted.isSet {
                 stop(pid, processes: &processes)
-                return failed("interrupted; stopped relay start before the runner was ready", logURL: logURL, code: .usage)
+                return failed("interrupted; stopped relay start before the runner was ready", logURL: logURL, code: .failure)
             }
             let deadline = launchedAt.map { $0.addingTimeInterval(options.readyTimeout + readyGrace) } ?? started.addingTimeInterval(launchTimeout)
             if Date() >= deadline {
@@ -254,7 +254,7 @@ enum BackgroundStart {
         var pid: pid_t = 0
         let result = posix_spawn(&pid, executable, &actions, &attributes, argv, envp)
         guard result == 0 else {
-            throw ArgumentError(description: "posix_spawn \(executable): \(String(cString: strerror(result)))")
+            throw SetupError(description: "posix_spawn \(executable): \(String(cString: strerror(result)))")
         }
         return pid
     }

@@ -31,7 +31,8 @@ extension Arguments {
     /// and options and arguments may come in any order; `--` ends the options, for text that starts with `-`.
     static func parseRunnerCommand(_ name: String, _ raw: [String], standardInput: () -> Data) throws -> Command {
         let allowed = (runnerOptions[name] ?? []).union(["--runner", "--session"])
-        let flags = runnerFlags[name] ?? []
+        // --json does nothing: the output is always JSON. Accepted so a command line written for another tool works.
+        let flags = (runnerFlags[name] ?? []).union(["--json"])
         var rest = raw
         var values: [String: [String]] = [:]
         var givenFlags: Set<String> = []
@@ -93,7 +94,7 @@ extension Arguments {
             }
         }
         guard let text = String(data: bytes, encoding: .utf8) else {
-            throw ArgumentError(description: "standard input is not UTF-8 text")
+            throw SetupError(description: "standard input is not UTF-8 text")
         }
         return text
     }
@@ -107,13 +108,6 @@ extension Arguments {
         return "Usage:\n  \(command.synopsis)\n\n\(command.details)\n\n\(runnerCommonUsage)"
     }
 
-    /// What a parse error prints: the command's synopsis for a runner command, the whole usage otherwise.
-    static func errorUsage(for name: String?) -> String {
-        if name == "skill" { return SkillCommand.errorUsage }
-        guard let name, let command = runnerUsages[name] ?? lifecycleUsages[name] else { return usage }
-        return "Usage:\n  \(command.synopsis)\nRun relay \(name) --help for details."
-    }
-
     /// Synopsis and description of each runner command, for `relay <command> --help`.
     static let runnerUsages: [String: (synopsis: String, details: String)] = [
         "ping": ("relay ping", "Checks that the runner is alive; answers at once even while a command runs (busy, busyForMs)."),
@@ -122,8 +116,8 @@ extension Arguments {
         "screenshot": (
             "relay screenshot [-o <file>|-] [--format png|jpeg] [--quality 0.05-1.0] [--max-size <px>] [--scale <px/pt>]",
             """
-            Saves a screenshot and prints its absolute path. Without -o it goes to $TMPDIR/relay/screenshot-<time>.png;
-            -o - writes the image to stdout instead. A .jpg/.jpeg file or --quality selects jpeg (quality 0.7 by default).
+            Saves a screenshot and prints its absolute path (not JSON). Without -o it goes to $TMPDIR/relay/screenshot-<time>.png;
+            -o - writes the image to stdout instead, and then a failure's JSON goes to stderr, not stdout. A .jpg/.jpeg file or --quality selects jpeg (quality 0.7 by default).
             The runner shrinks the image to --max-size pixels on the longer edge and to --scale pixels per point
             (--scale 1: one pixel per point); it never enlarges it. Shrunk, relay also prints the image size, the
             screen in points, and the pixels per point to stderr. Taps always take points: divide pixels by the scale.
@@ -143,9 +137,9 @@ extension Arguments {
             """
             Lists the elements that match every given condition exactly (at most --limit, 1-100). --timeout waits
             up to 10 seconds for a match. An element's index works as --index of tap and press.
-            No match is exit 0 ("count":0); with --require it is exit 6, the answer going to stderr with
-            relay: no element matched (also when --index is out of range), so find --timeout <s> --require
-            waits for an element and fails if it does not appear.
+            No match is exit 0 ("count":0); with --require it is exit 6, the answer (count, elements) coming
+            back as {"ok":false,"code":"element_not_found",...} on stdout (also when --index is out of range),
+            so find --timeout <s> --require waits for an element and fails if it does not appear.
             """
         ),
         "tap": (
@@ -195,6 +189,7 @@ extension Arguments {
             Shows the runner in runner.json: URL, device, the relay start that owns it (pid, whether it still runs,
             start time), and the /ping result (busy included). --json prints one JSON object.
             Exit status: 0 the runner answers /ping, 3 no runner.json or no answer, 4 the token was rejected (401).
+            With --json, a failure is one JSON object on stdout too ({"alive":false,"ok":false,"code":...,"error":...}).
             --all lists every session and the runner of ~/.relay/runner.json instead, one line each: session
             ((default) for that runner), state (starting, running, busy, no answer, rejected, unknown), device,
             URL, and the relay start's pid; --json prints one array. It exits 0 whatever the states are.
@@ -272,16 +267,19 @@ extension Arguments {
             type --stdin, --runner, --session, and --help cannot be in a step.
             A line # relay-run: 1 before the first step states the format the scenario is written for; another
             version is refused, so a scenario never runs with a meaning it was not written for.
-            Every step is checked first: each bad one prints relay: line <n>: <reason> and nothing runs (exit 1;
-            the n of a --step is its position). --check stops there: it reads no runner.json and runs nothing,
+            Every step is checked first: each bad one prints relay: line <n>: <reason> on stderr and nothing runs
+            (exit 2, a usage error; the n of a --step is its position). A step takes the options it takes alone,
+            --json and --opt=value included. --check stops there: it reads no runner.json and runs nothing,
             and prints relay: <n> steps checked; nothing was run (exit 0; --quiet: nothing).
             Otherwise runner.json is read once (--runner or --session, else $RELAY_RUNNER or $RELAY_SESSION, ...) and the steps run in this
-            process. Each step's output goes to stdout as the command alone prints it; stderr gets
+            process. Each step's output goes to stdout as the command alone prints it, one after the other; stderr gets
             relay: [i/n] <step> ... ok (<ms> ms) per step and a total at the end (--quiet: neither);
             these lines show the text of type steps as ***.
-            The first step that fails stops the run: stderr gets its error and relay: step i/n (line n) failed:
-            <step>, and relay run exits with that step's status (3 unavailable, 4 unauthorized, 5 busy, 6 action
-            failed, 7 bad request, 8 runner error, 1 a screenshot not saved); 0 when every step succeeds.
+            The first step that fails stops the run: its error is the last JSON on stdout ({"ok":false,"code":...}, as
+            the command alone prints it), stderr gets relay: step i/n (line n) failed: <step>, and relay run
+            exits with that step's status (3 unavailable, 4 unauthorized, 5 busy, 6 action failed, 7 bad request,
+            8 runner error, 1 a screenshot not saved); 0 when every step succeeds. A runner.json that cannot be
+            found or reached fails the same way before the first step.
             """
         )
     ]
@@ -298,8 +296,14 @@ extension Arguments {
       --runner <path> or --session <name>, else $RELAY_RUNNER or $RELAY_SESSION (both set is an error), else
       .relay/runner.json in the current directory or a parent, else ~/.relay/runner.json (where relay start
       without a session writes it). A session is ~/.relay/sessions/<name>/runner.json, with no fallback.
-    The runner's JSON is printed to stdout on success and to stderr on failure.
-    Exit status: 0 ok, 1 usage or local error, 3 runner unavailable (no runner.json or no connection),
+    Output is always JSON (a screenshot prints the saved file's path): --json is accepted and not needed.
+    A failure is JSON on stdout too: the runner's {"ok":false,"code":...,"error":...}, or relay's own in that shape
+      when it fails before the runner answers (code runner_unavailable, runner_timeout, runner_info_invalid,
+      app_not_installed, ...). relay: lines on stderr are hints for people. Exception: screenshot -o - writes the
+      image to stdout, so a failure's JSON goes to stderr.
+    Options may be written --opt value or --opt=value; text after -- is never split.
+    Exit status: 0 ok, 1 local failure (runner.json unreadable, screenshot not saved), 2 usage error (the command
+      line is wrong: two relay: lines on stderr, no JSON), 3 runner unavailable (no runner.json or no connection),
       4 unauthorized (401), 5 busy (409; retry), 6 action failed (422), 7 bad request (other 4xx), 8 runner error.
     """
 }

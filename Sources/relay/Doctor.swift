@@ -97,7 +97,7 @@ enum Doctor {
         output(problems == 0
             ? "No problems found\(warnings > 0 ? " (\(warnings) note(s) marked !)" : "")."
             : "\(problems) problem(s) found; fix the ✗ items above.")
-        return problems == 0 ? RunnerExitCode.success.rawValue : RunnerExitCode.usage.rawValue
+        return problems == 0 ? RunnerExitCode.success.rawValue : RunnerExitCode.failure.rawValue
     }
 
     static func hostChecks(

@@ -40,7 +40,7 @@ struct RunnerInfo: Codable, Equatable {
         Self.remove(at: url)
         let fd = open(url.path, O_WRONLY | O_CREAT | O_EXCL, 0o600)
         guard fd >= 0 else {
-            throw ArgumentError(description: "cannot create \(url.path): \(String(cString: strerror(errno)))")
+            throw SetupError(description: "cannot create \(url.path): \(String(cString: strerror(errno)))")
         }
         let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
         try handle.write(contentsOf: data)

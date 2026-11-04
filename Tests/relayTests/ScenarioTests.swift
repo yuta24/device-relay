@@ -151,7 +151,7 @@ struct ScenarioParseTests {
         #expect(file.map(\.text) == ["ping", "health", ""])
         let input = try ScenarioCommand.lines(.standardInput, readFile: { _ in "" }, standardInput: { Data("ping".utf8) })
         #expect(input.map(\.text) == ["ping"])
-        #expect(throws: ArgumentError.self) {
+        #expect(throws: SetupError.self) {
             try ScenarioCommand.lines(.file("missing"), readFile: { _ in throw CocoaError(.fileNoSuchFile) }, standardInput: { Data() })
         }
     }
@@ -174,7 +174,7 @@ struct ScenarioArgumentsTests {
         #expect(try Arguments.parse(["help", "run"]) == .commandHelp("run"))
         #expect(Arguments.usage(for: "run").contains("Experimental"))
         #expect(Arguments.usage.contains("relay run (<file> | - | --step <step>...)"))
-        #expect(Arguments.errorUsage(for: "run").hasSuffix("Run relay run --help for details."))
+        #expect(Arguments.helpCommand(for: "run") == "relay run --help")
     }
 }
 
@@ -360,8 +360,8 @@ struct ScenarioFormatTests {
         // A runner.json that does not exist would be exit 3 if relay run tried to connect.
         let options = ScenarioOptions(source: .file("a.relay"), runnerPath: "/nonexistent/runner.json", quiet: true, check: true)
         #expect(ScenarioCommand.run(options, readFile: { _ in "# relay-run: 1\ntap 1 2\nsleep 1\n" }) == 0)
-        #expect(ScenarioCommand.run(options, readFile: { _ in "tap 1\n" }) == 1)
-        #expect(ScenarioCommand.run(options, readFile: { _ in "# relay-run: 9\nping\n" }) == 1)
+        #expect(ScenarioCommand.run(options, readFile: { _ in "tap 1\n" }) == 2)
+        #expect(ScenarioCommand.run(options, readFile: { _ in "# relay-run: 9\nping\n" }) == 2)
         #expect(ScenarioCommand.checkedSummary(1) == "1 step checked; nothing was run")
         #expect(ScenarioCommand.checkedSummary(3) == "3 steps checked; nothing was run")
     }

@@ -94,7 +94,7 @@ struct SkillTests {
         #expect(throws: ArgumentError.self) { try Arguments.parseSkill(["install", "--dir"]) }
         #expect(throws: ArgumentError.self) { try Arguments.parseSkill(["uninstall", "--force"]) }
         #expect(throws: ArgumentError.self) { try Arguments.parseSkill(["status", "--link"]) }
-        #expect(Arguments.errorUsage(for: "skill").hasSuffix("relay skill status [--global | --dir <skills dir>]\nRun relay skill --help for details."))
+        #expect(Arguments.helpCommand(for: "skill") == "relay skill --help")
     }
 
     @Test func installsIntoTheGitRootOrTheCurrentDirectory() throws {

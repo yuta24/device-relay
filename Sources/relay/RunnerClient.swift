@@ -60,7 +60,7 @@ struct RunnerClient {
 
     private func send(method: String, path: String, body: Data?) throws -> RunnerResponse {
         guard let url = URL(string: path, relativeTo: baseURL) else {
-            throw ArgumentError(description: "invalid runner path: \(path)")
+            throw SetupError(description: "invalid runner path: \(path)")
         }
         var request = URLRequest(url: url, timeoutInterval: timeout)
         request.httpMethod = method

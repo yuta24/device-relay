@@ -118,7 +118,7 @@ enum Scenario {
     /// One step's words, checked as `relay <command>` would check them, minus what a step cannot do.
     static func action(_ words: [String]) throws -> ScenarioStep.Action {
         guard let name = words.first else { throw ArgumentError(description: "empty step") }
-        let rest = Array(words.dropFirst())
+        let rest = try Arguments.splittingEquals(Array(words.dropFirst()))
         if name == "relay" {
             throw ArgumentError(description: "write steps without the leading relay (tap ..., not relay tap ...)")
         }
@@ -315,9 +315,13 @@ enum ScenarioCommand {
         let steps: [ScenarioStep]
         do {
             steps = try Scenario.parse(try lines(options.source, readFile: readFile, standardInput: standardInput))
+        } catch let error as SetupError {
+            // The file or standard input could not be read: not a mistake in the steps.
+            CLIOutput.note(error.description)
+            return RunnerExitCode.failure.rawValue
         } catch {
-            FileHandle.standardError.write(Data("relay: \(error)\n".utf8))
-            return RunnerExitCode.usage.rawValue
+            // Steps that are wrong are exit 2, as a wrong command line is; nothing has run.
+            return CLIOutput.usageError("\(error)", command: "run")
         }
         if options.check {
             if !options.quiet {
@@ -326,7 +330,7 @@ enum ScenarioCommand {
             return RunnerExitCode.success.rawValue
         }
         let connection: RunnerConnection
-        switch RunnerControl.connect(runnerPath: options.runnerPath, session: options.session) {
+        switch RunnerControl.connect(runnerPath: options.runnerPath, session: options.session, command: "run") {
         case .success(let found): connection = found
         case .failure(let failure): return failure.code
         }
@@ -350,11 +354,11 @@ enum ScenarioCommand {
             do {
                 return Scenario.lines(of: try readFile(path))
             } catch {
-                throw ArgumentError(description: "cannot read \(path): \(error.localizedDescription)")
+                throw SetupError(description: "cannot read \(path): \(error.localizedDescription)")
             }
         case .standardInput:
             guard let text = String(data: standardInput(), encoding: .utf8) else {
-                throw ArgumentError(description: "standard input is not UTF-8 text")
+                throw SetupError(description: "standard input is not UTF-8 text")
             }
             return Scenario.lines(of: text)
         case .steps(let steps):
