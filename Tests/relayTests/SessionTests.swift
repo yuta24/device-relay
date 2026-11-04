@@ -482,7 +482,6 @@ struct BuildLockTests {
         private let done = DispatchSemaphore(value: 0)
         private let lock = NSLock()
         private var result: Result<Bool, Error>?
-        private var waiting = false
         private let waitingSignal = DispatchSemaphore(value: 0)
 
         init(_ buildLock: BuildLock, deadline: Date) {
