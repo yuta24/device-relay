@@ -268,8 +268,12 @@ struct DeviceSelection: Equatable {
 enum DeviceSelector {
     /// `--udid`, else `--device <name>`, else the only connected device, else the only booted simulator.
     /// `simulator` (`--simulator`) leaves out devices, and `os` (`--os`) keeps those whose OS version
-    /// starts with it (see `Device.matches(os:)`), before any of that.
-    static func select(from devices: [Device], udid: String?, name: String?, simulator: Bool = false, os: String? = nil) throws -> DeviceSelection {
+    /// starts with it (see `Device.matches(os:)`), before any of that. `inUse` holds the devices another
+    /// `relay start` runs on, by uppercase UDID, with who runs there: the automatic choice leaves them out,
+    /// since another relay start could not use them anyway, while one named with `--udid` or `--device` is
+    /// picked as usual, so the error says it is in use rather than some other device being operated.
+    static func select(from devices: [Device], udid: String?, name: String?, simulator: Bool = false, os: String? = nil,
+                       inUse: [String: String] = [:]) throws -> DeviceSelection {
         let candidates = devices.filter { (!simulator || $0.kind == .simulator) && (os.map($0.matches(os:)) ?? true) }
         let scope = simulator ? "iOS simulator" : "device or iOS simulator"
         let filters = [simulator ? "--simulator" : nil, os.map { "--os \($0)" }].compactMap { $0 }
@@ -317,8 +321,13 @@ enum DeviceSelector {
             }
         }
 
+        let free = candidates.filter { inUse[$0.udid.uppercased()] == nil }
+        let taken = candidates.filter { inUse[$0.udid.uppercased()] != nil && $0.isActive }
+        let takenList = taken.isEmpty ? "" : "\nin use by another relay start:\n" + taken.map {
+            "  \($0.summary) (\(inUse[$0.udid.uppercased()] ?? "in use"))"
+        }.joined(separator: "\n")
         if !simulator {
-            let connected = candidates.filter { $0.kind == .device && $0.isAvailable }
+            let connected = free.filter { $0.kind == .device && $0.isAvailable }
             if connected.count == 1 {
                 return selection(connected[0], nil, "the only connected device")
             }
@@ -327,7 +336,7 @@ enum DeviceSelector {
                     + candidateList(connected))
             }
         }
-        let booted = candidates.filter(\.isBooted)
+        let booted = free.filter(\.isBooted)
         if booted.count == 1 {
             return selection(booted[0], nil, "the only booted simulator")
         }
@@ -335,17 +344,17 @@ enum DeviceSelector {
             throw SetupError(description: "\(booted.count) simulators are booted\(filterNote); pass --udid or --device" + candidateList(booted))
         }
         // Newest runtime first, so the list starts with the simulators worth booting.
-        let simulators = candidates.filter { $0.kind == .simulator && $0.isAvailable }
+        let simulators = free.filter { $0.kind == .simulator && $0.isAvailable }
             .sorted {
                 let order = compare($0.osVersion ?? [], $1.osVersion ?? [])
                 return order != 0 ? order > 0 : $0.name.lowercased() < $1.name.lowercased()
             }
         if simulator {
             throw SetupError(description: "no booted iOS simulator\(filterNote); pass --device <name> to boot one "
-                + "(it is shut down when relay exits)" + candidateList(simulators))
+                + "(it is shut down when relay exits)" + candidateList(simulators) + takenList)
         }
         throw SetupError(description: "no connected device or booted simulator\(filterNote); connect a device, or pass --udid/--device "
-            + "(a shut-down simulator is booted for you)" + candidateList(simulators))
+            + "(a shut-down simulator is booted for you)" + candidateList(simulators) + takenList)
     }
 
     /// The device with the highest OS version, or nil when two share it or one has no version.

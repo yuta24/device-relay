@@ -19,6 +19,8 @@ struct RunnerInfo: Codable, Equatable {
     var runner: RunnerBuildVersion?
     /// The bundle ID of the runner's host app (see `RunnerBundleID`), which the runner commands take as `host`.
     var hostBundleID: String?
+    /// The session of the `relay start` that wrote the file (see `RelaySession`); nil without one.
+    var session: String?
 
     static func defaultURL(rootURL: URL = WorkingDirectory.url) -> URL {
         rootURL.appendingPathComponent(".relay", isDirectory: true).appendingPathComponent(fileName)

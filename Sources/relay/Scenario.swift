@@ -17,6 +17,8 @@ struct ScenarioOptions: Equatable {
     var source: Source
     /// `--runner <path>`, for every step; steps cannot name their own.
     var runnerPath: String?
+    /// `--session <name>`, for every step.
+    var session: String?
     /// `--quiet`: no progress line per step and no summary; a failure is still reported.
     var quiet = false
     /// `--check`: check every step and stop there, without reading runner.json or running anything.
@@ -131,8 +133,8 @@ enum Scenario {
                 + " (steps: \(stepCommands.joined(separator: ", ")))")
         }
         let options = optionWords(name, rest)
-        if options.contains("--runner") {
-            throw ArgumentError(description: "--runner goes to relay run, not to a step")
+        for option in ["--runner", "--session"] where options.contains(option) {
+            throw ArgumentError(description: "\(option) goes to relay run, not to a step")
         }
         if options.contains("-h") || options.contains("--help") {
             throw ArgumentError(description: "--help cannot be a step")
@@ -160,7 +162,7 @@ enum Scenario {
     /// The words of a step in option position, as `Arguments.parseRunnerCommand` reads them: not the value
     /// of an option (`--label -h` is a label), and nothing after `--` (text to type).
     static func optionWords(_ name: String, _ words: [String]) -> [String] {
-        let takesValue = (Arguments.runnerOptions[name] ?? []).union(["--runner", "-o"])
+        let takesValue = (Arguments.runnerOptions[name] ?? []).union(["--runner", "--session", "-o"])
         var options: [String] = []
         var rest = words[...]
         while let word = rest.popFirst() {
@@ -324,7 +326,7 @@ enum ScenarioCommand {
             return RunnerExitCode.success.rawValue
         }
         let connection: RunnerConnection
-        switch RunnerControl.connect(runnerPath: options.runnerPath) {
+        switch RunnerControl.connect(runnerPath: options.runnerPath, session: options.session) {
         case .success(let found): connection = found
         case .failure(let failure): return failure.code
         }

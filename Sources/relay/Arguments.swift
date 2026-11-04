@@ -33,6 +33,8 @@ struct StartOptions: Equatable {
     /// `--project <path>`: the device-relay checkout (see `RunnerProject`).
     var project: String?
     var port: Int = 8100
+    /// `--port` was given. A session without it gets a free port (`PortPicker`).
+    var portGiven = false
     var teamID: String?
     /// The prefix of the runner's bundle IDs (see `RunnerBundleID`). Set by `StartSetup`, not an option.
     var bundleIDPrefix: String?
@@ -43,6 +45,8 @@ struct StartOptions: Equatable {
     var allowWiFi = false
     /// `--background`: run `relay start` detached and return once the runner is ready (see `BackgroundStart`).
     var background = false
+    /// `--session <name>`, or `$RELAY_SESSION` once `main` has resolved it (see `RelaySession`).
+    var session: String?
 
     /// The arguments of the same `relay start` without `--background`, for the detached process.
     var foregroundArguments: [String] {
@@ -52,7 +56,8 @@ struct StartOptions: Equatable {
         if simulator { arguments.append("--simulator") }
         if let os { arguments += ["--os", os] }
         if let project { arguments += ["--project", project] }
-        arguments += ["--port", "\(port)"]
+        if portGiven { arguments += ["--port", "\(port)"] }
+        if let session { arguments += ["--session", session] }
         if let teamID { arguments += ["--team-id", teamID] }
         if rebuild { arguments.append("--rebuild") }
         if verbose { arguments.append("--verbose") }
@@ -70,10 +75,12 @@ struct BenchOptions: Equatable {
     var mode: String?
     /// Bearer token for the runner. Nil reads it from `.relay/runner.json`.
     var token: String?
+    /// `--session <name>`: the URL (when `--url` is not given) and the token of that session's runner.
+    var session: String?
 
     static func == (lhs: BenchOptions, rhs: BenchOptions) -> Bool {
         lhs.url == rhs.url && lhs.count == rhs.count && lhs.tap?.x == rhs.tap?.x && lhs.tap?.y == rhs.tap?.y
-            && lhs.mode == rhs.mode && lhs.token == rhs.token
+            && lhs.mode == rhs.mode && lhs.token == rhs.token && lhs.session == rhs.session
     }
 }
 
@@ -122,6 +129,8 @@ enum Arguments {
                         throw ArgumentError(description: "--port requires a valid TCP port")
                     }
                     options.port = port
+                    options.portGiven = true
+                case "--session": options.session = try sessionName(try value(for: option))
                 case "--team-id": options.teamID = try teamID(try value(for: option))
                 case "--ready-timeout":
                     guard let timeout = TimeInterval(try value(for: option)), timeout > 0 else {
@@ -142,16 +151,28 @@ enum Arguments {
         case "status", "stop":
             var json = false
             var runnerPath: String?
+            var session: String?
+            var all = false
             while !rest.isEmpty {
                 let option = rest.removeFirst()
                 switch option {
                 case "--json" where subcommand == "status": json = true
                 case "--runner": runnerPath = try value(for: option)
+                case "--session": session = try sessionName(try value(for: option))
+                case "--all": all = true
                 case "-h", "--help": return .commandHelp(subcommand)
                 default: throw ArgumentError(description: "unknown option: \(option)")
                 }
             }
-            return subcommand == "status" ? .status(RunnerStatusOptions(json: json, runnerPath: runnerPath)) : .stop(RunnerStopOptions(runnerPath: runnerPath))
+            guard runnerPath == nil || session == nil else {
+                throw ArgumentError(description: "\(subcommand) takes either --runner or --session, not both")
+            }
+            guard !all || (runnerPath == nil && session == nil) else {
+                throw ArgumentError(description: "\(subcommand) --all takes neither --runner nor --session")
+            }
+            return subcommand == "status"
+                ? .status(RunnerStatusOptions(json: json, runnerPath: runnerPath, session: session, all: all))
+                : .stop(RunnerStopOptions(runnerPath: runnerPath, session: session, all: all))
         case "run":
             return try parseRun(rest)
         case "record":
@@ -231,11 +252,14 @@ enum Arguments {
                     }
                     options.mode = mode
                 case "--token": options.token = try value(for: option)
+                case "--session": options.session = try sessionName(try value(for: option))
                 default: throw ArgumentError(description: "unknown option: \(option)")
                 }
             }
-            guard !options.url.isEmpty else {
-                throw ArgumentError(description: "bench requires --url <RUNNER_URL>")
+            // A session's port is usually not known to the caller, so its runner.json gives the URL.
+            let sessionFromEnvironment = !(ProcessInfo.processInfo.environment[RelaySession.environmentKey] ?? "").isEmpty
+            guard !options.url.isEmpty || options.session != nil || sessionFromEnvironment else {
+                throw ArgumentError(description: "bench requires --url <RUNNER_URL> or --session <name>")
             }
             return .bench(options)
         case "-h", "--help", "help":
@@ -251,23 +275,27 @@ enum Arguments {
         }
     }
 
-    /// `relay run (<file> | - | --step <step>...) [--check] [--runner <path>] [--quiet]`: exactly one source of steps.
+    /// `relay run (<file> | - | --step <step>...) [--check] [--runner <path> | --session <name>] [--quiet]`: exactly one source of steps.
     static func parseRun(_ raw: [String]) throws -> Command {
         var rest = raw
         var files: [String] = []
         var steps: [String] = []
         var runnerPath: String?
+        var session: String?
         var quiet = false
         var check = false
         while !rest.isEmpty {
             let argument = rest.removeFirst()
             switch argument {
-            case "--step", "--runner":
+            case "--step", "--runner", "--session":
                 // A step may start with -, so only a missing value is rejected here.
                 guard !rest.isEmpty else { throw ArgumentError(description: "\(argument) requires a value") }
                 let value = rest.removeFirst()
                 if argument == "--step" {
                     steps.append(value)
+                } else if argument == "--session" {
+                    guard session == nil else { throw ArgumentError(description: "--session is given more than once") }
+                    session = try sessionName(value)
                 } else {
                     guard runnerPath == nil else { throw ArgumentError(description: "--runner is given more than once") }
                     runnerPath = value
@@ -288,7 +316,10 @@ enum Arguments {
         case (0, true): throw ArgumentError(description: "run requires <file>, - (standard input), or --step <step>")
         default: throw ArgumentError(description: "run takes one of <file>, -, or --step <step>...")
         }
-        return .run(ScenarioOptions(source: source, runnerPath: runnerPath, quiet: quiet, check: check))
+        guard runnerPath == nil || session == nil else {
+            throw ArgumentError(description: "run takes either --runner or --session, not both")
+        }
+        return .run(ScenarioOptions(source: source, runnerPath: runnerPath, session: session, quiet: quiet, check: check))
     }
 
     /// `relay record start [--output <path>] [--force] [--max-duration <s>] [--runner <path>]`, `relay record
@@ -316,6 +347,7 @@ enum Arguments {
         var maxDuration = Recording.defaultMaxDuration
         var json = false
         var runnerPath: String?
+        var session: String?
         var port: Int?
         var force = false
         var udid: String?
@@ -334,6 +366,7 @@ enum Arguments {
             case "--force" where action == "start": force = true
             case "--json" where action == "status": json = true
             case "--runner" where action != "supervise": runnerPath = try value(for: option)
+            case "--session" where action != "supervise": session = try sessionName(try value(for: option))
             case "--port" where action == "stop" || action == "status":
                 guard let value = Int(try value(for: option)), (1...65535).contains(value) else {
                     throw ArgumentError(description: "--port requires a valid TCP port")
@@ -345,16 +378,16 @@ enum Arguments {
             default: throw ArgumentError(description: "unknown option for record \(action): \(option)")
             }
         }
-        guard runnerPath == nil || port == nil else {
-            throw ArgumentError(description: "record \(action) takes either --runner or --port, not both")
+        guard [runnerPath != nil, session != nil, port != nil].filter({ $0 }).count <= 1 else {
+            throw ArgumentError(description: "record \(action) takes one of --runner, --session, and --port")
         }
         switch action {
         case "start":
-            return .record(RecordOptions(action: .start(output: output, maxDuration: maxDuration, force: force), runnerPath: runnerPath))
+            return .record(RecordOptions(action: .start(output: output, maxDuration: maxDuration, force: force), runnerPath: runnerPath, session: session))
         case "stop":
-            return .record(RecordOptions(action: .stop, runnerPath: runnerPath, port: port))
+            return .record(RecordOptions(action: .stop, runnerPath: runnerPath, session: session, port: port))
         case "status":
-            return .record(RecordOptions(action: .status(json: json), runnerPath: runnerPath, port: port))
+            return .record(RecordOptions(action: .status(json: json), runnerPath: runnerPath, session: session, port: port))
         default:
             guard let udid, let output else {
                 throw ArgumentError(description: "record supervise requires --udid and --output")
@@ -386,6 +419,15 @@ enum Arguments {
         }
     }
 
+    /// A `--session` value; an invalid name is an error here, like any other bad option.
+    static func sessionName(_ value: String) throws -> String {
+        do {
+            return try RelaySession.validated(value)
+        } catch let error as SessionSelectionError {
+            throw ArgumentError(description: error.description)
+        }
+    }
+
     private static func teamID(_ value: String) throws -> String {
         guard RelayConfig.isValidTeamID(value) else {
             throw ArgumentError(description: "invalid Team ID: \(value) (10 uppercase letters and digits)")
@@ -413,18 +455,18 @@ enum Arguments {
     static let commandSynopses: [(names: [String], synopsis: String)] = [
         (["start"], """
         relay start [--udid <UDID> | --device <NAME>] [--simulator] [--os <VERSION>] [--team-id <TEAM_ID>] [--project <PATH>] [--port 8100] [--rebuild] [--verbose]
-                    [--ready-timeout 180] [--allow-wifi] [--background]
+                    [--ready-timeout 180] [--allow-wifi] [--background] [--session <NAME>]
         """),
-        (["status"], "relay status [--json] [--runner <PATH>]"),
-        (["stop"], "relay stop [--runner <PATH>]"),
-        (["record"], "relay record start [-o <file>] [--force] [--max-duration 600] [--runner <PATH>] | relay record stop | relay record status [--json]"),
+        (["status"], "relay status [--json] [--runner <PATH> | --session <NAME> | --all]"),
+        (["stop"], "relay stop [--runner <PATH> | --session <NAME> | --all]"),
+        (["record"], "relay record start [-o <file>] [--force] [--max-duration 600] [--runner <PATH> | --session <NAME>] | relay record stop | relay record status [--json]"),
         (["install", "uninstall"], "relay install [--project <PATH>] [--build [--verbose]] | relay install --remove | relay uninstall"),
         (["skill"], "relay skill install [--global | --dir <skills dir>] [--link] [--force] | relay skill uninstall | relay skill status"),
         (["devices"], "relay devices [--json] [--os <VERSION>]"),
         (["doctor"], "relay doctor [--udid <UDID> | --device <NAME>] [--simulator] [--os <VERSION>] [--project <PATH>]"),
         (["config"], "relay config [get <key> | set <key> <value> | unset <key>]"),
-        (["bench"], "relay bench --url <RUNNER_URL> [--count 10] [--tap x,y] [--mode private|xcui] [--token <TOKEN>]"),
-        (["run"], "relay run (<file> | - | --step <step>...) [--check] [--runner <PATH>] [--quiet]   (experimental)")
+        (["bench"], "relay bench (--url <RUNNER_URL> | --session <NAME>) [--count 10] [--tap x,y] [--mode private|xcui] [--token <TOKEN>]"),
+        (["run"], "relay run (<file> | - | --step <step>...) [--check] [--runner <PATH> | --session <NAME>] [--quiet]   (experimental)")
     ]
 
     /// Every command name of relay: the commands of `commandSynopses`, the runner commands, and the
@@ -457,12 +499,19 @@ enum Arguments {
              --background runs it detached from the terminal (log: ~/.relay/logs/start-*.log) and exits once
              the runner is ready, printing ready: <url>; relay stop stops it. Agents and CI should use
              relay start --background, then the runner commands, then relay stop.
+             --session <name> (or $RELAY_SESSION) keeps this runner apart from the others, for several agents at
+             once: its state is ~/.relay/sessions/<name>/runner.json, and without --port it takes a free port
+             in 8101-8199. The other commands take --session or $RELAY_SESSION too, and never fall back to
+             another runner. A device takes one runner: a device in use is an error when named, and left out
+             when relay start picks one itself.
     status   Shows the runner in runner.json (URL, device, relay start pid, start time), whether /ping
              answers, and the build it reports (relay version and runner source hash). Exits 0 if it does, 3 if there is no runner or it does not answer, 4 if it answers 401
-             (the token in runner.json is not that runner's).
+             (the token in runner.json is not that runner's). --all lists every session and the default
+             runner (session, state, device, URL, pid) and exits 0.
     stop     Stops relay start (SIGTERM, like Ctrl-C), which shuts the runner down, shuts down a simulator
              it booted, and removes runner.json. Prints "not running" (exit 0) if nothing runs.
-             A recording (relay record) of that runner is finished first.
+             A recording (relay record) of that runner is finished first. --all stops every session and the
+             default runner, also ones of other agents.
     record   Records the screen of the runner's simulator, or of its device connected with USB, to an MP4
              (detached from the terminal) until relay record stop, which prints the video's path, or until
              --max-duration seconds. A device needs camera access for the terminal. relay record --help for details.
@@ -482,7 +531,8 @@ enum Arguments {
              runner's default bundle ID prefix, dev.devicerelay.<team id in lowercase>.
     bench    Measures round-trip latency of /health, /screenshot, and optionally /tap.
              --mode forces the runner's touch path (private event synthesis or public XCUI).
-             --token defaults to the token in the runner.json the runner commands use.
+             --token defaults to the token in the runner.json the runner commands use; --session (or
+             $RELAY_SESSION) takes the token and, without --url, the URL from that session.
     run      Experimental; the format may change. Runs runner commands, one per line (without relay), in order
              in one process, after checking them all; stops at the first that fails and exits with its status.
              relay run --help for details.

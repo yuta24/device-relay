@@ -244,6 +244,10 @@ enum InstallCommand {
             bundleIDPrefix: bundleIDPrefix
         )
         do {
+            // Not at the same time as a relay start's build or launch from this DerivedData (see BuildLock).
+            let buildLock = try BuildLock(derivedData: derivedData, relayDirectory: home.appendingPathComponent(".relay", isDirectory: true))
+            defer { buildLock.release() }
+            try buildLock.wait(for: .exclusive, info: output)
             RunnerBuildStamp.remove(derivedData: derivedData)
             try build(arguments, buildLog, options.verbose)
             // relay start reuses the build only with this record (RunnerBuildPlan).

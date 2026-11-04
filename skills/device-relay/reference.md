@@ -6,9 +6,9 @@
 
 | コマンド | 内容 |
 | --- | --- |
-| `relay status [--json] [--runner <path>]` | runner.json のランナーの URL・端末・`relay start` の PID・起動時刻と `/ping` の結果。下の「start --background / status / stop」 |
+| `relay status [--json] [--runner <path> \| --session <name> \| --all]` | runner.json のランナーの URL・端末・`relay start` の PID・起動時刻と `/ping` の結果。下の「start --background / status / stop」。`--all` は全セッションの一覧（下の「セッション」） |
 | `relay start --background [オプション]` | `relay start` を端末から切り離して起動し、ready になったら戻ります。同上 |
-| `relay stop [--runner <path>]` | runner.json の `relay start` を止めます（ランナー、relay が boot したシミュレータ、runner.json も片付く）。同上 |
+| `relay stop [--runner <path> \| --session <name> \| --all]` | runner.json の `relay start` を止めます（ランナー、relay が boot したシミュレータ、runner.json も片付く）。同上。`--all` はほかのエージェントのものも止めます |
 | `relay devices [--json] [--os <version>]` | 実機とシミュレータの一覧（NAME、UDID、KIND、OS、STATE）。`--os` でその OS のものだけ |
 | `relay doctor [--udid <UDID> \| --device <名前>] [--simulator] [--os <version>] [--project <path>]` | Xcode、Runner、署名、端末（同じ指定の `relay start` が使うもの）を確認。✗ があれば 1 |
 | `relay ping` | `{"ok":true,"busy":<bool>,"busyForMs":<ms or null>,"runner":{"version":…,"sourceHash":…}}`。busy でも即答します。`runner` はランナーをビルドした relay とソースのハッシュ（古いランナーにはない） |
@@ -22,7 +22,8 @@
 | `--udid <UDID>` / `--device <名前>` | 使う端末。同時には指定できません。名前は完全一致（大文字小文字は無視）。同じ名前が複数あれば、接続中・起動中の 1 つ、なければ最も新しい iOS のシミュレータ。実機とシミュレータが同じ名前なら候補つきのエラー |
 | `--simulator` | シミュレータだけから選ぶ（実機がつながっていても）。`--device` なしでは起動中の 1 台。起動中がなければエラーになるので `--device` で名前を指定する |
 | `--os <version>` | OS で候補を絞る。`.` ごとの前方一致（`27` は 27.x、`26.5` は 26.5.x） |
-| `--port 8100` | 端末側の待ち受けポート。同じ Mac で別の `relay start` と同時に動かすときは分けます |
+| `--port 8100` | 端末側の待ち受けポート。同じ Mac で別の `relay start` と同時に動かすときは分けます（セッションでは省略すると `8101`〜`8199` の空きを選ぶ） |
+| `--session <name>` | セッション名（`$RELAY_SESSION` でも可）。下の「セッション」 |
 | `--rebuild` | 既存のビルドがあってもランナーを再ビルド（Runner のソース、Xcode の SDK、バンドル ID の接頭辞が変わったときは、付けなくても再ビルドする） |
 | `--ready-timeout 180` | ready まで待つ秒数 |
 | `--team-id <TEAM_ID>` | 実機の署名チーム（通常は自動検出） |
@@ -98,9 +99,9 @@ runner.json: /Users/<you>/.relay/runner.json
 
 | コマンド | 出力・終了コード |
 | --- | --- |
-| `relay record start [-o <file>] [--force] [--max-duration 600] [--runner <path>]` | 録画が始まったら保存先の絶対パスを stdout に出して 0。既定は `$TMPDIR/relay/relay-recording-<時刻>.mp4`、相対パスはカレントディレクトリ基準。1: シミュレータが boot していない、実機が USB で接続されていない（Wi-Fi だけ・未接続）、カメラの許可がない（利用者に システム設定 > プライバシーとセキュリティ > カメラ で許可してもらう）、端末の画面がキャプチャデバイスとして現れない（USB 接続・ロック解除・「信頼」を利用者に頼む）、同じ名前の実機が複数つながっている、ディレクトリがない、ファイルがすでにある（`--force` で上書き。利用者のファイルなら上書きしてよいか確認）、すでに録画中、録画が始まらない（stderr に simctl か録画プロセスの出力）。3: ランナーがない・応答しない |
-| `relay record stop [--runner <path> \| --port <n>]` | 書き出しを待ち（最大 30 秒）、空でない MP4 の絶対パスを stdout に出して 0。録画していなければ `not recording` で 0。自動停止（`--max-duration`）した録画もここで取り出す。1: 書き出しが終わらない（もう一度 stop できる）、動画が空、runner.json がなく録画が複数ある（ポートごとの一覧から `--port <n>` で選ぶ） |
-| `relay record status [--json] [--runner <path> \| --port <n>]` | 録画中か（`yes` / `ended`）、保存先、経過時間。実機のフレームが 5 秒以上来ていなければ `frames:` の行（`--json` では `stall`）。常に 0 |
+| `relay record start [-o <file>] [--force] [--max-duration 600] [--runner <path> \| --session <name>]` | 録画が始まったら保存先の絶対パスを stdout に出して 0。既定は `$TMPDIR/relay/relay-recording-<時刻>.mp4`、相対パスはカレントディレクトリ基準。1: シミュレータが boot していない、実機が USB で接続されていない（Wi-Fi だけ・未接続）、カメラの許可がない（利用者に システム設定 > プライバシーとセキュリティ > カメラ で許可してもらう）、端末の画面がキャプチャデバイスとして現れない（USB 接続・ロック解除・「信頼」を利用者に頼む）、同じ名前の実機が複数つながっている、ディレクトリがない、ファイルがすでにある（`--force` で上書き。利用者のファイルなら上書きしてよいか確認）、すでに録画中、録画が始まらない（stderr に simctl か録画プロセスの出力）。3: ランナーがない・応答しない |
+| `relay record stop [--runner <path> \| --session <name> \| --port <n>]` | 書き出しを待ち（最大 30 秒）、空でない MP4 の絶対パスを stdout に出して 0。録画していなければ `not recording` で 0。自動停止（`--max-duration`）した録画もここで取り出す。1: 書き出しが終わらない（もう一度 stop できる）、動画が空、runner.json がなく録画が複数ある（ポートごとの一覧から `--port <n>` で選ぶ） |
+| `relay record status [--json] [--runner <path> \| --session <name> \| --port <n>]` | 録画中か（`yes` / `ended`）、保存先、経過時間。実機のフレームが 5 秒以上来ていなければ `frames:` の行（`--json` では `stall`）。常に 0 |
 
 - 録画はターミナルから切り離して続くので、`record start` の後に別のコマンドを続けて実行できます。`relay stop` も録画を先に書き出します（パスは stderr）。
 - シミュレータが録画中に shutdown しても、実機が録画中に外されても、`record stop` はそこまでの動画を返します。
@@ -139,12 +140,28 @@ Claude Code などがシェルコマンドを sandbox（macOS では Seatbelt）
 
 ランナー操作のコマンドは、URL とトークンを次の順に探した runner.json から読みます（トークンはコマンドラインでは渡せません）。
 
-1. `--runner <path>`
-2. 環境変数 `RELAY_RUNNER`
+1. `--runner <path>` か `--session <name>`（両方は不可）
+2. 環境変数 `RELAY_RUNNER` か `RELAY_SESSION`（両方あると終了コード 1）
 3. カレントディレクトリから親へ順に `.relay/runner.json`
-4. `~/.relay/runner.json`（`relay start` が書く場所）
+4. `~/.relay/runner.json`（セッションなしの `relay start` が書く場所）
 
-1・2 で指定したファイルがなければ、3・4 を見ずに終了コード 3 です。終了コード 4 が続くときは、3 の古いファイルが `~/.relay/runner.json` より先に見つかっていないか確かめます。
+1・2 で指定したファイルやセッションがなければ、3・4 を見ずに終了コード 3 です。終了コード 4 が続くときは、3 の古いファイルが `~/.relay/runner.json` より先に見つかっていないか確かめます。
+
+### セッション
+
+複数のエージェントが並列に使うときは、セッションを分けます（名前は英数字で始まる、英数字と `.`・`_`・`-` の 64 文字まで）。`$RELAY_SESSION` が設定されていなければ、各コマンドに毎回 `--session <name>` を付けます。コマンドごとに新しいシェルになる環境では `export` は次のコマンドに残りません。
+
+| 分かれるもの | 内容 |
+| --- | --- |
+| runner.json | `~/.relay/sessions/<name>/runner.json`。`~/.relay/runner.json` には書かず、ほかのファイルへも進まない |
+| ポート | `--port` を省くと `8101`〜`8199` の空き。`ready:` の行に出る |
+| 端末 | 1 台に 1 ランナー（セッションなしも同じ）。使用中の端末を指定すると、持ち主つきのエラーで終了コード 1。端末を省くと使用中のものは候補から外す |
+| ビルド | 共有。同じ DerivedData へのビルドは 1 つずつで、`waiting for another relay start's build` と出して待つ |
+| ログ | `~/.relay/logs/start-<時刻>-<name>-<port>.log` など |
+
+セッションなしのコマンドが 3・4 のファイルを使い、ほかにセッションが動いていれば、stderr に `relay: warning: no session selected; using <path>, while sessions <names> are running; pass --session or set RELAY_SESSION` が出ます。終了コードは変わりません。
+
+`relay status --all [--json]` は、全セッションと `~/.relay/runner.json` のランナー（`(default)`。JSON の `session` は `null`）を一覧します（SESSION、STATE、DEVICE、URL、PID）。STATE は `starting`、`running`、`busy`、`no answer`、`rejected`、`unknown`。終了コードは常に 0。`relay stop --session <name>` はビルド中のセッションも止めます。詳しくは device-relay の docs/setup.md の「複数のセッションを並列に動かす」。
 
 ## コマンドとオプション
 

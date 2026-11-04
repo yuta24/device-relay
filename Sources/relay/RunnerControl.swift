@@ -35,6 +35,8 @@ struct RunnerControlOptions: Equatable {
     var operation: RunnerOperation
     /// `--runner <path>`; nil searches as `RunnerLocator` describes.
     var runnerPath: String?
+    /// `--session <name>` (see `RelaySession`); nil uses `$RELAY_SESSION` or searches.
+    var session: String?
     /// `relay find --require`: no element is a failure (exit 6), not `"count":0` with exit 0.
     var requireMatch = false
 }
@@ -60,7 +62,7 @@ enum RunnerControl {
     static let baseTimeout: TimeInterval = 30
 
     static func run(_ options: RunnerControlOptions) -> Int32 {
-        switch connect(runnerPath: options.runnerPath) {
+        switch connect(runnerPath: options.runnerPath, session: options.session) {
         case .success(let connection): return perform(options.operation, on: connection, requireMatch: options.requireMatch)
         case .failure(let failure): return failure.code
         }
@@ -68,14 +70,16 @@ enum RunnerControl {
 
     /// Finds and reads runner.json. On failure the reason is already on stderr and the error carries the exit status.
     /// Split from `perform` so `relay run` reads the file once for all its steps.
-    static func connect(runnerPath: String?) -> Result<RunnerConnection, RunnerControlFailure> {
+    static func connect(runnerPath: String?, session: String? = nil) -> Result<RunnerConnection, RunnerControlFailure> {
         let infoURL: URL
         let info: RunnerInfo
         do {
-            infoURL = try RunnerLocator.locate(explicitPath: runnerPath)
+            infoURL = try RunnerLocator.locate(explicitPath: runnerPath, session: session)
             info = try RunnerInfo.read(from: infoURL)
         } catch let error as RunnerUnavailableError {
             return .failure(RunnerControlFailure(code: fail(error.description, code: .unavailable)))
+        } catch let error as SessionSelectionError {
+            return .failure(RunnerControlFailure(code: fail(error.description, code: .usage)))
         } catch {
             return .failure(RunnerControlFailure(code: fail("cannot read runner info: \(error)", code: .usage)))
         }
@@ -144,7 +148,7 @@ enum RunnerControl {
 
         if case .screenshot(let screenshot) = operation {
             do {
-                if let path = try save(response.body, screenshot) {
+                if let path = try save(response.body, screenshot, session: info.session) {
                     print(path)
                 }
             } catch {
@@ -198,7 +202,7 @@ enum RunnerControl {
         }
         switch code {
         case .unauthorized:
-            return "the runner rejected the token in \(infoURL.path); the file is stale or belongs to another relay start (check --runner, $RELAY_RUNNER, or restart relay start)"
+            return "the runner rejected the token in \(infoURL.path); the file is stale or belongs to another relay start (check --runner, --session, $RELAY_RUNNER, $RELAY_SESSION, or restart relay start)"
         case .busy:
             return "the runner is running another command; retry, or wait until relay ping shows \"busy\":false"
         default:
@@ -221,22 +225,24 @@ enum RunnerControl {
     }
 
     /// Writes the image and returns its absolute path, or writes it to stdout for `-o -` and returns nil.
-    static func save(_ image: Data, _ screenshot: RunnerScreenshot, now: Date = Date()) throws -> String? {
+    static func save(_ image: Data, _ screenshot: RunnerScreenshot, now: Date = Date(), session: String? = nil) throws -> String? {
         if screenshot.output == "-" {
             FileHandle.standardOutput.write(image)
             return nil
         }
-        let url = screenshotURL(screenshot, now: now)
+        let url = screenshotURL(screenshot, now: now, session: session)
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try image.write(to: url)
         return url.path
     }
 
     /// `-o` resolved against the current directory, or `$TMPDIR/relay/screenshot-<time>.<ext>`: outside the
-    /// working tree, so screenshots do not show up in the app repository's `git status`.
+    /// working tree, so screenshots do not show up in the app repository's `git status`. A session's name goes
+    /// in front of the time, so two sessions never write one file.
     static func screenshotURL(
         _ screenshot: RunnerScreenshot,
         now: Date = Date(),
+        session: String? = nil,
         currentDirectory: URL = WorkingDirectory.url,
         temporaryDirectory: URL = FileManager.default.temporaryDirectory
     ) -> URL {
@@ -248,7 +254,7 @@ enum RunnerControl {
         formatter.dateFormat = "yyyyMMdd-HHmmss-SSS"
         return temporaryDirectory
             .appendingPathComponent("relay", isDirectory: true)
-            .appendingPathComponent("screenshot-\(formatter.string(from: now)).\(screenshot.fileExtension)")
+            .appendingPathComponent("screenshot-\(session.map { "\($0)-" } ?? "")\(formatter.string(from: now)).\(screenshot.fileExtension)")
             .standardizedFileURL
     }
 
