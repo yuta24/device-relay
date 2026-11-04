@@ -43,6 +43,7 @@ enum AppInstallCheck {
     /// Apps seen installed by this process, as `<udid> <bundle ID>`, so a `relay run` with several launches
     /// of one app asks once. Nothing in a scenario can uninstall an app.
     private static var seenInstalled: Set<String> = []
+    private static let seenInstalledLock = NSLock()
 
     /// The check `RunnerControl` makes before `/launch`. `hostBundleID` is known to be installed: the runner
     /// runs from it.
@@ -51,12 +52,17 @@ enum AppInstallCheck {
             return .installed
         }
         let key = "\(udid) \(bundleID)"
-        if seenInstalled.contains(key) {
+        seenInstalledLock.lock()
+        let seen = seenInstalled.contains(key)
+        seenInstalledLock.unlock()
+        if seen {
             return .installed
         }
         let state = ask(bundleID: bundleID, udid: udid, probe: probe)
         if state == .installed {
+            seenInstalledLock.lock()
             seenInstalled.insert(key)
+            seenInstalledLock.unlock()
         }
         return state
     }
@@ -117,8 +123,8 @@ enum AppInstallCheck {
     }
 
     /// `result.apps` of the JSON document. An empty list counts only from a run that says it looked at
-    /// default and removable apps, the ones `--include-all-apps` promises; a devicectl that reports
-    /// otherwise, or a document of another shape, says nothing about the app.
+    /// default, removable, hidden, and internal apps (all four were true on a device and on a simulator); a
+    /// devicectl that reports otherwise or leaves one out, or a document of another shape, says nothing about the app.
     static func interpretDevicectl(_ data: Data, bundleID: String) -> AppInstallState {
         guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               (root["info"] as? [String: Any])?["outcome"] as? String == "success",
@@ -129,7 +135,9 @@ enum AppInstallCheck {
         if apps.contains(where: { $0["bundleIdentifier"] as? String == bundleID }) {
             return .installed
         }
-        guard result["defaultAppsIncluded"] as? Bool == true, result["removableAppsIncluded"] as? Bool == true else {
+        let listedEveryApp = ["defaultAppsIncluded", "removableAppsIncluded", "hiddenAppsIncluded", "internalAppsIncluded"]
+            .allSatisfy { result[$0] as? Bool == true }
+        guard listedEveryApp else {
             return .unknown(reason: "devicectl did not list every app")
         }
         return .notInstalled

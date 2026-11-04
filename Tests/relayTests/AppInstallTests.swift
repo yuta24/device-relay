@@ -13,19 +13,18 @@ struct AppInstallCheckTests {
     private static func devicectl(
         apps: [String],
         outcome: String = "success",
-        defaultApps: Bool = true,
-        removableApps: Bool = true
+        defaultApps: Bool? = true,
+        removableApps: Bool? = true,
+        hiddenApps: Bool? = true,
+        internalApps: Bool? = true
     ) -> Data {
-        let document: [String: Any] = [
-            "info": ["outcome": outcome, "jsonVersion": 5],
-            "result": [
-                "apps": apps.map { ["bundleIdentifier": $0, "defaultApp": true] },
-                "defaultAppsIncluded": defaultApps,
-                "removableAppsIncluded": removableApps,
-                "hiddenAppsIncluded": true,
-                "internalAppsIncluded": true
-            ]
-        ]
+        // nil leaves the field out.
+        var result: [String: Any] = ["apps": apps.map { ["bundleIdentifier": $0, "defaultApp": true] }]
+        result["defaultAppsIncluded"] = defaultApps
+        result["removableAppsIncluded"] = removableApps
+        result["hiddenAppsIncluded"] = hiddenApps
+        result["internalAppsIncluded"] = internalApps
+        let document: [String: Any] = ["info": ["outcome": outcome, "jsonVersion": 5], "result": result]
         return try! JSONSerialization.data(withJSONObject: document)
     }
 
@@ -76,8 +75,13 @@ struct AppInstallCheckTests {
 
     @Test func devicectlListThatLeftAppsOutIsUnknown() {
         let unknown = AppInstallState.unknown(reason: "devicectl did not list every app")
-        #expect(AppInstallCheck.interpretDevicectl(Self.devicectl(apps: [], defaultApps: false), bundleID: "a.b") == unknown)
-        #expect(AppInstallCheck.interpretDevicectl(Self.devicectl(apps: [], removableApps: false), bundleID: "a.b") == unknown)
+        // Each of the four, false or missing.
+        for value in [false, nil] as [Bool?] {
+            #expect(AppInstallCheck.interpretDevicectl(Self.devicectl(apps: [], defaultApps: value), bundleID: "a.b") == unknown)
+            #expect(AppInstallCheck.interpretDevicectl(Self.devicectl(apps: [], removableApps: value), bundleID: "a.b") == unknown)
+            #expect(AppInstallCheck.interpretDevicectl(Self.devicectl(apps: [], hiddenApps: value), bundleID: "a.b") == unknown)
+            #expect(AppInstallCheck.interpretDevicectl(Self.devicectl(apps: [], internalApps: value), bundleID: "a.b") == unknown)
+        }
         // What such a run does list still counts.
         #expect(AppInstallCheck.interpretDevicectl(Self.devicectl(apps: ["a.b"], defaultApps: false), bundleID: "a.b") == .installed)
     }
