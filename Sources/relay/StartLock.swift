@@ -272,10 +272,18 @@ final class BuildLock {
         }
     }
 
-    /// Holds the lock in `mode`, waiting as long as it takes, and returns whether it had to wait. Changing
-    /// the mode gives the lock up first (`flock`), so two processes holding it shared cannot deadlock.
+    /// Holds the lock in `mode`, waiting as long as it takes, and returns whether it had to wait.
+    ///
+    /// Going to exclusive gives up what this descriptor holds first, explicitly, so another process may get
+    /// the lock before this one and the products may have changed by the time this returns. On Darwin a
+    /// `LOCK_EX | LOCK_NB` that fails keeps the shared lock: two starts polling for it while both still hold
+    /// it shared would each block the other for ever. Going from exclusive to shared has nothing to wait for,
+    /// since nobody else can hold the lock, and lets no build in between.
     @discardableResult
     func wait(for mode: Mode, isCancelled: () -> Bool = { StartCancellation.isRequested }, info: (String) -> Void) throws -> Bool {
+        if mode == .exclusive {
+            flock(fileDescriptor, LOCK_UN)
+        }
         var waited = false
         while flock(fileDescriptor, mode.flag | LOCK_NB) != 0 {
             guard errno == EWOULDBLOCK else {

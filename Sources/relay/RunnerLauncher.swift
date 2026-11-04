@@ -144,7 +144,7 @@ final class RunnerLauncher {
         try buildLock.wait(for: .shared, info: info)
         var plan = decidePlan(rebuild: rebuildIsNeeded())
         if case .build = plan {
-            // Changing the mode gives the lock up, so another start may have finished a build by now.
+            // Going to exclusive gives the shared lock up first, so another start may have finished a build by now.
             try buildLock.wait(for: .exclusive, info: info)
             plan = decidePlan(rebuild: rebuildIsNeeded())
         }

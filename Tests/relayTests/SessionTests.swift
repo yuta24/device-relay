@@ -477,6 +477,93 @@ struct BuildLockTests {
         #expect(waited)
     }
 
+    /// `body` on a thread of its own, since waiting for the lock polls. `join` returns what it returned.
+    private final class Waiter: @unchecked Sendable {
+        private let done = DispatchSemaphore(value: 0)
+        private let lock = NSLock()
+        private var result: Result<Bool, Error>?
+        private var waiting = false
+        private let waitingSignal = DispatchSemaphore(value: 0)
+
+        init(_ buildLock: BuildLock, deadline: Date) {
+            let thread = Thread { [self] in
+                let result = Result {
+                    try buildLock.wait(for: .exclusive, isCancelled: { Date() > deadline }, info: { [self] _ in waitingSignal.signal() })
+                }
+                lock.withLock { self.result = result }
+                done.signal()
+            }
+            thread.start()
+        }
+
+        /// Returns once the thread has said that it waits, or by the time limit.
+        func waitUntilPolling(timeout: TimeInterval) -> Bool {
+            waitingSignal.wait(timeout: .now() + timeout) == .success
+        }
+
+        var hasFinished: Bool { lock.withLock { result != nil } }
+
+        func join() throws -> Bool {
+            done.wait()
+            return try lock.withLock { result! }.get()
+        }
+    }
+
+    // On Darwin a failed LOCK_EX | LOCK_NB keeps the shared lock: two starts that both held it shared and
+    // both decided to build would each block the other for ever. The limit turns that into a failure here.
+    @Test func twoStartsHoldingItSharedCanBothGoOnToBuild() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let first = try makeLock(home)
+        let second = try makeLock(home)
+        defer {
+            first.release()
+            second.release()
+        }
+        try first.wait(for: .shared, info: { _ in })
+        try second.wait(for: .shared, info: { _ in })
+
+        let deadline = Date().addingTimeInterval(3)
+        let waiter = Waiter(second, deadline: deadline)
+        #expect(waiter.waitUntilPolling(timeout: 3))
+
+        // The other one gets it, and the waiter does not get it at the same time.
+        try first.wait(for: .exclusive, isCancelled: { Date() > deadline }, info: { _ in })
+        Thread.sleep(forTimeInterval: BuildLock.pollInterval * 2)
+        #expect(!waiter.hasFinished)
+
+        first.release()
+        #expect(try waiter.join())
+    }
+
+    @Test func aBuilderGoesBackToSharedWithoutLettingABuildIn() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let builder = try makeLock(home)
+        let reader = try makeLock(home)
+        let nextBuilder = try makeLock(home)
+        defer {
+            builder.release()
+            reader.release()
+            nextBuilder.release()
+        }
+        try builder.wait(for: .exclusive, info: { _ in })
+
+        let waiter = Waiter(nextBuilder, deadline: Date().addingTimeInterval(5))
+        #expect(waiter.waitUntilPolling(timeout: 3))
+
+        // Nothing holds it against the builder, so this does not wait; a reader then joins it.
+        #expect(try builder.wait(for: .shared, isCancelled: { true }, info: { _ in }) == false)
+        #expect(try reader.wait(for: .shared, isCancelled: { true }, info: { _ in }) == false)
+        Thread.sleep(forTimeInterval: BuildLock.pollInterval * 2)
+        #expect(!waiter.hasFinished)
+
+        // A build gets in only once nobody reads the products any more.
+        builder.release()
+        reader.release()
+        #expect(try waiter.join())
+    }
+
     @Test func waitingCanBeCancelled() throws {
         let home = try temporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }
