@@ -96,10 +96,10 @@
 
 ### ウィンドウの位置
 
-- **API**: SpringBoard の要素の識別子 `SBSwitcherWindow:Main`（アプリのウィンドウが入る window）と `card:<バンドル ID>:sceneID:<シーン>`（ウィンドウ）。取得は公開 API の `XCUIElement.snapshot()` ですが、識別子は公開されていません。実装は `RelayRunnerUITests.swift` で、判定は `Sources/relay/RunnerWindows.swift` です。
+- **API**: SpringBoard の要素の識別子 `SBSwitcherWindow:` で始まるもの（アプリのウィンドウが入る window。iPad では `SBSwitcherWindow:Main`、iOS 27.1 の iPhone Duo を開いた状態では `SBSwitcherWindow:Unknown.main[3]` が観測されています）と `card:<バンドル ID>:sceneID:<シーン>`（ウィンドウ）。取得は公開 API の `XCUIElement.snapshot()` ですが、識別子は公開されていません。実装は `RelayRunnerUITests.swift` で、判定は `Sources/relay/RunnerWindows.swift` です。
 - **機能**: iPad で、要素の frame とタップ位置を画面の座標に変換します（「[iPad のウィンドウ表示](screen.md#ipad-のウィンドウ表示)」）。iPhone では読みません。
 - **公開 API では足りない理由**: アプリの window 要素は常に `(0, 0)` から始まり、画面上の位置も表示の倍率もわかりません。ほかに比べたのは次のとおりです。クエリの `XCUIElement.frame` は表示の向きの値を返しますが、約 50–120 ms かかります（スナップショットは約 15 ms）。スクリーンショットとの照合は、画面の内容に左右されるうえ、遅くなります。
-- **使えないとき**: `SBSwitcherWindow:Main` が見つからないか `card:` がなければ、SpringBoard 全体を読み直します（約 35–55 ms）。それでも `card:` がなく、アプリが画面より小さければ、要素指定のタッチは何も送らずに `422`、`window_position_unknown` で、`/find`・`/source` には `window: null` と `warning` が付きます。アプリが画面と同じ大きさなら全画面として扱うので、識別子が変わると、縮小表示のアプリ（`UIRequiresFullScreen`）だけは検出できずに外れます。形が合わない frame（縦横の倍率の差が 0.02 を超える）も `422` にします。
+- **使えないとき**: `SBSwitcherWindow:` で始まる window が見つからないか、その先頭の window に `card:` がなければ、SpringBoard 全体を読み直します（約 35–55 ms）。一致する window が複数あっても、読むのは先頭だけです。先頭だけなら約 13 ms ですが、すべて読むと約 33 ms で、全体を読むのと変わらなくなるためです。全体を読み直せば、ほかの window の `card:` も見つかります。それでも `card:` がなく、アプリが画面より小さければ、要素指定のタッチは何も送らずに `422`、`window_position_unknown` で、`/find`・`/source` には `window: null` と `warning` が付きます。アプリが画面と同じ大きさなら全画面として扱うので、識別子が変わると、縮小表示のアプリ（`UIRequiresFullScreen`）だけは検出できずに外れます。形が合わない frame（縦横の倍率の差が 0.02 を超える）も `422` にします。
 
 ### アプリの状態の待ち時間
 

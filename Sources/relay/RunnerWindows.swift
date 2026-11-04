@@ -65,9 +65,15 @@ enum RunnerWindowLookup: Equatable {
 /// The decisions about iPad windows. Like `RunnerDisplays.swift`, this file is compiled into both the `relay`
 /// CLI and the runner target so the SwiftPM unit tests cover it; the runner only reads the snapshots.
 enum RunnerWindows {
-    /// SpringBoard's window that holds the app windows. Snapshotting only this one takes about 15 ms, against
-    /// about 35–55 ms for all of SpringBoard on an iPad mini simulator.
-    static let switcherWindowIdentifier = "SBSwitcherWindow:Main"
+    /// How the identifier of SpringBoard's window that holds the app windows starts. What follows varies:
+    /// `SBSwitcherWindow:Main` on an iPad, `SBSwitcherWindow:Unknown.main[3]` seen on an unfolded iPhone Duo.
+    /// Snapshotting only this window takes about 15 ms, against about 35–55 ms for all of SpringBoard on an iPad
+    /// mini simulator.
+    static let switcherWindowIdentifierPrefix = "SBSwitcherWindow:"
+    /// Finds that window in a query of SpringBoard's windows.
+    static var switcherWindowPredicate: NSPredicate {
+        NSPredicate(format: "identifier BEGINSWITH %@", switcherWindowIdentifierPrefix)
+    }
     static let springboardBundleID = "com.apple.springboard"
     /// The Dock's folder (Recents and Downloads): a service that stays active in Windowed Apps mode with a
     /// screen-sized window of its own, and is at times listed ahead of the app the user sees.

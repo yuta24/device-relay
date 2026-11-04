@@ -162,6 +162,15 @@ struct RunnerWindowsTests {
 
     // MARK: Cards and the foreground
 
+    @Test func switcherWindowIsFoundWhateverFollowsThePrefix() {
+        let predicate = RunnerWindows.switcherWindowPredicate
+        #expect(predicate.evaluate(with: ["identifier": "SBSwitcherWindow:Main"]))
+        #expect(predicate.evaluate(with: ["identifier": "SBSwitcherWindow:Unknown.main[3]"]))
+        #expect(!predicate.evaluate(with: ["identifier": "SBSwitcherWindow"]))
+        #expect(!predicate.evaluate(with: ["identifier": "SBHomeScreenWindow:SBSwitcherWindow:Main"]))
+        #expect(!predicate.evaluate(with: ["identifier": ""]))
+    }
+
     @Test func recognizesTheCardsOfAnApp() {
         #expect(RunnerWindows.isCard(identifier: "card:com.example.app:sceneID:com.example.app-1234", of: Self.bundleID))
         #expect(RunnerWindows.isCard(identifier: "card:com.example.app", of: Self.bundleID))

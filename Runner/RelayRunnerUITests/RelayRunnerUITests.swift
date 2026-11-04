@@ -440,10 +440,12 @@ final class RelayRunnerUITests: XCTestCase {
     }
 
     /// The frames in the displayed orientation of the app's windows in SpringBoard's tree, front one first; nil
-    /// when the tree can't be read. The window that holds them is read first since it is much smaller.
+    /// when the tree can't be read. The window that holds them is read first since it is much smaller. Only the
+    /// first such window (about 13 ms): resolving all of them takes about 33 ms, no faster than all of SpringBoard,
+    /// which is read when that window has no card of the app and so finds the cards in any other.
     private func windowCards(of bundleID: String, orientation: UIInterfaceOrientation) -> [CGRect]? {
         let (switcher, switcherFailed) = ignoringIssues {
-            try? springboard.windows.matching(identifier: RunnerWindows.switcherWindowIdentifier).firstMatch.snapshot()
+            try? springboard.windows.matching(RunnerWindows.switcherWindowPredicate).firstMatch.snapshot()
         }
         var cards = switcherFailed ? nil : switcher.map { Self.cards(of: bundleID, in: $0) }
         var container = switcher?.frame
