@@ -15,14 +15,11 @@ struct ShellError: Error, CustomStringConvertible {
 enum Shell {
     /// The processes `run` is waiting for, so `terminateRunning()` can stop a build when a detached
     /// `relay start` is told to stop (see `StartCancellation`).
-    private static var running: [ObjectIdentifier: Process] = [:]
-    private static let runningLock = NSLock()
+    private static let running = Locked<[ObjectIdentifier: Process]>([:])
 
     /// Sends SIGTERM to every process `run` is waiting for; `run` then throws `ShellError`.
     static func terminateRunning() {
-        runningLock.lock()
-        let processes = Array(running.values)
-        runningLock.unlock()
+        let processes = Array(running.value.values)
         processes.filter(\.isRunning).forEach { $0.terminate() }
     }
 
@@ -46,14 +43,11 @@ enum Shell {
         process.standardOutput = pipe
         process.standardError = pipe
 
-        var output = Data()
-        let lock = NSLock()
+        let output = Locked(Data())
         pipe.fileHandleForReading.readabilityHandler = { handle in
             let data = handle.availableData
             guard !data.isEmpty else { return }
-            lock.lock()
-            output.append(data)
-            lock.unlock()
+            output.withLock { $0.append(data) }
             log?.write(data)
             if echo {
                 FileHandle.standardError.write(data)
@@ -61,13 +55,9 @@ enum Shell {
         }
 
         try process.run()
-        runningLock.lock()
-        running[ObjectIdentifier(process)] = process
-        runningLock.unlock()
+        running.withLock { $0[ObjectIdentifier(process)] = process }
         defer {
-            runningLock.lock()
-            running[ObjectIdentifier(process)] = nil
-            runningLock.unlock()
+            running.withLock { $0[ObjectIdentifier(process)] = nil }
         }
         let stop = DispatchWorkItem {
             process.terminate()
@@ -84,10 +74,10 @@ enum Shell {
         stop.cancel()
         pipe.fileHandleForReading.readabilityHandler = nil
         let remaining = pipe.fileHandleForReading.readDataToEndOfFile()
-        lock.lock()
-        output.append(remaining)
-        let text = String(decoding: output, as: UTF8.self)
-        lock.unlock()
+        let text = output.withLock {
+            $0.append(remaining)
+            return String(decoding: $0, as: UTF8.self)
+        }
         log?.write(remaining)
 
         guard process.terminationStatus == 0 else {

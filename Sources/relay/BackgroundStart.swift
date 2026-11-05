@@ -392,14 +392,11 @@ private struct ProcessTree {
 /// xcodebuild, and `relay start` then exits through its usual error path, which shuts down a simulator it
 /// booted. Once the runner is launched, `RunnerLauncher`'s own signal handling takes over (`handOver()`).
 enum StartCancellation {
-    private static let lock = NSLock()
-    private static var requested = false
-    private static var sources: [DispatchSourceSignal] = []
+    private static let requested = Locked(false)
+    private static let sources = Locked<[DispatchSourceSignal]>([])
 
     static var isRequested: Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return requested
+        requested.value
     }
 
     static func install() {
@@ -407,23 +404,21 @@ enum StartCancellation {
             signal(signalNumber, SIG_IGN)
             let source = DispatchSource.makeSignalSource(signal: signalNumber, queue: .global())
             source.setEventHandler {
-                lock.lock()
-                requested = true
-                lock.unlock()
+                requested.set(true)
                 FileHandle.standardError.write(Data("relay: stop requested\n".utf8))
                 Shell.terminateRunning()
             }
             source.resume()
-            sources.append(source)
+            sources.withLock { $0.append(source) }
         }
     }
 
     /// Stops handling the signals, which stay ignored, once `RunnerLauncher` handles them itself.
     static func handOver() {
-        lock.lock()
-        let installed = sources
-        sources = []
-        lock.unlock()
+        let installed = sources.withLock { sources in
+            defer { sources = [] }
+            return sources
+        }
         installed.forEach { $0.cancel() }
     }
 }

@@ -70,17 +70,42 @@ SHA-1 hash: \(certificateSHA1)
 """
 
 /// Fake external commands that record the xcrun calls.
-private final class FakeHost {
-    var devicectl = devicectlList
-    var simctl = simctlList([(simulatorUDID, "iPhone 17 Pro", "Shutdown")])
-    var locked: Bool? = false
-    var findIdentity = findIdentityOutput
-    var xcrunCalls: [[String]] = []
+private final class FakeHost: Sendable {
+    private struct State {
+        var devicectl = devicectlList
+        var simctl = simctlList([(simulatorUDID, "iPhone 17 Pro", "Shutdown")])
+        var locked: Bool? = false
+        var findIdentity = findIdentityOutput
+        var xcrunCalls: [[String]] = []
+    }
+
+    private let state = Locked(State())
+
+    var devicectl: String {
+        get { state.value.devicectl }
+        set { state.withLock { $0.devicectl = newValue } }
+    }
+    var simctl: String {
+        get { state.value.simctl }
+        set { state.withLock { $0.simctl = newValue } }
+    }
+    var locked: Bool? {
+        get { state.value.locked }
+        set { state.withLock { $0.locked = newValue } }
+    }
+    var findIdentity: String {
+        get { state.value.findIdentity }
+        set { state.withLock { $0.findIdentity = newValue } }
+    }
+    var xcrunCalls: [[String]] {
+        get { state.value.xcrunCalls }
+        set { state.withLock { $0.xcrunCalls = newValue } }
+    }
 
     var commands: HostCommands {
         HostCommands(
             xcrun: { [self] args in
-                xcrunCalls.append(args)
+                state.withLock { $0.xcrunCalls.append(args) }
                 switch args.first {
                 case "simctl" where args.dropFirst().first == "list": return simctl
                 case "xcodebuild": return "Xcode 27.0\nBuild version 27A000a\n"
@@ -196,21 +221,21 @@ struct DeviceListTests {
         #expect(DeviceList.devicectlSkipReason(udid: deviceUDID, simulator: false, simulators: simulators) == nil)
         #expect(DeviceList.devicectlSkipReason(udid: nil, simulator: false, simulators: simulators) == nil)
 
-        var devicectlCalls = 0
+        let devicectlCalls = Locked(0)
         var commands = FakeHost().commands
         let devicectlJSON = commands.devicectlJSON
         commands.devicectlJSON = { args in
-            devicectlCalls += 1
+            devicectlCalls.withLock { $0 += 1 }
             return try devicectlJSON(args)
         }
         let (simulatorOnly, warnings) = try DeviceList.load(commands, udid: simulatorUDID)
-        #expect(devicectlCalls == 0)
+        #expect(devicectlCalls.value == 0)
         #expect(simulatorOnly.map(\.udid) == [simulatorUDID])
         #expect(warnings.isEmpty)
         _ = try DeviceList.load(commands, simulator: true)
-        #expect(devicectlCalls == 0)
+        #expect(devicectlCalls.value == 0)
         let (all, _) = try DeviceList.load(commands, udid: deviceUDID)
-        #expect(devicectlCalls == 1)
+        #expect(devicectlCalls.value == 1)
         #expect(all.map(\.udid) == [deviceUDID, otherDeviceUDID, simulatorUDID])
     }
 

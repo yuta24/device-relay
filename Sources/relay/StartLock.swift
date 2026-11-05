@@ -200,7 +200,7 @@ struct StartLock {
         var buffer = [CChar](repeating: 0, count: 128)
         let count = pread(fd, &buffer, buffer.count - 1, 0)
         guard count > 0 else { return Holder() }
-        let lines = String(cString: buffer).split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
+        let lines = String(nullTerminated: buffer).split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
         var holder = Holder()
         if let pid = lines.first.flatMap({ pid_t($0) }), pid > 0, kill(pid, 0) == 0 || errno == EPERM {
             holder.pid = pid
@@ -261,7 +261,7 @@ struct StartLocks {
 /// Reading the products takes the lock shared (from deciding to reuse them until the runner answers, when
 /// the build is no longer read); building takes it exclusive. Waiting polls, so Ctrl-C and `relay stop` still
 /// work: a thread blocked in `flock` would not notice them. The kernel drops the lock when the process exits.
-final class BuildLock {
+final class BuildLock: Sendable {
     enum Mode {
         case shared
         case exclusive
@@ -272,7 +272,7 @@ final class BuildLock {
     static let pollInterval: TimeInterval = 0.2
 
     private let fileDescriptor: Int32
-    private var isReleased = false
+    private let isReleased = Locked(false)
 
     /// `~/.relay/locks/build-<hash of the DerivedData path>.lock`.
     static func url(derivedData: URL, relayDirectory: URL) -> URL {
@@ -323,8 +323,12 @@ final class BuildLock {
     }
 
     func release() {
-        guard !isReleased else { return }
-        isReleased = true
+        // Only the first caller closes: a second close could hit a descriptor reused by something else.
+        let wasReleased = isReleased.withLock { released in
+            defer { released = true }
+            return released
+        }
+        guard !wasReleased else { return }
         close(fileDescriptor)
     }
 }

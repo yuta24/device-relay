@@ -10,11 +10,11 @@ enum AppInstallState: Equatable {
 }
 
 /// The host's tools `AppInstallCheck` asks. Tests replace them with canned output.
-struct AppInstallProbe {
+struct AppInstallProbe: Sendable {
     /// `xcrun <args>`; stdout and stderr merged. Throws `ShellError` on a nonzero status.
-    var xcrun: ([String]) throws -> String
+    var xcrun: @Sendable ([String]) throws -> String
     /// `xcrun devicectl <args> --json-output <file>`, returning the JSON document devicectl wrote.
-    var devicectlJSON: ([String]) throws -> Data
+    var devicectlJSON: @Sendable ([String]) throws -> Data
 
     static let live = AppInstallProbe(
         xcrun: { try Shell.xcrun($0, timeout: AppInstallCheck.simctlTimeout) },
@@ -42,8 +42,7 @@ enum AppInstallCheck {
 
     /// Apps seen installed by this process, as `<udid> <bundle ID>`, so a `relay run` with several launches
     /// of one app asks once. Nothing in a scenario can uninstall an app.
-    private static var seenInstalled: Set<String> = []
-    private static let seenInstalledLock = NSLock()
+    private static let seenInstalled = Locked<Set<String>>([])
 
     /// The check `RunnerControl` makes before `/launch`. `hostBundleID` is known to be installed: the runner
     /// runs from it.
@@ -52,17 +51,12 @@ enum AppInstallCheck {
             return .installed
         }
         let key = "\(udid) \(bundleID)"
-        seenInstalledLock.lock()
-        let seen = seenInstalled.contains(key)
-        seenInstalledLock.unlock()
-        if seen {
+        if seenInstalled.value.contains(key) {
             return .installed
         }
         let state = ask(bundleID: bundleID, udid: udid, probe: probe)
         if state == .installed {
-            seenInstalledLock.lock()
-            seenInstalled.insert(key)
-            seenInstalledLock.unlock()
+            seenInstalled.withLock { _ = $0.insert(key) }
         }
         return state
     }

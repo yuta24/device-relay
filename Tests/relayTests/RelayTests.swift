@@ -1181,8 +1181,8 @@ struct RunnerRequestValuesTests {
 
 struct CommandGateTests {
     /// A clock the test moves by hand, in nanoseconds.
-    private final class Clock: @unchecked Sendable {
-        var now: UInt64 = 5_000_000_000
+    private func makeClock() -> Locked<UInt64> {
+        Locked(5_000_000_000)
     }
 
     @Test func admitsOneCommandAtATime() {
@@ -1194,28 +1194,28 @@ struct CommandGateTests {
     }
 
     @Test func reportsElapsedTimeOnlyWhileBusy() {
-        let clock = Clock()
-        let gate = CommandGate(now: { clock.now })
+        let clock = makeClock()
+        let gate = CommandGate(now: { clock.value })
         #expect(gate.busyForMs() == nil)
         #expect(gate.tryEnter())
-        clock.now += 1_234_999_999
+        clock.withLock { $0 += 1_234_999_999 }
         #expect(gate.busyForMs() == 1234)
         // A rejected request doesn't restart the clock.
         #expect(!gate.tryEnter())
-        clock.now += 1_000_000
+        clock.withLock { $0 += 1_000_000 }
         #expect(gate.busyForMs() == 1235)
         gate.leave()
         #expect(gate.busyForMs() == nil)
     }
 
     @Test func pingBodyHasNullElapsedTimeWhenIdle() throws {
-        let clock = Clock()
-        let gate = CommandGate(now: { clock.now })
+        let clock = makeClock()
+        let gate = CommandGate(now: { clock.value })
         let idle = try JSONSerialization.data(withJSONObject: gate.pingBody(), options: [.sortedKeys])
         #expect(String(decoding: idle, as: UTF8.self) == #"{"busy":false,"busyForMs":null,"ok":true}"#)
 
         #expect(gate.tryEnter())
-        clock.now += 3_000_000_000
+        clock.withLock { $0 += 3_000_000_000 }
         let busy = try JSONSerialization.data(withJSONObject: gate.pingBody(), options: [.sortedKeys])
         #expect(String(decoding: busy, as: UTF8.self) == #"{"busy":true,"busyForMs":3000,"ok":true}"#)
     }

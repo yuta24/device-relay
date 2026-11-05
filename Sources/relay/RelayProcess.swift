@@ -22,7 +22,7 @@ enum RelayProcess {
         guard pid > 0, let startedAt = startTime(pid: pid) else { return nil }
         var path = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
         let length = proc_pidpath(pid, &path, UInt32(path.count))
-        let executable = length > 0 ? String(cString: path) : ""
+        let executable = length > 0 ? String(nullTerminated: path) : ""
         return Snapshot(startedAt: startedAt, executable: executable, arguments: arguments(pid: pid) ?? [])
     }
 
@@ -109,7 +109,7 @@ enum RelayProcess {
     static var currentExecutable: String {
         var path = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
         if proc_pidpath(getpid(), &path, UInt32(path.count)) > 0 {
-            return String(cString: path)
+            return String(nullTerminated: path)
         }
         return Bundle.main.executablePath ?? CommandLine.arguments[0]
     }
@@ -122,5 +122,12 @@ enum RelayProcess {
     static func currentStartTime() -> Date {
         let start = startTime(pid: getpid()) ?? Date()
         return Date(timeIntervalSince1970: start.timeIntervalSince1970.rounded(.down))
+    }
+}
+
+extension String {
+    /// The text before the first NUL of a buffer a C function filled; invalid UTF-8 is repaired.
+    init(nullTerminated buffer: [CChar]) {
+        self.init(decoding: buffer.prefix { $0 != 0 }.map(UInt8.init(bitPattern:)), as: UTF8.self)
     }
 }

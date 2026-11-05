@@ -2,14 +2,14 @@ import Foundation
 
 /// The external commands relay reads the host's state with (`simctl`, `devicectl`, `security`, ...).
 /// Tests replace them with canned output.
-struct HostCommands {
+struct HostCommands: Sendable {
     /// `xcrun <args>`; stdout and stderr merged. Throws `ShellError` on a nonzero status.
-    var xcrun: ([String]) throws -> String
+    var xcrun: @Sendable ([String]) throws -> String
     /// `xcrun devicectl <args> --json-output <file>`, returning the JSON document devicectl wrote.
-    var devicectlJSON: ([String]) throws -> Data
+    var devicectlJSON: @Sendable ([String]) throws -> Data
     /// `<executable> <args>` for tools outside xcrun (`/usr/bin/security`, `/usr/bin/xcode-select`); stdout
     /// and stderr merged.
-    var run: (_ executable: String, _ args: [String]) throws -> String
+    var run: @Sendable (_ executable: String, _ args: [String]) throws -> String
 
     static let live = HostCommands(
         xcrun: { try Shell.xcrun($0) },

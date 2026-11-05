@@ -14,7 +14,7 @@ See [docs/design.md](docs/design.md) for how it works. Detailed documentation in
 
 ## Requirements
 
-- Xcode on macOS (tested with Xcode 27; Xcode 15 or later is needed for `devicectl`)
+- Xcode on macOS (tested with Xcode 27, CI runs Xcode 26 and 27; Xcode 16 or later is needed to build relay, which uses Swift 6)
 - **iOS 17.0 or later** (relay relies on the CoreDevice tunnel; the deployment target is 17.0)
 - For a physical device:
   - An Apple Development certificate (sign in under Xcode > Settings > Accounts to create one). The Team ID is detected from the certificate.

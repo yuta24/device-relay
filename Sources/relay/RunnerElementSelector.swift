@@ -152,7 +152,7 @@ enum RunnerElementSelectorError: Error, Equatable, CustomStringConvertible {
     }
 }
 
-struct RunnerElementMatch {
+struct RunnerElementMatch: Sendable {
     /// The position among all matches in document order, the value to pass as `index`.
     var index: Int
     /// The element without its children.
