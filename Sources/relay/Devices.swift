@@ -65,10 +65,10 @@ enum DeviceList {
     /// stuck CoreDevice (`Timed out waiting for CoreDeviceService`) neither delays nor warns about a simulator.
     static func load(_ commands: HostCommands = .live, udid: String? = nil, simulator: Bool = false) throws -> (devices: [Device], warnings: [String]) {
         var warnings: [String] = []
-        var devices = try parseSimctl(Data(commands.xcrun(["simctl", "list", "devices", "--json"]).utf8))
+        var devices = try parseSimctl(Data(commands.xcrun(["simctl", "list", "devices", "--json"], CommandTimeout.query).utf8))
         if devicectlSkipReason(udid: udid, simulator: simulator, simulators: devices) == nil {
             do {
-                devices += try parseDevicectl(commands.devicectlJSON(["list", "devices"]))
+                devices += try parseDevicectl(commands.devicectlJSON(["list", "devices"], CommandTimeout.devicectl))
             } catch {
                 warnings.append("cannot list devices with devicectl: \(error)")
             }

@@ -1,24 +1,25 @@
 import Foundation
 
 /// The external commands relay reads the host's state with (`simctl`, `devicectl`, `security`, ...).
-/// Tests replace them with canned output.
+/// Tests replace them with canned output. Each takes a time limit (see `CommandTimeout`): none of these may
+/// run without one.
 struct HostCommands: Sendable {
-    /// `xcrun <args>`; stdout and stderr merged. Throws `ShellError` on a nonzero status.
-    var xcrun: @Sendable ([String]) throws -> String
+    /// `xcrun <args>`; stdout and stderr merged. Throws `ShellError` on a nonzero status and at the time limit.
+    var xcrun: @Sendable (_ args: [String], _ timeout: TimeInterval) throws -> String
     /// `xcrun devicectl <args> --json-output <file>`, returning the JSON document devicectl wrote.
-    var devicectlJSON: @Sendable ([String]) throws -> Data
+    var devicectlJSON: @Sendable (_ args: [String], _ timeout: TimeInterval) throws -> Data
     /// `<executable> <args>` for tools outside xcrun (`/usr/bin/security`, `/usr/bin/xcode-select`); stdout
     /// and stderr merged.
-    var run: @Sendable (_ executable: String, _ args: [String]) throws -> String
+    var run: @Sendable (_ executable: String, _ args: [String], _ timeout: TimeInterval) throws -> String
 
     static let live = HostCommands(
-        xcrun: { try Shell.xcrun($0) },
-        devicectlJSON: { try devicectlJSON($0) },
-        run: { try Shell.run($0, $1) }
+        xcrun: { try Shell.xcrun($0, timeout: $1) },
+        devicectlJSON: { try devicectlJSON($0, timeout: $1) },
+        run: { try Shell.run($0, $1, timeout: $2) }
     )
 
     /// `xcrun devicectl <args> --json-output <file>`, returning the JSON document devicectl wrote.
-    static func devicectlJSON(_ args: [String], timeout: TimeInterval? = nil) throws -> Data {
+    static func devicectlJSON(_ args: [String], timeout: TimeInterval) throws -> Data {
         let output = FileManager.default.temporaryDirectory.appendingPathComponent("relay-devicectl-\(UUID().uuidString).json")
         defer { try? FileManager.default.removeItem(at: output) }
         try Shell.xcrun(["devicectl"] + args + ["--json-output", output.path, "--quiet"], timeout: timeout)

@@ -174,14 +174,12 @@ struct AppInstallCheckTests {
 
     // MARK: - Time limit and time-out wording
 
-    @Test func shellStopsAProcessAtItsTimeLimit() {
-        let start = Date()
-        #expect(throws: ShellError.self) { try Shell.run("/bin/sleep", ["30"], timeout: 0.2) }
-        #expect(Date().timeIntervalSince(start) < 10)
-    }
-
-    @Test func shellLeavesAProcessThatEndsInTime() throws {
-        #expect(try Shell.run("/bin/echo", ["done"], timeout: 30) == "done\n")
+    @Test func aToolThatTimesOutIsUnknownAndSaysSo() {
+        // The output of a command stopped halfway does not count, even when it looks like an answer.
+        let simctl = Self.probe(simctl: { throw ShellError(args: [], status: 15, output: Self.notInstalledOutput, timedOutAfter: 5) })
+        #expect(AppInstallCheck.ask(bundleID: "a.b", udid: "U", probe: simctl) == .unknown(reason: "simctl timed out after 5 s"))
+        let devicectl = Self.probe(simctl: { throw Self.notSimulator }, devicectl: { throw ShellError(args: [], status: 9, output: "", timedOutAfter: 10) })
+        #expect(AppInstallCheck.ask(bundleID: "a.b", udid: "U", probe: devicectl) == .unknown(reason: "devicectl timed out after 10 s"))
     }
 
     @Test func launchTimeoutSaysHowToGetTheRunnerBack() {

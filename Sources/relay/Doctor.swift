@@ -164,25 +164,28 @@ enum Doctor {
         staleness: (URL, RunnerProject.Source) -> String?
     ) -> [Check] {
         var checks: [Check] = [.ok("relay", RelayVersion.current)]
-        let developerDirectory = (try? commands.run("/usr/bin/xcode-select", ["-p"]))?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let developerDirectory = (try? commands.run("/usr/bin/xcode-select", ["-p"], CommandTimeout.query))?.trimmingCharacters(in: .whitespacesAndNewlines)
         do {
-            let lines = try commands.xcrun(["xcodebuild", "-version"]).split(whereSeparator: \.isNewline).map(String.init)
+            let lines = try commands.xcrun(["xcodebuild", "-version"], CommandTimeout.query).split(whereSeparator: \.isNewline).map(String.init)
             let version = lines.first { $0.hasPrefix("Xcode ") } ?? lines.first ?? "?"
             let build = lines.first { $0.hasPrefix("Build version ") }.map { " (\($0.dropFirst("Build version ".count)))" } ?? ""
             checks.append(.ok("Xcode", "\(version)\(build)\(developerDirectory.map { ", \($0)" } ?? "")"))
         } catch {
-            checks.append(.problem("Xcode", "xcodebuild is not available\(developerDirectory.map { " (developer directory: \($0))" } ?? "")",
-                                   fix: "install Xcode and select it: sudo xcode-select -s /Applications/Xcode.app"))
+            checks.append(timedOut("Xcode", error)
+                ?? .problem("Xcode", "xcodebuild is not available\(developerDirectory.map { " (developer directory: \($0))" } ?? "")",
+                            fix: "install Xcode and select it: sudo xcode-select -s /Applications/Xcode.app"))
         }
-        if let version = try? commands.xcrun(["--version"]).trimmingCharacters(in: .whitespacesAndNewlines) {
-            checks.append(.ok("xcrun", version))
-        } else {
-            checks.append(.problem("xcrun", "not working", fix: "install Xcode and select it: sudo xcode-select -s /Applications/Xcode.app"))
+        do {
+            checks.append(.ok("xcrun", try commands.xcrun(["--version"], CommandTimeout.query).trimmingCharacters(in: .whitespacesAndNewlines)))
+        } catch {
+            checks.append(timedOut("xcrun", error)
+                ?? .problem("xcrun", "not working", fix: "install Xcode and select it: sudo xcode-select -s /Applications/Xcode.app"))
         }
-        if let path = try? commands.xcrun(["--find", "devicectl"]).trimmingCharacters(in: .whitespacesAndNewlines) {
-            checks.append(.ok("devicectl", path))
-        } else {
-            checks.append(.problem("devicectl", "not found", fix: "relay needs Xcode 15 or later for devicectl"))
+        do {
+            checks.append(.ok("devicectl", try commands.xcrun(["--find", "devicectl"], CommandTimeout.query).trimmingCharacters(in: .whitespacesAndNewlines)))
+        } catch {
+            checks.append(timedOut("devicectl", error)
+                ?? .problem("devicectl", "not found", fix: "relay needs Xcode 15 or later for devicectl"))
         }
         let project = try? resolveProject()
         if let project {
@@ -197,6 +200,12 @@ enum Doctor {
             try? RunnerProject.resolve(explicitPath: nil, currentDirectory: currentDirectory, home: home, includeInstalled: false).root
         }
         return checks
+    }
+
+    /// The check for a command that did not answer in time, or nil for another failure. It says nothing about
+    /// what is installed, so the fix for a missing tool would mislead.
+    private static func timedOut(_ title: String, _ error: Error) -> Check? {
+        (error as? ShellError)?.timeoutSummary.map { .problem(title, $0, fix: "run it in a terminal to see what it is waiting for") }
     }
 
     /// The copy in `~/.relay/runner`: its record, and whether it matches this relay.

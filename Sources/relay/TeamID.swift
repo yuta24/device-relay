@@ -100,13 +100,13 @@ enum SigningIdentities {
     static let developmentPrefixes = ["Apple Development:", "iPhone Developer:"]
 
     static func load(_ commands: HostCommands = .live) throws -> [SigningIdentity] {
-        let identities = parseFindIdentity(try commands.run("/usr/bin/security", ["find-identity", "-v", "-p", "codesigning"]))
+        let identities = parseFindIdentity(try commands.run("/usr/bin/security", ["find-identity", "-v", "-p", "codesigning"], CommandTimeout.query))
             .filter { identity in developmentPrefixes.contains { identity.name.hasPrefix($0) } }
         guard !identities.isEmpty else { return [] }
         var certificates: [String: Data] = [:]
         for prefix in developmentPrefixes {
             // Nonzero when no certificate matches the name.
-            if let output = try? commands.run("/usr/bin/security", ["find-certificate", "-a", "-Z", "-p", "-c", prefix]) {
+            if let output = try? commands.run("/usr/bin/security", ["find-certificate", "-a", "-Z", "-p", "-c", prefix], CommandTimeout.query) {
                 certificates.merge(parseFindCertificate(output)) { first, _ in first }
             }
         }
