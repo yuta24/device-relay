@@ -55,7 +55,7 @@ ln -sfn ~/.local/share/device-relay/device-relay-v$VERSION/bin/relay ~/.local/bi
 ```
 
 - `~/.local/bin` が PATH になければ追加してください。更新するときは新しいバージョンで同じ手順を繰り返し、古いディレクトリを削除します。
-- バイナリは公証（notarize）していません。ブラウザでダウンロードしたファイルは quarantine が付いて macOS が実行を拒否するので、上のように `curl` でダウンロードするか、展開したディレクトリで `xattr -d com.apple.quarantine bin/relay` を実行してください。
+- バイナリは署名と公証（notarize）を済ませているので、tarball はブラウザでダウンロードしてもかまいません。macOS は公証をオンラインで確認するので、ブラウザでダウンロードしたものの初回の実行にはネットワーク接続が必要です。
 - `bin/relay` はコピーせずリンクしてください。relay は自分の場所から Runner を探します。バイナリだけを別の場所にコピーした場合は、展開したディレクトリで `relay install` を 1 回実行します。
 
 ### ソースからビルドする

@@ -55,7 +55,7 @@ ln -sfn ~/.local/share/device-relay/device-relay-v$VERSION/bin/relay ~/.local/bi
 ```
 
 - Add `~/.local/bin` to your PATH if it isn't there. To update, repeat these steps with the new version, then remove the old directory.
-- The binary is not notarized. A file downloaded with a browser gets quarantined and macOS refuses to run it, so download with `curl` as above, or run `xattr -d com.apple.quarantine bin/relay` in the extracted directory.
+- The binary is signed and notarized, so downloading the tarball with a browser works too. macOS checks the notarization online, so the first run of a browser download needs a network connection.
 - Link `bin/relay` rather than copying it: relay finds the Runner from its own location. If you do copy the binary alone somewhere else, run `relay install` once from the extracted directory.
 
 ### Build from source

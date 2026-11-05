@@ -13,7 +13,10 @@ jobs:
     name: Publish the release
     # Xcode 26, the oldest Xcode relay supports, so the binaries run wherever relay does.
     runs-on: macos-latest
-    timeout-minutes: 30
+    # Holds the signing secrets: v* tags only, and the run waits here for a reviewer (docs/development.md).
+    environment: release
+    # Notarization alone may wait for 30 minutes (scripts/notarize.sh). Waiting for the reviewer doesn't count.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v6
       - name: Show the Xcode in use
@@ -32,12 +35,79 @@ jobs:
         # One test at a time, as in ci.yml: run in parallel on the hosted runner, the tests hang.
         run: xcrun swift test --no-parallel
         timeout-minutes: 10
-      - name: Package
+      # After the tests, so they run without the secrets and the unlocked keychain.
+      - name: Import the signing certificate and the notary key
+        id: signing
+        env:
+          DEVELOPER_ID_P12_BASE64: ${{ secrets.DEVELOPER_ID_P12_BASE64 }}
+          DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+          NOTARY_KEY_P8_BASE64: ${{ secrets.NOTARY_KEY_P8_BASE64 }}
+        # The paths are repeated in the cleanup step, which has to work when this step fails halfway.
+        run: |
+          set -euo pipefail
+          umask 077
+
+          printf '%s' "$NOTARY_KEY_P8_BASE64" | base64 --decode >"$RUNNER_TEMP/notary-key.p8"
+          chmod 600 "$RUNNER_TEMP/notary-key.p8"
+
+          keychain=$RUNNER_TEMP/release-signing.keychain-db
+          keychain_password=$(openssl rand -hex 32)
+          security create-keychain -p "$keychain_password" "$keychain"
+          # Longer than the job's timeout, so it doesn't lock itself during the build.
+          security set-keychain-settings -lut 7200 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+
+          printf '%s' "$DEVELOPER_ID_P12_BASE64" | base64 --decode >"$RUNNER_TEMP/developer-id.p12"
+          security import "$RUNNER_TEMP/developer-id.p12" -k "$keychain" -f pkcs12 \
+            -P "$DEVELOPER_ID_P12_PASSWORD" -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/developer-id.p12"
+          # Lets codesign use the key without a prompt. Its output describes the key, so it stays out of the log.
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain" >/dev/null
+          # codesign --keychain picks the identity, but builds the certificate chain from the search list.
+          security list-keychains -d user | xargs security list-keychains -d user -s "$keychain"
+
+          # The hash, because the name carries the Team ID: neither is in this repository or printed here.
+          identities=$(security find-identity -v -p codesigning "$keychain" |
+            awk '/"Developer ID Application: / { print $2 }')
+          if [ "$(printf '%s' "$identities" | grep -c '')" -ne 1 ]; then
+            echo "::error::expected one valid Developer ID Application identity in the certificate; check that it isn't expired or revoked and that it is that type of certificate"
+            exit 1
+          fi
+          {
+            echo "keychain=$keychain"
+            echo "identity=$identities"
+          } >>"$GITHUB_OUTPUT"
+      - name: Build and sign
         # Cross-compiling on one runner: the runner is arm64, and SwiftPM builds x86_64 from the same SDK.
+        env:
+          RELAY_CODESIGN_IDENTITY: ${{ steps.signing.outputs.identity }}
+          RELAY_CODESIGN_KEYCHAIN: ${{ steps.signing.outputs.keychain }}
         run: |
           version=${GITHUB_REF_NAME#v}
-          scripts/package.sh "$version" arm64
-          scripts/package.sh "$version" x86_64
+          scripts/package.sh --build-only "$version" arm64
+          scripts/package.sh --build-only "$version" x86_64
+      - name: Notarize
+        timeout-minutes: 35
+        env:
+          NOTARY_KEY_PATH: ${{ runner.temp }}/notary-key.p8
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+        run: scripts/notarize.sh dist/build
+      # Here rather than at the end, so nothing is left for the steps below. After a failure the steps below
+      # still don't run: this one's always() doesn't clear the failure, and no Release is created.
+      - name: Remove the keychain and the keys
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/notary-key.p8" "$RUNNER_TEMP/developer-id.p12"
+          keychain=$RUNNER_TEMP/release-signing.keychain-db
+          if [ -e "$keychain" ]; then
+            security delete-keychain "$keychain"
+          fi
+      - name: Package
+        run: |
+          version=${GITHUB_REF_NAME#v}
+          scripts/package.sh --pack-only "$version" arm64
+          scripts/package.sh --pack-only "$version" x86_64
       - name: Create the GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
