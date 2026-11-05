@@ -157,8 +157,8 @@ struct JSONFlagTests {
     }
 
     @Test func theHelpSaysSo() {
-        #expect(flattened(Arguments.usage(for: "tap")).contains("--json is accepted and not needed"))
-        #expect(flattened(Arguments.usage).contains("--json is accepted and not needed"))
+        #expect(flattened(Arguments.usage(for: "tap")).contains("--json is accepted, not needed"))
+        #expect(flattened(Arguments.usage).contains("--json is accepted, not needed"))
         #expect(flattened(Arguments.usage(for: "tap")).contains("Options may be written --opt value or --opt=value"))
     }
 }

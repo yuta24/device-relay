@@ -359,8 +359,7 @@ extension Arguments {
       else ~/.relay/runner.json (where relay start without a session writes it). A session is
       ~/.relay/sessions/<name>/runner.json, with no fallback. A .relay/runner.json in the current
       directory is not read: pass it with --runner.
-    Output is always JSON (a screenshot prints the saved file's path): --json is accepted and not
-    needed.
+    Output is always JSON (a screenshot prints the saved file's path); --json is accepted, not needed.
     A failure is JSON on stdout too: the runner's {"ok":false,"code":...,"error":...}, or relay's own in
       that shape when it fails before the runner answers (code runner_unavailable, runner_timeout,
       runner_info_invalid, app_not_installed, ...). relay: lines on stderr are hints for people.

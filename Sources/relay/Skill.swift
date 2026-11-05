@@ -289,20 +289,19 @@ extension SkillInstaller {
 enum SkillCommand {
     static let usage = """
     Usage:
-      relay skill install [--global | --dir <skills dir>] [--link] [--force] relay skill uninstall
-      [--global | --dir <skills dir>] relay skill status [--global | --dir <skills dir>]
+      relay skill install [--global | --dir <skills dir>] [--link] [--force]
+      relay skill uninstall [--global | --dir <skills dir>]
+      relay skill status [--global | --dir <skills dir>]
 
     Installs the device-relay agent skill, which tells coding agents such as Claude Code how to check an
     app on a simulator or device with relay. By default it is copied to .claude/skills/device-relay in
-    the git root of the current directory (the current directory outside git), where the team can commit
-    it.
+    the git root of the current directory (else the current directory), where the team can commit it.
     --global installs it to ~/.claude/skills/device-relay, --dir to <skills dir>/device-relay.
     --link makes a symbolic link instead of a copy, for working on the skill in a checkout.
     The skill comes from the copy relay install made in ~/.relay/runner/skills (with --link, a checkout
     first), else from the device-relay checkout relay install copies from. A copy records the relay
     version in .relay-skill.json next to SKILL.md. A skill relay installed is updated in place; anything
-    else at the destination is replaced only with --force. uninstall removes only a skill relay
-    installed.
+    else at the destination is replaced only with --force. uninstall removes only what relay installed.
     status shows where the skill is installed, marking with ! one that is out of date.
     """
 
