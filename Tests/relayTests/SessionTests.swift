@@ -362,7 +362,7 @@ struct DeviceLockTests {
             try StartLock.acquire(device: phone, session: "b", home: home)
         } throws: { error in
             let message = "\(error)"
-            return error is SetupError && message.contains("sim-a") && message.contains("session a") && message.contains("relay stop --session a")
+            return error is DeviceInUseError && message.contains("sim-a") && message.contains("session a") && message.contains("relay stop --session a")
         }
         // The other device is free, and so is this one after the holder exits.
         let other = try StartLock.acquire(device: simulator("iPhone 17 Pro", "sim-b"), session: "b", home: home)
@@ -466,6 +466,252 @@ struct AutomaticDeviceTests {
                 claimDevice: { throw SetupError(description: "in use: \($0.udid)") }
             )
         } throws: { "\($0)".contains("in use: SIM-C") }
+    }
+}
+
+private final class Recorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [String] = []
+    func add(_ value: String) { lock.lock(); values.append(value); lock.unlock() }
+    var all: [String] { lock.lock(); defer { lock.unlock() }; return values }
+}
+
+struct AutoSelectRaceTests {
+    private func commands(_ sims: [(udid: String, name: String)]) -> HostCommands {
+        let entries = sims.map { #"{"udid":"\#($0.udid)","name":"\#($0.name)","state":"Booted","isAvailable":true}"# }.joined(separator: ",")
+        return HostCommands(
+            xcrun: { arguments in
+                if arguments.prefix(3) == ["simctl", "list", "devices"] {
+                    return #"{"devices":{"com.apple.CoreSimulator.SimRuntime.iOS-27-0":[\#(entries)]}}"#
+                }
+                Issue.record("should not run: \(arguments)")
+                return ""
+            },
+            devicectlJSON: { _ in Data() },
+            run: { _, _ in "" }
+        )
+    }
+
+    private func prepare(_ options: StartOptions, sims: [(udid: String, name: String)], home: URL, info: Recorder,
+                         inUse: @escaping ([Device]) -> [String: String], claim: @escaping (Device) throws -> Void) throws -> StartSetup {
+        try StartSetup.prepare(
+            options, commands: commands(sims), configURL: home.appendingPathComponent("config.json"),
+            resolveProject: { _ in (home, .option) }, staleness: { _, _ in nil }, info: { info.add($0) },
+            inUse: inUse, claimDevice: claim
+        )
+    }
+
+    private func busy(_ device: Device) -> DeviceInUseError {
+        DeviceInUseError(device: device, holder: StartLock.Holder(pid: 7, session: "z"))
+    }
+
+    @Test func anAutomaticChoiceSelectsAgainWhenTheDeviceWasJustTaken() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let info = Recorder()
+        let claims = Recorder()
+        // B is in use when the first list is read, so A is the only candidate; B is free again (its holder exited)
+        // when the choice is made again, and A was taken meanwhile.
+        let reads = Recorder()
+        let setup = try prepare(
+            StartOptions(simulator: true), sims: [("SIM-A", "iPhone A"), ("SIM-B", "iPhone B")], home: home, info: info,
+            inUse: { _ in
+                reads.add("read")
+                return reads.all.count == 1 ? ["SIM-B": "session y, relay start pid 8"] : [:]
+            },
+            claim: { device in
+                claims.add(device.udid)
+                if device.udid == "SIM-A" { throw busy(device) }
+            }
+        )
+        #expect(setup.device.udid == "SIM-B")
+        #expect(claims.all == ["SIM-A", "SIM-B"])
+        #expect(info.all.contains("iPhone A was just taken by session z, relay start pid 7; selecting again"))
+        #expect(info.all.filter { $0.hasPrefix("using ") }.count == 1)
+        #expect(info.all.last { $0.hasPrefix("using ") }?.contains("SIM-B") == true)
+    }
+
+    @Test func theTakenDeviceStaysOutEvenIfTheLockFilesDoNotShowIt() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let claims = Recorder()
+        // inUse never lists A, and A is booted next to B: only the added "taken" entry keeps A out the second time.
+        #expect {
+            _ = try prepare(
+                StartOptions(simulator: true), sims: [("SIM-A", "iPhone A"), ("SIM-B", "iPhone B")], home: home, info: Recorder(),
+                inUse: { _ in ["SIM-B": "session y, relay start pid 8"] },
+                claim: { device in claims.add(device.udid); throw busy(device) }
+            )
+        } throws: { error in
+            let message = "\(error)"
+            return error is SetupError && message.contains("no booted iOS simulator") && message.contains("SIM-B") && message.contains("session y")
+        }
+        #expect(claims.all == ["SIM-A"])
+    }
+
+    @Test func whenEveryDeviceIsTakenTheErrorListsWhoHasThem() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let claims = Recorder()
+        let info = Recorder()
+        #expect {
+            _ = try prepare(
+                StartOptions(simulator: true), sims: [("SIM-A", "iPhone A")], home: home, info: info,
+                inUse: { _ in [:] }, claim: { device in claims.add(device.udid); throw busy(device) }
+            )
+        } throws: { error in
+            let message = "\(error)"
+            return error is SetupError && message.contains("no booted iOS simulator") && message.contains("in use by another relay start")
+                && message.contains("iPhone A") && message.contains("session z, relay start pid 7")
+        }
+        #expect(claims.all == ["SIM-A"])
+        #expect(info.all.filter { $0.contains("selecting again") }.count == 1)
+    }
+
+    @Test func selectingAgainStopsEvenIfInUseForgetsEveryHolder() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let claims = Recorder()
+        // inUse forgets every holder while the claims keep failing; the devices added to the used ones end it.
+        #expect(throws: SetupError.self) {
+            _ = try prepare(
+                StartOptions(simulator: true), sims: [("SIM-A", "iPhone A")], home: home, info: Recorder(),
+                inUse: { _ in [:] }, claim: { device in claims.add(device.udid); throw busy(device) }
+            )
+        }
+        #expect(claims.all.count <= 2)
+    }
+
+    @Test func aNamedDeviceInUseFailsAtOnce() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        for options in [StartOptions(udid: "SIM-A"), StartOptions(device: "iPhone A")] {
+            let claims = Recorder()
+            let info = Recorder()
+            #expect {
+                _ = try prepare(options, sims: [("SIM-A", "iPhone A"), ("SIM-B", "iPhone B")], home: home, info: info,
+                                inUse: { _ in [:] }, claim: { device in claims.add(device.udid); throw busy(device) })
+            } throws: { $0 is DeviceInUseError && "\($0)".contains("SIM-A") && "\($0)".contains("relay stop --session z") }
+            #expect(claims.all == ["SIM-A"])
+            #expect(!info.all.contains { $0.contains("selecting again") })
+        }
+    }
+
+    @Test func otherFailuresOfTheClaimAreNotRetried() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let claims = Recorder()
+        #expect {
+            _ = try prepare(StartOptions(simulator: true), sims: [("SIM-A", "iPhone A")], home: home, info: Recorder(),
+                            inUse: { _ in [:] }, claim: { device in claims.add(device.udid); throw SetupError(description: "cannot open lock") })
+        } throws: { "\($0)" == "cannot open lock" }
+        #expect(claims.all == ["SIM-A"])
+    }
+
+    @Test func aSessionTakesTheFirstOfSeveralFreeBootedSimulators() throws {
+        let older = Device(name: "Alpha", udid: "SIM-0", kind: .simulator, os: "iOS 26.5", state: "booted", isAvailable: true)
+        let devices = [older, simulator("beta", "SIM-3"), simulator("Alpha", "SIM-2"), simulator("alpha", "SIM-1")]
+        let selection = try DeviceSelector.select(from: devices, udid: nil, name: nil, session: "race1")
+        // Newest iOS first, then the name without case, then the UDID.
+        #expect(selection.device.udid == "SIM-1")
+        #expect(selection.isAutomatic)
+        #expect(selection.reason == "the first of 4 free booted simulators (newest iOS, then name), for session race1")
+        // A device in use is not among them.
+        #expect(try DeviceSelector.select(from: devices, udid: nil, name: nil, inUse: ["SIM-1": "x"], session: "race1").device.udid == "SIM-2")
+        // Without a session it stays an error.
+        #expect { try DeviceSelector.select(from: devices, udid: nil, name: nil) } throws: { "\($0)".contains("4 simulators are booted") }
+        // --udid and --device keep their meaning.
+        #expect(try DeviceSelector.select(from: devices, udid: "SIM-3", name: nil, session: "race1").device.udid == "SIM-3")
+    }
+
+    @Test func connectedDevicesAreNeverGuessedForASession() {
+        func phone(_ name: String, _ udid: String) -> Device {
+            Device(name: name, udid: udid, kind: .device, os: "iOS 26.0", state: "connected", isAvailable: true)
+        }
+        let devices = [phone("One", "D-1"), phone("Two", "D-2"), simulator("iPhone", "SIM-1")]
+        #expect { try DeviceSelector.select(from: devices, udid: nil, name: nil, session: "race1") } throws: { "\($0)".contains("2 devices are connected") }
+    }
+
+    @Test func twoSessionsOnTwoBootedSimulatorsEndUpOnDifferentOnes() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let sims = [("SIM-A", "iPhone A"), ("SIM-B", "iPhone B")]
+        // Both read the lock files before either claims. The first claims A; the second finds A taken and selects B.
+        let first = try prepare(StartOptions(simulator: true, session: "race1"), sims: sims, home: home, info: Recorder(),
+                                inUse: { StartLock.devicesInUse($0, home: home) },
+                                claim: { _ = try StartLock.acquire(device: $0, session: "race1", home: home) })
+        #expect(first.device.udid == "SIM-A")
+        let info = Recorder()
+        let second = try prepare(StartOptions(simulator: true, session: "race2"), sims: sims, home: home, info: info,
+                                 inUse: { _ in [:] },
+                                 claim: { _ = try StartLock.acquire(device: $0, session: "race2", home: home) })
+        #expect(second.device.udid == "SIM-B")
+        #expect(info.all.contains { $0.hasPrefix("iPhone A was just taken by session race1") })
+        // A third finds none left.
+        #expect {
+            _ = try prepare(StartOptions(simulator: true, session: "race3"), sims: sims, home: home, info: Recorder(),
+                            inUse: { StartLock.devicesInUse($0, home: home) }, claim: { _ in Issue.record("nothing to claim") })
+        } throws: { "\($0)".contains("no booted iOS simulator") }
+    }
+
+    @Test func theErrorShowsLikeTheOldOne() {
+        let phone = simulator("iPhone 17", "SIM-A")
+        let holder = StartLock.Holder(pid: 12, session: "a")
+        #expect(DeviceInUseError(device: phone, holder: holder).description == StartLock.deviceHeldMessage(phone, holder: holder))
+    }
+
+    @Test func twoThreadsClaimingOneDeviceGetOneLock() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let phone = simulator("iPhone 17", "sim-a")
+        let results = Recorder()
+        let group = DispatchGroup()
+        let start = DispatchSemaphore(value: 0)
+        var held: [StartLock] = []
+        let heldLock = NSLock()
+        for index in 0..<8 {
+            group.enter()
+            DispatchQueue.global().async {
+                start.wait()
+                do {
+                    let lock = try StartLock.acquire(device: phone, session: "s\(index)", home: home)
+                    heldLock.lock(); held.append(lock); heldLock.unlock()
+                    results.add("won")
+                } catch is DeviceInUseError {
+                    results.add("busy")
+                } catch {
+                    results.add("other: \(error)")
+                }
+                group.leave()
+            }
+        }
+        for _ in 0..<8 { start.signal() }
+        group.wait()
+        #expect(results.all.filter { $0 == "won" }.count == 1)
+        #expect(results.all.filter { $0 == "busy" }.count == 7)
+        held.forEach { $0.release() }
+    }
+
+    @Test func aRealLockHeldByAnotherStartIsSkippedForTheNextDevice() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let sims = [("SIM-A", "iPhone A"), ("SIM-B", "iPhone B")]
+        // Another start holds A after this one read the lock files (inUse reads nothing at first), and B is free later.
+        let held = try StartLock.acquire(device: simulator("iPhone A", "SIM-A"), session: "other", home: home)
+        defer { held.release() }
+        let reads = Recorder()
+        let info = Recorder()
+        let setup = try prepare(
+            StartOptions(simulator: true), sims: sims, home: home, info: info,
+            inUse: { devices in
+                reads.add("read")
+                // The first read happens before the other start's claim: only B shows as used (by a start that then exits).
+                return reads.all.count == 1 ? ["SIM-B": "session y, relay start pid 8"] : StartLock.devicesInUse(devices, home: home).filter { $0.key != "SIM-B" }
+            },
+            claim: { _ = try StartLock.acquire(device: $0, session: "mine", home: home) }
+        )
+        #expect(setup.device.udid == "SIM-B")
+        #expect(info.all.contains { $0.hasPrefix("iPhone A was just taken by session other, relay start pid \(getpid())") })
     }
 }
 
