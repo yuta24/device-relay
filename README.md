@@ -111,7 +111,7 @@ If you can't pass the environment variable, add `--session <name>` to each comma
 ## Troubleshooting
 
 - Start with `relay doctor` (`relay doctor --simulator` for a simulator) to check the environment. Items marked ✗ and ! come with a one-line fix.
-- Logs are in `~/.relay/logs/` (`start-*.log`, `build-*.log`, `runner-*.log`). When `relay start --background` fails, it prints the cause and the end of the log.
+- Logs are in `~/.relay/logs/` (`start-*.log`, `build-*.log`, `runner-*.log`). When `relay start --background` fails, it prints the cause and the end of the log. `relay start` removes logs over 7 days old, keeping the newest 20 of each kind.
 - Subcommand exit codes (`2` = usage error, `3` = can't reach the runner, `5` = busy, `6` = XCUI action failed, and so on) are listed in [docs/cli.md](docs/cli.md).
 - For problems specific to physical devices (UI Automation, the passcode, the home button, and so on), see [docs/limitations.md](docs/limitations.md).
 

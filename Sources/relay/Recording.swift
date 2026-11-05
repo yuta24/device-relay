@@ -386,6 +386,7 @@ enum Recording {
             }
         }
 
+        RelayPrune.atRecordStart()
         let logsURL = home.appendingPathComponent(".relay/logs", isDirectory: true)
         let logURL: URL
         var supervisor: pid_t
