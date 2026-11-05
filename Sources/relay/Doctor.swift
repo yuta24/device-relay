@@ -22,6 +22,7 @@ enum Doctor {
         home: URL = UserHome.url,
         staleness: (URL, RunnerProject.Source) -> String? = { RunnerInstaller.staleness(root: $0, source: $1) },
         sandbox: (URL) -> [Check] = SandboxProbe.checks(home:),
+        inUse: (([Device]) -> [String: StartLock.Holder])? = nil,
         output: (String) -> Void = { print($0) }
     ) -> Int32 {
         var sections: [(title: String, checks: [Check])] = []
@@ -43,6 +44,7 @@ enum Doctor {
         var target: Device?
         do {
             let (devices, warnings) = try DeviceList.load(commands, udid: options.udid, simulator: options.simulator)
+            let held = inUse?(devices) ?? StartLock.holdersInUse(devices, home: home)
             let active = devices.filter(\.isActive)
             let connected = active.filter { $0.kind == .device }.count
             let simulators = "\(active.count - connected) booted simulator(s), \(devices.filter { $0.kind == .simulator && $0.isAvailable }.count) iOS simulator(s)"
@@ -52,12 +54,24 @@ enum Doctor {
                 deviceChecks.append(.ok("devices", "\(connected) connected device(s), \(simulators)"))
             }
             deviceChecks += warnings.map { .warning("devicectl", $0, fix: "check that Xcode 15 or later is selected (xcode-select -p)") }
+            // Candidates another relay start holds: the automatic choice below leaves them out, as relay start does.
+            let busy = devices.filter {
+                held[$0.udid.uppercased()] != nil && $0.isActive && (!options.simulator || $0.kind == .simulator) && (options.os.map($0.matches(os:)) ?? true)
+            }
+            if !busy.isEmpty {
+                deviceChecks.append(.ok("in use", busy.map { "\($0.summary) (\(held[$0.udid.uppercased()]?.summary ?? "in use"))" }.joined(separator: ", ")
+                    + "; relay start without --udid/--device does not pick these"))
+            }
             do {
                 let selection = try DeviceSelector.select(from: devices, udid: options.udid, name: options.device,
-                                                          simulator: options.simulator, os: options.os)
+                                                          simulator: options.simulator, os: options.os, inUse: held.mapValues(\.summary))
                 let device = selection.device
                 target = device
-                if !selection.isAutomatic {
+                if !selection.isAutomatic, let holder = held[device.udid.uppercased()] {
+                    // relay start stops here with a DeviceInUseError; the checks of the device below still run.
+                    deviceChecks.append(.problem("target", "\(device.summary) is in use by \(holder.summary)",
+                                                 fix: "use another device (--udid or --device; relay status --all lists what is in use), or stop that one (\(StartLock.stopHint(holder)))"))
+                } else if !selection.isAutomatic {
                     deviceChecks.append(.ok("target", "\(device.summary) (\(selection.reason))"))
                 } else if device.kind == .device {
                     // A device needs signing and UI Automation; people trying relay out usually want a simulator.
@@ -68,7 +82,12 @@ enum Doctor {
                 }
             } catch {
                 // The candidates follow on the next lines; the table below lists them.
-                let firstLine = String(describing: error).split(separator: "\n").first.map { String($0.hasSuffix(":") ? $0.dropLast() : $0) } ?? ""
+                let message = String(describing: error)
+                var firstLine = message.split(separator: "\n").first.map { String($0.hasSuffix(":") ? $0.dropLast() : $0) } ?? ""
+                // The error may list the devices another relay start holds; here that list is the "in use" line above.
+                if !busy.isEmpty {
+                    firstLine += "; \(busy.count) in use by another relay start (see the in use line)"
+                }
                 // Without --udid/--device nothing is wrong yet: relay start can still be told which one to use.
                 deviceChecks.append(options.udid == nil && options.device == nil
                     ? .warning("target", firstLine, fix: options.simulator

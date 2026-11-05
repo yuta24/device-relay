@@ -387,6 +387,12 @@ struct DeviceLockTests {
         #expect(StartLock.devicesInUse([phone], home: home).isEmpty)
     }
 
+    @Test func stopHintNamesTheSessionOrAnyStop() {
+        #expect(StartLock.stopHint(StartLock.Holder(pid: 1, session: "a")) == "relay stop --session a")
+        #expect(StartLock.stopHint(StartLock.Holder(pid: 1)) == "relay stop, or Ctrl-C where it runs")
+        #expect(StartLock.stopHint(nil) == "relay stop, or Ctrl-C where it runs")
+    }
+
     @Test func aHolderWithoutASessionStopsWithPlainRelayStop() {
         let message = StartLock.deviceHeldMessage(simulator("iPhone 17", "SIM-A"), holder: StartLock.Holder(pid: 12))
         #expect(message.contains("relay start pid 12"))

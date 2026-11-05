@@ -124,6 +124,7 @@ relay doctor            # bundle ID の行が prefix dev.yuta24.devicerelay (fro
 - relay のバージョン、Xcode（`xcodebuild -version` と `xcode-select -p`）、xcrun、devicectl
 - Runner プロジェクトの解決結果と、`relay install` の状態（記録したバージョン・コミット・コピー元、ずれていれば !）
 - 端末一覧と、同じオプションの `relay start` が使う端末（`--udid` / `--device` がなければ自動選択の結果）。自動選択で実機になる場合は、シミュレータで試すなら `--simulator` か `--device <シミュレータ名>` を付けるよう ! で知らせます
+- 使用中の端末: ほかの `relay start`（セッション）が使っている端末が候補にあるときは、`in use` の行に端末と使っている相手（`session a, relay start pid 123`）を出します。自動選択はそれらを外します（`relay start` と同じ）。`--udid` / `--device` で指定した端末が使用中なら target を ✗ にし、止め方（`relay stop --session <名前>` など）か別の端末を指定するよう案内します（その端末の残りの確認は続けます）。使用中がなければこの行は出ません。`relay doctor` はセッションを持たないので、空いている起動中のシミュレータが複数あっても 1 台には決めません（`relay start --session` なら選びます）。使用中でない候補が 1 台もなければ、target は ! です
 - 実機: OS のバージョン（17 以上）、接続状態、ペアリング、デベロッパモード（`devicectl list devices`）、DDI のマウント状態（`ddiServicesAvailable`）、ロック状態（`devicectl device info lockState` の `passcodeRequired`）。UI オートメーションの有効状態は Mac から読めないので、常に ! で確認を促します
 - シミュレータ: ランタイムが入っているか、起動状態
 - 署名: 証明書と Team ID（実機なら見つからなければ ✗、シミュレータなら !）

@@ -864,6 +864,82 @@ struct DoctorTests {
         #expect(!lines.contains { $0.contains("devicectl") && $0.contains("cannot list") })
     }
 
+    private let busyUDID = "22222222-2222-2222-2222-222222222222"
+    private let freeUDID = "33333333-3333-3333-3333-333333333333"
+    private let heldBySession = StartLock.Holder(pid: 123, session: "a")
+    private var heldText: String { heldBySession.summary }
+
+    private func twoBootedSimulators() -> FakeHost {
+        let host = FakeHost()
+        host.simctl = simctlList([(busyUDID, "iPhone 17", "Booted"), (freeUDID, "iPhone 17 Pro", "Booted")])
+        return host
+    }
+
+    private func run(_ options: DoctorOptions, host: FakeHost, inUse: [String: StartLock.Holder]) -> (status: Int32, lines: [String]) {
+        var lines: [String] = []
+        let status = Doctor.run(options, commands: host.commands, configURL: URL(fileURLWithPath: "/nonexistent/config.json"),
+                                resolveProject: project, home: URL(fileURLWithPath: "/nonexistent"), sandbox: { _ in [] },
+                                inUse: { _ in inUse }, output: { lines.append($0) })
+        return (status, lines)
+    }
+
+    @Test func theAutomaticChoiceLeavesOutADeviceAnotherStartHolds() {
+        let result = run(DoctorOptions(simulator: true), host: twoBootedSimulators(), inUse: [busyUDID: heldBySession])
+        #expect(result.status == RunnerExitCode.success.rawValue)
+        #expect(result.lines.contains { $0.hasPrefix("  ✓ target           iPhone 17 Pro") && $0.contains("the only booted simulator") })
+        #expect(result.lines.contains { $0.hasPrefix("  ✓ in use") && $0.contains("(\(heldText))") && $0.contains("does not pick these") })
+        #expect(result.lines.contains("Target: iPhone 17 Pro"))
+    }
+
+    @Test func aNamedDeviceAnotherStartHoldsIsAProblem() {
+        let result = run(DoctorOptions(udid: busyUDID, simulator: true), host: twoBootedSimulators(), inUse: [busyUDID: heldBySession])
+        #expect(result.status == RunnerExitCode.failure.rawValue)
+        #expect(result.lines.contains { $0.hasPrefix("  ✗ target") && $0.contains("is in use by \(heldText)") })
+        #expect(result.lines.contains { $0.contains("→ use another device") && $0.contains("relay stop --session a") })
+        // The rest of the device's checks go on.
+        #expect(result.lines.contains("Target: iPhone 17"))
+    }
+
+    @Test func aHolderWithoutASessionIsStoppedWhereItRuns() {
+        let result = run(DoctorOptions(udid: busyUDID, simulator: true), host: twoBootedSimulators(), inUse: [busyUDID: StartLock.Holder(pid: 9)])
+        #expect(result.status == RunnerExitCode.failure.rawValue)
+        #expect(result.lines.contains { $0.contains("relay stop, or Ctrl-C where it runs") })
+    }
+
+    @Test func everyCandidateInUseIsANoteWithTheListNotAProblem() {
+        let result = run(DoctorOptions(simulator: true), host: twoBootedSimulators(),
+                         inUse: [busyUDID: heldBySession, freeUDID: StartLock.Holder(pid: 456, session: "b")])
+        #expect(result.status == RunnerExitCode.success.rawValue)
+        #expect(result.lines.contains { $0.hasPrefix("  ! target") && $0.contains("simulators are booted") == false })
+        #expect(result.lines.contains { $0.hasPrefix("  ! target") && $0.contains("2 in use by another relay start (see the in use line)") })
+        let inUseLine = result.lines.first { $0.hasPrefix("  ✓ in use") } ?? ""
+        #expect(inUseLine.contains("(\(heldText))") && inUseLine.contains("(session b, relay start pid 456)"))
+    }
+
+    @Test func nothingInUseLeavesTheOutputAsItWas() {
+        let result = run(DoctorOptions(simulator: true), host: twoBootedSimulators(), inUse: [:])
+        #expect(!result.lines.contains { $0.contains("in use") })
+        #expect(result.lines.contains { $0.hasPrefix("  ! target") })
+    }
+
+    @Test func jsonListsTheDevicesInUse() throws {
+        var lines: [String] = []
+        let status = Doctor.run(DoctorOptions(udid: busyUDID, simulator: true, json: true), commands: twoBootedSimulators().commands,
+                                configURL: URL(fileURLWithPath: "/nonexistent/config.json"), resolveProject: project,
+                                home: URL(fileURLWithPath: "/nonexistent"), sandbox: { _ in [] },
+                                inUse: { _ in [busyUDID: heldBySession] }, output: { lines.append($0) })
+        #expect(status == RunnerExitCode.failure.rawValue)
+        let text = try #require(lines.first)
+        let object = try #require(try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
+        let checks = try #require(object["checks"] as? [[String: Any]])
+        let busy = try #require(checks.first { $0["name"] as? String == "in use" })
+        #expect(busy["section"] as? String == "Devices")
+        #expect(busy["status"] as? String == "ok")
+        let target = try #require(checks.first { $0["name"] as? String == "target" })
+        #expect(target["status"] as? String == "problem")
+        #expect((target["fix"] as? String)?.contains("relay stop --session a") == true)
+    }
+
     @Test func reportsASandboxThatBlocksLocalhost() {
         var lines: [String] = []
         let status = Doctor.run(DoctorOptions(udid: simulatorUDID), commands: FakeHost().commands, configURL: URL(fileURLWithPath: "/nonexistent/config.json"),

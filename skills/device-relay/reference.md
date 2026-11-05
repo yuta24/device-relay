@@ -10,7 +10,7 @@
 | `relay start --background [オプション]` | `relay start` を端末から切り離して起動し、ready になったら戻ります。同上 |
 | `relay stop [--runner <path> \| --session <name> \| --all]` | runner.json の `relay start` を止めます（ランナー、relay が boot したシミュレータ、runner.json も片付く）。同上。`--all` はほかのエージェントのものも止めます |
 | `relay devices [--json] [--os <version>]` | 実機とシミュレータの一覧（NAME、UDID、KIND、OS、STATE）。`--os` でその OS のものだけ |
-| `relay doctor [--udid <UDID> \| --device <名前>] [--simulator] [--os <version>] [--project <path>] [--json]` | Xcode、Runner、署名、端末（同じ指定の `relay start` が使うもの）を確認。✗ があれば 1。`--json` は 1 行の JSON オブジェクト `{"ok":…,"problems":n,"warnings":n,"checks":[{"section","name","status":"ok"\|"warning"\|"problem","detail","fix"}]}`（`fix` は ok で `null`）だけを出す（終了コードは同じ） |
+| `relay doctor [--udid <UDID> \| --device <名前>] [--simulator] [--os <version>] [--project <path>] [--json]` | Xcode、Runner、署名、端末（同じ指定の `relay start` が使うもの）を確認（ほかの `relay start` が使用中の端末は `in use` の行に出て自動選択から外れ、指定した端末が使用中なら ✗）。✗ があれば 1。`--json` は 1 行の JSON オブジェクト `{"ok":…,"problems":n,"warnings":n,"checks":[{"section","name","status":"ok"\|"warning"\|"problem","detail","fix"}]}`（`fix` は ok で `null`）だけを出す（終了コードは同じ） |
 | `relay ping` | `{"ok":true,"busy":<bool>,"busyForMs":<ms or null>,"runner":{"version":…,"sourceHash":…}}`。生きているか・busy かの即答で、操作中でも返ります（端末には触れません）。`runner` はランナーをビルドした relay とソースのハッシュ（古いランナーにはない） |
 | `relay skill status` | このスキルの取り出し元とインストール先（プロジェクト・グローバル）、relay とのバージョンのずれ（!）。入れ直しは `relay skill install [--global \| --dir <skills dir>]`（利用者に確認してから）。詳しくは `relay skill --help` |
 | `relay health` | 操作の前に要る情報（操作中は 409 で終了コード 5。busy でも調べるなら `relay ping`）。端末情報、表示の向きでの画面サイズ（`screen.width` / `height` / `scale`）、`orientation`、`foreground`、表示の一覧 `displays` と前面アプリの表示 `display`、ランナーの版 `runner` |

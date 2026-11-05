@@ -77,10 +77,15 @@ struct StartLock {
     /// The devices among `devices` a `relay start` holds, by uppercase UDID, with who holds each. A device
     /// with no lock file was never used, so this opens only a few files.
     static func devicesInUse(_ devices: [Device], home: URL = UserHome.url) -> [String: String] {
-        var inUse: [String: String] = [:]
+        holdersInUse(devices, home: home).mapValues(\.summary)
+    }
+
+    /// `devicesInUse` with the holder itself, for what needs more than the summary (see `stopHint`).
+    static func holdersInUse(_ devices: [Device], home: URL = UserHome.url) -> [String: Holder] {
+        var inUse: [String: Holder] = [:]
         for device in devices {
             if let holder = holder(of: deviceURL(udid: device.udid, home: home)) {
-                inUse[device.udid.uppercased()] = holder.summary
+                inUse[device.udid.uppercased()] = holder
             }
         }
         return inUse
@@ -139,10 +144,14 @@ struct StartLock {
             + "(relay status --session \(session)), stop it (relay stop --session \(session)), or pick another session name"
     }
 
+    /// How to stop the `relay start` that holds a lock: its session's `relay stop`, else any `relay stop` or Ctrl-C.
+    static func stopHint(_ holder: Holder?) -> String {
+        holder?.session.map { "relay stop --session \($0)" } ?? "relay stop, or Ctrl-C where it runs"
+    }
+
     static func deviceHeldMessage(_ device: Device, holder: Holder?) -> String {
-        let stop = holder?.session.map { "relay stop --session \($0)" } ?? "relay stop, or Ctrl-C where it runs"
         return "\(device.name) (\(device.udid)) is in use by \(holder?.summary ?? "another relay start"): a device takes one runner at a time. "
-            + "Use another device (--udid or --device; relay status --all lists what is in use), or stop that one (\(stop))"
+            + "Use another device (--udid or --device; relay status --all lists what is in use), or stop that one (\(stopHint(holder)))"
     }
 
     func release() {

@@ -597,7 +597,8 @@ enum Arguments {
              --os lists those of that OS version only.
     doctor   Checks Xcode, the runner project, the agent skill, signing, and the device relay start
              would use (with the same --udid, --device, --simulator, and --os), marking each ✓, ✗, or !
-             with a fix. Exits 1 if anything is ✗. --json prints one object instead and no other line:
+             with a fix. Exits 1 if anything is ✗. A device another relay start holds is left out of the
+             automatic choice and is ✗ when named. --json prints one object instead and no other line:
              {"ok":bool,"problems":n,"warnings":n,"checks":[{"section":..,"name":..,"detail":..,
              "status":"ok"|"warning"|"problem","fix":null|"..."}]}.
     config   Shows or changes ~/.relay/config.json (keys: teamID, bundleIDPrefix). bundleIDPrefix
