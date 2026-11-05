@@ -115,7 +115,7 @@ struct RunnerSelectionTests {
             == .file(source: "$RELAY_RUNNER", path: "env.json"))
         #expect(try RunnerLocator.selection(explicitPath: nil, session: nil, environment: ["RELAY_SESSION": "env"])
             == .session(source: "$RELAY_SESSION", name: "env"))
-        #expect(try RunnerLocator.selection(explicitPath: nil, session: nil, environment: ["RELAY_SESSION": "", "RELAY_RUNNER": ""]) == .search)
+        #expect(try RunnerLocator.selection(explicitPath: nil, session: nil, environment: ["RELAY_SESSION": "", "RELAY_RUNNER": ""]) == .defaultRunner)
     }
 
     @Test func twoVariablesOrTwoOptionsAreErrors() {
@@ -132,7 +132,7 @@ struct RunnerSelectionTests {
         let home = try temporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }
         let info = RunnerInfo(url: "http://127.0.0.1:8100/", token: "t", udid: "SIM")
-        // Both the search path's files exist.
+        // The home copy, a file in the project, and another session's exist.
         try info.write(to: RunnerLocator.userURL(home: home))
         let project = home.appendingPathComponent("project")
         try info.write(to: RunnerInfo.defaultURL(rootURL: project))
@@ -148,11 +148,11 @@ struct RunnerSelectionTests {
         try info.write(to: RelaySession.infoURL(name: "mine", home: home))
         #expect(try RunnerLocator.locate(explicitPath: nil, session: "mine", environment: [:], currentDirectory: project, home: home).path
             == home.path + "/.relay/sessions/mine/runner.json")
-        // Without a session, as before: the current directory's file, then the home one.
-        #expect(try RunnerLocator.locate(explicitPath: nil, environment: [:], currentDirectory: project, home: home, warn: { _ in }).path
-            == project.path + "/.relay/runner.json")
-        #expect(try RunnerLocator.locate(explicitPath: nil, environment: [:], currentDirectory: home, home: home, warn: { _ in }).path
-            == home.path + "/.relay/runner.json")
+        // Without a session, the home copy, wherever the command runs: the project's own file is not read.
+        for directory in [project, home] {
+            #expect(try RunnerLocator.locate(explicitPath: nil, environment: [:], currentDirectory: directory, home: home, warn: { _ in }).path
+                == home.path + "/.relay/runner.json")
+        }
     }
 
     @Test func aRecordingOfAMissingSessionIsNotAnother() throws {
@@ -180,16 +180,66 @@ struct RunnerSelectionTests {
         try RunnerInfo(url: "http://127.0.0.1:8100/", token: "default", udid: "SIM").write(to: RunnerLocator.userURL(home: home))
         var options = BenchOptions(url: "")
         options.session = "mine"
-        #expect(throws: RunnerUnavailableError.self) { try Bench.sessionInfoURL(options, environment: [:], home: home) }
+        #expect(throws: RunnerUnavailableError.self) { try Bench.resolveTarget(options, environment: [:], home: home) }
 
         try RunnerInfo(url: "http://127.0.0.1:8101/", token: "mine", udid: "SIM").write(to: RelaySession.infoURL(name: "mine", home: home))
-        let url = try #require(try Bench.sessionInfoURL(options, environment: [:], home: home))
-        #expect(try Bench.token(options, infoURL: url) == "mine")
-        // Nothing to read with both given, or without a session.
-        options.url = "http://127.0.0.1:8101"
+        let target = try Bench.resolveTarget(options, environment: [:], home: home)
+        #expect(target.url == "http://127.0.0.1:8101/")
+        #expect(target.token == "mine")
+        // The session from the environment is the same.
+        #expect(try Bench.resolveTarget(BenchOptions(url: ""), environment: ["RELAY_SESSION": "mine"], home: home).token == "mine")
+    }
+
+    @Test func benchFindsTheRunnerLikeTheOtherCommands() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        // Nothing to find: exit 3 (RunnerUnavailableError), whatever else is given.
+        #expect(throws: RunnerUnavailableError.self) { try Bench.resolveTarget(BenchOptions(url: ""), environment: [:], home: home) }
+        #expect(throws: RunnerUnavailableError.self) { try Bench.resolveTarget(BenchOptions(url: "http://127.0.0.1:9"), environment: [:], home: home) }
+
+        try RunnerInfo(url: "http://127.0.0.1:8100/", token: "default", udid: "SIM").write(to: RunnerLocator.userURL(home: home))
+        let file = home.appendingPathComponent("other.json")
+        try RunnerInfo(url: "http://127.0.0.1:8200/", token: "other", udid: "SIM").write(to: file)
+
+        // ~/.relay/runner.json without options; --runner and $RELAY_RUNNER pick a file.
+        var target = try Bench.resolveTarget(BenchOptions(url: ""), environment: [:], home: home)
+        #expect((target.url, target.token) == ("http://127.0.0.1:8100/", "default"))
+        var options = BenchOptions(url: "")
+        options.runnerPath = file.path
+        target = try Bench.resolveTarget(options, environment: [:], home: home)
+        #expect((target.url, target.token) == ("http://127.0.0.1:8200/", "other"))
+        target = try Bench.resolveTarget(BenchOptions(url: ""), environment: ["RELAY_RUNNER": file.path], home: home)
+        #expect(target.token == "other")
+        options.runnerPath = home.appendingPathComponent("missing.json").path
+        #expect(throws: RunnerUnavailableError.self) { try Bench.resolveTarget(options, environment: [:], home: home) }
+    }
+
+    @Test func benchUrlAndTokenOverrideTheFile() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        try RunnerInfo(url: "http://127.0.0.1:8100/", token: "default", udid: "SIM").write(to: RunnerLocator.userURL(home: home))
+        // --url alone keeps the token of the file; --token alone keeps its URL.
+        var target = try Bench.resolveTarget(BenchOptions(url: "http://127.0.0.1:9999"), environment: [:], home: home)
+        #expect((target.url, target.token) == ("http://127.0.0.1:9999", "default"))
+        var options = BenchOptions(url: "")
         options.token = "given"
-        #expect(try Bench.sessionInfoURL(options, environment: [:], home: home) == nil)
-        #expect(try Bench.sessionInfoURL(BenchOptions(url: "http://x"), environment: [:], home: home) == nil)
+        target = try Bench.resolveTarget(options, environment: [:], home: home)
+        #expect((target.url, target.token) == ("http://127.0.0.1:8100/", "given"))
+        // With both, nothing is read, so there need not be a runner.json.
+        let empty = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: empty) }
+        options.url = "http://127.0.0.1:9999"
+        target = try Bench.resolveTarget(options, environment: [:], home: empty)
+        #expect((target.url, target.token) == ("http://127.0.0.1:9999", "given"))
+    }
+
+    @Test func benchNeedsNoUrlAndTakesRunnerButNotWithSession() throws {
+        #expect(try Arguments.parse(["bench"]) == .bench(BenchOptions(url: "")))
+        var options = BenchOptions(url: "")
+        options.runnerPath = "r.json"
+        #expect(try Arguments.parse(["bench", "--runner", "r.json"]) == .bench(options))
+        #expect(try Arguments.parse(["bench", "--runner=r.json", "--count=3"]) == .bench({ var o = options; o.count = 3; return o }()))
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["bench", "--runner", "r.json", "--session", "a"]) }
     }
 }
 

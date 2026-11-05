@@ -1,6 +1,6 @@
 import Foundation
 
-/// The running runner's URL and token, saved by `relay start` as `.relay/runner.json` for other clients.
+/// The running runner's URL and token, saved by `relay start` as `runner.json` (`~/.relay/runner.json`, or a session's) for other clients.
 struct RunnerInfo: Codable, Equatable {
     static let fileName = "runner.json"
 

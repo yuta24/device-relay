@@ -6,10 +6,13 @@ struct DoctorOptions: Equatable {
     var simulator = false
     var os: String?
     var project: String?
+    /// `--json`: one JSON object on stdout instead of the lines for people (see `Doctor.json`).
+    var json = false
 }
 
 /// `relay doctor`: checks the host (Xcode, the runner project, signing) and the device `relay start`
-/// would use, without building or launching anything. Exits 1 when something is ✗.
+/// would use, without building or launching anything. Exits 1 when something is ✗. With `--json` it prints
+/// one object (`json(sections:)`) and nothing else on stdout.
 enum Doctor {
     static func run(
         _ options: DoctorOptions,
@@ -21,11 +24,16 @@ enum Doctor {
         sandbox: (URL) -> [Check] = SandboxProbe.checks(home:),
         output: (String) -> Void = { print($0) }
     ) -> Int32 {
-        var checks: [Check] = []
+        var sections: [(title: String, checks: [Check])] = []
+        var checks: [Check] { sections.flatMap(\.checks) }
+        // The lines for people are left out of --json: stdout holds the one object.
+        func say(_ line: String) {
+            if !options.json { output(line) }
+        }
         func section(_ title: String, _ sectionChecks: [Check]) {
-            output(title)
-            sectionChecks.forEach { output($0.formatted()) }
-            checks += sectionChecks
+            say(title)
+            sectionChecks.forEach { say($0.formatted()) }
+            sections.append((title, sectionChecks))
         }
 
         section("Host", hostChecks(commands: commands, resolveProject: { try resolveProject(options.project) }, home: home, staleness: staleness)
@@ -74,7 +82,7 @@ enum Doctor {
                 ($0.kind == .device || $0.isActive) && (!options.simulator || $0.kind == .simulator) && (options.os.map($0.matches(os:)) ?? true)
             }
             if !listed.isEmpty {
-                output(DeviceList.table(listed).split(separator: "\n").map { "    " + $0 }.joined(separator: "\n"))
+                say(DeviceList.table(listed).split(separator: "\n").map { "    " + $0 }.joined(separator: "\n"))
             }
         } catch {
             section("Devices", [.problem("devices", "\(error)", fix: "check that Xcode is installed and selected (xcode-select -p)")])
@@ -93,11 +101,40 @@ enum Doctor {
 
         let problems = checks.filter { $0.status == .problem }.count
         let warnings = checks.filter { $0.status == .warning }.count
-        output("")
-        output(problems == 0
+        if options.json {
+            output(String(decoding: json(sections: sections), as: UTF8.self))
+            return problems == 0 ? RunnerExitCode.success.rawValue : RunnerExitCode.failure.rawValue
+        }
+        say("")
+        say(problems == 0
             ? "No problems found\(warnings > 0 ? " (\(warnings) note(s) marked !)" : "")."
             : "\(problems) problem(s) found; fix the ✗ items above.")
         return problems == 0 ? RunnerExitCode.success.rawValue : RunnerExitCode.failure.rawValue
+    }
+
+    /// The `relay doctor --json` object, on one line with sorted keys:
+    /// `{"checks":[{"detail":...,"fix":...,"name":...,"section":...,"status":"ok"|"warning"|"problem"}],
+    /// "ok":<no problem>,"problems":<n>,"warnings":<n>}`. `fix` is null for a check that has none (every ok).
+    /// The keys and the three status words are part of the CLI's output: never rename one.
+    static func json(sections: [(title: String, checks: [Check])]) -> Data {
+        let all = sections.flatMap { section in section.checks.map { (section.title, $0) } }
+        let checks: [[String: Any]] = all.map { title, check in
+            [
+                "name": check.title,
+                "section": title,
+                "status": check.status.jsonName,
+                "detail": check.detail,
+                "fix": check.status == .ok ? NSNull() : (check.fix.map { $0 as Any } ?? NSNull())
+            ]
+        }
+        let problems = all.filter { $0.1.status == .problem }.count
+        let object: [String: Any] = [
+            "ok": problems == 0,
+            "problems": problems,
+            "warnings": all.filter { $0.1.status == .warning }.count,
+            "checks": checks
+        ]
+        return CLIOutput.json(object)
     }
 
     static func hostChecks(

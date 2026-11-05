@@ -119,7 +119,7 @@ relay doctor            # bundle ID の行が prefix dev.yuta24.devicerelay (fro
 
 ## 環境の確認（relay doctor）
 
-`relay doctor [--udid <UDID> | --device <名前>] [--simulator] [--os <version>] [--project <path>]` は、ビルドや起動をせずに次を確認し、各項目を ✓（問題なし）/ ✗（このままでは動かない）/ !（注意）で表示します。✗ と ! には直し方を 1 行添えます。✗ があれば終了コード 1（ローカルの失敗）、なければ 0 です。
+`relay doctor [--udid <UDID> | --device <名前>] [--simulator] [--os <version>] [--project <path>] [--json]` は、ビルドや起動をせずに次を確認し、各項目を ✓（問題なし）/ ✗（このままでは動かない）/ !（注意）で表示します。✗ と ! には直し方を 1 行添えます。✗ があれば終了コード 1（ローカルの失敗）、なければ 0 です。
 
 - relay のバージョン、Xcode（`xcodebuild -version` と `xcode-select -p`）、xcrun、devicectl
 - Runner プロジェクトの解決結果と、`relay install` の状態（記録したバージョン・コミット・コピー元、ずれていれば !）
@@ -130,6 +130,27 @@ relay doctor            # bundle ID の行が prefix dev.yuta24.devicerelay (fro
 - バンドル ID: `relay start` が使う接頭辞と出どころ（`bundleIDPrefix` の設定、Team ID から作った既定値、Team が分からない、シミュレータの既定値）。表示だけで、config の値が不正なときだけ ✗（「[バンドル ID の接頭辞](#バンドル-id-の接頭辞)」）
 - sandbox: 127.0.0.1 への接続と、`~/.relay`（あれば）へのファイルの作成を試します。OS に拒否された（`Operation not permitted`）ら、エージェントなどの sandbox の中で動いているようだとして ✗ にします（「[エージェントの sandbox から使う](#エージェントの-sandbox-から使う)」）
 - エージェントスキル: カレントディレクトリの git のルートの `.claude/skills/device-relay` と `~/.claude/skills/device-relay` の状態（`relay skill status` と同じ判定。古い・relay が入れたものでなければ !。入っていなくても問題にはしません）
+
+### relay doctor --json
+
+`--json` を付けると、人向けの行（✓ / ✗ / !）を出さず、1 つの JSON オブジェクトを 1 行で stdout に出します（キーは辞書順）。終了コードは同じです（✗ があれば `1`、なければ `0`）。
+
+```json
+{"checks":[{"detail":"0.2.0","fix":null,"name":"relay","section":"Host","status":"ok"},{"detail":"no booted iOS simulator (--simulator); pass --device <name> to boot one","fix":"relay devices lists the simulators; …","name":"target","section":"Devices","status":"warning"}],"ok":true,"problems":0,"warnings":1}
+```
+
+| キー | 内容 |
+| --- | --- |
+| `ok` | ✗（`problem`）が 1 つもなければ `true`。終了コード 0 と同じ |
+| `problems` / `warnings` | `status` が `problem` / `warning` の項目の数 |
+| `checks` | 項目の配列（人向けの表示と同じ順）。端末の一覧表は含みません（`relay devices --json`） |
+| `checks[].section` | 見出し（`Host`、`Devices`、`Target: <端末名>`、`Signing`） |
+| `checks[].name` | 項目名（`Xcode`、`signing`、`target` など） |
+| `checks[].status` | `"ok"`（✓）、`"warning"`（!）、`"problem"`（✗）の 3 つだけ |
+| `checks[].detail` | 内容（人向けの行と同じ文） |
+| `checks[].fix` | `warning` と `problem` では直し方（1 行）、`ok` では `null`。`warning` で直し方のない項目も `null` |
+
+これらのキーと `status` の 3 つの値は変えません。`name` と `detail` の文言は人向けで、変わることがあります。
 
 `relay start` も、ビルドの前に同じ端末のチェックを行い、✗（接続されていない、ペアリングされていない、デベロッパモードが無効、iOS 17 未満、シミュレータのランタイムがない）があればビルドせずに終了します。! の項目（ロック中、DDI 未マウント）は表示だけして続けます。
 
@@ -154,7 +175,7 @@ ready になると、URL とアクセストークンが `~/.relay/runner.json`�
 ```sh
 TOKEN=$(jq -r .token ~/.relay/runner.json)
 curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8100/health
-relay bench --url http://127.0.0.1:8100 --count 5 --tap 200,120   # トークンは runner.json から読む
+relay bench --count 5 --tap 200,120   # URL もトークンも runner.json から読む（他のコマンドと同じ探し方。--url と --token で上書きできる）
 ```
 
 Ctrl-C を押す（または別のターミナルで `relay stop` を実行する）と `relay` が `/shutdown` を送り、`runner.json` を削除します。ランナーがテストメソッドから抜けて `** TEST EXECUTE SUCCEEDED **` で終了し、`relay` も終了します（10 秒以内に終わらなければ xcodebuild を terminate します）。ランナーが ready になる前に Ctrl-C を押した場合は、`/shutdown` を送る先がないので xcodebuild をすぐに terminate します。ランナーの起動前（シミュレータの boot やビルドの途中）なら、そのビルドの xcodebuild を止め、relay が boot したシミュレータを shutdown して、`relay: stopped before launching the runner` と表示して終了コード 1 で終わります。
@@ -252,7 +273,7 @@ relay: warning: no session selected; using /Users/you/.relay/runner.json, while 
 - **ビルド**: ビルド成果物（`~/.relay/build/…/DerivedData-*`）は共有のままで、同じソースのビルドを使い回します。同時に起動しても同じ DerivedData へのビルドは 1 つだけで、後のものは `relay: waiting for another relay start's build …` と出して待ち、終わったらそのビルドを使い回します（待っている間に同じソースのビルドが終われば `--rebuild` も満たされたものとします）。ビルドしない起動どうしは並列に進みます。`~/.relay/locks/build-<ハッシュ>.lock` を、ビルド中は排他で、成果物からランナーを起動して ready になるまでは共有で持つので、起動の途中で成果物が書き換えられることもありません。待っている間も Ctrl-C と `relay stop` で止められます。`relay install --build` も同じロックを取ります。
 - **テスト実行の出力**: xcodebuild の `test-without-building` が書くログと xcresult は、ポートごとの `~/.relay/build/…/TestData/port-<port>/` に分けます。同じ `-derivedDataPath` を共有すると、同じ秒に始まったテストの xcresult の名前が同じになり、`Logs/Test/LogStoreManifest.plist` も同時に書き換えられるためです。
 - **ログ**: `~/.relay/logs` の `start-`・`build-`・`runner-`・`record-` のログは `<種類>-<時刻>-<セッション>-<port>.log` という名前になります。既定の出力先のスクリーンショットと録画の名前にもセッション名が入ります。
-- **セッションなしのコマンドへの警告**: セッションも `--runner` も `RELAY_RUNNER` もないコマンド（ランナー操作、`relay run`、`relay status`、`relay stop`、`relay record`、`relay bench` のトークン）が探索で runner.json を見つけたとき、`~/.relay/sessions/*/runner.json` があるか `session.lock` が握られているセッションがあれば、警告を stderr に出します。失敗にはせず、終了コードも変えません。セッションなしのランナーを意図して使っているなら無視でき、警告を消すには `--runner` で指定します。調べるのはファイルとロックだけでランナーには問い合わせないので、コマンドは遅くなりません。その代わり、強制終了で残った runner.json も「動いている」と数えます（`relay stop --session <名前>` で片付きます）。
+- **セッションなしのコマンドへの警告**: セッションも `--runner` も `RELAY_RUNNER` もないコマンド（ランナー操作、`relay run`、`relay status`、`relay stop`、`relay record`、`relay bench`）が `~/.relay/runner.json` を使うとき、`~/.relay/sessions/*/runner.json` があるか `session.lock` が握られているセッションがあれば、警告を stderr に出します。失敗にはせず、終了コードも変えません。セッションなしのランナーを意図して使っているなら無視でき、警告を消すには `--runner` で指定します。調べるのはファイルとロックだけでランナーには問い合わせないので、コマンドは遅くなりません。その代わり、強制終了で残った runner.json も「動いている」と数えます（`relay stop --session <名前>` で片付きます）。
 - **録画**: 録画の状態はこれまでどおりポートごとです（ポートはランナーごとに違います）。セッションを指定した `relay record stop` / `status` は、そのセッションの runner.json がなければ終了コード 3 で、ほかのセッションの録画には進みません。止まったランナーの録画は `--port <n>` で指定できます。
 
 一覧（`relay status --all`）は、`~/.relay/runner.json` のランナー（SESSION は `(default)`）と全セッションを 1 行ずつ表示します。終わったセッション（runner.json がなく、ロックも持たれていないもの）は出ません。終了コードは状態によらず `0` です。

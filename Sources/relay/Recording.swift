@@ -16,9 +16,9 @@ struct RecordOptions: Equatable {
     }
 
     var action: Action
-    /// `--runner <path>`; nil searches as `RunnerLocator` describes.
+    /// `--runner <path>`; nil uses what `RunnerLocator` describes.
     var runnerPath: String?
-    /// `--session <name>` (see `RelaySession`); nil uses `$RELAY_SESSION` or searches.
+    /// `--session <name>` (see `RelaySession`); nil uses `$RELAY_SESSION`, else `~/.relay/runner.json`.
     var session: String?
     /// `--port <n>` of `record stop` and `record status`: the state file of that runner port, without runner.json.
     var port: Int?
@@ -609,7 +609,7 @@ enum Recording {
         if let stall {
             object["stall"] = stall
         }
-        return (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])) ?? Data("{}".utf8)
+        return CLIOutput.json(object)
     }
 
     /// The recording of `--port`, else of the runner in runner.json, or nil when there is none. Without
@@ -643,7 +643,7 @@ enum Recording {
             ))
             return stateURL(port: port(of: info), home: home)
         } catch let error as RunnerUnavailableError {
-            guard try RunnerLocator.selection(explicitPath: runnerPath, session: session, environment: environment) == .search else {
+            guard try RunnerLocator.selection(explicitPath: runnerPath, session: session, environment: environment) == .defaultRunner else {
                 throw error
             }
             let candidates = stateURLs(home: home)

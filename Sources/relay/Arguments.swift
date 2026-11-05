@@ -73,14 +73,16 @@ struct BenchOptions: Equatable {
     var tap: (x: Double, y: Double)?
     /// Touch path for `/tap`: `private` or `xcui`. Nil lets the runner choose.
     var mode: String?
-    /// Bearer token for the runner. Nil reads it from `.relay/runner.json`.
+    /// Bearer token for the runner. Nil reads it from the runner.json `RunnerLocator` finds.
     var token: String?
     /// `--session <name>`: the URL (when `--url` is not given) and the token of that session's runner.
     var session: String?
+    /// `--runner <path>`: the runner.json to read them from, as for the other runner commands.
+    var runnerPath: String?
 
     static func == (lhs: BenchOptions, rhs: BenchOptions) -> Bool {
         lhs.url == rhs.url && lhs.count == rhs.count && lhs.tap?.x == rhs.tap?.x && lhs.tap?.y == rhs.tap?.y
-            && lhs.mode == rhs.mode && lhs.token == rhs.token && lhs.session == rhs.session
+            && lhs.mode == rhs.mode && lhs.token == rhs.token && lhs.session == rhs.session && lhs.runnerPath == rhs.runnerPath
     }
 }
 
@@ -142,6 +144,12 @@ enum Arguments {
         let raw = try splittingEquals(raw)
         guard let subcommand = raw.first else { return .help }
         var rest = Array(raw.dropFirst())
+        // These read --help themselves (status, stop, record, run, skill and the runner commands).
+        let readsHelpItself: Set = ["status", "stop", "record", "run", "skill"]
+        if commandNames.contains(subcommand), !readsHelpItself.contains(subcommand), runnerUsages[subcommand] == nil,
+           rest.contains(where: { $0 == "--help" || $0 == "-h" }) {
+            return .commandHelp(subcommand)
+        }
 
         func value(for option: String) throws -> String {
             guard !rest.isEmpty, !rest[0].hasPrefix("--") else {
@@ -236,6 +244,7 @@ enum Arguments {
                 case "--simulator": options.simulator = true
                 case "--os": options.os = try osVersion(try value(for: option))
                 case "--project": options.project = try value(for: option)
+                case "--json": options.json = true
                 default: throw ArgumentError(description: "unknown option: \(option)")
                 }
             }
@@ -290,17 +299,17 @@ enum Arguments {
                     options.mode = mode
                 case "--token": options.token = try value(for: option)
                 case "--session": options.session = try sessionName(try value(for: option))
+                case "--runner": options.runnerPath = try value(for: option)
                 default: throw ArgumentError(description: "unknown option: \(option)")
                 }
             }
-            // A session's port is usually not known to the caller, so its runner.json gives the URL.
-            let sessionFromEnvironment = !(ProcessInfo.processInfo.environment[RelaySession.environmentKey] ?? "").isEmpty
-            guard !options.url.isEmpty || options.session != nil || sessionFromEnvironment else {
-                throw ArgumentError(description: "bench requires --url <RUNNER_URL> or --session <name>")
+            guard options.runnerPath == nil || options.session == nil else {
+                throw ArgumentError(description: "bench takes either --runner or --session, not both")
             }
             return .bench(options)
         case "-h", "--help", "help":
-            if let name = rest.first, runnerUsages[name] != nil || lifecycleUsages[name] != nil {
+            if rest.first == "skill" { return .skill(SkillOptions(action: .help)) }
+            if let name = rest.first, commandNames.contains(name) {
                 return .commandHelp(name)
             }
             return .help
@@ -491,19 +500,37 @@ enum Arguments {
     /// added here is known everywhere.
     static let commandSynopses: [(names: [String], synopsis: String)] = [
         (["start"], """
-        relay start [--udid <UDID> | --device <NAME>] [--simulator] [--os <VERSION>] [--team-id <TEAM_ID>] [--project <PATH>] [--port 8100] [--rebuild] [--verbose]
-                    [--ready-timeout 180] [--allow-wifi] [--background] [--session <NAME>]
+        relay start [--udid <UDID> | --device <NAME>] [--simulator] [--os <VERSION>] [--team-id <TEAM_ID>]
+            [--project <PATH>] [--port 8100] [--rebuild] [--verbose] [--ready-timeout 180]
+            [--allow-wifi] [--background] [--session <NAME>]
         """),
         (["status"], "relay status [--json] [--runner <PATH> | --session <NAME> | --all]"),
         (["stop"], "relay stop [--runner <PATH> | --session <NAME> | --all]"),
-        (["record"], "relay record start [-o <file>] [--force] [--max-duration 600] [--runner <PATH> | --session <NAME>] | relay record stop | relay record status [--json]"),
+        (["record"], """
+        relay record start [-o <file>] [--force] [--max-duration 600] [--runner <PATH> | --session <NAME>]
+        relay record stop
+        relay record status [--json]
+        """),
         (["install", "uninstall"], "relay install [--project <PATH>] [--build [--verbose]] | relay install --remove | relay uninstall"),
-        (["skill"], "relay skill install [--global | --dir <skills dir>] [--link] [--force] | relay skill uninstall | relay skill status"),
+        (["skill"], """
+        relay skill install [--global | --dir <skills dir>] [--link] [--force]
+        relay skill uninstall
+        relay skill status
+        """),
         (["devices"], "relay devices [--json] [--os <VERSION>]"),
-        (["doctor"], "relay doctor [--udid <UDID> | --device <NAME>] [--simulator] [--os <VERSION>] [--project <PATH>]"),
+        (["doctor"], """
+        relay doctor [--udid <UDID> | --device <NAME>] [--simulator] [--os <VERSION>] [--project <PATH>]
+            [--json]
+        """),
         (["config"], "relay config [get <key> | set <key> <value> | unset <key>]"),
-        (["bench"], "relay bench (--url <RUNNER_URL> | --session <NAME>) [--count 10] [--tap x,y] [--mode private|xcui] [--token <TOKEN>]"),
-        (["run"], "relay run (<file> | - | --step <step>...) [--check] [--runner <PATH> | --session <NAME>] [--quiet]   (experimental)")
+        (["bench"], """
+        relay bench [--runner <PATH> | --session <NAME>] [--count 10] [--tap x,y] [--mode private|xcui]
+            [--url <RUNNER_URL>] [--token <TOKEN>]
+        """),
+        (["run"], """
+        relay run (<file> | - | --step <step>...) [--check] [--runner <PATH> | --session <NAME>] [--quiet]
+            (experimental)
+        """)
     ]
 
     /// Every command name of relay: the commands of `commandSynopses`, the runner commands, and the
@@ -516,66 +543,78 @@ enum Arguments {
     Usage:
     \(commandSynopses.map { $0.synopsis.split(separator: "\n").map { "  " + $0 }.joined(separator: "\n") }.joined(separator: "\n"))
 
-    start    Builds the RelayRunner XCTest runner if needed (no build yet, its sources changed, or another
-             Xcode SDK), launches it on the device or simulator, and prints the runner URL once it answers /health. The URL and a per-launch access token
-             are saved to ~/.relay/runner.json (mode 0600) and removed on exit. Ctrl-C shuts the runner down.
-             Without --udid or --device it uses the only connected device, else the only booted simulator;
-             --simulator leaves devices out (to try a simulator with a device connected), and --os 27 or
-             --os 26.5 keeps those whose OS version starts with it. --device picks, of several with that name,
-             the only connected or booted one, else the simulator with the newest iOS, and prints which.
+    start    Builds the RelayRunner XCTest runner if needed (no build yet, its sources changed, or
+             another Xcode SDK), launches it on the device or simulator, and prints the runner URL once
+             it answers /health. The URL and a per-launch access token are saved to ~/.relay/runner.json
+             (mode 0600) and removed on exit. Ctrl-C shuts the runner down.
+             Without --udid or --device it uses the only connected device, else the only booted
+             simulator; --simulator leaves devices out (to try a simulator with a device connected), and
+             --os 27 or --os 26.5 keeps those whose OS version starts with it. --device picks, of
+             several with that name, the only connected or booted one, else the simulator with the
+             newest iOS, and prints which.
              A shut-down simulator named with --udid/--device is booted, and shut down again on exit.
              For devices, the Team ID defaults to teamID in ~/.relay/config.json, else the team of the
-             Apple Development certificates in the keychain; the one used is saved there. The runner's host
-             app is <prefix>.RelayRunnerHost (prefix: bundleIDPrefix in config.json, else dev.devicerelay.<team
-             id in lowercase>, else dev.devicerelay.local); the runner commands take host for its bundle ID.
+             Apple Development certificates in the keychain; the one used is saved there. The runner's
+             host app is <prefix>.RelayRunnerHost (prefix: bundleIDPrefix in config.json, else
+             dev.devicerelay.<team id in lowercase>, else dev.devicerelay.local); the runner commands
+             take host for its bundle ID.
              The runner project is --project, else $RELAY_HOME, else a device-relay checkout around the
-             current directory, else the copy relay install made in ~/.relay/runner, else the checkout of
-             the relay executable. Builds and logs go to ~/.relay/build and ~/.relay/logs.
+             current directory, else the copy relay install made in ~/.relay/runner, else the checkout
+             of the relay executable. Builds and logs go to ~/.relay/build and ~/.relay/logs.
              Devices are reached over the CoreDevice tunnel only; --allow-wifi also tries the device's
              Wi-Fi addresses, where the token travels as plain HTTP.
-             --background runs it detached from the terminal (log: ~/.relay/logs/start-*.log) and exits once
-             the runner is ready, printing ready: <url>; relay stop stops it. Agents and CI should use
-             relay start --background, then the runner commands, then relay stop.
-             --session <name> (or $RELAY_SESSION) keeps this runner apart from the others, for several agents at
-             once: its state is ~/.relay/sessions/<name>/runner.json, and without --port it takes a free port
-             in 8101-8199. The other commands take --session or $RELAY_SESSION too, and never fall back to
-             another runner. A device takes one runner: a device in use is an error when named, and left out
-             when relay start picks one itself.
-    status   Shows the runner in runner.json (URL, device, relay start pid, start time), whether /ping
-             answers, and the build it reports (relay version and runner source hash). Exits 0 if it does, 3 if there is no runner or it does not answer, 4 if it answers 401
-             (the token in runner.json is not that runner's). --all lists every session and the default
-             runner (session, state, device, URL, pid) and exits 0.
-    stop     Stops relay start (SIGTERM, like Ctrl-C), which shuts the runner down, shuts down a simulator
-             it booted, and removes runner.json. Prints "not running" (exit 0) if nothing runs.
-             A recording (relay record) of that runner is finished first. --all stops every session and the
-             default runner, also ones of other agents.
-    record   Records the screen of the runner's simulator, or of its device connected with USB, to an MP4
-             (detached from the terminal) until relay record stop, which prints the video's path, or until
-             --max-duration seconds. A device needs camera access for the terminal. relay record --help for details.
+             --background runs it detached from the terminal (log: ~/.relay/logs/start-*.log) and exits
+             once the runner is ready, printing ready: <url>; relay stop stops it. Agents and CI should
+             use relay start --background, then the runner commands, then relay stop.
+             --session <name> (or $RELAY_SESSION) keeps this runner apart from the others, for several
+             agents at once: its state is ~/.relay/sessions/<name>/runner.json, and without --port it
+             takes a free port in 8101-8199. The other commands take --session or $RELAY_SESSION too,
+             and never fall back to another runner. A device takes one runner: a device in use is an
+             error when named, and left out when relay start picks one itself.
+    status   The check after relay start: shows the runner in runner.json (URL, device, relay start pid,
+             start time), whether /ping answers, and the build it reports (relay version and runner
+             source hash). Exits 0 if it does, 3 if there is no runner or it does not answer, 4 if it
+             answers 401 (the token in runner.json is not that runner's). --all lists every session and
+             the default runner (session, state, device, URL, pid) and exits 0.
+    stop     Stops relay start (SIGTERM, like Ctrl-C), which shuts the runner down, shuts down a
+             simulator it booted, and removes runner.json; waits for it and prints "stopped", or "not
+             running" (exit 0) if nothing runs. A recording (relay record) of that runner is finished
+             first. --all stops every session and the default runner, also ones of other agents.
+    record   Records the screen of the runner's simulator, or of its device connected with USB, to an
+             MP4 (detached from the terminal) until relay record stop, which prints the video's path, or
+             until --max-duration seconds. A device needs camera access for the terminal. relay record
+             --help for details.
     install  Copies the runner project and the agent skill from the device-relay checkout (--project,
              $RELAY_HOME, or the one the relay executable was built in) to ~/.relay/runner, replacing a
-             previous copy, and records the relay version. --build also builds it for simulators (log: ~/.relay/logs/build-*.log;
-             --verbose also shows xcodebuild's output). --remove (or relay uninstall) deletes
-             ~/.relay/runner and its builds; config.json and runner.json stay.
+             previous copy, and records the relay version. --build also builds it for simulators (log:
+             ~/.relay/logs/build-*.log; --verbose also shows xcodebuild's output). --remove (or relay
+             uninstall) deletes ~/.relay/runner and its builds; config.json and runner.json stay.
     skill    Installs the device-relay agent skill into .claude/skills of the current git repository
              (--global: ~/.claude/skills; relay skill --help for details).
     devices  Lists devices (devicectl) and iOS simulators (simctl): name, UDID, kind, OS, and state.
              --os lists those of that OS version only.
-    doctor   Checks Xcode, the runner project, the agent skill, signing, and the device relay start would
-             use (with the same --udid, --device, --simulator, and --os), marking each ✓ / ✗ / ! with a fix.
-             Exits 1 if anything is ✗.
-    config   Shows or changes ~/.relay/config.json (keys: teamID, bundleIDPrefix). bundleIDPrefix replaces the
-             runner's default bundle ID prefix, dev.devicerelay.<team id in lowercase>.
-    bench    Measures round-trip latency of /health, /screenshot, and optionally /tap.
-             --mode forces the runner's touch path (private event synthesis or public XCUI).
-             --token defaults to the token in the runner.json the runner commands use; --session (or
-             $RELAY_SESSION) takes the token and, without --url, the URL from that session.
-    run      Experimental; the format may change. Runs runner commands, one per line (without relay), in order
-             in one process, after checking them all; stops at the first that fails and exits with its status.
-             relay run --help for details.
+    doctor   Checks Xcode, the runner project, the agent skill, signing, and the device relay start
+             would use (with the same --udid, --device, --simulator, and --os), marking each ✓, ✗, or !
+             with a fix. Exits 1 if anything is ✗. --json prints one object instead and no other line:
+             {"ok":bool,"problems":n,"warnings":n,"checks":[{"section":..,"name":..,"detail":..,
+             "status":"ok"|"warning"|"problem","fix":null|"..."}]}.
+    config   Shows or changes ~/.relay/config.json (keys: teamID, bundleIDPrefix). bundleIDPrefix
+             replaces the runner's default bundle ID prefix, dev.devicerelay.<team id in lowercase>.
+    bench    Measures round-trip latency of /health, /screenshot, and optionally /tap. The runner is
+             found as for the runner commands (--runner or --session, else $RELAY_RUNNER or
+             $RELAY_SESSION, else ~/.relay/runner.json); exit 3 if there is none. --url and --token
+             replace its URL and token (--url alone still takes the token from runner.json). --mode
+             forces the runner's touch path (private event synthesis or public XCUI).
+    run      Experimental; the format may change. Runs runner commands, one per line (without relay), in
+             order in one process, after checking them all; stops at the first that fails and exits with
+             its status. relay run --help for details.
 
     Runner commands (operate the runner relay start launched; relay <command> --help for details):
-    \(runnerCommandOrder.map { "  " + runnerUsages[$0]!.synopsis }.joined(separator: "\n"))
+    \(listedRunnerCommands.map { "  " + runnerUsages[$0]!.synopsis }.joined(separator: "\n"))
+
+    ping, health, and status: ping asks whether the runner is alive and busy, and answers even while a
+    command runs; health returns the screen size and the like, and fails with exit 5 while a command
+    runs; status also reads runner.json and looks at the relay start behind it.
 
     \(runnerCommonUsage)
     """

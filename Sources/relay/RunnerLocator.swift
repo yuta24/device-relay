@@ -4,17 +4,19 @@ import Foundation
 /// and token from. The token is never taken from the command line, where `ps` would show it.
 ///
 /// Order: `--runner <path>` or `--session <name>` (one of them), then `$RELAY_RUNNER` or `$RELAY_SESSION`
-/// (one of them), then `.relay/runner.json` in the current directory or any parent, then
-/// `~/.relay/runner.json`, which is where `relay start` without a session writes it, wherever it runs.
-/// An option wins over a variable, so `--runner` works where `RELAY_SESSION` is set.
+/// (one of them), then `~/.relay/runner.json`, which is where `relay start` without a session writes it,
+/// wherever it runs. An option wins over a variable, so `--runner` works where `RELAY_SESSION` is set.
+/// A `.relay/runner.json` in the current directory or a parent is not read (older relay versions wrote
+/// one there): a file that `relay start` did not just write is the likeliest cause of a 401. It is only
+/// mentioned when nothing else is found (`legacyFile`); `--runner` still reads a file kept anywhere.
 enum RunnerLocator {
     static let environmentKey = "RELAY_RUNNER"
 
-    /// What selects the file. A `.file` or `.session` must exist; only `.search` looks further.
+    /// What selects the file. A `.file` or `.session` must exist; `.defaultRunner` is `~/.relay/runner.json`.
     enum Selection: Equatable {
         case file(source: String, path: String)
         case session(source: String, name: String)
-        case search
+        case defaultRunner
     }
 
     /// Throws `SessionSelectionError` for an invalid session name, and when the two variables are both set:
@@ -45,7 +47,7 @@ enum RunnerLocator {
         if let name {
             return .session(source: "$\(RelaySession.environmentKey)", name: name)
         }
-        return .search
+        return .defaultRunner
     }
 
     /// The file `relay start` writes.
@@ -54,9 +56,9 @@ enum RunnerLocator {
     }
 
     /// The file to read. A path or session given with an option or a variable must exist: falling back to
-    /// another runner would send the commands to a device the caller did not ask for. A file found by the
-    /// search still works while sessions run, with a warning (`sessionlessWarning`): an agent whose command
-    /// lost `RELAY_SESSION` may be about to operate someone else's runner.
+    /// another runner would send the commands to a device the caller did not ask for. Without one, it is
+    /// `~/.relay/runner.json`, which still works while sessions run, with a warning (`sessionlessWarning`):
+    /// an agent whose command lost `RELAY_SESSION` may be about to operate someone else's runner.
     static func locate(
         explicitPath: String?,
         session: String? = nil,
@@ -79,19 +81,42 @@ enum RunnerLocator {
                     + "relay start --background --session \(name) starts one, relay status --all lists what runs")
             }
             return url
-        case .search:
+        case .defaultRunner:
             break
         }
 
-        let candidates = searchPath(currentDirectory: currentDirectory, home: home)
-        guard let found = candidates.first(where: { FileManager.default.fileExists(atPath: $0.path) }) else {
-            throw RunnerUnavailableError(description: "no runner.json found in .relay/ of \(currentDirectory.path) or its parents, "
-                + "nor at \(userURL(home: home).path); start the runner with relay start, or pass --runner <path> or --session <name>, or set \(environmentKey) or \(RelaySession.environmentKey)")
+        let found = userURL(home: home)
+        guard FileManager.default.fileExists(atPath: found.path) else {
+            let legacy = legacyFile(currentDirectory: currentDirectory, home: home).map { "; " + legacyNote(for: $0) } ?? ""
+            throw RunnerUnavailableError(description: "no runner.json at \(found.path); start the runner with relay start, "
+                + "or pass --runner <path> or --session <name>, or set \(environmentKey) or \(RelaySession.environmentKey)\(legacy)")
         }
         if let warning = sessionlessWarning(using: found, sessions: RelaySession.running(home: home)) {
             warn(warning)
         }
         return found
+    }
+
+    /// The nearest `.relay/runner.json` in `currentDirectory` or a parent that older relay versions may have
+    /// left there, which is no longer read. Looked for only to say so; the home copy is not one.
+    static func legacyFile(currentDirectory: URL, home: URL) -> URL? {
+        let user = userURL(home: home).standardizedFileURL
+        var directory = currentDirectory.standardizedFileURL
+        while true {
+            let candidate = RunnerInfo.defaultURL(rootURL: directory).standardizedFileURL
+            if candidate != user, FileManager.default.fileExists(atPath: candidate.path) {
+                return candidate
+            }
+            let parent = directory.deletingLastPathComponent().standardizedFileURL
+            guard parent.path != directory.path else { return nil }
+            directory = parent
+        }
+    }
+
+    /// `.relay/runner.json in <dir> is no longer read; pass --runner <path>`.
+    static func legacyNote(for file: URL) -> String {
+        let directory = file.deletingLastPathComponent().deletingLastPathComponent().path
+        return ".relay/runner.json in \(directory) is no longer read; pass --runner \(file.path) to use it"
     }
 
     /// What to say when the search found `url` while `sessions` are running; nil when none is.
@@ -107,23 +132,6 @@ enum RunnerLocator {
     static func resolve(_ path: String, in directory: URL) -> URL {
         let url = path.hasPrefix("/") ? URL(fileURLWithPath: path) : directory.appendingPathComponent(path)
         return url.canonicalFileURL
-    }
-
-    /// `.relay/runner.json` in `currentDirectory` and each parent up to the root, then the home copy.
-    static func searchPath(currentDirectory: URL, home: URL) -> [URL] {
-        var candidates: [URL] = []
-        var directory = currentDirectory.standardizedFileURL
-        while true {
-            candidates.append(RunnerInfo.defaultURL(rootURL: directory))
-            let parent = directory.deletingLastPathComponent().standardizedFileURL
-            guard parent.path != directory.path else { break }
-            directory = parent
-        }
-        let user = userURL(home: home).standardizedFileURL
-        if !candidates.contains(user) {
-            candidates.append(user)
-        }
-        return candidates
     }
 }
 

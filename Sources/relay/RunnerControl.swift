@@ -37,9 +37,9 @@ enum RunnerExitCode: Int32 {
 
 struct RunnerControlOptions: Equatable {
     var operation: RunnerOperation
-    /// `--runner <path>`; nil searches as `RunnerLocator` describes.
+    /// `--runner <path>`; nil uses what `RunnerLocator` describes.
     var runnerPath: String?
-    /// `--session <name>` (see `RelaySession`); nil uses `$RELAY_SESSION` or searches.
+    /// `--session <name>` (see `RelaySession`); nil uses `$RELAY_SESSION`, else `~/.relay/runner.json`.
     var session: String?
     /// `relay find --require`: no element is a failure (exit 6), not `"count":0` with exit 0.
     var requireMatch = false
@@ -207,7 +207,7 @@ enum RunnerControl {
         object["ok"] = false
         object["code"] = RunnerErrorCode.elementNotFound.rawValue
         object["error"] = "no element matched"
-        return (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])) ?? body
+        return CLIOutput.json(object, fallback: body)
     }
 
     /// What follows "cannot reach the runner" when a request timed out. The runner is fine but still at the

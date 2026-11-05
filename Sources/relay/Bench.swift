@@ -2,14 +2,11 @@ import Foundation
 
 enum Bench {
     static func run(_ options: BenchOptions) throws {
-        // A session's runner.json only: the search below could find another runner's.
-        let sessionURL = try sessionInfoURL(options)
-        let sessionInfo = try sessionURL.map { try RunnerInfo.read(from: $0) }
-        let url = options.url.isEmpty ? (sessionInfo?.url ?? "") : options.url
-        guard let baseURL = URL(string: url), !url.isEmpty else {
-            throw ArgumentError(description: "invalid --url: \(url)")
+        let target = try resolveTarget(options)
+        guard let baseURL = URL(string: target.url), !target.url.isEmpty else {
+            throw ArgumentError(description: "invalid --url: \(target.url)")
         }
-        let client = RunnerClient(baseURL: baseURL, token: try token(options, infoURL: sessionURL))
+        let client = RunnerClient(baseURL: baseURL, token: target.token)
 
         var cases: [(name: String, request: () throws -> RunnerResponse)] = [
             ("GET /health", { try client.get("/health") }),
@@ -43,27 +40,28 @@ enum Bench {
         }
     }
 
-    /// The runner.json of `--session` or `$RELAY_SESSION`, unless `--runner`-like `$RELAY_RUNNER` is what selects
-    /// the runner (`RunnerLocator.selection`); nil without a session. Nothing is read with both `--url` and `--token`.
-    static func sessionInfoURL(_ options: BenchOptions, environment: [String: String] = ProcessInfo.processInfo.environment,
-                               home: URL = UserHome.url) throws -> URL? {
-        guard options.url.isEmpty || options.token == nil,
-              case .session = try RunnerLocator.selection(explicitPath: nil, session: options.session, environment: environment) else {
-            return nil
+    /// The URL and token to measure: `--url` and `--token` when given, else those of the runner.json the other
+    /// runner commands find (`RunnerLocator`: `--runner`, `--session`, `$RELAY_RUNNER`, `$RELAY_SESSION`,
+    /// `~/.relay/runner.json`). Nothing is read with both `--url` and `--token`. Throws `RunnerUnavailableError`
+    /// (exit 3) when the runner.json is needed and not there.
+    static func resolveTarget(
+        _ options: BenchOptions,
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        currentDirectory: URL = WorkingDirectory.url,
+        home: URL = UserHome.url
+    ) throws -> (url: String, token: String) {
+        if !options.url.isEmpty, let token = options.token {
+            return (options.url, token)
         }
-        return try RunnerLocator.locate(explicitPath: nil, session: options.session, environment: environment, home: home)
-    }
-
-    /// `--token`, or the token `relay start` saved in the runner.json the runner commands find (`RunnerLocator`).
-    static func token(_ options: BenchOptions, infoURL: URL? = nil) throws -> String {
-        if let token = options.token {
-            return token
+        let infoURL: URL
+        do {
+            infoURL = try RunnerLocator.locate(explicitPath: options.runnerPath, session: options.session, environment: environment,
+                                               currentDirectory: currentDirectory, home: home)
+        } catch let error as RunnerUnavailableError where !options.url.isEmpty {
+            throw RunnerUnavailableError(description: "\(error.description); or pass --token with --url")
         }
-        let infoURL = infoURL ?? (try? RunnerLocator.locate(explicitPath: nil)) ?? RunnerLocator.userURL()
-        guard let info = try? RunnerInfo.read(from: infoURL) else {
-            throw SetupError(description: "no runner token: pass --token or start the runner with relay start (reads \(infoURL.path))")
-        }
-        return info.token
+        let info = try RunnerInfo.read(from: infoURL)
+        return (options.url.isEmpty ? info.url : options.url, options.token ?? info.token)
     }
 
     static func percentile(_ sorted: [Double], _ p: Double) -> Double {

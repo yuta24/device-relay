@@ -102,7 +102,7 @@ enum RunnerSessions {
                 "runnerInfo": row.infoURL.path
             ]
         }
-        return (try? JSONSerialization.data(withJSONObject: objects, options: [.sortedKeys, .withoutEscapingSlashes])) ?? Data("[]".utf8)
+        return CLIOutput.json(objects, fallback: Data("[]".utf8))
     }
 
     /// Always 0: the list is the answer, and a line that is not running is part of it.

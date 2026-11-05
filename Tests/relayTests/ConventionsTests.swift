@@ -2,6 +2,11 @@ import Foundation
 @testable import relay
 import Testing
 
+/// `text` with every run of white space (line breaks of a wrapped help included) as one space, to look for a phrase in.
+func flattened(_ text: String) -> String {
+    text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+}
+
 /// The conventions of the command line: exit statuses, `--json`, `--opt=value`, the two-line usage error, and
 /// where the JSON of a failure goes.
 struct ExitStatusTests {
@@ -19,7 +24,7 @@ struct ExitStatusTests {
         let wrong: [[String]] = [
             ["start", "--bogus"], ["start", "--port", "abc"], ["start", "--port"], ["start", "--udid", "A", "--device", "B"],
             ["start", "--session", "bad/name"], ["tap", "--bogus"], ["tap", "1"], ["type", "--stdin", "text"], ["status", "--runner", "a", "--session", "b"],
-            ["bogus"], ["record", "bogus"], ["skill", "bogus"], ["config", "get", "nope"], ["run"], ["bench"]
+            ["bogus"], ["record", "bogus"], ["skill", "bogus"], ["config", "get", "nope"], ["run"], ["bench", "--runner", "a", "--session", "b"]
         ]
         for arguments in wrong {
             #expect(throws: ArgumentError.self, "\(arguments)") { try Arguments.parse(arguments) }
@@ -34,15 +39,15 @@ struct ExitStatusTests {
         #expect(CLIOutput.usageMessage("unknown command: bogus", command: "bogus")
             == "relay: unknown command: bogus\nrelay: see relay --help\n")
         #expect(CLIOutput.usageMessage("unknown command: bogus") == "relay: unknown command: bogus\nrelay: see relay --help\n")
-        // A command without help of its own points to the general one.
         #expect(CLIOutput.usageMessage("--port requires a valid TCP port", command: "start")
-            == "relay: --port requires a valid TCP port\nrelay: see relay --help\n")
+            == "relay: --port requires a valid TCP port\nrelay: see relay start --help\n")
         for name in ["status", "stop", "record", "run", "skill"] + Arguments.runnerCommandOrder {
             #expect(Arguments.helpCommand(for: name) == "relay \(name) --help", "\(name)")
         }
-        for name in ["start", "devices", "doctor", "config", "install", "bench", "bogus"] {
-            #expect(Arguments.helpCommand(for: name) == "relay --help", "\(name)")
+        for name in Arguments.commandNames {
+            #expect(Arguments.helpCommand(for: name) == "relay \(name) --help", "\(name)")
         }
+        #expect(Arguments.helpCommand(for: "bogus") == "relay --help")
         #expect(Arguments.helpCommand(for: nil) == "relay --help")
     }
 
@@ -152,9 +157,9 @@ struct JSONFlagTests {
     }
 
     @Test func theHelpSaysSo() {
-        #expect(Arguments.usage(for: "tap").contains("--json is accepted and not needed"))
-        #expect(Arguments.usage.contains("--json is accepted and not needed"))
-        #expect(Arguments.usage(for: "tap").contains("Options may be written --opt value or --opt=value"))
+        #expect(flattened(Arguments.usage(for: "tap")).contains("--json is accepted and not needed"))
+        #expect(flattened(Arguments.usage).contains("--json is accepted and not needed"))
+        #expect(flattened(Arguments.usage(for: "tap")).contains("Options may be written --opt value or --opt=value"))
     }
 }
 
@@ -258,5 +263,121 @@ struct FailureJSONTests {
         #expect(ScenarioCommand.run(options, readFile: { _ in "" }) == 2)
         #expect(ScenarioCommand.run(options, readFile: { _ in "bogus\n" }) == 2)
         #expect(ScenarioCommand.run(ScenarioOptions(source: .standardInput, quiet: true, check: true), standardInput: { Data([0xff]) }) == 1)
+    }
+}
+
+/// Every line of every help text fits in `HelpText.width` characters, so a terminal of that width never wraps one.
+struct HelpWidthTests {
+    private var texts: [(name: String, text: String)] {
+        var texts: [(String, String)] = [("relay --help", Arguments.usage), ("relay skill --help", SkillCommand.usage)]
+        for name in ["start", "install", "uninstall", "devices", "doctor", "config", "bench"] {
+            texts.append(("relay \(name) --help", Arguments.usage(for: name)))
+        }
+        for name in (Array(Arguments.runnerUsages.keys) + Array(Arguments.lifecycleUsages.keys)).sorted() {
+            texts.append(("relay \(name) --help", Arguments.usage(for: name)))
+        }
+        return texts
+    }
+
+    @Test func noLineIsLongerThanTheWidth() {
+        #expect(HelpText.width == 100)
+        // The overall usage, every runner command (16), status, stop, record, run, and skill.
+        #expect(texts.count == 9 + Arguments.runnerUsages.count + Arguments.lifecycleUsages.count)
+        for (name, text) in texts {
+            for line in text.components(separatedBy: "\n") {
+                #expect(line.count <= HelpText.width, "\(name): \(line.count) characters: \(line)")
+            }
+        }
+    }
+
+    @Test func theHelpPrintedForACommandIsThatText() throws {
+        #expect(try Arguments.parse(["skill", "--help"]) == .skill(SkillOptions(action: .help)))
+        for name in Arguments.lifecycleUsages.keys {
+            #expect(Arguments.usage(for: name).hasPrefix("Usage:\n  relay \(name)"), "\(name)")
+        }
+    }
+
+    @Test func wrappedBreaksAtSpacesAndHangs() {
+        let words = (1...30).map { "word\($0)" }.joined(separator: " ")
+        let lines = HelpText.wrapped(words, hanging: 2, width: 40).components(separatedBy: "\n")
+        #expect(lines.count > 1)
+        #expect(lines.allSatisfy { $0.count <= 40 })
+        #expect(lines.dropFirst().allSatisfy { $0.hasPrefix("  w") })
+        #expect(lines.joined(separator: " ").split(separator: " ").map(String.init) == words.split(separator: " ").map(String.init))
+    }
+}
+
+/// What the help says about which command to use when.
+struct HelpGuidanceTests {
+    @Test func shutdownIsLeftOutOfTheListsAndPointsToStop() {
+        #expect(!Arguments.usage.contains("shutdown"))
+        #expect(!Arguments.usage.contains("relay shutdown"))
+        #expect(Arguments.usage(for: "shutdown").hasPrefix("Usage:\n  relay shutdown\n\nNormally use relay stop."))
+    }
+
+    @Test func pingHealthAndStatusSayHowTheyDiffer() {
+        #expect(flattened(Arguments.usage(for: "ping")).contains("even while a command runs"))
+        #expect(flattened(Arguments.usage(for: "ping")).contains("relay health"))
+        #expect(flattened(Arguments.usage(for: "health")).contains("exit 5 (busy)"))
+        #expect(flattened(Arguments.usage(for: "health")).contains("relay ping answers even then"))
+        #expect(flattened(Arguments.usage(for: "status")).contains("Unlike relay ping"))
+        #expect(flattened(Arguments.usage).contains("ping, health, and status:"))
+    }
+
+    @Test func theOrderOfTheSearchHasNoCurrentDirectory() {
+        for text in [Arguments.usage, Arguments.usage(for: "tap")] {
+            #expect(flattened(text).contains("else ~/.relay/runner.json"))
+            #expect(flattened(text).contains("A .relay/runner.json in the current directory is not read"))
+            #expect(!flattened(text).contains("or a parent"))
+        }
+    }
+}
+
+/// One format for every `--json` output: one line, sorted keys, slashes as they are.
+struct JSONFormatTests {
+    @Test func oneLineSortedWithoutEscapedSlashes() throws {
+        let data = CLIOutput.json(["b": "a/b", "a": 1, "list": [["z": 1, "y": 2]]])
+        #expect(String(decoding: data, as: UTF8.self) == #"{"a":1,"b":"a/b","list":[{"y":2,"z":1}]}"#)
+        #expect(String(decoding: CLIOutput.failureBody(.devicesUnavailable, "x/y"), as: UTF8.self)
+            == #"{"code":"devices_unavailable","error":"x/y","ok":false}"#)
+        let noMatch = RunnerControl.noMatchBody(Data(#"{"count":0,"elements":[],"note":"a/b"}"#.utf8))
+        #expect(String(decoding: noMatch, as: UTF8.self).contains(#""note":"a/b""#))
+        #expect(!String(decoding: noMatch, as: UTF8.self).contains("\n"))
+    }
+}
+
+/// `relay <cmd> --help`, `-h`, and `relay help <cmd>` work for every subcommand.
+struct EveryCommandHasHelpTests {
+    @Test func helpIsAnswerWithExitZeroOnStdout() throws {
+        for name in Arguments.commandNames.sorted() {
+            for form in [[name, "--help"], [name, "-h"], ["help", name]] {
+                let command = try Arguments.parse(form)
+                switch command {
+                case .commandHelp(let shown): #expect(shown == name, "\(form)")
+                case .skill(let options): #expect(name == "skill" && options.action == .help, "\(form)")
+                default: Issue.record("\(form) parsed as \(command)")
+                }
+            }
+        }
+        // An option before it, or after other arguments, still asks for help.
+        #expect(try Arguments.parse(["start", "--simulator", "--help"]) == .commandHelp("start"))
+        #expect(try Arguments.parse(["bench", "--count", "3", "-h"]) == .commandHelp("bench"))
+    }
+
+    @Test func theTextHasTheSynopsisAndTheDescription() throws {
+        let start = Arguments.usage(for: "start")
+        #expect(start.hasPrefix("Usage:\n  relay start [--udid"))
+        #expect(start.contains("Builds the RelayRunner XCTest runner"))
+        #expect(!start.contains("status "))
+        for name in ["install", "uninstall", "devices", "doctor", "config", "bench"] {
+            let text = Arguments.usage(for: name)
+            #expect(text.hasPrefix("Usage:\n  relay \(name == "uninstall" ? "install" : name)"), "\(name)")
+            #expect(text.components(separatedBy: "\n\n").count == 2, "\(name)")
+        }
+        // Only its own entry: the next one (run) does not follow bench.
+        #expect(!Arguments.usage(for: "bench").contains("one process"))
+        #expect(!Arguments.usage(for: "start").contains("Records the screen"))
+        #expect(Arguments.usage(for: "uninstall").contains("relay uninstall"))
+        #expect(Arguments.usage(for: "uninstall").contains("--remove"))
     }
 }

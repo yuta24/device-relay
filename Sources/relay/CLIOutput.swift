@@ -33,7 +33,13 @@ enum CLIOutput {
         object["ok"] = false
         object["code"] = code
         object["error"] = message
-        return (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])) ?? Data()
+        return json(object, fallback: Data())
+    }
+
+    /// `object` (a dictionary or an array) as JSON on one line, keys sorted, slashes not escaped: the one
+    /// format every `--json` output and failure of relay has, so output can be compared and diffed.
+    static func json(_ object: Any, fallback: Data = Data("{}".utf8)) -> Data {
+        (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])) ?? fallback
     }
 
     static func failureBody(_ code: RelayErrorCode, _ message: String, extra: [String: Any] = [:]) -> Data {
@@ -69,9 +75,33 @@ enum CLIOutput {
 extension Arguments {
     /// The command whose `--help` explains `name`: `relay <name> --help` when it has its own help, else `relay --help`.
     static func helpCommand(for name: String?) -> String {
-        guard let name, name == "skill" || runnerUsages[name] != nil || lifecycleUsages[name] != nil else {
+        guard let name, commandNames.contains(name) else {
             return "relay --help"
         }
         return "relay \(name) --help"
+    }
+}
+
+/// The text of `--help`: every line is at most `HelpText.width` characters.
+enum HelpText {
+    static let width = 100
+
+    /// `text` broken at spaces into lines of at most `width` characters; the lines after the first start with
+    /// `hanging` spaces.
+    static func wrapped(_ text: String, hanging: Int = 0, width: Int = HelpText.width) -> String {
+        var lines: [String] = []
+        var line = ""
+        for word in text.split(separator: " ") {
+            if line.isEmpty {
+                line = String(word)
+            } else if line.count + 1 + word.count <= width {
+                line += " " + word
+            } else {
+                lines.append(line)
+                line = String(repeating: " ", count: hanging) + word
+            }
+        }
+        lines.append(line)
+        return lines.joined(separator: "\n")
     }
 }

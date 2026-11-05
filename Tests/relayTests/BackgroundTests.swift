@@ -228,8 +228,8 @@ struct BackgroundStartTests {
     }
 
     @Test func statusHelpListsTheExitStatuses() {
-        #expect(Arguments.usage.contains("4 if it answers 401"))
-        #expect(Arguments.usage(for: "status").contains("4 the token was rejected (401)"))
+        #expect(flattened(Arguments.usage).contains("4 if it answers 401"))
+        #expect(flattened(Arguments.usage(for: "status")).contains("4 the token was rejected (401)"))
     }
 
     @Test func describesWaitStatus() {
