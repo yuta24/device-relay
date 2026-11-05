@@ -2,7 +2,7 @@
 
 # device-relay
 
-A prototype for driving physical iOS devices and simulators from a Mac over HTTP, without embedding anything in the app under test.
+A CLI for driving iOS simulators and physical devices from a Mac — for people, scripts, and coding agents — with nothing embedded in the app under test.
 
 ## Overview
 
