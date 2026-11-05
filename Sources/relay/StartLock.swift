@@ -64,11 +64,12 @@ struct StartLock {
     }
 
     /// Takes the device's lock without waiting. `session` goes into the file, for the message another
-    /// `relay start` shows and for `devicesInUse`.
+    /// `relay start` shows and for `devicesInUse`. Throws `DeviceInUseError` when another process holds it
+    /// (the automatic choice in `StartSetup.prepare` selects again), `SetupError` when the lock file fails.
     static func acquire(device: Device, session: String?, home: URL = UserHome.url) throws -> StartLock {
         let url = deviceURL(udid: device.udid, home: home)
         guard let lock = try take(url, session: session) else {
-            throw SetupError(description: deviceHeldMessage(device, holder: holder(of: url)))
+            throw DeviceInUseError(device: device, holder: holder(of: url))
         }
         return lock
     }
@@ -199,6 +200,17 @@ struct StartLock {
             holder.session = lines[1]
         }
         return holder
+    }
+}
+
+/// Another `relay start` holds the lock of `device`. Shows as `relay: <message>` and exits 1 like a `SetupError`.
+struct DeviceInUseError: Error, CustomStringConvertible {
+    let device: Device
+    /// Who holds the lock, if the file says.
+    let holder: StartLock.Holder?
+
+    var description: String {
+        StartLock.deviceHeldMessage(device, holder: holder)
     }
 }
 

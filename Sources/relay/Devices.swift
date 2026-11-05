@@ -272,8 +272,11 @@ enum DeviceSelector {
     /// `relay start` runs on, by uppercase UDID, with who runs there: the automatic choice leaves them out,
     /// since another relay start could not use them anyway, while one named with `--udid` or `--device` is
     /// picked as usual, so the error says it is in use rather than some other device being operated.
+    /// `session` (a `relay start` of a session) takes the first of several free booted simulators, newest iOS
+    /// then name then UDID, instead of failing: sessions start side by side, and the one that loses the race for
+    /// a simulator selects again (see `StartSetup.prepare`) and takes the next. Connected devices are never guessed.
     static func select(from devices: [Device], udid: String?, name: String?, simulator: Bool = false, os: String? = nil,
-                       inUse: [String: String] = [:]) throws -> DeviceSelection {
+                       inUse: [String: String] = [:], session: String? = nil) throws -> DeviceSelection {
         let candidates = devices.filter { (!simulator || $0.kind == .simulator) && (os.map($0.matches(os:)) ?? true) }
         let scope = simulator ? "iOS simulator" : "device or iOS simulator"
         let filters = [simulator ? "--simulator" : nil, os.map { "--os \($0)" }].compactMap { $0 }
@@ -339,6 +342,15 @@ enum DeviceSelector {
         let booted = free.filter(\.isBooted)
         if booted.count == 1 {
             return selection(booted[0], nil, "the only booted simulator")
+        }
+        if booted.count > 1, let session {
+            let ordered = booted.sorted {
+                let order = compare($0.osVersion ?? [], $1.osVersion ?? [])
+                if order != 0 { return order > 0 }
+                let names = $0.name.caseInsensitiveCompare($1.name)
+                return names != .orderedSame ? names == .orderedAscending : $0.udid < $1.udid
+            }
+            return selection(ordered[0], nil, "the first of \(booted.count) free booted simulators (newest iOS, then name), for session \(session)")
         }
         if booted.count > 1 {
             throw SetupError(description: "\(booted.count) simulators are booted\(filterNote); pass --udid or --device" + candidateList(booted))

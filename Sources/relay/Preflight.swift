@@ -154,12 +154,29 @@ struct StartSetup {
 
         let (devices, warnings) = try DeviceList.load(commands, udid: options.udid, simulator: options.simulator)
         warnings.forEach(info)
-        let selection = try DeviceSelector.select(from: devices, udid: options.udid, name: options.device,
-                                                  simulator: options.simulator, os: options.os, inUse: inUse(devices))
+        // Another `relay start` may take the chosen device between `inUse` and the claim. An automatic choice
+        // then adds that device to the ones in use and selects again, once per device at most; a device named
+        // with --udid or --device fails at once.
+        var taken: [String: String] = [:]
+        var selection: DeviceSelection
+        var reselections = 0
+        while true {
+            selection = try DeviceSelector.select(from: devices, udid: options.udid, name: options.device,
+                                                  simulator: options.simulator, os: options.os,
+                                                  inUse: inUse(devices).merging(taken) { _, new in new },
+                                                  session: options.session)
+            do {
+                // Before booting it or building: two runners on one device stop each other's XCTest session.
+                try claimDevice(selection.device)
+                break
+            } catch let busy as DeviceInUseError where selection.isAutomatic && reselections <= devices.count {
+                reselections += 1
+                taken[busy.device.udid.uppercased()] = busy.holder?.summary ?? "another relay start"
+                info("\(busy.device.name) was just taken by \(busy.holder?.summary ?? "another relay start"); selecting again")
+            }
+        }
         let device = selection.device
         info("using \(device.summary) (\(selection.isAutomatic ? "selected automatically; " : "")\(selection.reason))")
-        // Before booting it or building: two runners on one device stop each other's XCTest session.
-        try claimDevice(device)
 
         let locked = device.kind == .device ? DeviceChecks.lockState(udid: device.udid, commands: commands) : nil
         let checks = DeviceChecks.checks(for: device, locked: locked, includeHints: false)
