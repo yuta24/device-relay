@@ -37,7 +37,9 @@ jobs:
       - name: Build
         run: xcrun swift build
       - name: Test
-        run: xcrun swift test
+        # One test at a time, so a test that hangs is the last one the log shows as started.
+        run: xcrun swift test --no-parallel
+        timeout-minutes: 10
 
   runner:
     name: Runner (${{ matrix.xcode }}, simulator build)
