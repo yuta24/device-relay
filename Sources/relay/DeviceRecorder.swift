@@ -174,13 +174,7 @@ enum DeviceCapture {
 
     /// The device screens among the capture devices.
     static func screens() -> [AVCaptureDevice] {
-        let type: AVCaptureDevice.DeviceType
-        if #available(macOS 14.0, *) {
-            type = .external
-        } else {
-            type = .externalUnknown
-        }
-        return AVCaptureDevice.DiscoverySession(deviceTypes: [type], mediaType: .muxed, position: .unspecified).devices
+        AVCaptureDevice.DiscoverySession(deviceTypes: [.external], mediaType: .muxed, position: .unspecified).devices
             .filter { $0.modelID == modelID }
     }
 }
