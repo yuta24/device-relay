@@ -250,7 +250,7 @@ enum DeviceList {
             object["developerMode"] = device.developerModeEnabled
             return object
         }
-        return try JSONSerialization.data(withJSONObject: objects, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+        return CLIOutput.json(objects, fallback: Data("[]".utf8))
     }
 }
 

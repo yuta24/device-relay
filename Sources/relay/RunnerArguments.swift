@@ -104,39 +104,76 @@ extension Arguments {
         if let name, let command = lifecycleUsages[name] {
             return "Usage:\n  \(command.synopsis)\n\n\(command.details)"
         }
+        if let name, let help = commandHelp(for: name) { return help }
         guard let name, let command = runnerUsages[name] else { return usage }
         return "Usage:\n  \(command.synopsis)\n\n\(command.details)\n\n\(runnerCommonUsage)"
     }
 
+    /// The help of a command that has no text of its own: its synopsis from `commandSynopses` and its entry
+    /// of the overall usage (the lines indented under its name), with that indent removed. Nil for other names.
+    static func commandHelp(for name: String) -> String? {
+        guard let entry = commandSynopses.first(where: { $0.names.contains(name) }), name != "skill" else { return nil }
+        let lines = usage.components(separatedBy: "\n")
+        let described = entry.names.first { first in lines.contains { $0.hasPrefix(first + " ") } } ?? name
+        guard let start = lines.firstIndex(where: { $0.hasPrefix(described + " ") }) else { return nil }
+        let indent = 9
+        var description = [String(lines[start].dropFirst(indent))]
+        for line in lines[(start + 1)...] {
+            guard line.hasPrefix(String(repeating: " ", count: indent)) else { break }
+            description.append(String(line.dropFirst(indent)))
+        }
+        let synopsis = entry.synopsis.components(separatedBy: "\n").map { "  " + $0 }.joined(separator: "\n")
+        return "Usage:\n\(synopsis)\n\n\(description.joined(separator: "\n"))"
+    }
+
     /// Synopsis and description of each runner command, for `relay <command> --help`.
     static let runnerUsages: [String: (synopsis: String, details: String)] = [
-        "ping": ("relay ping", "Checks that the runner is alive; answers at once even while a command runs (busy, busyForMs)."),
-        "health": ("relay health", "Device, screen size in points, orientation, touch path, and foreground app."),
+        "ping": (
+            "relay ping",
+            """
+            Asks whether the runner is alive and whether it is busy with a command (busy, busyForMs), and which
+            build it is. It answers at once even while a command runs, and does not touch the device.
+            relay health is for what a command needs first (the screen size); relay status also looks at
+            runner.json and the relay start behind it.
+            """
+        ),
+        "health": (
+            "relay health",
+            """
+            What to know before operating the device: its name, the screen size in points (a tap must be inside
+            it), the orientation, the touch path, and the foreground app. It is a command like the others: while
+            another runs it fails with exit 5 (busy); relay ping answers even then.
+            """
+        ),
         "foreground": ("relay foreground", "The foreground app's bundle ID and pid."),
         "screenshot": (
-            "relay screenshot [-o <file>|-] [--format png|jpeg] [--quality 0.05-1.0] [--max-size <px>] [--scale <px/pt>]",
+            "relay screenshot [-o <file>|-] [--format png|jpeg] [--quality 0.05-1.0] [--max-size <px>]\n      [--scale <px/pt>]",
             """
-            Saves a screenshot and prints its absolute path (not JSON). Without -o it goes to $TMPDIR/relay/screenshot-<time>.png;
-            -o - writes the image to stdout instead, and then a failure's JSON goes to stderr, not stdout. A .jpg/.jpeg file or --quality selects jpeg (quality 0.7 by default).
+            Saves a screenshot and prints its absolute path (not JSON). Without -o it goes to
+            $TMPDIR/relay/screenshot-<time>.png; -o - writes the image to stdout instead, and then a failure's
+            JSON goes to stderr, not stdout. A .jpg/.jpeg file or --quality selects jpeg (quality 0.7 by
+            default).
             The runner shrinks the image to --max-size pixels on the longer edge and to --scale pixels per point
-            (--scale 1: one pixel per point); it never enlarges it. Shrunk, relay also prints the image size, the
-            screen in points, and the pixels per point to stderr. Taps always take points: divide pixels by the scale.
+            (--scale 1: one pixel per point); it never enlarges it. Shrunk, relay also prints the image size,
+            the screen in points, and the pixels per point to stderr. Taps always take points: divide pixels by
+            the scale.
             """
         ),
         "source": (
-            "relay source [--format json|text|compact] [--filter interactive] [--max-depth <n>] [--bundle-id <id>]",
+            "relay source [--format json|text|compact] [--filter interactive] [--max-depth <n>]\n      [--bundle-id <id>]",
             """
             Prints the element tree of the foreground app (or --bundle-id). --max-depth 0 is the root only.
             --format compact prints one line per element (type, label, id, value, placeholder, frame).
-            --filter interactive lists only the enabled controls on screen that a selector can name (buttons, cells,
-            text fields, switches, ...; not keyboard keys), as a flat list of elements (json) or lines (compact).
+            --filter interactive lists only the enabled controls on screen that a selector can name (buttons,
+            cells, text fields, switches, ...; not keyboard keys), as a flat list of elements (json) or lines
+            (compact).
             """
         ),
         "find": (
             "relay find <selector> [--limit 20] [--timeout <s>] [--require] [--bundle-id <id>]",
             """
-            Lists the elements that match every given condition exactly (at most --limit, 1-100). --timeout waits
-            up to 10 seconds for a match. An element's index works as --index of tap and press.
+            Lists the elements that match every given condition exactly (at most --limit, 1-100). --timeout
+            waits up to 10 seconds for a match. An element's index works as --index of tap and press.
             No match is exit 0 ("count":0); with --require it is exit 6, the answer (count, elements) coming
             back as {"ok":false,"code":"element_not_found",...} on stdout (also when --index is out of range),
             so find --timeout <s> --require waits for an element and fails if it does not appear.
@@ -146,12 +183,12 @@ extension Arguments {
             "relay tap (<x> <y> | <selector>) [--mode private|xcui] [--timeout <s>] [--bundle-id <id>]",
             """
             Taps a point (points in the displayed orientation) or the center of the element the selector picks.
-            --timeout (up to 10 seconds) and --bundle-id apply to a selector only. A point outside the screen
-            (0 <= x < width, 0 <= y < height as relay health reports it) is rejected with exit 7; nothing is sent.
+            --timeout (up to 10 seconds) and --bundle-id apply to a selector only. A point outside the screen (0
+            <= x < width, 0 <= y < height as relay health reports it) is rejected with exit 7; nothing is sent.
             """
         ),
         "press": (
-            "relay press (<x> <y> | <selector>) [--duration 1.0] [--mode private|xcui] [--timeout <s>] [--bundle-id <id>]",
+            "relay press (<x> <y> | <selector>) [--duration 1.0] [--mode private|xcui] [--timeout <s>]\n      [--bundle-id <id>]",
             "Long-presses like tap does, for --duration seconds."
         ),
         "swipe": (
@@ -165,8 +202,9 @@ extension Arguments {
             "relay type [<text> | --stdin] [--key return|delete|space]... [--bundle-id <id>]",
             """
             Types text into the element with keyboard focus (tap it first), then sends each --key in order.
-            --stdin reads the text from standard input without one trailing newline, which keeps passwords out of
-            ps and the shell history (printf 'secret' | relay type --stdin). Put -- before text that starts with -.
+            --stdin reads the text from standard input without one trailing newline, which keeps passwords out
+            of ps and the shell history (printf 'secret' | relay type --stdin). Put -- before text that starts
+            with -.
             """
         ),
         "key": ("relay key return|delete|space [--bundle-id <id>]", "Sends one special key to the element with keyboard focus."),
@@ -175,9 +213,21 @@ extension Arguments {
             "relay orientation portrait|portraitUpsideDown|landscapeLeft|landscapeRight|landscape",
             "Sets the device orientation. landscape is short for landscapeLeft."
         ),
-        "launch": ("relay launch <bundle-id>", "Launches the app, or brings it to the foreground. An app that is not installed fails at once (exit 6)."),
+        "launch": (
+            "relay launch <bundle-id>",
+            "Launches the app, or brings it to the foreground. An app not installed fails at once (exit 6)."
+        ),
         "terminate": ("relay terminate <bundle-id>", "Terminates the app."),
-        "shutdown": ("relay shutdown", "Stops the runner; relay start then exits.")
+        "shutdown": (
+            "relay shutdown",
+            """
+            Normally use relay stop. This only sends /shutdown to the runner and returns at once ({"ok":true}).
+            The relay start behind it sees the runner end, then removes runner.json and shuts down a simulator
+            it booted, a few seconds later and without telling you when it is done; relay stop waits for that
+            and prints stopped. If relay start is no longer running, shutdown leaves its runner.json behind,
+            which relay stop removes.
+            """
+        )
     ]
 
     /// `relay status`, `relay stop`, `relay record`, and `relay run`, which manage the runner or run several commands rather
@@ -186,10 +236,14 @@ extension Arguments {
         "status": (
             "relay status [--json] [--runner <path> | --session <name> | --all]",
             """
-            Shows the runner in runner.json: URL, device, the relay start that owns it (pid, whether it still runs,
-            start time), and the /ping result (busy included). --json prints one JSON object.
-            Exit status: 0 the runner answers /ping, 3 no runner.json or no answer, 4 the token was rejected (401).
-            With --json, a failure is one JSON object on stdout too ({"alive":false,"ok":false,"code":...,"error":...}).
+            Shows the runner in runner.json: URL, device, the relay start that owns it (pid, whether it still
+            runs, start time), and the /ping result (busy included). --json prints one JSON object. Unlike relay
+            ping, it reads runner.json and looks at the relay start behind it, which is why it is the check
+            after relay start.
+            Exit status: 0 the runner answers /ping, 3 no runner.json or no answer, 4 the token was rejected
+            (401).
+            With --json, a failure is one JSON object on stdout too
+            ({"alive":false,"ok":false,"code":...,"error":...}).
             --all lists every session and the runner of ~/.relay/runner.json instead, one line each: session
             ((default) for that runner), state (starting, running, busy, no answer, rejected, unknown), device,
             URL, and the relay start's pid; --json prints one array. It exits 0 whatever the states are.
@@ -199,13 +253,13 @@ extension Arguments {
             "relay stop [--runner <path> | --session <name> | --all]",
             """
             Sends SIGTERM to the relay start in runner.json (like Ctrl-C: it shuts the runner down, shuts down a
-            simulator it booted, and removes runner.json) and waits for it to exit. Without that process, it sends
-            /shutdown to the runner and removes the stale runner.json. Prints "stopped", or "not running" if nothing
-            runs; both exit 0. Exits 1 if relay start does not exit within 60 seconds.
+            simulator it booted, and removes runner.json) and waits for it to exit. Without that process, it
+            sends /shutdown to the runner and removes the stale runner.json. Prints "stopped", or "not running"
+            if nothing runs; both exit 0. Exits 1 if relay start does not exit within 60 seconds.
             A recording of that runner (relay record) is finished first; its path goes to stderr.
-            A session still booting or building (no runner.json yet) is stopped too. --all stops every session and
-            the runner of ~/.relay/runner.json, one after the other, printing <session>: stopped for each; it
-            also stops other agents' runners, so an agent normally stops only its own session.
+            A session still booting or building (no runner.json yet) is stopped too. --all stops every session
+            and the runner of ~/.relay/runner.json, one after the other, printing <session>: stopped for each;
+            it also stops other agents' runners, so an agent normally stops only its own session.
             """
         ),
         "record": (
@@ -219,31 +273,33 @@ extension Arguments {
             happened (a video for a pull request, for example): relay record start, then the runner commands,
             then relay record stop.
             start records detached from the terminal (log: ~/.relay/logs/record-*.log), waits until the
-            recording has started, and prints the video's absolute path. A simulator is recorded with
-            xcrun simctl io <udid> recordVideo --codec h264 --force <file>. A device must be connected with a USB
+            recording has started, and prints the video's absolute path. A simulator is recorded with xcrun
+            simctl io <udid> recordVideo --codec h264 --force <file>. A device must be connected with a USB
             cable (not only Wi-Fi) and unlocked: its screen is recorded as a capture device, as QuickTime Player
             does, into H.264 (an MP4, or a QuickTime movie if the file ends in .mov); start returns once the
             first frame is written. This needs camera access for the app relay runs in (the terminal or the
             IDE): the first start asks for it with a macOS dialog, and a denied one is allowed again in System
             Settings > Privacy & Security > Camera.
-            Without -o the video goes to $TMPDIR/relay/relay-recording-<time>.mp4; a relative -o is under
-            the current directory, whose directory must exist. An existing file is an error unless --force
-            replaces it (relay checks before starting). The recording stops by itself after --max-duration
-            seconds (600 by default); relay record stop still prints its path.
+            Without -o the video goes to $TMPDIR/relay/relay-recording-<time>.mp4; a relative -o is under the
+            current directory, whose directory must exist. An existing file is an error unless --force replaces
+            it (relay checks before starting). The recording stops by itself after --max-duration seconds (600
+            by default); relay record stop still prints its path.
             One recording per runner: the state is ~/.relay/recording-<port>.json (mode 0600); a second start
             fails while it records, and the state of one that ended does not block the next.
             stop sends SIGINT to the recording (simctl, or relay record supervise for a device), waits up to 30
-            seconds for the video to be written, checks that it is not empty, and prints its path; "not recording"
-            when there is none. For a device it takes about 4 seconds: the capture must be stopped for a few
-            seconds before the next one sees the screen (start tries a new process once when it does not).
+            seconds for the video to be written, checks that it is not empty, and prints its path; "not
+            recording" when there is none. For a device it takes about 4 seconds: the capture must be stopped
+            for a few seconds before the next one sees the screen (start tries a new process once when it does
+            not).
             relay stop and the exit of relay start finish a recording of their runner too.
             A simulator shut down while recording ends the video there, and so does a device unplugged while
             recording. A device that sends no frame for 5 seconds (locked, for example) keeps recording: the log
             and status note it (the video holds the last frame), and the log notes when frames come again.
-            stop and status use the recording of the runner in runner.json; --port <n> uses the one of that runner
-            port directly (also without runner.json; not with --runner or --session). A --runner, $RELAY_RUNNER, or
-            session that does not exist is exit 3, as for the other commands. Without them and without runner.json,
-            the only recording is used, and several are listed by port to choose one with --port.
+            stop and status use the recording of the runner in runner.json; --port <n> uses the one of that
+            runner port directly (also without runner.json; not with --runner or --session). A --runner,
+            $RELAY_RUNNER, or session that does not exist is exit 3, as for the other commands. Without them and
+            without runner.json, the only recording is used, and several are listed by port to choose one with
+            --port.
             status shows whether it records, the video, the elapsed time, and a device's frames having stopped
             (--json: one object); it exits 0.
             Exit status: 0 ok, 1 not a booted simulator, a device not connected with USB, no camera access, a
@@ -258,28 +314,29 @@ extension Arguments {
             """
             Experimental: the format and behavior may change. Runs a scenario: runner commands, one per line,
             written as after relay (tap --label General --type button --timeout 5), read from <file>, from
-            standard input (-), or from each --step. Blank lines and lines starting with # are skipped (a # later
-            in a line is text). Words split like a shell: spaces, '...', "...", and \\ (no variables or globs).
-            Steps: \(Scenario.stepCommands.joined(separator: " "))
+            standard input (-), or from each --step. Blank lines and lines starting with # are skipped (a #
+            later in a line is text). Words split like a shell: spaces, '...', "...", and \\ (no variables or
+            globs).
+            \(HelpText.wrapped("Steps: " + Scenario.stepCommands.joined(separator: " "), hanging: 2))
             sleep <s> waits a fixed time (0 < s <= \(Int(Scenario.maxSleep))); prefer find --timeout or tap --timeout,
             which wait only as long as needed; find --require also stops the run (exit 6) when nothing matches,
-            while find without it succeeds either way, as it does alone. screenshot needs --output <file>;
-            type --stdin, --runner, --session, and --help cannot be in a step.
+            while find without it succeeds either way, as it does alone. screenshot needs --output <file>; type
+            --stdin, --runner, --session, and --help cannot be in a step.
             A line # relay-run: 1 before the first step states the format the scenario is written for; another
             version is refused, so a scenario never runs with a meaning it was not written for.
-            Every step is checked first: each bad one prints relay: line <n>: <reason> on stderr and nothing runs
-            (exit 2, a usage error; the n of a --step is its position). A step takes the options it takes alone,
-            --json and --opt=value included. --check stops there: it reads no runner.json and runs nothing,
-            and prints relay: <n> steps checked; nothing was run (exit 0; --quiet: nothing).
-            Otherwise runner.json is read once (--runner or --session, else $RELAY_RUNNER or $RELAY_SESSION, ...) and the steps run in this
-            process. Each step's output goes to stdout as the command alone prints it, one after the other; stderr gets
-            relay: [i/n] <step> ... ok (<ms> ms) per step and a total at the end (--quiet: neither);
-            these lines show the text of type steps as ***.
-            The first step that fails stops the run: its error is the last JSON on stdout ({"ok":false,"code":...}, as
-            the command alone prints it), stderr gets relay: step i/n (line n) failed: <step>, and relay run
-            exits with that step's status (3 unavailable, 4 unauthorized, 5 busy, 6 action failed, 7 bad request,
-            8 runner error, 1 a screenshot not saved); 0 when every step succeeds. A runner.json that cannot be
-            found or reached fails the same way before the first step.
+            Every step is checked first: each bad one prints relay: line <n>: <reason> on stderr and nothing
+            runs (exit 2, a usage error; the n of a --step is its position). A step takes the options it takes
+            alone, --json and --opt=value included. --check stops there: it reads no runner.json and runs
+            nothing, and prints relay: <n> steps checked; nothing was run (exit 0; --quiet: nothing).
+            Otherwise runner.json is read once (--runner or --session, else $RELAY_RUNNER or $RELAY_SESSION,
+            else ~/.relay/runner.json) and the steps run in this process. Each step's output goes to stdout as
+            the command alone prints it, one after the other; stderr gets relay: [i/n] <step> ... ok (<ms> ms)
+            per step and a total at the end (--quiet: neither); these lines show the text of type steps as ***.
+            The first step that fails stops the run: its error is the last JSON on stdout
+            ({"ok":false,"code":...}, as the command alone prints it), stderr gets relay: step i/n (line n)
+            failed: <step>, and relay run exits with that step's status (3 unavailable, 4 unauthorized, 5 busy,
+            6 action failed, 7 bad request, 8 runner error, 1 a screenshot not saved); 0 when every step
+            succeeds. A runner.json that cannot be found or reached fails the same way before the first step.
             """
         )
     ]
@@ -289,22 +346,29 @@ extension Arguments {
         "type", "key", "button", "orientation", "launch", "terminate", "shutdown"
     ]
 
+    /// The runner commands the overall usage lists. `relay shutdown` works, and has its help, but it is left
+    /// out: an agent that wants to stop the runner means `relay stop`, which does more (see `usage(for:)`).
+    static let listedRunnerCommands = runnerCommandOrder.filter { $0 != "shutdown" }
+
     static let runnerCommonUsage = """
-    <selector>: one or more of --id <identifier> --label <label> --type <type> --value <value>, which must all
-      match exactly (the attributes relay source reports), plus --index <n> to pick one of several matches.
+    <selector>: one or more of --id <identifier> --label <label> --type <type> --value <value>, which
+      must all match exactly (the attributes relay source reports), plus --index <n> to pick one of
+      several matches.
     Runner commands read the runner URL and token from runner.json, never from the command line:
-      --runner <path> or --session <name>, else $RELAY_RUNNER or $RELAY_SESSION (both set is an error), else
-      .relay/runner.json in the current directory or a parent, else ~/.relay/runner.json (where relay start
-      without a session writes it). A session is ~/.relay/sessions/<name>/runner.json, with no fallback.
-    Output is always JSON (a screenshot prints the saved file's path): --json is accepted and not needed.
-    A failure is JSON on stdout too: the runner's {"ok":false,"code":...,"error":...}, or relay's own in that shape
-      when it fails before the runner answers (code runner_unavailable, runner_timeout, runner_info_invalid,
-      app_not_installed, ...). relay: lines on stderr are hints for people. Exception: screenshot -o - writes the
-      image to stdout, so a failure's JSON goes to stderr.
+      --runner <path> or --session <name>, else $RELAY_RUNNER or $RELAY_SESSION (both set is an error),
+      else ~/.relay/runner.json (where relay start without a session writes it). A session is
+      ~/.relay/sessions/<name>/runner.json, with no fallback. A .relay/runner.json in the current
+      directory is not read: pass it with --runner.
+    Output is always JSON (a screenshot prints the saved file's path); --json is accepted, not needed.
+    A failure is JSON on stdout too: the runner's {"ok":false,"code":...,"error":...}, or relay's own in
+      that shape when it fails before the runner answers (code runner_unavailable, runner_timeout,
+      runner_info_invalid, app_not_installed, ...). relay: lines on stderr are hints for people.
+      Exception: screenshot -o - writes the image to stdout, so a failure's JSON goes to stderr.
     Options may be written --opt value or --opt=value; text after -- is never split.
-    Exit status: 0 ok, 1 local failure (runner.json unreadable, screenshot not saved), 2 usage error (the command
-      line is wrong: two relay: lines on stderr, no JSON), 3 runner unavailable (no runner.json or no connection),
-      4 unauthorized (401), 5 busy (409; retry), 6 action failed (422), 7 bad request (other 4xx), 8 runner error.
+    Exit status: 0 ok, 1 local failure (runner.json unreadable, screenshot not saved), 2 usage error
+      (the command line is wrong: two relay: lines on stderr, no JSON), 3 runner unavailable (no
+      runner.json or no connection), 4 unauthorized (401), 5 busy (409; retry), 6 action failed (422), 7
+      bad request (other 4xx), 8 runner error.
     """
 }
 

@@ -239,6 +239,16 @@ struct DeviceListTests {
         #expect(objects.first?["kind"] as? String == "device")
         #expect(objects.first?["available"] as? Bool == true)
     }
+
+    /// Like every other `--json`: one line with sorted keys (a pretty-printed array was the odd one out).
+    @Test func jsonIsOneLineLikeTheOthers() throws {
+        let data = try DeviceList.json([device("Phone", udid: "D1"), simulator("Sim", udid: "S1")])
+        let text = String(decoding: data, as: UTF8.self)
+        #expect(!text.contains("\n"))
+        #expect(text.hasPrefix(#"[{"available":true,"#))
+        #expect(data == CLIOutput.json(try #require(try JSONSerialization.jsonObject(with: data) as? [[String: Any]])))
+        #expect(String(decoding: try DeviceList.json([]), as: UTF8.self) == "[]")
+    }
 }
 
 struct DeviceSelectorTests {
@@ -735,6 +745,63 @@ struct StartSetupTests {
 
 struct DoctorTests {
     private let project: (String?) throws -> (root: URL, source: RunnerProject.Source) = { _ in (URL(fileURLWithPath: "/relay"), .environment) }
+
+    private func jsonObject(_ options: DoctorOptions, host: FakeHost = FakeHost(), project: (String?) throws -> (root: URL, source: RunnerProject.Source))
+        throws -> (status: Int32, lines: [String], object: [String: Any]) {
+        var lines: [String] = []
+        let status = Doctor.run(options, commands: host.commands, configURL: URL(fileURLWithPath: "/nonexistent/config.json"),
+                                resolveProject: project, home: URL(fileURLWithPath: "/nonexistent"), output: { lines.append($0) })
+        // With --json the one object is the only output.
+        let text = try #require(lines.first)
+        let object = try #require(try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
+        return (status, lines, object)
+    }
+
+    @Test func jsonIsTheOnlyOutputAndListsEveryCheck() throws {
+        let result = try jsonObject(DoctorOptions(json: true), project: project)
+        #expect(result.status == RunnerExitCode.success.rawValue)
+        #expect(result.lines.count == 1)
+        #expect(!result.lines[0].contains("\n"))
+        let object = result.object
+        #expect(Set(object.keys) == ["ok", "problems", "warnings", "checks"])
+        #expect(object["ok"] as? Bool == true)
+        #expect(object["problems"] as? Int == 0)
+        let checks = try #require(object["checks"] as? [[String: Any]])
+        #expect(!checks.isEmpty)
+        for check in checks {
+            #expect(Set(check.keys) == ["section", "name", "status", "detail", "fix"], "\(check)")
+            #expect(["ok", "warning", "problem"].contains(check["status"] as? String))
+            // A fix is for a check that is not ok.
+            #expect((check["status"] as? String == "ok") == (check["fix"] is NSNull), "\(check)")
+        }
+        #expect(object["warnings"] as? Int == checks.filter { $0["status"] as? String == "warning" }.count)
+        // The same checks, and the same words, as the lines for people.
+        let target = try #require(checks.first { $0["name"] as? String == "target" })
+        #expect(target["status"] as? String == "warning")
+        #expect((target["detail"] as? String)?.contains("the only connected device") == true)
+        #expect((target["fix"] as? String)?.contains("pass --simulator") == true)
+        #expect(checks.contains { $0["name"] as? String == "signing" && $0["status"] as? String == "ok" && $0["section"] as? String == "Target: Test Phone" })
+    }
+
+    @Test func jsonKeepsTheExitStatusOfAProblem() throws {
+        let host = FakeHost()
+        host.findIdentity = ""
+        let result = try jsonObject(DoctorOptions(udid: deviceUDID, json: true), host: host,
+                                    project: { _ in throw SetupError(description: "not found") })
+        #expect(result.status == RunnerExitCode.failure.rawValue)
+        #expect(result.lines.count == 1)
+        #expect(result.object["ok"] as? Bool == false)
+        #expect(result.object["problems"] as? Int == 2)
+        let problems = (result.object["checks"] as? [[String: Any]] ?? []).filter { $0["status"] as? String == "problem" }
+        #expect(Set(problems.compactMap { $0["name"] as? String }) == ["runner project", "signing"])
+        #expect(problems.allSatisfy { $0["fix"] is String })
+    }
+
+    @Test func jsonIsAnOptionOfDoctor() throws {
+        #expect(try Arguments.parse(["doctor", "--json"]) == .doctor(DoctorOptions(json: true)))
+        #expect(try Arguments.parse(["doctor", "--simulator", "--json"]) == .doctor(DoctorOptions(simulator: true, json: true)))
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["doctor", "--json=1"]) }
+    }
 
     @Test func passesWithWarningsOnly() {
         var lines: [String] = []

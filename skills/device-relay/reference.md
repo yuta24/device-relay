@@ -1,6 +1,6 @@
 # device-relay リファレンス
 
-[SKILL.md](SKILL.md) の補足です。ここにないことは device-relay の README と docs/ の各文書（ファイル名と節の名前を「」で示します）か `relay --help` / `relay <command> --help` を見てください。`--help` はランナー操作のコマンド（`screenshot`・`tap` など）、`status`・`stop`・`record`、`relay skill` にあります。`start`・`doctor`・`devices`・`install` は `relay --help` の全体のヘルプに書かれています。
+[SKILL.md](SKILL.md) の補足です。ここにないことは device-relay の README と docs/ の各文書（ファイル名と節の名前を「」で示します）か `relay --help` / `relay <command> --help` を見てください。`--help`（`-h`、`relay help <command>` も同じ）はすべてのサブコマンドにあります。
 
 ## ランナーの起動・確認・停止
 
@@ -10,10 +10,10 @@
 | `relay start --background [オプション]` | `relay start` を端末から切り離して起動し、ready になったら戻ります。同上 |
 | `relay stop [--runner <path> \| --session <name> \| --all]` | runner.json の `relay start` を止めます（ランナー、relay が boot したシミュレータ、runner.json も片付く）。同上。`--all` はほかのエージェントのものも止めます |
 | `relay devices [--json] [--os <version>]` | 実機とシミュレータの一覧（NAME、UDID、KIND、OS、STATE）。`--os` でその OS のものだけ |
-| `relay doctor [--udid <UDID> \| --device <名前>] [--simulator] [--os <version>] [--project <path>]` | Xcode、Runner、署名、端末（同じ指定の `relay start` が使うもの）を確認。✗ があれば 1 |
-| `relay ping` | `{"ok":true,"busy":<bool>,"busyForMs":<ms or null>,"runner":{"version":…,"sourceHash":…}}`。busy でも即答します。`runner` はランナーをビルドした relay とソースのハッシュ（古いランナーにはない） |
+| `relay doctor [--udid <UDID> \| --device <名前>] [--simulator] [--os <version>] [--project <path>] [--json]` | Xcode、Runner、署名、端末（同じ指定の `relay start` が使うもの）を確認。✗ があれば 1。`--json` は 1 行の JSON オブジェクト `{"ok":…,"problems":n,"warnings":n,"checks":[{"section","name","status":"ok"\|"warning"\|"problem","detail","fix"}]}`（`fix` は ok で `null`）だけを出す（終了コードは同じ） |
+| `relay ping` | `{"ok":true,"busy":<bool>,"busyForMs":<ms or null>,"runner":{"version":…,"sourceHash":…}}`。生きているか・busy かの即答で、操作中でも返ります（端末には触れません）。`runner` はランナーをビルドした relay とソースのハッシュ（古いランナーにはない） |
 | `relay skill status` | このスキルの取り出し元とインストール先（プロジェクト・グローバル）、relay とのバージョンのずれ（!）。入れ直しは `relay skill install [--global \| --dir <skills dir>]`（利用者に確認してから）。詳しくは `relay skill --help` |
-| `relay health` | 端末情報、表示の向きでの画面サイズ（`screen.width` / `height` / `scale`）、`orientation`、`foreground`、表示の一覧 `displays` と前面アプリの表示 `display`、ランナーの版 `runner` |
+| `relay health` | 操作の前に要る情報（操作中は 409 で終了コード 5。busy でも調べるなら `relay ping`）。端末情報、表示の向きでの画面サイズ（`screen.width` / `height` / `scale`）、`orientation`、`foreground`、表示の一覧 `displays` と前面アプリの表示 `display`、ランナーの版 `runner` |
 
 `relay start` の主なオプション（`--background` と組み合わせられます）:
 
@@ -80,7 +80,7 @@ runner.json: /Users/<you>/.relay/runner.json
 | --- | --- |
 | 0 | `/ping` に応答した |
 | 3 | runner.json がない、または応答しない（stderr に「relay stop で片付け、relay start --background で起動」の案内。`--json` なら `{"alive":false,"ok":false,"code":"runner_unavailable",…}` も stdout に出る） |
-| 4 | トークンが拒否された（401）。runner.json が、そのアドレスで動いているランナーのものではない（別の `relay start`、古いファイル、`--runner` / `$RELAY_RUNNER` / カレントディレクトリから親へ順にたどった `.relay/runner.json`）。自分で起動したものでなければ利用者に確認する |
+| 4 | トークンが拒否された（401）。runner.json が、そのアドレスで動いているランナーのものではない（別の `relay start`、古いファイル、`--runner` / `$RELAY_RUNNER` / `~/.relay/runner.json`。カレントディレクトリの `.relay/runner.json` は読みません）。自分で起動したものでなければ利用者に確認する |
 | ほか | `/ping` がそれ以外の HTTP 状態を返した（ランナー操作のコマンドと同じ対応: 404 などは 7、5xx は 8） |
 
 **`relay stop`**: runner.json の `relay start` に SIGTERM を送り、終わるのを待ちます（Ctrl-C と同じ経路で、ランナーの `/shutdown`、relay が boot したシミュレータの shutdown、runner.json の削除）。フォアグラウンドの `relay start` も止まるので、自分で起動したものにだけ使います。
@@ -142,10 +142,9 @@ Claude Code などがシェルコマンドを sandbox（macOS では Seatbelt）
 
 1. `--runner <path>` か `--session <name>`（両方は不可）
 2. 環境変数 `RELAY_RUNNER` か `RELAY_SESSION`（両方あると書き方の誤りで終了コード 2）
-3. カレントディレクトリから親へ順に `.relay/runner.json`
-4. `~/.relay/runner.json`（セッションなしの `relay start` が書く場所）
+3. `~/.relay/runner.json`（セッションなしの `relay start` が書く場所）
 
-1・2 で指定したファイルやセッションがなければ、3・4 を見ずに終了コード 3 です。終了コード 4 が続くときは、3 の古いファイルが `~/.relay/runner.json` より先に見つかっていないか確かめます。
+1・2 で指定したファイルやセッションがなければ、3 を見ずに終了コード 3 です。カレントディレクトリや親の `.relay/runner.json` は読みません（以前の版が残した古いファイルによる 401 を防ぐため）。3 がなくてそのようなファイルがあるときは、エラーの文に `.relay/runner.json in <dir> is no longer read; pass --runner <path> to use it` と出ます。手で置いたファイルは `--runner <path>` で使います。終了コード 4 が続くときは、`--runner` / `$RELAY_RUNNER` が古いファイルを指していないか確かめます。
 
 ### セッション
 
@@ -179,8 +178,8 @@ Claude Code などがシェルコマンドを sandbox（macOS では Seatbelt）
 | `orientation` | `relay orientation portrait\|portraitUpsideDown\|landscapeLeft\|landscapeRight\|landscape`（`landscape` は `landscapeLeft` の別名） |
 | `launch` / `terminate` | `relay launch <bundle-id>` / `relay terminate <bundle-id>`。アプリが起動・終了するまで返らず、応答を最大 150 秒（30 + 120 秒）待ちます。`launch` は入っていないアプリならランナーに送らず、すぐに終了コード 6（`app_not_installed`）。確かめられないときは `cannot tell whether …` を出して送ります |
 | `foreground` | 前面アプリの `bundleId` と `pid` |
-| `shutdown` | ランナーを止めます（`relay start` の後片付けは行いません。通常は `relay stop` を使う） |
 
+- `relay shutdown` は一覧に載せていません。普段は `relay stop` を使います。`shutdown` はランナーに `/shutdown` を送って `{"ok":true}` で即座に戻るだけで、runner.json の削除とシミュレータの shutdown は、ランナーの終了を見た `relay start` が数秒後に行います（終わったかどうかは分かりません）。`relay start` がもう動いていなければ runner.json が残ります。`relay stop` は終了まで待って `stopped` を出します。
 - 応答を待つのは 30 秒に、その操作が待ちうる時間（`--timeout`、`--duration`、`--hold`、上の `type` / `launch` / `terminate`、`key` は 1 秒）を足した長さです。自分のコマンド実行のタイムアウトはそれより長くします。時間切れ（`no response within <秒>s`、終了コード 3）でもランナーはその操作を続けていて、終わるまでほかのコマンドは 409（終了コード 5）なので、`relay ping` の `busy` が `false` になるのを待ってから続けます。`launch` の時間切れは数分続くことがあります。busy の間も `relay stop` は効くので、自分で起動したランナーなら止めて起動し直すほうが早く戻ります。
 - `--type` の名前、キー名、ボタン名、向き、数値の範囲は送る前に確認され、間違っていれば書き方の誤りで終了コード 2、何も送りません（例: `relay key tab` → `unsupported key 'tab'`）。
 - `--mode` は通常指定しません（既定の `private` が速い。`xcui` はアプリのアイドルを待つので 1 回 1–2 秒）。

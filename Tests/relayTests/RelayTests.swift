@@ -369,18 +369,19 @@ struct BenchTests {
         var options = BenchOptions(url: "http://127.0.0.1:8100")
         options.token = "from-option"
         let missing = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        #expect(try Bench.token(options, infoURL: missing) == "from-option")
+        #expect(try Bench.resolveTarget(options, environment: [:], home: missing).token == "from-option")
     }
 
     @Test func tokenFallsBackToRunnerInfo() throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let infoURL = directory.appendingPathComponent(RunnerInfo.fileName)
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: home) }
+        let infoURL = RunnerLocator.userURL(home: home)
         try RunnerInfo(url: "http://127.0.0.1:8100/", token: "from-file", udid: "SIM").write(to: infoURL)
 
-        #expect(try Bench.token(BenchOptions(url: "http://127.0.0.1:8100"), infoURL: infoURL) == "from-file")
+        let options = BenchOptions(url: "http://127.0.0.1:8100")
+        #expect(try Bench.resolveTarget(options, environment: [:], home: home).token == "from-file")
         RunnerInfo.remove(at: infoURL)
-        #expect(throws: SetupError.self) { try Bench.token(BenchOptions(url: "http://127.0.0.1:8100"), infoURL: infoURL) }
+        #expect(throws: RunnerUnavailableError.self) { try Bench.resolveTarget(options, environment: [:], home: home) }
     }
 }
 
@@ -1383,13 +1384,19 @@ struct RunnerArgumentsTests {
         #expect(try Arguments.parse(["tap", "--help"]) == .commandHelp("tap"))
         #expect(try Arguments.parse(["screenshot", "-h"]) == .commandHelp("screenshot"))
         #expect(try Arguments.parse(["help", "find"]) == .commandHelp("find"))
-        #expect(try Arguments.parse(["help", "start"]) == .help)
+        #expect(try Arguments.parse(["help", "start"]) == .commandHelp("start"))
+        #expect(try Arguments.parse(["help", "bogus"]) == .help)
         #expect(Arguments.usage(for: "swipe").contains("relay swipe <x1> <y1> <x2> <y2>"))
-        // Every runner command is in the overall usage.
-        for name in Arguments.runnerUsages.keys {
+        // Every runner command is in the overall usage, except shutdown: relay stop is what stops a runner.
+        for name in Arguments.runnerUsages.keys where name != "shutdown" {
             #expect(Arguments.usage.contains("relay \(name)"))
         }
+        #expect(!Arguments.usage.contains("shutdown"))
+        #expect(!Arguments.listedRunnerCommands.contains("shutdown"))
         #expect(Set(Arguments.runnerCommandOrder) == Set(Arguments.runnerUsages.keys))
+        // It still has its help, which says to use relay stop first.
+        #expect(try Arguments.parse(["shutdown", "--help"]) == .commandHelp("shutdown"))
+        #expect(Arguments.usage(for: "shutdown").contains("Normally use relay stop."))
     }
 }
 
@@ -1491,24 +1498,58 @@ struct RunnerLocatorTests {
         }
     }
 
-    @Test func prefersOptionThenEnvironmentThenParentsThenHome() throws {
+    @Test func prefersOptionThenEnvironmentThenTheHomeCopy() throws {
         let tree = try Tree()
         defer { try? FileManager.default.removeItem(at: tree.root) }
         #expect(throws: RunnerUnavailableError.self) { try tree.locate() }
 
         let home = try tree.write("home", under: tree.home)
         #expect(try tree.locate() == home)
+        // A file in the current directory or a parent is not read, however near it is.
         let app = try tree.write("app", under: tree.app)
-        #expect(try tree.locate() == app)
         let current = try tree.write("current", under: tree.current)
-        #expect(try tree.locate() == current)
+        #expect(try tree.locate() == home)
 
         let other = try tree.write("other", under: tree.root.appendingPathComponent("elsewhere"))
         #expect(try tree.locate(environment: [RunnerLocator.environmentKey: other.path]) == other)
         // --runner wins over the environment, and relative paths start at the current directory.
         #expect(try tree.locate("../.relay/runner.json", environment: [RunnerLocator.environmentKey: other.path]) == app)
+        #expect(try tree.locate(".relay/runner.json") == current)
         // An empty variable is ignored.
-        #expect(try tree.locate(environment: [RunnerLocator.environmentKey: ""]) == current)
+        #expect(try tree.locate(environment: [RunnerLocator.environmentKey: ""]) == home)
+    }
+
+    @Test func aRunnerJSONInTheCurrentDirectoryIsNotReadButIsMentioned() throws {
+        let tree = try Tree()
+        defer { try? FileManager.default.removeItem(at: tree.root) }
+        let app = try tree.write("app", under: tree.app)
+
+        // Nothing at the home copy: the error says so, and where the ignored file is (a parent here).
+        let message = try #require(throws: RunnerUnavailableError.self) { try tree.locate() }.description
+        #expect(message.contains("no runner.json at \(tree.home.path)/.relay/runner.json"))
+        #expect(message.contains(".relay/runner.json in \(tree.app.path) is no longer read; pass --runner \(app.path) to use it"))
+        // The nearest one is named.
+        try tree.write("current", under: tree.current)
+        let nearest = try #require(throws: RunnerUnavailableError.self) { try tree.locate() }.description
+        #expect(nearest.contains(".relay/runner.json in \(tree.current.path) is no longer read"))
+        #expect(!nearest.contains("in \(tree.app.path) is"))
+
+        // Without such a file, no mention; and an option or a variable that names a missing file does not either.
+        let clean = try Tree()
+        defer { try? FileManager.default.removeItem(at: clean.root) }
+        #expect(try #require(throws: RunnerUnavailableError.self) { try clean.locate() }.description.contains("no longer read") == false)
+        #expect(try #require(throws: RunnerUnavailableError.self) { try tree.locate("missing.json") }.description.contains("no longer read") == false)
+    }
+
+    @Test func theHomeCopyIsNotMentionedAsAnIgnoredFile() throws {
+        let tree = try Tree()
+        defer { try? FileManager.default.removeItem(at: tree.root) }
+        // The home copy is found from the directories below it, so it is never the ignored one.
+        #expect(RunnerLocator.legacyFile(currentDirectory: tree.current, home: tree.home) == nil)
+        try tree.write("home", under: tree.home)
+        #expect(RunnerLocator.legacyFile(currentDirectory: tree.current, home: tree.home) == nil)
+        let app = try tree.write("app", under: tree.app)
+        #expect(RunnerLocator.legacyFile(currentDirectory: tree.current, home: tree.home) == app.standardizedFileURL)
     }
 
     @Test func givenPathMustExist() throws {
@@ -1518,17 +1559,6 @@ struct RunnerLocatorTests {
         // No fallback to another runner when the requested one is gone.
         #expect(throws: RunnerUnavailableError.self) { try tree.locate("missing.json") }
         #expect(throws: RunnerUnavailableError.self) { try tree.locate(environment: [RunnerLocator.environmentKey: "/nonexistent/runner.json"]) }
-    }
-
-    @Test func searchPathEndsWithTheHomeCopyOnce() {
-        let home = URL(fileURLWithPath: "/Users/me")
-        let path = RunnerLocator.searchPath(currentDirectory: URL(fileURLWithPath: "/Users/me/src/app"), home: home).map(\.path)
-        #expect(path == [
-            "/Users/me/src/app/.relay/runner.json", "/Users/me/src/.relay/runner.json", "/Users/me/.relay/runner.json",
-            "/Users/.relay/runner.json", "/.relay/runner.json"
-        ])
-        let outside = RunnerLocator.searchPath(currentDirectory: URL(fileURLWithPath: "/tmp/x"), home: home).map(\.path)
-        #expect(outside.last == "/Users/me/.relay/runner.json")
     }
 
     @Test func removesTheSharedCopyOnlyWhileItIsOurs() throws {

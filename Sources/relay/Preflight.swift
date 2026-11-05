@@ -6,6 +6,15 @@ struct Check: Equatable {
         case ok = "✓"
         case problem = "✗"
         case warning = "!"
+
+        /// The word `relay doctor --json` uses.
+        var jsonName: String {
+            switch self {
+            case .ok: return "ok"
+            case .problem: return "problem"
+            case .warning: return "warning"
+            }
+        }
     }
 
     var status: Status

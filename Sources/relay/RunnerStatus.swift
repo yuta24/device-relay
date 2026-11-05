@@ -3,9 +3,9 @@ import Foundation
 
 struct RunnerStatusOptions: Equatable {
     var json = false
-    /// `--runner <path>`; nil searches as `RunnerLocator` describes.
+    /// `--runner <path>`; nil uses what `RunnerLocator` describes.
     var runnerPath: String?
-    /// `--session <name>` (see `RelaySession`); nil uses `$RELAY_SESSION` or searches.
+    /// `--session <name>` (see `RelaySession`); nil uses `$RELAY_SESSION`, else `~/.relay/runner.json`.
     var session: String?
     /// `--all`: every session and the runner of `~/.relay/runner.json` (see `RunnerSessions`).
     var all = false
@@ -200,7 +200,7 @@ enum RunnerStatus {
         case .refusedByOS(let reason):
             object["ping"] = ["error": reason, "refusedByOS": true] as [String: Any]
         }
-        return (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])) ?? Data("{}".utf8)
+        return CLIOutput.json(object)
     }
 
     static func formatted(_ date: Date, timeZone: TimeZone) -> String {
