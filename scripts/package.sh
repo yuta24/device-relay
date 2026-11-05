@@ -11,12 +11,31 @@
 #
 # relay finds Runner/ from its own location (RunnerProject), so this layout has to keep bin/ next to it.
 # The asset name and layout are what mise's github backend detects with no options (docs/development.md).
+#
+# Two steps, which the release workflow runs apart so that it can notarize between them:
+#   --build-only  builds relay into dist/build/<arch>/relay, signed if RELAY_CODESIGN_IDENTITY is set
+#   --pack-only   packs that binary as it is (rebuilding could replace the notarized binary)
+#
+#   RELAY_CODESIGN_IDENTITY  the identity for codesign, such as a certificate's SHA-1 hash. Unset: unsigned
+#   RELAY_CODESIGN_KEYCHAIN  the keychain to find that identity in. Unset: the keychain search list
 set -euo pipefail
 
 usage() {
-	echo "usage: scripts/package.sh <version> <arm64|x86_64>   (the version without v, as in RelayVersion.current)" >&2
+	echo "usage: scripts/package.sh [--build-only|--pack-only] <version> <arm64|x86_64>   (the version without v, as in RelayVersion.current)" >&2
 	exit 2
 }
+
+mode=all
+case "${1:-}" in
+--build-only)
+	mode=build
+	shift
+	;;
+--pack-only)
+	mode=pack
+	shift
+	;;
+esac
 
 [ "$#" -eq 2 ] || usage
 version=$1
@@ -40,15 +59,49 @@ if ! git diff --quiet HEAD --; then
 	echo "package.sh: warning: uncommitted changes; relay is built with them, but the other files come from HEAD" >&2
 fi
 
-# Xcode's toolchain: another swift first in PATH (swiftly) may not match the Xcode SDK (see the Makefile).
-swift=${SWIFT:-xcrun swift}
-$swift build -c release --arch "$arch"
-binary="$($swift build -c release --arch "$arch" --show-bin-path)/relay"
+built_binary="dist/build/$arch/relay"
 
-built=$(lipo -archs "$binary")
-if [ "$built" != "$arch" ]; then
-	echo "package.sh: $binary is for $built, not $arch" >&2
+if [ "$mode" != pack ]; then
+	# Xcode's toolchain: another swift first in PATH (swiftly) may not match the Xcode SDK (see the Makefile).
+	swift=${SWIFT:-xcrun swift}
+	$swift build -c release --arch "$arch"
+	binary="$($swift build -c release --arch "$arch" --show-bin-path)/relay"
+
+	rm -rf "dist/build/$arch"
+	mkdir -p "dist/build/$arch"
+	cp "$binary" "$built_binary"
+
+	if [ -n "${RELAY_CODESIGN_IDENTITY:-}" ]; then
+		# shellcheck disable=SC2086 # the expansion is either nothing or the option and its quoted value
+		codesign --force --options runtime --timestamp --sign "$RELAY_CODESIGN_IDENTITY" \
+			${RELAY_CODESIGN_KEYCHAIN:+--keychain "$RELAY_CODESIGN_KEYCHAIN"} "$built_binary"
+		codesign --verify --strict --verbose=2 "$built_binary"
+		# Only this line: the rest of --display shows the identity's name and the Team ID in a public log.
+		code_directory=$(codesign --display --verbose=2 "$built_binary" 2>&1 | grep '^CodeDirectory ')
+		echo "$code_directory"
+		case "$code_directory" in
+		*flags=*runtime*) ;;
+		*)
+			echo "package.sh: $built_binary is signed without the hardened runtime" >&2
+			exit 1
+			;;
+		esac
+	fi
+fi
+
+if [ ! -f "$built_binary" ]; then
+	echo "package.sh: no $built_binary; run scripts/package.sh --build-only $version $arch first" >&2
 	exit 1
+fi
+built=$(lipo -archs "$built_binary")
+if [ "$built" != "$arch" ]; then
+	echo "package.sh: $built_binary is for $built, not $arch" >&2
+	exit 1
+fi
+
+if [ "$mode" = build ]; then
+	echo "$built_binary"
+	exit 0
 fi
 
 # Same reading of the project as CheckoutRunnerSource.referencedFiles.
@@ -71,7 +124,7 @@ trap 'rm -rf "$stage"' EXIT
 git archive --format=tar --prefix="$name/" HEAD Runner skills LICENSE README.md README.ja.md "${shared[@]}" |
 	tar -xf - -C "$stage"
 mkdir -p "$stage/$name/bin"
-cp "$binary" "$stage/$name/bin/relay"
+cp "$built_binary" "$stage/$name/bin/relay"
 
 mkdir -p dist
 rm -f "dist/$archive" "dist/$archive.sha256"

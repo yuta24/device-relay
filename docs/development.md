@@ -70,9 +70,77 @@ git tag v0.4.0
 git push origin v0.4.0
 ```
 
-タグの push で `.github/workflows/release.yml` が動きます。タグと `RelayVersion.current` が違えば失敗し、同じなら `swift test --no-parallel` の後に arm64 と x86_64 をビルドして、tarball と `.sha256` を添付した GitHub Release を作ります（リリースノートは自動生成）。
+3. GitHub の Actions でそのタグの実行を開き、「Review deployments」から `release` environment を承認します。承認するまでジョブは始まりません。
 
-手元で同じ tarball を作るには `make dist`、または `scripts/package.sh <version> <arm64|x86_64>` を使います。出力先は `dist/` です。バイナリは作業ツリーから、ほかのファイルは `git archive` で HEAD からとるので、未コミットの変更があると警告します。
+タグの push で `.github/workflows/release.yml` が動きます。タグと `RelayVersion.current` が違えば失敗し、同じなら次の順に進みます。どこかで失敗すると、以降は実行されず Release は作られません。
+
+1. `swift test --no-parallel`
+2. 証明書と API キーを一時的な keychain とファイルに取り込む（`$RUNNER_TEMP` の下）
+3. arm64 と x86_64 をビルドして署名する（Hardened Runtime、secure timestamp。`scripts/package.sh --build-only`）
+4. 両方のバイナリを 1 回の提出で公証する（`scripts/notarize.sh`。Accepted でなければ失敗）
+5. keychain と API キーを削除する（`if: always()` なので、失敗したときも実行）
+6. tarball に固める（`scripts/package.sh --pack-only`）
+7. tarball と `.sha256` を添付した GitHub Release を作る（リリースノートは自動生成）
+
+Hardened Runtime で entitlements は要りません。tarball や単体の Mach-O には公証のチケットを staple できないので、macOS はオンラインで確認します。
+
+手元で同じ tarball を作るには `make dist`、または `scripts/package.sh <version> <arm64|x86_64>` を使います。出力先は `dist/` です。バイナリは作業ツリーから、ほかのファイルは `git archive` で HEAD からとるので、未コミットの変更があると警告します。シークレットは要らず、署名も公証もされません（`RELAY_CODESIGN_IDENTITY` を設定すると署名だけします）。
+
+### シークレット
+
+`release` environment に置きます。リポジトリのファイルに署名 ID の名前や Team ID を書かないでください。ワークフローは keychain の中の「Developer ID Application」の ID を実行時に探し、SHA-1 ハッシュで指定します。
+
+| シークレット | 内容 |
+| --- | --- |
+| `DEVELOPER_ID_P12_BASE64` | Developer ID Application 証明書と秘密鍵の `.p12` を base64 にしたもの |
+| `DEVELOPER_ID_P12_PASSWORD` | その `.p12` のパスワード |
+| `NOTARY_KEY_P8_BASE64` | App Store Connect API キー（`.p8`）を base64 にしたもの |
+| `NOTARY_KEY_ID` | その API キーの Key ID |
+| `NOTARY_ISSUER_ID` | App Store Connect の Issuer ID |
+
+### 証明書と API キーの更新
+
+**証明書**（期限切れ、または漏えいしたとき）:
+
+1. Apple Developer の Certificates で Developer ID Application 証明書を作り、キーチェーンアクセスで秘密鍵ごと `.p12` に書き出します。`.p12` には証明書を 1 つだけ入れます（有効な Developer ID Application の ID が 1 つでないとワークフローは失敗します）。
+2. シークレットを更新します。`gh` はプロンプトで値を受け取るので、シェルの履歴に残りません。
+
+   ```sh
+   base64 -i developer-id.p12 | gh secret set DEVELOPER_ID_P12_BASE64 --env release
+   gh secret set DEVELOPER_ID_P12_PASSWORD --env release
+   ```
+
+3. 手元の `.p12` を削除します。
+
+secure timestamp 付きで署名したバイナリは、証明書が期限切れになっても動きます。失効（revoke）すると配布済みのバイナリも動かなくなることがあるので、漏えいしたとき以外は失効させないでください。
+
+**API キー**:
+
+1. App Store Connect の「ユーザとアクセス」>「統合」で Team Key を作ります（アクセス権は Developer）。`.p8` をダウンロードできるのは 1 回だけです。
+2. シークレットを更新します。
+
+   ```sh
+   base64 -i AuthKey_XXXXXXXXXX.p8 | gh secret set NOTARY_KEY_P8_BASE64 --env release
+   gh secret set NOTARY_KEY_ID --env release
+   gh secret set NOTARY_ISSUER_ID --env release
+   ```
+
+3. 次のリリースで動くことを確かめてから、古いキーを失効させ、手元の `.p8` を削除します。
+
+### 署名や公証が失敗したとき
+
+Release は作られていないので、利用者への影響はありません。失敗の内容はジョブのログで確かめます。公証が Accepted でなければ、Apple のログ（`notarytool log`）も出力されます。
+
+- **Apple 側の問題やタイムアウト（`In Progress` のまま 30 分）**: 同じタグのままジョブを「Re-run jobs」します。再実行にも承認が要ります。
+- **修正が要るとき**: 修正を main にマージしてから、タグを削除して付け直します。`RelayVersion.current` はそのままです。
+
+  ```sh
+  git push origin :refs/tags/v0.4.0
+  git tag -d v0.4.0
+  git checkout main && git pull
+  git tag v0.4.0
+  git push origin v0.4.0
+  ```
 
 ### tarball の名前と配置を変えるとき
 
