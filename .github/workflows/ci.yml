@@ -37,7 +37,8 @@ jobs:
       - name: Build
         run: xcrun swift build
       - name: Test
-        # One test at a time, so a test that hangs is the last one the log shows as started.
+        # One test at a time: run in parallel on the hosted runner, the tests hang (not reproduced
+        # locally, even with 2 or 3 workers). Serially they take about 5 seconds.
         run: xcrun swift test --no-parallel
         timeout-minutes: 10
 
