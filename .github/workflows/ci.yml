@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cli:
+    name: relay CLI (${{ matrix.xcode }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Each image carries one major Xcode version.
+          - xcode: Xcode 27
+            image: xcode-27
+          - xcode: Xcode 26
+            image: macos-latest
+    runs-on: ${{ matrix.image }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      # The image's default Xcode: a release, where the newest one installed may be a release candidate.
+      - name: Show the Xcode in use
+        run: |
+          xcodebuild -version
+          xcrun swift --version
+      - name: Build
+        run: xcrun swift build
+      - name: Test
+        # One test at a time: run in parallel on the hosted runner, the tests hang (not reproduced
+        # locally, even with 2 or 3 workers). Serially they take about 5 seconds.
+        run: xcrun swift test --no-parallel
+        timeout-minutes: 10
+
+  runner:
+    name: Runner (${{ matrix.xcode }}, simulator build)
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - xcode: Xcode 27
+            image: xcode-27
+          - xcode: Xcode 26
+            image: macos-latest
+    runs-on: ${{ matrix.image }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - name: Show the Xcode in use
+        run: xcodebuild -version
+      - name: Build the runner for the iOS simulator
+        run: |
+          xcodebuild build-for-testing \
+            -project Runner/RelayRunner.xcodeproj -scheme RelayRunner \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO
