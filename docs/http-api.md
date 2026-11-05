@@ -1,6 +1,6 @@
 # HTTP API
 
-ランナーが端末上で提供する HTTP API の仕様です（エンドポイント、認証、同時リクエスト、前面アプリ、文字入力）。全体の入口は [README](../README.md) です。
+ランナーが端末上で提供する HTTP API の仕様です（エンドポイント、認証、同時リクエスト、前面アプリ、文字入力）。全体の入口は [README](../README.ja.md) です。
 
 ## エンドポイント
 
@@ -34,7 +34,7 @@
 ```json
 {"coordinateSpace":"points","device":{"model":"iPhone","simulator":true,"systemVersion":"27.0"},
  "foreground":{"bundleId":"com.apple.mobilesafari","pid":42390,"source":"private"},"ok":true,
- "orientation":"landscapeLeft","runner":{"sourceHash":"<64 桁>","version":"0.2.0"},
+ "orientation":"landscapeLeft","runner":{"sourceHash":"<64 桁>","version":"0.3.0"},
  "screen":{"height":402,"scale":3,"width":874},"touchSynthesis":"private"}
 ```
 

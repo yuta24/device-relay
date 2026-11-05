@@ -1,6 +1,6 @@
 # 要素ツリーと要素セレクタ
 
-`/source` の要素ツリーと、`/tap`・`/press`・`/find` の要素セレクタ、要素の待機について説明します。全体の入口は [README](../README.md) です。
+`/source` の要素ツリーと、`/tap`・`/press`・`/find` の要素セレクタ、要素の待機について説明します。全体の入口は [README](../README.ja.md) です。
 
 ## 要素ツリー（/source）
 

@@ -1,10 +1,10 @@
 # CLI
 
-`relay` のサブコマンドでランナーを操作する方法、シナリオの実行（実験的）、エージェントスキルについて説明します。全体の入口は [README](../README.md) です。
+`relay` のサブコマンドでランナーを操作する方法、シナリオの実行（実験的）、エージェントスキルについて説明します。全体の入口は [README](../README.ja.md) です。
 
-## 0.2.0 からの変更（破壊的）
+## 0.3.0 の破壊的な変更（0.2.0 から）
 
-公開前に CLI の約束事をそろえました。0.2.0 のコマンドラインを使っているスクリプトやエージェントのスキルは、次の点を直してください。
+0.3.0 で CLI の約束事をそろえました。0.2.0 のコマンドラインを使っているスクリプトやエージェントのスキルは、次の点を直してください。
 
 - **終了コード `2` を追加**: 書き方の誤り（不明なオプション、値の不足・不正、両立しないオプション、不正なセッション名、`RELAY_RUNNER` と `RELAY_SESSION` の両方の設定、`relay run` の不正な手順）は `2` になりました。`1` はローカルの失敗（端末が使用中、ビルドの失敗、ファイルがない、`relay start --background` の「すでに動いている」など）だけです。
 - **失敗の JSON は stdout**: ランナー操作のコマンドで、失敗時のランナーの JSON を stderr ではなく stdout に出します。`2>&1` を付けて stderr の JSON を読んでいたなら、stdout を読んでください。runner.json がない・接続できない（`3`）などの relay 側の失敗も `{"ok":false,"code":"runner_unavailable","error":"…"}` で stdout に出ます。`launch` の `app_not_installed` と `find --require` の一致なしも stdout です。例外は `screenshot -o -`（stdout が画像なので、失敗の JSON は stderr）。
@@ -259,7 +259,7 @@ relay record stop --port 8101         # runner.json によらず、そのポー�
 
 `skills/device-relay/` は、コーディングエージェント（Claude Code など）が対象アプリのリポジトリで作業しながら relay でアプリの動作を確かめるためのスキルです。`SKILL.md` に基本の流れ（`relay status` → `relay start --background` → `relay launch` → スクリーンショットと要素の観察 → 操作 → 確認 → `relay stop`）、要素セレクタを優先する操作のコツ、終了コードごとの対処、安全上の注意をまとめ、オプションやトラブルシューティングの詳細は `reference.md` に分けています。
 
-使う前に、このリポジトリで `make install` と `relay install` を済ませ、`relay doctor` で確認しておきます（「[クイックスタート](../README.md#クイックスタート)」）。`relay install` は Runner と一緒にスキルも `~/.relay/runner/skills/device-relay` にコピーし、`relay skill install` はそこから対象アプリのリポジトリなどへ入れます。
+使う前に、このリポジトリで `make install` と `relay install` を済ませ、`relay doctor` で確認しておきます（「[クイックスタート](../README.ja.md#クイックスタート)」）。`relay install` は Runner と一緒にスキルも `~/.relay/runner/skills/device-relay` にコピーし、`relay skill install` はそこから対象アプリのリポジトリなどへ入れます。
 
 ```sh
 cd /path/to/app

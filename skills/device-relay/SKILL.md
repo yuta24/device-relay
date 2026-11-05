@@ -1,83 +1,83 @@
 ---
 name: device-relay
-description: relay CLI（device-relay）で iOS のシミュレータや実機を操作し、アプリの実際の動作を確かめる。アプリの起動、スクリーンショットを撮って画面を見る、要素ツリーを読む、タップ・長押し・スワイプ・文字入力ができ、アプリ側には何も組み込まない。iOS アプリの変更をシミュレータや実機で確かめるとき、画面がどう見えるか知りたいとき、UI の不具合を再現するとき、iPhone のアプリをタッチやキーボードで操作するときに使う。
+description: Drive iOS simulators and physical devices with the relay CLI (device-relay) to check how an app really behaves. It can launch apps, take screenshots to see the screen, read the element tree, and tap, long-press, swipe, and type, with nothing embedded in the app. Use when verifying an iOS app change on a simulator or device, when you need to know how a screen looks, when reproducing a UI bug, or when operating an iPhone app by touch or keyboard.
 ---
 
 # device-relay
 
-`relay` は、常駐する XCTest ランナーを通じて Mac から iOS のシミュレータや実機を操作する CLI です。対象アプリの改修は要りません。どのディレクトリ（対象アプリのリポジトリなど）からでも使え、そこには何も作りません（ランナーの URL とトークンは `~/.relay/runner.json`、スクリーンショットは `$TMPDIR/relay/`）。
+`relay` is a CLI that controls iOS simulators and physical devices from a Mac through a long-running XCTest runner. The target app needs no changes. It works from any directory (such as the target app's repository) and creates nothing there (the runner's URL and token go in `~/.relay/runner.json`, screenshots in `$TMPDIR/relay/`).
 
-オプションの詳細、要素ツリー、失敗の理由ごとの対処、トラブルシューティングは [reference.md](reference.md) にあります。全体の説明は device-relay の README と docs/ の各文書です。
+Option details, the element tree, what to do for each failure reason, and troubleshooting are in [reference.md](reference.md). For the full picture, see the device-relay README and the documents in docs/ (docs/ is in Japanese).
 
-## セットアップ（初回だけ）
+## Setup (first time only)
 
-1. `command -v relay` で確認します。なければ、device-relay のチェックアウトで `make install`（`~/.local/bin/relay` にリンク。`~/.local/bin` が PATH にあること）→ `relay install`（Runner プロジェクトとこのスキルを `~/.relay/runner` にコピー）を実行するよう利用者に頼みます。利用者のホームに書き込むので、断りなく実行しないでください。
-2. `relay doctor [--udid <UDID> | --device <名前>] [--simulator] [--os <version>] [--json]` で環境を確かめます（`relay start` に付けるのと同じ指定で、その端末を確認します）。✗ があれば終了コード 1（ローカルの失敗）で、各行に直し方が出ます。! は注意で、起動は止めません。ほかのセッションが使っている端末は `in use` の行に出て、自動選択から外れます（指定した端末が使用中なら ✗）。
-3. このスキル自体は `relay skill install`（対象アプリのリポジトリの `.claude/skills/device-relay` にコピー。`--global` なら `~/.claude/skills`）で入ります。`relay skill status` で ! が出たら（relay の更新でスキルが古い）、`relay skill install` で更新するよう利用者に伝えます。リポジトリやホームのファイルを書き換えるので、断りなく実行しないでください。
+1. Check with `command -v relay`. If it is missing, ask the user to run `make install` in a device-relay checkout (links `~/.local/bin/relay`; `~/.local/bin` must be in PATH) and then `relay install` (copies the Runner project and this skill to `~/.relay/runner`). These write to the user's home directory, so don't run them without asking.
+2. Check the environment with `relay doctor [--udid <UDID> | --device <name>] [--simulator] [--os <version>] [--json]` (given what you would pass to `relay start`, it checks that device). Any ✗ means exit code 1 (local failure), and each line says how to fix it. ! is a warning and does not block starting. A device another session is using appears on an `in use` line and is left out of automatic selection (✗ if you named it).
+3. This skill itself is installed by `relay skill install` (copies it to `.claude/skills/device-relay` in the target app's repository; `--global` uses `~/.claude/skills`). If `relay skill status` shows ! (relay was updated and the skill is out of date), tell the user to update it with `relay skill install`. This rewrites files in the repository or home directory, so don't run it without asking.
 
-### sandbox の中で動くとき
+### When running inside a sandbox
 
-エージェントのシェルが sandbox（Claude Code の sandbox など）の中で動くと、`relay start` は動かず（`~/.relay` や DerivedData に書けない、testmanagerd に接続できないなど）、ランナー操作のコマンドも localhost に接続できません。relay が `the OS refused the connection (Operation not permitted)` と出したり、`relay doctor` の `localhost` / `~/.relay` が ✗ なら、ランナーが止まっているのではなく、relay が sandbox の中にいます。`relay stop` や起動し直しをせず、relay を sandbox の外で動かす設定（Claude Code では `sandbox.excludedCommands` に `"relay *"`。[reference.md](reference.md#sandbox-の中から使う)）を利用者に頼みます。設定ファイルは断りなく書き換えないでください。除外が効くよう、relay は 1 回に 1 コマンドで呼び、`cd … &&`、リダイレクト（`>`）、`$(…)` と組み合わせません。
+If the agent's shell runs inside a sandbox (Claude Code's sandbox, for example), `relay start` does not work (it can't write to `~/.relay` or DerivedData, can't connect to testmanagerd, and so on), and the runner commands can't connect to localhost either. If relay prints `the OS refused the connection (Operation not permitted)`, or `localhost` / `~/.relay` is ✗ in `relay doctor`, the runner has not stopped: relay is inside a sandbox. Don't `relay stop` or restart anything. Ask the user to configure relay to run outside the sandbox (in Claude Code, `"relay *"` in `sandbox.excludedCommands`; see [reference.md](reference.md#using-relay-from-inside-a-sandbox)). Don't rewrite settings files without asking. For the exclusion to take effect, call relay with one command at a time, not combined with `cd … &&`, redirection (`>`), or `$(…)`.
 
-## 基本の流れ
-
-```sh
-relay status                                    # 0: 応答あり（それを使う）。3: ランナーがない・応答なし。4: トークン拒否
-relay devices                                   # 端末の一覧（NAME、UDID、KIND、OS、STATE）
-relay start --background --device "<名前>"      # または --udid <UDID>（--os <version> で絞れる）。ready まで待ち、stdout に ready:/device:/pid:/log:/token: を出して 0
-relay launch <bundle-id>                        # 対象アプリを起動・前面化
-relay screenshot --scale 1                      # 保存先の絶対パスが出る → そのファイルを画像として読む（1 px = 1 pt）
-relay source --format compact --filter interactive   # 操作できる要素を 1 行 1 要素で
-relay find --type button                        # セレクタに一致する要素（JSON）
-relay tap --id <identifier>                     # 要素を指定して操作
-relay find --id <次の画面の要素> --timeout 5 --require   # 現れるまで待つ（現れなければ終了コード 6）。その後で観察し直す
-relay stop                                      # 自分で起動したときだけ。stopped か not running で 0
-```
-
-- **動いているランナーはそのまま使う。** `relay status` が 0 なら、利用者などがすでに起動しています。それを使い、止めないでください。`~/.relay/runner.json` のランナーが同じポート（`--port`、既定 8100）で応答していると `relay start --background` は起動せずに終了コード 1 で終わり `relay stop` を案内しますが、`relay stop` はフォアグラウンドの `relay start` も止めるので、止めてよいのは自分が起動したものだけです。同じポートで別の `relay start` がまだ起動の途中（boot やビルド中）のときも、`another relay start ... is starting or running a runner on port ...` で終了コード 1 になります。そのときは `relay status` が 0 になるのを待ってそれを使います。
-- **`relay status` が 4 なら止めずに確かめる。** 見つかった runner.json のトークンが、そのアドレスで応答しているランナーのものではありません（別の `relay start` のランナーが同じポートにいる、古い runner.json、`--runner` / `$RELAY_RUNNER` / `~/.relay/runner.json` が別のものを指している。カレントディレクトリの `.relay/runner.json` は読みません）。自分で起動したものでなければ、`relay stop` や起動し直しをせずに利用者に確認します。
-- **`status`・`ping`・`health` は目的で選ぶ。** `relay status` は runner.json と `relay start`（PID・端末・版）も見る、起動後の確認です（機械向けには `--json`）。`relay ping` は「生きているか、`busy` か」の即答で、操作中でも返ります。`relay health` は操作の前に要る情報（画面サイズなど）で、操作中は 409（終了コード 5）になります。
-- **自分のランナーを覚えておく。** `relay start --background` が出す `pid:` を控え、終わるときは `relay status` の `pid` が同じであることを確かめてから `relay stop` します。
-- **端末は明示する。** `--udid` / `--device` がないと、`relay start` は接続中の実機が 1 台ならそれ、なければ起動中のシミュレータが 1 台ならそれを選び、決まらなければ候補つきでエラーにします。実機がつながっているとシミュレータより実機が選ばれるので、利用者に実機を指定されていない限り、`relay devices` で選んだシミュレータを `--device` / `--udid` で指定します（起動中のシミュレータを使うなら `--simulator` でも、実機を除いて選べます）。同じ名前のシミュレータが複数ある（ランタイム違い）ときは、`--device` が最も新しい iOS のものを選び、`relay: using …` に OS を出します。特定の iOS が要るときは `--os 26.5` のように絞るか `--udid` を使います。停止中のシミュレータを指定すると boot し、`relay stop` で shutdown します。
-- `relay start --background` の進行状況（boot、ビルド、起動）は stderr の `relay:` 行に出ます。初回はランナーのビルドで数分かかるので、コマンドのタイムアウトを長めにします（起動まで最大 30 分、起動後は `--ready-timeout`（既定 180 秒）+ 15 秒待ちます）。
-- 起動に失敗すると、子の `relay start` を止め、stderr にログの末尾と原因（ログのパス付き）を出して非ゼロで終わります。終了コードは、ready の前に子が終了した（ビルドの失敗、端末が見つからない、`Failed to initialize for UI testing` など）なら 1、時間切れなら 3、同じポートですでにランナーが応答しているなら 1 です。ログの末尾と、必要ならログファイル（`~/.relay/logs/start-<時刻>-<port>.log`）を読んでから対処します（[トラブルシューティング](reference.md#トラブルシューティング)）。
-- 対象アプリは端末にインストール済みである必要があります（プロジェクトのやり方で Xcode や `xcodebuild` / `xcrun simctl install` でビルド・インストールする）。`relay launch` は起動・前面化だけで、入っていなければランナーに送らず、すぐに終了コード 6（`app_not_installed`）で終わります。
-- バンドル ID はプロジェクトの `PRODUCT_BUNDLE_IDENTIFIER` で調べるか、アプリを前面にして `relay foreground` で確かめます。
-
-### 並列に使うとき
-
-ほかのエージェントも relay を使っている（または使うかもしれない）ときは、セッションを使います。
-
-**まず `echo "$RELAY_SESSION"` で確かめます。** 利用者がエージェントの起動時に渡していれば（`RELAY_SESSION=agent-1 claude` など）値が出て、どのコマンドもそのセッションを使うので、そのまま進めます。空なら、自分のセッション名を決めて、relay の各コマンドに毎回 `--session <name>` を付けます。
-
-**`export` に頼りません。** コマンドごとに新しいシェルになる環境では次のコマンドに残らず、そのコマンドはセッションなしになって、終了コード 3 で失敗するか、別の誰かのランナーを操作します。
+## Basic flow
 
 ```sh
-relay status --all                                                     # 全セッションの一覧（どの端末が使用中か）
-relay start --background --session agent-1 --device "<名前>" --os 27.0  # 端末はセッションごとに分ける。ポートは自動
-relay tap --session agent-1 --id <id>                                  # 自分のランナーだけに届く
-relay stop --session agent-1                                           # 自分のセッションだけ止まる
+relay status                                    # 0: answered (use it). 3: no runner, or no answer. 4: token rejected
+relay devices                                   # list devices (NAME, UDID, KIND, OS, STATE)
+relay start --background --device "<name>"      # or --udid <UDID> (--os <version> narrows it). Waits until ready, prints ready:/device:/pid:/log:/token: on stdout, exits 0
+relay launch <bundle-id>                        # launch the target app or bring it to the foreground
+relay screenshot --scale 1                      # prints the saved file's absolute path → read that file as an image (1 px = 1 pt)
+relay source --format compact --filter interactive   # the elements you can operate, one per line
+relay find --type button                        # the elements matching a selector (JSON)
+relay tap --id <identifier>                     # operate by element
+relay find --id <element on the next screen> --timeout 5 --require   # wait for it to appear (exit code 6 if it doesn't), then observe again
+relay stop                                      # only if you started it yourself. stopped or not running, exit 0
 ```
 
-- `relay: warning: no session selected; using <パス>, while sessions <名前> are running` が出たら、そのコマンドはセッションなしで動いています（失敗にはなりません）。自分のランナーを使うつもりなら `--session` を付け直し、その操作がどの端末に届いたかを確かめます。
-- セッションを指定すると、ほかの runner.json へは決して進みません。まだ起動していなければ終了コード 3 です。`RELAY_SESSION` と `RELAY_RUNNER` の両方があると書き方の誤りで終了コード 2 です。
-- 1 台の端末で動かせるランナーは 1 つです。使用中の端末を指定すると、持ち主つきのエラーで終わるので、別の端末を選びます。端末を指定しないセッションは、空いている起動中のシミュレータから新しい iOS・名前順で 1 台選び、同時に起動して取られたら次の 1 台を選びます。ほかのセッションのランナーは止めません（`relay stop --all` も同様に使いません）。
-- 同じソースのビルドは共有です。ほかの `relay start` がビルド中か、同じビルドからランナーを起動している間は `waiting for another relay start's build` と出して待ちます。先の起動が ready になるまで数分かかることがありますが、失敗ではないので、止めたり起動し直したりせずに待ちます。
-- セッションのポートはほかの `relay start` とは重なりませんが、ほかのプロセスが先に取ると、`relay start` はランナーの起動に失敗します（ログに `Address already in use`）。そのときはもう一度 `relay start` すれば、次の空きポートを選びます。
+- **Use a running runner as it is.** If `relay status` exits 0, the user or someone else has already started one. Use it, and don't stop it. If the runner in `~/.relay/runner.json` answers on the same port (`--port`, default 8100), `relay start --background` does not start anything and exits 1, pointing to `relay stop`; but `relay stop` also stops a foreground `relay start`, so stop only what you started yourself. If another `relay start` on the same port is still starting (booting or building), you also get exit code 1 with `another relay start ... is starting or running a runner on port ...`. In that case, wait for `relay status` to return 0 and use that runner.
+- **If `relay status` returns 4, investigate before stopping anything.** The token in the runner.json it found doesn't belong to the runner answering at that address (another `relay start`'s runner is on the same port, runner.json is stale, or `--runner` / `$RELAY_RUNNER` / `~/.relay/runner.json` points elsewhere; `.relay/runner.json` in the current directory is not read). Unless you started it yourself, ask the user before running `relay stop` or restarting.
+- **Choose between `status`, `ping`, and `health` by purpose.** `relay status` also looks at runner.json and `relay start` (PID, device, version), and is the check to run after starting (`--json` for machines). `relay ping` answers at once whether it is alive and `busy`, even during an operation. `relay health` gives what you need before operating (screen size and so on), and returns 409 (exit code 5) during an operation.
+- **Remember your own runner.** Note the `pid:` that `relay start --background` prints, and when finishing, check that `pid` in `relay status` is the same before running `relay stop`.
+- **Name the device explicitly.** Without `--udid` / `--device`, `relay start` picks the only connected physical device, else the only booted simulator, and otherwise fails with a list of candidates. A connected physical device is picked over a simulator, so unless the user asked for a physical device, pass a simulator chosen from `relay devices` with `--device` / `--udid` (to use a booted simulator, `--simulator` also leaves physical devices out). If several simulators share a name (different runtimes), `--device` picks the one with the newest iOS and shows its OS in `relay: using …`. If you need a specific iOS, narrow it with something like `--os 26.5`, or use `--udid`. A shut-down simulator you name is booted, and shut down again by `relay stop`.
+- Progress of `relay start --background` (boot, build, launch) goes to `relay:` lines on stderr. The first run takes minutes to build the runner, so give the command a long timeout (it waits up to 30 minutes until launch, then `--ready-timeout` (default 180 seconds) + 15 seconds).
+- If starting fails, it stops the child `relay start`, prints the end of the log and the cause (with the log's path) to stderr, and exits non-zero. The exit code is 1 if the child exited before ready (build failure, device not found, `Failed to initialize for UI testing`, and so on), 3 on timeout, and 1 if a runner already answers on the same port. Read the end of the log and, if needed, the log file (`~/.relay/logs/start-<time>-<port>.log`) before acting ([Troubleshooting](reference.md#troubleshooting)).
+- The target app must already be installed on the device (build and install it the project's way: Xcode, `xcodebuild`, or `xcrun simctl install`). `relay launch` only launches or foregrounds; if the app isn't installed it sends nothing to the runner and exits 6 at once (`app_not_installed`).
+- Find the bundle ID in the project's `PRODUCT_BUNDLE_IDENTIFIER`, or bring the app to the foreground and check with `relay foreground`.
 
-## 観察
+### Using it in parallel
 
-- **ふだんは縮小したスクリーンショットと絞り込んだツリーを使います。** フル解像度の画像や全体のツリーは大きく（設定のトップで画像 1206×2622 px、ツリー 37 KB）、読むたびにコンテキストを使います。
-- `relay screenshot --scale 1` は、端末側で 1 ポイント = 1 画素に縮小した PNG を保存し、絶対パスを 1 行出します（iPhone で約 400×870 px）。そのファイルを読んで画面を見ます。画像の画素がそのままタップのポイントになります。stderr の `relay: image … px, screen … pt, … px/pt` で確かめられます。iPad など画面が大きいときは `--max-size 1024` も付けます（そのときは画素を stderr の px/pt で割るとポイント）。
-- 小さな文字や細部を確かめたいときだけ、フル解像度の `relay screenshot`（オプションなし）を使います。その画像の画素はポイント × scale（iPhone では 3）です。
-- `relay source --format compact --filter interactive` は、画面に見えていて有効な、操作できる要素（ボタン、セル、入力欄、スイッチなど）だけを 1 行 1 要素で出します（設定のトップで 12 行・約 1 KB）。行の `type`・`label`・`id`・`value` はそのままセレクタに使えます: `button label="General" id="com.apple.settings.general" frame=16,293,370,52` → `relay tap --id com.apple.settings.general` か `relay tap --type button --label General`。キーボードのキーは出ません（`relay type` / `relay key` を使う）。JSON がほしければ `--format compact` を外します。
-- 一覧にない要素（見出しや結果のテキスト、無効なボタン）を確かめたいときは、`relay find <セレクタ>` か、全体のツリー `relay source --format compact`（1 行 1 要素、字下げで親子関係）を使います。`relay source`（JSON）と `--format text` は大きいので、必要なときだけ（JSON は `jq` で絞るか `--max-depth <n>`）。どれも `--bundle-id` がなければ前面アプリが対象です。
-- `relay find <セレクタ>` は一致した要素の `type`・`identifier`・`label`・`value`・`frame`・`enabled`・`index` を返します。決まった要素を探すにはこれがいちばん速く、一致がなくても終了コード 0（`"count":0`）です。`--require` を付けると、一致がないとき終了コード 6 になります（あるはずの要素を確かめるとき）。
-- スクリーンショットは利用者に見えるもの、ツリーは指定できるものです。画面の理解にはスクリーンショット、セレクタを決めるには絞り込んだツリーや `find` と、両方を使います。
+When other agents are using (or might use) relay, use sessions.
 
-## 操作
+**First check with `echo "$RELAY_SESSION"`.** If the user passed it when launching the agent (`RELAY_SESSION=agent-1 claude`, for example), a value appears and every command uses that session, so just carry on. If it is empty, choose your own session name and add `--session <name>` to every relay command.
 
-**座標より要素セレクタを優先します。** セレクタは `--id`・`--label`・`--type`・`--value` を 1 つ以上（すべて完全一致・大文字小文字を区別・AND）と、任意の `--index <n>` です。
+**Don't rely on `export`.** In environments that start a new shell for each command it does not carry over, and the next command runs without a session, so it either fails with exit code 3 or operates someone else's runner.
+
+```sh
+relay status --all                                                     # list every session (which devices are in use)
+relay start --background --session agent-1 --device "<name>" --os 27.0  # one device per session. The port is automatic
+relay tap --session agent-1 --id <id>                                  # reaches only your runner
+relay stop --session agent-1                                           # stops only your session
+```
+
+- If you see `relay: warning: no session selected; using <path>, while sessions <names> are running`, that command ran without a session (it does not fail). If you meant to use your own runner, add `--session` and check which device that operation reached.
+- Once a session is specified, relay never falls back to another runner.json. If it hasn't started yet, the exit code is 3. Having both `RELAY_SESSION` and `RELAY_RUNNER` set is a usage error, exit code 2.
+- A device can run one runner. Naming a device in use fails with an error that names its owner, so choose another device. A session that names no device takes one free booted simulator, newest iOS first and then by name, and if another start takes it at the same moment, it picks the next. Don't stop other sessions' runners (don't use `relay stop --all` either).
+- Builds of the same sources are shared. While another `relay start` is building, or launching a runner from the same build, relay prints `waiting for another relay start's build` and waits. That can take minutes until the earlier one is ready, but it isn't a failure, so wait rather than stopping or restarting.
+- A session's port does not collide with other `relay start`s, but if another process takes it first, `relay start` fails to launch the runner (`Address already in use` in the log). Run `relay start` again and it picks the next free port.
+
+## Observing
+
+- **Normally use shrunk screenshots and filtered trees.** Full-resolution images and whole trees are large (image 1206×2622 px, tree 37 KB at the top of Settings) and use up context each time you read them.
+- `relay screenshot --scale 1` saves a PNG shrunk on the device to 1 pixel per point and prints its absolute path as one line (about 400×870 px on an iPhone). Read that file to see the screen. The image's pixels are the points you tap. You can confirm it from `relay: image … px, screen … pt, … px/pt` on stderr. On large screens such as an iPad, also add `--max-size 1024` (then divide pixels by the px/pt on stderr to get points).
+- Use full-resolution `relay screenshot` (no options) only when you need to check small text or fine details. Its pixels are points × scale (3 on an iPhone).
+- `relay source --format compact --filter interactive` lists only the visible, enabled elements you can operate (buttons, cells, text fields, switches, and so on), one per line (12 lines, about 1 KB at the top of Settings). A line's `type`, `label`, `id`, and `value` work directly as selectors: `button label="General" id="com.apple.settings.general" frame=16,293,370,52` → `relay tap --id com.apple.settings.general` or `relay tap --type button --label General`. Keyboard keys are not listed (use `relay type` / `relay key`). For JSON, drop `--format compact`.
+- To check elements that aren't listed (headings or result text, disabled buttons), use `relay find <selector>` or the whole tree with `relay source --format compact` (one element per line, indentation for parent and child). `relay source` (JSON) and `--format text` are large, so use them only when needed (narrow JSON with `jq` or `--max-depth <n>`). All of them target the foreground app unless you pass `--bundle-id`.
+- `relay find <selector>` returns the matching elements' `type`, `identifier`, `label`, `value`, `frame`, `enabled`, and `index`. It is the fastest way to look for a known element, and no match is still exit code 0 (`"count":0`). With `--require`, no match is exit code 6 (for checking an element that should be there).
+- The screenshot is what the user sees; the tree is what you can address. Use both: the screenshot to understand the screen, and the filtered tree or `find` to decide on a selector.
+
+## Operating
+
+**Prefer element selectors over coordinates.** A selector is one or more of `--id`, `--label`, `--type`, and `--value` (all exact, case-sensitive matches, ANDed together), plus an optional `--index <n>`.
 
 ```sh
 relay tap --id login.button
@@ -86,84 +86,84 @@ relay tap --type textField --index 1
 relay press --label "Photo" --type cell --duration 1.0
 ```
 
-- アプリが accessibilityIdentifier を付けていれば `--id`、なければ `--label` と `--type` を使います（セルは同じラベルの `button` と `staticText` の 2 つに見えることが多いので `--type` を足す）。
-- `ambiguous` で失敗したら、候補を読んで条件か `--index` を足します。
-- 座標（`relay tap <x> <y>`、`relay swipe <x1> <y1> <x2> <y2>`）は、表示の向きでの画面左上を原点とするポイント単位です。画面の外（`0 ≤ x < screen.width`、`0 ≤ y < screen.height` の外）は何も送らずに終了コード 7 です。要素の `frame` や `relay health` の `screen.width` / `screen.height` から求めます。スクリーンショットから求めるときは、`--scale 1` の画像なら画素がそのままポイント、それ以外は画素を stderr の px/pt（フル解像度なら scale）で割ります。座標は、スクロールなど要素で指定できない操作だけに使います（例: `relay swipe 200 700 200 200` で下から上へ）。
-- 文字入力: 入力欄をタップしてから `relay type "text"`。確定は `--key return` を付けます。1 文字消すのは `relay key delete`。キーは `return`・`delete`・`space` だけです。`-` で始まる文字列は `relay type -- -text` のように `--` を挟みます。
-- **sleep せずに待つ。** 画面が変わる操作の後は、次の画面にある要素を `relay find <セレクタ> --timeout <秒>`（最大 10 秒。`count` を確認）で待つか、`tap` / `press` に `--timeout` を付けて要素が現れるのを待たせます。もっと長く待つときは短い timeout を繰り返します。
-- iPad のウィンドウ表示でも、要素の frame と `point` は画面の座標です。`relay find --type window` の `window` でウィンドウの位置と倍率がわかります。同じアプリのウィンドウが複数あるなどで位置が決まらないと、要素指定のタップは終了コード 6 で `window_position_unknown` になり（何も送りません）、`find` と `source` には `warning` が付きます。そのときはスクリーンショットから座標で指定します。
-- 表示が複数ある端末（iPhone Duo。外側と内側）では、`relay health` の `display` と `screen`、スクリーンショット、座標、要素の frame は、すべて前面アプリが載っている表示のものです。折りたたみを変えたら（変えるのは利用者です）`relay status` と `relay health` を読み直します（切り替えでランナーが止まることがあります）。終了コード 6 で `display_unknown`（`cannot tell which display`）が出たら画面が暗いので利用者に確かめ、`touch_mode_unavailable`（`xcui touches can't reach`）が出たら `--mode` を外して（または `--mode private` で）送り直します。詳しくは reference.md の「座標と向き」。
-- **画面が変わったら観察し直す。** frame、index、前面アプリは変わります。前の画面のセレクタや座標を確かめずに使い回さないでください。
-- コマンドは 1 つずつ、前の結果を待ってから送ります。ランナーは一度に 1 コマンドしか実行せず、重なると busy（終了コード 5）になります。
-- `relay launch` の直後は前面アプリが切り替え前のまま返ることがあります。対象を確実にしたいときは `find` / `tap` / `type` / `source` に `--bundle-id <id>` を付けます。
-- `relay health` の `foreground.source` が `fallback` のときは、手で切り替えたアプリを追えないので `--bundle-id <id>` を付けます。`touchSynthesis` が `xcui` のときは、タッチが 1 回 1–2 秒かかります。どちらも非公開 API が使えない状態です（詳しくは device-relay の docs/private-api.md）。
+- Use `--id` if the app sets an accessibilityIdentifier, otherwise `--label` and `--type` (a cell often appears as both a `button` and a `staticText` with the same label, so add `--type`).
+- If it fails with `ambiguous`, read the candidates and add a condition or `--index`.
+- Coordinates (`relay tap <x> <y>`, `relay swipe <x1> <y1> <x2> <y2>`) are in points, with the origin at the top left of the screen in the displayed orientation. Outside the screen (outside `0 ≤ x < screen.width`, `0 ≤ y < screen.height`), nothing is sent and the exit code is 7. Get them from an element's `frame` or from `screen.width` / `screen.height` in `relay health`. When working from a screenshot, the pixels of a `--scale 1` image are points; otherwise divide pixels by the px/pt on stderr (the scale, at full resolution). Use coordinates only for what elements can't express, such as scrolling (for example `relay swipe 200 700 200 200`, from bottom to top).
+- Text input: tap the text field, then `relay type "text"`. Add `--key return` to submit. To delete one character, `relay key delete`. The only keys are `return`, `delete`, and `space`. For text starting with `-`, put `--` first: `relay type -- -text`.
+- **Wait without sleeping.** After an operation that changes the screen, wait for an element on the next screen with `relay find <selector> --timeout <seconds>` (up to 10 seconds; check `count`), or add `--timeout` to `tap` / `press` so they wait for the element to appear. For longer waits, repeat a short timeout.
+- In iPad windowed mode too, element frames and `point` are in screen coordinates. `window` in `relay find --type window` gives the window's position and scale. If the position can't be determined (several windows of the same app, for example), element taps exit 6 with `window_position_unknown` (nothing is sent), and `find` and `source` include a `warning`. In that case, use coordinates from a screenshot.
+- On devices with several displays (iPhone Duo: outer and inner), `display` and `screen` in `relay health`, screenshots, coordinates, and element frames all refer to the display the foreground app is on. After a fold change (which only the user can do), read `relay status` and `relay health` again (the switch can stop the runner). If you get exit code 6 with `display_unknown` (`cannot tell which display`), the screen is dark, so check with the user; with `touch_mode_unavailable` (`xcui touches can't reach`), drop `--mode` (or use `--mode private`) and send it again. See "Coordinates and orientation" in reference.md.
+- **Observe again after the screen changes.** Frames, indexes, and the foreground app change. Don't reuse selectors or coordinates from the previous screen without checking.
+- Send commands one at a time, waiting for the previous result. The runner runs one command at a time, and overlapping ones get busy (exit code 5).
+- Right after `relay launch`, the foreground app may still be reported as the previous one. To be sure of the target, add `--bundle-id <id>` to `find` / `tap` / `type` / `source`.
+- If `foreground.source` in `relay health` is `fallback`, apps switched by hand can't be tracked, so add `--bundle-id <id>`. If `touchSynthesis` is `xcui`, each touch takes 1–2 seconds. Both mean the private APIs are unavailable (see docs/private-api.md in device-relay).
 
-## 手順の再生（relay run、実験的）
+## Replaying steps (relay run, experimental)
 
-実験的な機能で、形式は変わることがあります。初めての画面は 1 コマンドずつ観察して進め、確かめ終えた手順だけを再生に回します。
+This is an experimental feature, and the format may change. Go through an unfamiliar screen one command at a time while observing, and replay only steps you have already confirmed.
 
-1. 確かめた手順を、`relay` を除いて 1 行 1 手順で `<名前>.relay` に書き出す（先頭に `# relay-run: 1`。リポジトリに置くかは利用者に確認）。画面が変わるところは `find <セレクタ> --timeout 5 --require` か `tap … --timeout 5` で待ち、到着を確かめる。
-2. 流す前に `relay run <file> --check` で検証する（何も実行しない）。
-3. 次からは `relay run <file>` で再生する。最初に失敗した手順で止まり、`relay: step i/n (line N) failed: …` とその手順の終了コード（下の表）が出る。
-4. 失敗したら、止まった時点の画面を観察し直し（スクリーンショット、`relay source --format compact --filter interactive`）、line N のセレクタや待ちを直して 2 からやり直す。
+1. Write the confirmed steps to `<name>.relay`, one per line without `relay` (start with `# relay-run: 1`; ask the user whether to keep it in the repository). Where the screen changes, wait with `find <selector> --timeout 5 --require` or `tap … --timeout 5` to confirm you arrived.
+2. Before running it, validate it with `relay run <file> --check` (runs nothing).
+3. From then on, replay it with `relay run <file>`. It stops at the first step that fails, printing `relay: step i/n (line N) failed: …` and exiting with that step's exit code (table below).
+4. If it fails, observe the screen as it stopped (screenshot, `relay source --format compact --filter interactive`), fix the selector or wait on line N, and start again from step 2.
 
-書き方の詳細は [reference.md](reference.md#シナリオの実行relay-run実験的)。
+See [reference.md](reference.md#running-scenarios-relay-run-experimental) for how to write them.
 
-## 録画
+## Recording
 
-動作の証拠（プルリクエストに貼る動画など）を残すときは、`relay record start` → 操作 → `relay record stop` です。シミュレータと、USB で接続した実機で使えます（Wi-Fi だけの実機は終了コード 1）。
+To keep evidence of behavior (a video for a pull request, for example), use `relay record start`, then your operations, then `relay record stop`. It works on simulators and on physical devices connected with USB (a device on Wi-Fi only gets exit code 1).
 
-- 実機は、relay を動かしているアプリ（ターミナルなど）に macOS のカメラの許可が要ります。初回は `record start` が macOS のダイアログを出して答えを待つので、利用者に「許可」を押すよう頼みます。拒否済みなどで終了コード 1 になったら、システム設定 > プライバシーとセキュリティ > カメラ で許可してもらいます。エージェントが自分で設定を変えたり `tccutil` を使ったりしてはいけません。
+- On a physical device, the app running relay (the terminal, for example) needs macOS camera access. The first `record start` shows a macOS dialog and waits for the answer, so ask the user to press Allow. If it exits 1 because access was denied earlier or the like, ask them to allow it in System Settings > Privacy & Security > Camera. The agent must not change the setting itself or use `tccutil`.
 
-- `relay record start` は保存先の絶対パスを出して戻ります（既定は `$TMPDIR/relay/`、`-o <file>` で指定。ディレクトリは存在すること）。`relay record stop` は書き出しを待って同じパスを出します。そのファイルを利用者に伝えます。
-- 止め忘れても `--max-duration`（既定 600 秒）で止まり、`record stop` で取り出せます。自分で起動したランナーを `relay stop` で止めるときも、録画は先に書き出されます。
-- 録画中に別の `record start` は終了コード 1 です。`relay record status` で確かめます。詳しくは [reference.md](reference.md#録画relay-record)。
+- `relay record start` prints the absolute path of the video and returns (default `$TMPDIR/relay/`; set it with `-o <file>`, whose directory must exist). `relay record stop` waits for the video to be written and prints the same path. Tell the user about that file.
+- If you forget to stop it, it stops after `--max-duration` (default 600 seconds), and `record stop` still retrieves it. When you stop your own runner with `relay stop`, the recording is written first too.
+- Another `record start` during a recording exits 1. Check with `relay record status`. See [reference.md](reference.md#recording-relay-record).
 
-## 終了コード
+## Exit codes
 
-| コード | 意味 | 対処 |
+| Code | Meaning | What to do |
 | --- | --- | --- |
-| 0 | 成功 | – |
-| 1 | ローカルの失敗（runner.json が読めない、端末が使用中、ビルドの失敗、`relay start --background` で「すでに動いている」など。何も送っていない） | stdout の JSON か stderr の `relay:` 行の理由を読んで直す |
-| 2 | 書き方の誤り（不明なオプション、値の不足・不正、両立しないオプション、不正なセッション名など）。stderr に `relay: <誤り>` と `relay: see relay <command> --help` の 2 行だけが出る（JSON も stdout もない） | コマンドを直す。`relay <command> --help` |
-| 3 | ランナーに届かない（runner.json がない、接続できない、`no response within <秒>s`） | `no response within` なら、ランナーは操作を続けているので `relay ping` の `busy` が `false` になるまで待つ（`launch` / `terminate` は最大 150 秒、長い `type` は 1 文字 0.1 秒ぶん待つので、自分のコマンドのタイムアウトをそれより長くする）。`launch` の時間切れは、busy がさらに数分続くことがあるので、自分で起動したランナーなら `relay stop` → 起動し直すほうが早い。それ以外は `relay status`。runner.json がなければ `relay start --background …`。runner.json はあるが応答しない（`relay start` が強制終了されたなど）なら、`relay stop` で片付けてから起動。`the OS refused the connection` なら relay が sandbox の中にいる（上の「sandbox の中で動くとき」）ので、止めも起動もしない |
-| 4 | トークンが拒否された（401）。runner.json が古いか、別のランナーのもの | `relay status` で URL・端末・PID を確かめ、`--runner` / `--session` / `$RELAY_RUNNER` / `$RELAY_SESSION` / `~/.relay/runner.json` も確認。自分で起動したものなら `relay stop` → 起動し直す。そうでなければ止めずに利用者に確認 |
-| 5 | busy（409）。別のコマンドを実行中 | 1 秒ほど待つか、`relay ping` が `"busy":false` になってから再試行 |
-| 6 | 操作の失敗（422）: 要素が見つからない・1 つに決まらない・無効・画面外、キーボードのフォーカスがない。`relay launch` のアプリが入っていない | stdout の JSON の `code` で分ける（下の表）。要素の失敗は `reason` と `candidates` を読み、観察し直してセレクタを直す |
-| 7 | リクエストの拒否（400 などの 4xx） | `code` が `point_offscreen` なら座標が画面の外（`relay health` の `screen` を読み直す。向きを変えると縦横が入れ替わる）。`touch_mode_unavailable` なら `--mode` を外して送り直す。`invalid_request` などはエラー文を読んで直す |
-| 8 | ランナーのエラー（5xx など） | 1 回だけ再試行。続くなら `relay status` とログを確認 |
+| 0 | Success | – |
+| 1 | Local failure (runner.json unreadable, device in use, build failure, "already running" from `relay start --background`, and so on; nothing was sent) | Read the reason in the JSON on stdout or the `relay:` line on stderr, and fix it |
+| 2 | Usage error (unknown option, missing or invalid value, incompatible options, invalid session name, and so on). stderr gets only two lines, `relay: <error>` and `relay: see relay <command> --help` (no JSON, no stdout) | Fix the command. `relay <command> --help` |
+| 3 | Can't reach the runner (no runner.json, can't connect, `no response within <seconds>s`) | For `no response within`, the runner is still working, so wait for `busy` in `relay ping` to become `false` (`launch` / `terminate` wait up to 150 seconds, and a long `type` waits 0.1 seconds per character, so give your own command a longer timeout). After a `launch` timeout, busy can continue for several more minutes, so if you started the runner yourself, `relay stop` and restarting is faster. Otherwise, `relay status`. If there is no runner.json, `relay start --background …`. If runner.json exists but doesn't answer (`relay start` was killed, for example), clean up with `relay stop`, then start. For `the OS refused the connection`, relay is inside a sandbox (see "When running inside a sandbox" above), so neither stop nor start anything |
+| 4 | Token rejected (401). runner.json is stale or belongs to another runner | Check the URL, device, and PID with `relay status`, and also `--runner` / `--session` / `$RELAY_RUNNER` / `$RELAY_SESSION` / `~/.relay/runner.json`. If you started it yourself, `relay stop` and restart. Otherwise, ask the user without stopping it |
+| 5 | Busy (409). Another command is running | Wait about a second, or retry once `relay ping` shows `"busy":false` |
+| 6 | Action failed (422): element not found, not unique, disabled, or offscreen; no keyboard focus; the app for `relay launch` isn't installed | Branch on `code` in the JSON on stdout (table below). For element failures, read `reason` and `candidates`, observe again, and fix the selector |
+| 7 | Request rejected (400 and other 4xx) | If `code` is `point_offscreen`, the coordinates are off the screen (read `screen` in `relay health` again; rotating swaps width and height). For `touch_mode_unavailable`, drop `--mode` and send it again. For `invalid_request` and others, read the error text and fix it |
+| 8 | Runner error (5xx and the like) | Retry once. If it persists, check `relay status` and the logs |
 
-ランナー操作のコマンドの出力は常に JSON で、成功でも失敗でも stdout に 1 つ出ます（`--json` は付けても付けなくても同じです）。stderr の `relay:` で始まる行は人向けのヒントで、`2>&1` で混ぜる必要はありません。例外は `relay screenshot`（成功時は保存先のパス 1 行。`-o -` のときは画像が stdout なので、失敗の JSON は stderr）と、書き方の誤り（終了コード 2。JSON なし）です。`--port=8101` のような `--opt=value` の形も書けます。
+Runner commands always output JSON, exactly one object on stdout whether they succeed or fail (`--json` makes no difference). `relay:` lines on stderr are hints for people, so there is no need to merge them with `2>&1`. The exceptions are `relay screenshot` (one line with the saved path on success; with `-o -` the image is on stdout, so a failure's JSON goes to stderr) and usage errors (exit code 2, no JSON). Options can also be written `--opt=value`, such as `--port=8101`.
 
-失敗時の JSON（`{"ok":false,"code":"…","error":"…"}`）は、ランナーの応答のほか、relay 側の失敗（`runner_unavailable`・`runner_timeout`＝終了コード 3、`runner_info_invalid`・`screenshot_save_failed`＝1、`app_not_installed`＝6 など）も同じ形です。`code` は安定した文字列なので、英文の `error` ではなく `code` で分岐します。終了コード 6 でよく出るもの:
+Failure JSON (`{"ok":false,"code":"…","error":"…"}`) has the same shape for runner responses and for failures on relay's side (`runner_unavailable` and `runner_timeout` = exit code 3, `runner_info_invalid` and `screenshot_save_failed` = 1, `app_not_installed` = 6, and so on). `code` is a stable string, so branch on `code`, not on the English `error`. Common ones with exit code 6:
 
-| `code` | 対処 |
+| `code` | What to do |
 | --- | --- |
-| `element_not_found` | `--timeout` で待つ、`relay foreground` で前面アプリを確かめる、`relay find --type …` で実際の値を確かめる |
-| `element_ambiguous` | `candidates` を見て `--type` などの条件か `--index` を足す（待っても直らない） |
-| `element_not_hittable` | `reason` が `offscreen` ならスクロール、`disabled` なら前提の操作、`emptyFrame` なら観察し直す |
-| `no_keyboard_focus` | 入力欄をタップしてから送り直す |
-| `touch_mode_unavailable` | `--mode` を外して送り直す |
-| `display_unknown` | 画面が暗い。利用者に確かめる |
-| `window_position_unknown` | iPad のウィンドウの位置が不明。ウィンドウを 1 つにするか、スクリーンショットから座標で指定する |
-| `touch_failed` / `xcui_failed` | 1 回だけ再試行し、続くなら観察し直す |
-| `app_not_installed` | バンドル ID を確かめる（大文字小文字も区別される）か、アプリをインストールしてから送り直す。待っても直らない |
+| `element_not_found` | Wait with `--timeout`, check the foreground app with `relay foreground`, check the actual values with `relay find --type …` |
+| `element_ambiguous` | Look at `candidates` and add a condition such as `--type`, or `--index` (waiting won't help) |
+| `element_not_hittable` | If `reason` is `offscreen`, scroll; if `disabled`, do the prerequisite step; if `emptyFrame`, observe again |
+| `no_keyboard_focus` | Tap the text field and send it again |
+| `touch_mode_unavailable` | Drop `--mode` and send it again |
+| `display_unknown` | The screen is dark. Check with the user |
+| `window_position_unknown` | The iPad window's position is unknown. Reduce to one window, or use coordinates from a screenshot |
+| `touch_failed` / `xcui_failed` | Retry once. If it persists, observe again |
+| `app_not_installed` | Check the bundle ID (it is case-sensitive) or install the app and send it again. Waiting won't help |
 
-`code` がなければ古いランナーです（終了コードとエラー文で判断）。code の一覧は [reference.md](reference.md#操作が失敗したとき終了コード-6)、`reason` ごとの対処も同じ所にあります。
+No `code` means an old runner (judge by the exit code and error text). The list of codes is in [reference.md](reference.md#when-an-action-fails-exit-code-6), as is what to do for each `reason`.
 
-## 安全のために
+## Staying safe
 
-- **対象アプリの外に出ない。** タスクに必要でない限り、設定、Safari、メッセージなど対象アプリ以外のアプリを開いたり操作したりしないでください。ほかのアプリに移ってしまったら、`relay button home` → `relay launch <bundle-id>` で戻ります。
-- **状態をそろえてから始める。** 前の操作の影響を避けたいときは、`relay button home` → `relay launch <bundle-id>`（まっさらに起動し直すなら先に `relay terminate <bundle-id>`）。
-- **パスワードや個人情報を勝手に入力しない。** 利用者から渡されたものだけを入力します。パスワードはコマンドラインに書かず（`ps` やシェルの履歴に残るため）、利用者が用意した環境変数やファイルから標準入力で渡します: `printf '%s' "$PASSWORD" | relay type --stdin`。
-- **実機では破壊的な操作をしない。** データやアプリの削除、購入、メッセージやメールの送信、システム設定の変更、サインアウトなどは、事前に利用者に確認します。実機のスクリーンショットには個人情報が写りうるので、タスクに必要な範囲を超えて共有しないでください。
-- **後片付け。** 向きを変えたら（`relay orientation landscape` は `landscapeLeft` と同じ）`relay orientation portrait` で戻し、アプリを妥当な画面に戻し、自分で起動したランナーだけを `relay stop` で止めます。
+- **Stay inside the target app.** Unless the task requires it, don't open or operate apps other than the target, such as Settings, Safari, or Messages. If you end up in another app, go back with `relay button home` and then `relay launch <bundle-id>`.
+- **Start from a known state.** To avoid the effects of earlier operations, `relay button home` and then `relay launch <bundle-id>` (for a fresh launch, `relay terminate <bundle-id>` first).
+- **Don't enter passwords or personal information on your own.** Enter only what the user gave you. Don't put passwords on the command line (they stay in `ps` and the shell history); pass them on standard input from an environment variable or file the user prepared: `printf '%s' "$PASSWORD" | relay type --stdin`.
+- **Don't do anything destructive on a physical device.** Deleting data or apps, purchases, sending messages or email, changing system settings, signing out, and the like need the user's confirmation first. Screenshots of a physical device can show personal information, so don't share them beyond what the task needs.
+- **Clean up.** If you rotated the device (`relay orientation landscape` is the same as `landscapeLeft`), go back with `relay orientation portrait`, return the app to a reasonable screen, and stop only runners you started, with `relay stop`.
 
-## よくある失敗
+## Common failures
 
-- `Failed to initialize for UI testing`（`Timed out while enabling automation mode.`）: 実機では、有効化のときに端末がパスコードの入力を求めていることがある。利用者に、端末にパスコード入力画面が出ていたら入力してもらうよう依頼してから起動し直す（`relay start` が「relay install を再実行して」と知らせていたら、利用者に確認して先に `relay install` をやり直す）。続くなら 設定 > デベロッパ >「UI オートメーションを有効にする」をオンにしてもらう。シミュレータなら 1 回だけ起動し直す。
-- 実機で「信頼されていないデベロッパ」: 設定 > 一般 > VPNとデバイス管理 で開発元を信頼してもらってから、起動し直す。
-- 実機がロックされている: 利用者にロックを解除してもらう。
-- ローカルネットワークの許可（実機で `--allow-wifi` のとき）: 端末のダイアログで許可してもらう。
+- `Failed to initialize for UI testing` (`Timed out while enabling automation mode.`): on a physical device, the device may be asking for its passcode during enablement. Ask the user to enter the passcode if the device shows that screen, then start again (if `relay start` said to run `relay install` again, confirm with the user and do that first). If it continues, ask them to turn on Settings > Developer > Enable UI Automation. On a simulator, start again just once.
+- "Untrusted Developer" on a physical device: ask the user to trust the developer in Settings > General > VPN & Device Management, then start again.
+- The physical device is locked: ask the user to unlock it.
+- Local network permission (physical device with `--allow-wifi`): ask the user to allow it in the dialog on the device.
 
-どれも端末を手で操作する必要があるので、回避しようとせず、利用者に何をしてほしいかを伝えます。詳しくは [reference.md](reference.md#トラブルシューティング)。
+All of these require someone to operate the device by hand, so don't try to work around them; tell the user what you need them to do. See [reference.md](reference.md#troubleshooting).
