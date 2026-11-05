@@ -673,15 +673,14 @@ struct AutoSelectRaceTests {
         let results = Recorder()
         let group = DispatchGroup()
         let start = DispatchSemaphore(value: 0)
-        var held: [StartLock] = []
-        let heldLock = NSLock()
+        let held = Locked<[StartLock]>([])
         for index in 0..<8 {
             group.enter()
             DispatchQueue.global().async {
                 start.wait()
                 do {
                     let lock = try StartLock.acquire(device: phone, session: "s\(index)", home: home)
-                    heldLock.lock(); held.append(lock); heldLock.unlock()
+                    held.withLock { $0.append(lock) }
                     results.add("won")
                 } catch is DeviceInUseError {
                     results.add("busy")
@@ -695,7 +694,7 @@ struct AutoSelectRaceTests {
         group.wait()
         #expect(results.all.filter { $0 == "won" }.count == 1)
         #expect(results.all.filter { $0 == "busy" }.count == 7)
-        held.forEach { $0.release() }
+        held.value.forEach { $0.release() }
     }
 
     @Test func aRealLockHeldByAnotherStartIsSkippedForTheNextDevice() throws {

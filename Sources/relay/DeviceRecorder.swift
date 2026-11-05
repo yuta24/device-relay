@@ -208,6 +208,9 @@ struct FrameWatch {
 
 /// Writes the frames of a capture session to the video. The writer starts with the first frame, so its size
 /// is the screen's and the video starts when the screen does.
+///
+/// Sendable by hand: its state is only touched on the serial frames queue, where the frames come and
+/// where `DeviceRecordSupervisor` reads it with `queue.sync`.
 private final class DeviceFrameWriter: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, @unchecked Sendable {
     let url: URL
     /// Set on the queue the frames come on.
@@ -378,13 +381,13 @@ enum DeviceRecordSupervisor {
         session.stopRunning()
         // The next recording's process would not see the screen right away (`releaseDelay`).
         Thread.sleep(forTimeInterval: DeviceCapture.releaseDelay)
-        let (frames, size, status) = queue.sync { (writer.frames, writer.size, writer.writer?.status) }
+        let (frames, size, status, writeError) = queue.sync { (writer.frames, writer.size, writer.writer?.status, writer.writer?.error) }
         guard finishedInTime else {
             log("the video was not written within \(Int(Recording.stopTimeout))s")
             return 1
         }
         guard frames > 0, status == .completed else {
-            log(frames == 0 ? "no frame came from the screen of \(name)" : "the video was not written (\(writer.writer?.error.map { "\($0)" } ?? "unknown error"))")
+            log(frames == 0 ? "no frame came from the screen of \(name)" : "the video was not written (\(writeError.map { "\($0)" } ?? "unknown error"))")
             return 1
         }
         log("wrote \(frames) frames (\(size.map { "\($0.width)x\($0.height)" } ?? "?")) to \(output)")
@@ -393,27 +396,5 @@ enum DeviceRecordSupervisor {
 
     private static func log(_ message: String) {
         FileHandle.standardError.write(Data("relay: \(message)\n".utf8))
-    }
-}
-
-/// A value set from a notification and read by the waiting loop.
-private final class Locked<Value>: @unchecked Sendable {
-    private let lock = NSLock()
-    private var stored: Value
-
-    init(_ value: Value) {
-        stored = value
-    }
-
-    var value: Value {
-        lock.lock()
-        defer { lock.unlock() }
-        return stored
-    }
-
-    func set(_ value: Value) {
-        lock.lock()
-        stored = value
-        lock.unlock()
     }
 }

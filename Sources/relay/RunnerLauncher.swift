@@ -43,7 +43,10 @@ struct LivenessMonitor {
 }
 
 /// Builds, launches, and locates the resident XCTest runner.
-final class RunnerLauncher {
+///
+/// Sendable, checked by the compiler: everything that changes after `init` is in `state`. The pipe's handler
+/// and the signal handlers run on other threads than `run()`.
+final class RunnerLauncher: Sendable {
     static let scheme = "RelayRunner"
     static let readyMarker = "RELAY_RUNNER_READY"
 
@@ -65,16 +68,24 @@ final class RunnerLauncher {
     /// A session has none: its file is the only one that names its runner.
     private let userInfoURL: URL?
     /// Called once the runner answers and runner.json is written, before `ready:` is printed.
-    var onReady: (() -> Void)?
+    var onReady: (@Sendable () -> Void)? {
+        get { state.value.onReady }
+        set { state.withLock { $0.onReady = newValue } }
+    }
     /// Generated per launch. The runner gets only its hash, through the environment (never the command
     /// line), so the token itself never reaches xcodebuild or the xcresult bundle.
     private let token = RunnerAuth.generateToken()
-    private var process: Process?
-    private var runnerURL: URL?
-    private var markerAddresses: [String] = []
-    private var startupFailure: StartupFailure?
-    private var isStopping = false
-    private let lock = NSLock()
+    private let state = Locked(State())
+
+    private struct State {
+        var onReady: (@Sendable () -> Void)?
+        var process: Process?
+        var runnerURL: URL?
+        var markerAddresses: [String] = []
+        var startupFailure: StartupFailure?
+        var isStopping = false
+        var signalSources: [DispatchSourceSignal] = []
+    }
 
     init(
         options: StartOptions,
@@ -393,7 +404,7 @@ final class RunnerLauncher {
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = pipe
-        var lines = RunnerOutputLineBuffer()
+        let lines = Locked(RunnerOutputLineBuffer())
         let verbose = options.verbose
         pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
@@ -401,36 +412,34 @@ final class RunnerLauncher {
                 // End of output: the pipe is drained, so nothing is lost by stopping here.
                 handle.readabilityHandler = nil
                 try? log.close()
-                if let line = lines.finish() {
+                if let line = lines.withLock({ $0.finish() }) {
                     self?.handleRunnerLine(line, verbose: verbose)
                 }
                 return
             }
             // The log keeps the raw bytes, including lines too long for the buffer.
             log.write(data)
-            for line in lines.append(data) {
+            for line in lines.withLock({ $0.append(data) }) {
                 self?.handleRunnerLine(line, verbose: verbose)
             }
         }
 
         try process.run()
-        self.process = process
+        state.withLock { $0.process = process }
         return process
     }
 
     private func handleRunnerLine(_ line: String, verbose: Bool) {
         if let failure = Self.startupFailure(in: line) {
-            lock.lock()
-            // Keep the specific UI testing error over the generic "TEST EXECUTE FAILED" that follows it.
-            if startupFailure == nil || (failure.isUITestingSetup && startupFailure?.isUITestingSetup == false) {
-                startupFailure = failure
+            state.withLock { state in
+                // Keep the specific UI testing error over the generic "TEST EXECUTE FAILED" that follows it.
+                if state.startupFailure == nil || (failure.isUITestingSetup && state.startupFailure?.isUITestingSetup == false) {
+                    state.startupFailure = failure
+                }
             }
-            lock.unlock()
         }
         if let addresses = Self.parseReadyLine(line) {
-            lock.lock()
-            markerAddresses = addresses
-            lock.unlock()
+            state.withLock { $0.markerAddresses = addresses }
             info("runner listening; device addresses: \(addresses.joined(separator: ", "))")
         } else if line.hasPrefix("relay-runner ") || verbose {
             FileHandle.standardError.write(Data("\(line)\n".utf8))
@@ -448,12 +457,10 @@ final class RunnerLauncher {
                 self?.shutdown()
             }
             source.resume()
-            signalSources.append(source)
+            state.withLock { $0.signalSources.append(source) }
         }
         StartCancellation.handOver()
     }
-
-    private var signalSources: [DispatchSourceSignal] = []
 
     /// The home copy is removed only while it is ours: a later `relay start` may have replaced it.
     private func removeRunnerInfo(at infoURL: URL) {
@@ -465,10 +472,10 @@ final class RunnerLauncher {
 
     private func shutdown() {
         info("stopping runner")
-        lock.lock()
-        isStopping = true
-        lock.unlock()
-        let process = self.process
+        let process = state.withLock { state in
+            state.isStopping = true
+            return state.process
+        }
         guard let url = currentRunnerURL() else {
             // Without a runner URL there is nobody to send /shutdown to, so stop xcodebuild right away.
             if process?.isRunning == true {
@@ -487,33 +494,23 @@ final class RunnerLauncher {
     }
 
     private func currentRunnerURL() -> URL? {
-        lock.lock()
-        defer { lock.unlock() }
-        return runnerURL
+        state.value.runnerURL
     }
 
     private func setRunnerURL(_ url: URL) {
-        lock.lock()
-        runnerURL = url
-        lock.unlock()
+        state.withLock { $0.runnerURL = url }
     }
 
     private func currentIsStopping() -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return isStopping
+        state.value.isStopping
     }
 
     private func currentStartupFailure() -> StartupFailure? {
-        lock.lock()
-        defer { lock.unlock() }
-        return startupFailure
+        state.value.startupFailure
     }
 
     private func currentMarkerAddresses() -> [String] {
-        lock.lock()
-        defer { lock.unlock() }
-        return markerAddresses
+        state.value.markerAddresses
     }
 
     private func info(_ message: String) {

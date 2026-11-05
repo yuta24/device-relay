@@ -73,21 +73,21 @@ struct RunnerClient {
         }
 
         let semaphore = DispatchSemaphore(value: 0)
-        var result: Result<RunnerResponse, Error> = .failure(URLError(.unknown))
+        let result = Locked<Result<RunnerResponse, Error>>(.failure(URLError(.unknown)))
         Self.session.dataTask(with: request) { data, response, error in
             if let error {
-                result = .failure(error)
+                result.set(.failure(error))
             } else {
                 let http = response as? HTTPURLResponse
                 var headers: [String: String] = [:]
                 for case let (name as String, value as String) in http?.allHeaderFields ?? [:] {
                     headers[name] = value
                 }
-                result = .success(RunnerResponse(status: http?.statusCode ?? 0, body: data ?? Data(), headers: headers))
+                result.set(.success(RunnerResponse(status: http?.statusCode ?? 0, body: data ?? Data(), headers: headers)))
             }
             semaphore.signal()
         }.resume()
         semaphore.wait()
-        return try result.get()
+        return try result.value.get()
     }
 }

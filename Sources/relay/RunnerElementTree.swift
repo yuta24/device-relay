@@ -4,7 +4,7 @@ import Foundation
 ///
 /// This file is compiled into both the `relay` CLI and the RelayRunnerUITests target, so the JSON the
 /// runner returns is covered by the SwiftPM unit tests. The runner fills it from an `XCUIElementSnapshot`.
-struct RunnerElementNode {
+struct RunnerElementNode: Sendable {
     var type: String
     var identifier: String
     var label: String

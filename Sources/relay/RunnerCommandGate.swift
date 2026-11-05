@@ -8,11 +8,11 @@ import Foundation
 final class CommandGate: @unchecked Sendable {
     private let lock = NSLock()
     /// Monotonic nanoseconds; injectable for tests.
-    private let now: () -> UInt64
+    private let now: @Sendable () -> UInt64
     /// When the running command was admitted, or nil while idle.
     private var enteredAt: UInt64?
 
-    init(now: @escaping () -> UInt64 = { DispatchTime.now().uptimeNanoseconds }) {
+    init(now: @escaping @Sendable () -> UInt64 = { DispatchTime.now().uptimeNanoseconds }) {
         self.now = now
     }
 

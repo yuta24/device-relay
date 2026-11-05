@@ -29,8 +29,8 @@ struct AppInstallCheckTests {
     }
 
     private static func probe(
-        simctl: @escaping () throws -> String,
-        devicectl: @escaping () throws -> Data = { Issue.record("devicectl was asked"); return Data() }
+        simctl: @escaping @Sendable () throws -> String,
+        devicectl: @escaping @Sendable () throws -> Data = { Issue.record("devicectl was asked"); return Data() }
     ) -> AppInstallProbe {
         AppInstallProbe(xcrun: { _ in try simctl() }, devicectlJSON: { _ in try devicectl() })
     }
@@ -150,17 +150,17 @@ struct AppInstallCheckTests {
     }
 
     @Test func onlyAnInstalledAppIsRemembered() {
-        var asked = 0
-        let installed = Self.probe(simctl: { asked += 1; return "/App.app" })
+        let asked = Locked(0)
+        let installed = Self.probe(simctl: { asked.withLock { $0 += 1 }; return "/App.app" })
         #expect(AppInstallCheck.state(of: "a.remembered", udid: "cache-udid", hostBundleID: nil, probe: installed) == .installed)
         #expect(AppInstallCheck.state(of: "a.remembered", udid: "cache-udid", hostBundleID: nil, probe: installed) == .installed)
-        #expect(asked == 1)
+        #expect(asked.value == 1)
 
-        var askedMissing = 0
-        let missing = Self.probe(simctl: { askedMissing += 1; throw ShellError(args: [], status: 2, output: Self.notInstalledOutput) })
+        let askedMissing = Locked(0)
+        let missing = Self.probe(simctl: { askedMissing.withLock { $0 += 1 }; throw ShellError(args: [], status: 2, output: Self.notInstalledOutput) })
         #expect(AppInstallCheck.state(of: "a.missing", udid: "cache-udid", hostBundleID: nil, probe: missing) == .notInstalled)
         #expect(AppInstallCheck.state(of: "a.missing", udid: "cache-udid", hostBundleID: nil, probe: missing) == .notInstalled)
-        #expect(askedMissing == 2)
+        #expect(askedMissing.value == 2)
     }
 
     @Test func notInstalledBodyHasTheShapeOfARunnerError() throws {
