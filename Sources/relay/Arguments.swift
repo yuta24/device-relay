@@ -570,7 +570,9 @@ enum Arguments {
              agents at once: its state is ~/.relay/sessions/<name>/runner.json, and without --port it
              takes a free port in 8101-8199. The other commands take --session or $RELAY_SESSION too,
              and never fall back to another runner. A device takes one runner: a device in use is an
-             error when named, and left out when relay start picks one itself.
+             error when named, and left out when relay start picks one itself. With a session, of
+             several free booted simulators it takes the first (newest iOS, then name) rather than
+             asking which; one another start takes first is left out, and the choice is made again.
     status   The check after relay start: shows the runner in runner.json (URL, device, relay start pid,
              start time), whether /ping answers, and the build it reports (relay version and runner
              source hash). Exits 0 if it does, 3 if there is no runner or it does not answer, 4 if it
