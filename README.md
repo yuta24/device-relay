@@ -21,18 +21,59 @@ See [docs/design.md](docs/design.md) for how it works. Detailed documentation in
   - Developer Mode and UI Automation turned on on the device
   - The device paired with the Mac and reachable through CoreDevice, over USB or the same network
 
-> **Toolchains**: if another Swift toolchain (installed with `swiftly`, for example) comes first in your PATH, it can disagree with the Xcode SDK and fail with errors such as `unknown argument: '-target-arch-variant'`. In that case, build with Xcode's toolchain through `xcrun swift build` / `xcrun swift test` / `xcrun swift run` (the Makefile uses `xcrun swift` too).
+> **Toolchains (building from source)**: if another Swift toolchain (installed with `swiftly`, for example) comes first in your PATH, it can disagree with the Xcode SDK and fail with errors such as `unknown argument: '-target-arch-variant'`. In that case, build with Xcode's toolchain through `xcrun swift build` / `xcrun swift test` / `xcrun swift run` (the Makefile uses `xcrun swift` too).
 
 > **Private APIs**: the runner uses private XCTest APIs, which can change without notice when Xcode or iOS is updated. They are used only inside the UI test bundle on the device; nothing is added to the target app. See [docs/private-api.md](docs/private-api.md) for what is used and what happens when it is unavailable.
+
+## Install
+
+The `relay` CLI comes prebuilt, so your Xcode version can't break building it. The Runner comes as source, and `relay start` builds it on your Mac with your Xcode.
+
+### mise (recommended)
+
+```sh
+mise use -g github:yuta24/device-relay
+```
+
+To update: `mise upgrade github:yuta24/device-relay`.
+
+### Manual install
+
+```sh
+VERSION=0.4.0      # the latest version on https://github.com/yuta24/device-relay/releases
+ARCH=$(uname -m)   # arm64 or x86_64
+NAME=device-relay-v$VERSION-macos-$ARCH
+BASE=https://github.com/yuta24/device-relay/releases/download/v$VERSION
+
+curl -fLO "$BASE/$NAME.tar.gz"
+curl -fLO "$BASE/$NAME.tar.gz.sha256"
+shasum -a 256 -c "$NAME.tar.gz.sha256"
+
+mkdir -p ~/.local/share/device-relay ~/.local/bin
+tar -xzf "$NAME.tar.gz" -C ~/.local/share/device-relay
+ln -sfn ~/.local/share/device-relay/device-relay-v$VERSION/bin/relay ~/.local/bin/relay
+```
+
+- Add `~/.local/bin` to your PATH if it isn't there. To update, repeat these steps with the new version, then remove the old directory.
+- The binary is not notarized. A file downloaded with a browser gets quarantined and macOS refuses to run it, so download with `curl` as above, or run `xattr -d com.apple.quarantine bin/relay` in the extracted directory.
+- Link `bin/relay` rather than copying it: relay finds the Runner from its own location. If you do copy the binary alone somewhere else, run `relay install` once from the extracted directory.
+
+### Build from source
+
+For contributors, or to run `main`:
+
+```sh
+git clone https://github.com/yuta24/device-relay
+cd device-relay
+make install   # xcrun swift build -c release, and link it to ~/.local/bin/relay (change with PREFIX=...)
+```
+
+The link points into the checkout, and relay builds the Runner from there. After updating the repository, run `make install` again. `make uninstall` removes the link only if it points into this checkout.
 
 ## Quick start
 
 ```sh
-# In the device-relay repository (once)
-make install          # xcrun swift build -c release, and link it to ~/.local/bin/relay (change with PREFIX=...)
-relay install         # copy the Runner project to ~/.relay/runner (--build also builds it for simulators)
-
-# From then on, from any directory (such as the target app's repository). Start with a simulator
+# From any directory (such as the target app's repository). Start with a simulator
 relay doctor --simulator   # check Xcode, the Runner, and simulators (signing is only needed for devices)
 relay devices              # find a simulator's name ("iPhone 17 Pro" below is an example)
 relay start --background --device "iPhone 17 Pro"   # boot it if shut down, launch the runner, and return once ready
@@ -46,8 +87,6 @@ relay stop                 # stop the runner (and shut down a simulator relay bo
 - `relay start` without `--udid` / `--device` / `--simulator` prefers a connected physical device. A device needs signing and UI Automation set up, so follow the steps in "[実機](docs/setup.md#実機)" first.
 
 From agents, CI, and scripts, the basic flow is `relay start --background`, then your operations, then `relay stop` ("[バックグラウンドで動かす](docs/setup.md#バックグラウンドで動かすrelay-start---background--status--stop)"). When you are at the machine and watching, `relay start` in the foreground (stop with Ctrl-C) is fine too.
-
-- `make install` creates a symbolic link to `.build/release/relay` at `$(PREFIX)/bin/relay` (`~/.local/bin/relay` by default). Add `~/.local/bin` to your PATH if it isn't there. `make uninstall` removes that link only if it points into this checkout. After updating the repository, run `make install` and `relay install` again.
 
 ## First steps
 
@@ -82,7 +121,7 @@ A physical device needs the following before `relay start`. For details, see [�
 
 | Command | What it does |
 | --- | --- |
-| `relay install` / `relay uninstall` | Copy the Runner project to `~/.relay/runner` / remove it |
+| `relay install` / `relay uninstall` | Copy the Runner project to `~/.relay/runner` / remove it (only needed for a `relay` binary copied away from its directory) |
 | `relay doctor` | Check the environment: Xcode, the Runner, the device, signing, and so on |
 | `relay devices` | List physical devices and simulators |
 | `relay start [--background]` | Build and launch the runner (`--background` returns once it is ready) |
@@ -121,7 +160,7 @@ Detailed documentation in docs/ is currently in Japanese.
 
 | Document | Contents |
 | --- | --- |
-| [docs/setup.md](docs/setup.md) | Preparing the Runner (`relay install`), choosing a device, Team ID, checking the environment (`relay doctor`), simulators, starting in the background, physical devices |
+| [docs/setup.md](docs/setup.md) | Installing and updating, how the Runner is found (`relay install`), choosing a device, Team ID, checking the environment (`relay doctor`), simulators, starting in the background, physical devices |
 | [docs/cli.md](docs/cli.md) | CLI subcommands and exit codes, how the runner is found (runner.json, sessions), running scenarios (`relay run`, experimental), recording (`relay record`, for simulators and devices connected with USB), the agent skill |
 | [docs/http-api.md](docs/http-api.md) | HTTP API endpoints and status codes, authentication, concurrent requests and liveness checks (`/ping`), the foreground app, text input and special keys |
 | [docs/elements.md](docs/elements.md) | The element tree (`/source`, compact, interactive), element selectors, waiting (timeout) |
@@ -129,7 +168,7 @@ Detailed documentation in docs/ is currently in Japanese.
 | [docs/design.md](docs/design.md) | Architecture and file layout, touch synthesis paths, measured latency |
 | [docs/limitations.md](docs/limitations.md) | Known limitations |
 | [docs/private-api.md](docs/private-api.md) | The private Apple APIs the runner uses, and what happens when they are unavailable |
-| [docs/development.md](docs/development.md) | For developers: running from the repository, launching the runner by hand, the host app used for verification |
+| [docs/development.md](docs/development.md) | For developers: running from the repository, launching the runner by hand, the host app used for verification, cutting a release |
 | [skills/device-relay/](skills/device-relay/) | The skill for coding agents (`SKILL.md` and `reference.md`, in English) |
 
 ## License

@@ -1,12 +1,12 @@
 # make install links the release build of relay into $(PREFIX)/bin (default ~/.local/bin).
-# The link points into this checkout, so relay install finds the runner project here.
+# The link points into this checkout, so relay finds the runner project here.
 PREFIX ?= $(HOME)/.local
 BINDIR ?= $(PREFIX)/bin
 # Xcode's toolchain: another swift first in PATH (swiftly) may not match the Xcode SDK.
 SWIFT ?= xcrun swift
 PRODUCT := $(CURDIR)/.build/release/relay
 
-.PHONY: build install uninstall test
+.PHONY: build install uninstall test dist
 
 build:
 	$(SWIFT) build -c release
@@ -19,7 +19,7 @@ install: build
 	ln -sfn "$(PRODUCT)" "$(BINDIR)/relay"
 	@echo "linked $(BINDIR)/relay -> $(PRODUCT)"
 	@case ":$$PATH:" in *":$(BINDIR):"*) ;; *) echo "note: $(BINDIR) is not in PATH" >&2 ;; esac
-	@echo "next: relay install && relay doctor"
+	@echo "next: relay doctor"
 
 # Removes the link only when it points to this checkout's build. relay uninstall removes ~/.relay/runner.
 uninstall:
@@ -33,3 +33,8 @@ uninstall:
 
 test:
 	$(SWIFT) test
+
+# The release tarballs of RelayVersion.current, in dist/ (the release workflow runs the same script).
+dist:
+	@version=$$(sed -n 's/^ *static let current = "\(.*\)"$$/\1/p' Sources/relay/RunnerInstall.swift); \
+	SWIFT="$(SWIFT)" scripts/package.sh "$$version" arm64 && SWIFT="$(SWIFT)" scripts/package.sh "$$version" x86_64

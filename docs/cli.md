@@ -54,7 +54,7 @@ relay record start                             # 画面の録画を始める（�
 relay record stop                              # 録画を止め、MP4 の絶対パスを出力
 ```
 
-（`make install` した `relay` をどのディレクトリからでも使えます。リポジトリ内では `xcrun swift run relay …` でも動きます。）
+（インストールした `relay` をどのディレクトリからでも使えます。リポジトリ内では `xcrun swift run relay …` でも動きます。）
 
 | コマンド | エンドポイント | 主なオプション |
 | --- | --- | --- |
@@ -259,7 +259,7 @@ relay record stop --port 8101         # runner.json によらず、そのポー�
 
 `skills/device-relay/` は、コーディングエージェント（Claude Code など）が対象アプリのリポジトリで作業しながら relay でアプリの動作を確かめるためのスキルです。`SKILL.md` に基本の流れ（`relay status` → `relay start --background` → `relay launch` → スクリーンショットと要素の観察 → 操作 → 確認 → `relay stop`）、要素セレクタを優先する操作のコツ、終了コードごとの対処、安全上の注意をまとめ、オプションやトラブルシューティングの詳細は `reference.md` に分けています。
 
-使う前に、このリポジトリで `make install` と `relay install` を済ませ、`relay doctor` で確認しておきます（「[クイックスタート](../README.ja.md#クイックスタート)」）。`relay install` は Runner と一緒にスキルも `~/.relay/runner/skills/device-relay` にコピーし、`relay skill install` はそこから対象アプリのリポジトリなどへ入れます。
+使う前に、relay をインストールし、`relay doctor` で確認しておきます（「[インストール](../README.ja.md#インストール)」）。`relay skill install` は、展開したリリースやチェックアウトの `skills/device-relay` から対象アプリのリポジトリなどへスキルを入れます。どちらも見つからないとき（`relay` のバイナリだけをコピーしたとき）は、`relay install` が一緒にコピーした `~/.relay/runner/skills/device-relay` を使います。
 
 ```sh
 cd /path/to/app
@@ -271,8 +271,8 @@ relay skill uninstall          # relay が入れたものだけを削除（--glo
 ```
 
 - 既定の入れ先は、カレントディレクトリの git のルート（git の外ならカレントディレクトリ）の `.claude/skills/device-relay` です。コピーなので、そのままコミットしてチームで共有できます。どのコマンドも入れ先（削除先）のパスを必ず表示します。relay が表示・比較するパスは、存在する部分のシンボリックリンクを解決した形にそろえます（macOS では `/private/tmp/...` も `/tmp/...` になります）。
-- 取り出し元は `~/.relay/runner/skills/device-relay`（`relay install` したもの）、なければ `relay install` と同じ探し方で見つけた device-relay のチェックアウト（`$RELAY_HOME`、カレントディレクトリとその親、`relay` の実行ファイルのチェックアウト）の `skills/device-relay` です。
+- 取り出し元は、`relay install` と同じ探し方で見つけた展開したリリースか device-relay のチェックアウト（`$RELAY_HOME`、カレントディレクトリとその親、`relay` の実行ファイルの場所）の `skills/device-relay`、なければ `~/.relay/runner/skills/device-relay`（`relay install` したもの）です。`--link` でも同じ順です。
 - コピーには、SKILL.md を変えずに隠しファイル `.relay-skill.json` を置き、relay のバージョン、コミット、取り出し元、日時を記録します。この記録があるもの（または relay のスキルを指すリンク）は relay が入れたものとみなし、再実行で上書き更新します。それ以外のものが入れ先にあれば、`--force` なしでは上書きしません。`uninstall` は relay が入れたものだけを削除し、それ以外は残してエラーにします。
-- `--link` はコピーの代わりにシンボリックリンクを作ります。スキルを編集する開発用で、取り出し元はチェックアウトを優先します（チェックアウトの変更がそのまま反映されます）。リンクはこの Mac の絶対パスを指すので、コミットして共有するには向きません。
-- `relay skill status` は、記録したバージョンが `relay` のバージョンと違う場合や、取り出し元より古い（バージョンかコミットが違う）場合に ! を付けます。relay を更新したら `relay install` の後に `relay skill install`（`--global` などで入れたなら同じオプション）をやり直してください。
+- `--link` はコピーの代わりにシンボリックリンクを作ります。スキルを編集する開発用で、チェックアウトの変更がそのまま反映されます。リンクはこの Mac の絶対パスを指すので、コミットして共有するには向きません。
+- `relay skill status` は、記録したバージョンが `relay` のバージョンと違う場合や、取り出し元より古い（バージョンかコミットが違う）場合に ! を付けます。relay を更新したら `relay skill install`（`--global` などで入れたなら同じオプション）をやり直してください。バイナリだけをコピーして `relay install` のコピーから取り出している場合は、先に展開したディレクトリ（またはチェックアウト）で `relay install` を実行します。
 - スキルは、ランナーが動いていれば（`relay status` が 0）それを使い、止めません。自分で `relay start --background` したときだけ、終わりに `relay stop` します。端末は、実機を指定されない限り `relay devices` で選んだシミュレータを `--device` / `--udid` で明示します。

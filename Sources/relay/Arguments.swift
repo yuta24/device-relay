@@ -559,8 +559,9 @@ enum Arguments {
              dev.devicerelay.<team id in lowercase>, else dev.devicerelay.local); the runner commands
              take host for its bundle ID.
              The runner project is --project, else $RELAY_HOME, else a device-relay checkout around the
-             current directory, else the copy relay install made in ~/.relay/runner, else the checkout
-             of the relay executable. Builds and logs go to ~/.relay/build and ~/.relay/logs.
+             current directory, else the directory of the relay executable (an extracted release or
+             a checkout), else the copy relay install made in ~/.relay/runner. Builds and logs go to
+             ~/.relay/build and ~/.relay/logs.
              Devices are reached over the CoreDevice tunnel only; --allow-wifi also tries the device's
              Wi-Fi addresses, where the token travels as plain HTTP.
              --background runs it detached from the terminal (log: ~/.relay/logs/start-*.log) and exits
@@ -586,10 +587,12 @@ enum Arguments {
              MP4 (detached from the terminal) until relay record stop, which prints the video's path, or
              until --max-duration seconds. A device needs camera access for the terminal. relay record
              --help for details.
-    install  Copies the runner project and the agent skill from the device-relay checkout (--project,
-             $RELAY_HOME, or the one the relay executable was built in) to ~/.relay/runner, replacing a
-             previous copy, and records the relay version. --build also builds it for simulators (log:
-             ~/.relay/logs/build-*.log; --verbose also shows xcodebuild's output). --remove (or relay
+    install  Only needed for a relay binary copied away from its directory: copies the runner
+             project and the agent skill from the extracted release or checkout (--project,
+             $RELAY_HOME, the current directory, or the relay executable's directory) to
+             ~/.relay/runner, replacing a previous copy, and records the relay version. --build also
+             builds it for simulators (log: ~/.relay/logs/build-*.log; --verbose also shows
+             xcodebuild's output). --remove (or relay
              uninstall) deletes ~/.relay/runner and its builds; config.json and runner.json stay.
     skill    Installs the device-relay agent skill into .claude/skills of the current git repository
              (--global: ~/.claude/skills; relay skill --help for details).

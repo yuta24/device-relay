@@ -4,11 +4,12 @@ import Foundation
 /// so relay runs from any directory (usually the app's repository).
 ///
 /// Order: `--project <path>`, then `$RELAY_HOME`, then a device-relay checkout in the current directory
-/// or its parents, then the copy `relay install` made in `~/.relay/runner`, then a checkout holding the
-/// relay executable (symlinks resolved, so `make install`'s link finds its checkout). A checkout around
-/// the current directory wins over the installed copy, so working on the runner in the repository
-/// builds those sources rather than an older copy; from an app's repository the installed copy is used.
-/// Build products, logs, and `runner.json` go under `~/.relay`, never to the current directory (see
+/// or its parents, then the directory holding the relay executable (symlinks resolved, so `make install`'s
+/// link finds its checkout, and `bin/relay` of an extracted release or a link to it finds `../Runner`), then
+/// the copy `relay install` made in `~/.relay/runner`. A "checkout" is anything with the repository's layout,
+/// an extracted release included. The executable's own directory wins over the installed copy, so upgrading
+/// relay never keeps building the runner of an older `relay install`; the copy is for a relay binary copied
+/// away from its directory. Build products, logs, and `runner.json` go under `~/.relay`, never to the current directory (see
 /// `buildDirectory`).
 enum RunnerProject {
     static let environmentKey = "RELAY_HOME"
@@ -56,7 +57,7 @@ enum RunnerProject {
 
     /// The runner root. A path given with `--project` or `$RELAY_HOME` must hold the project: falling
     /// back to another one would build something the caller did not ask for. `includeInstalled: false`
-    /// finds a checkout only, which is what `relay install` copies from.
+    /// finds a checkout or extracted release only, which is what `relay install` copies from.
     static func resolve(
         explicitPath: String?,
         environment: [String: String] = ProcessInfo.processInfo.environment,
@@ -94,17 +95,18 @@ enum RunnerProject {
         if let root = ancestors(of: currentDirectory).first(where: isCheckout) {
             return (root, .currentDirectory)
         }
-        if includeInstalled, contains(installed) {
-            return (installed, .installed)
-        }
         if let executableURL, let root = ancestors(of: executableURL.resolvingSymlinksInPath().deletingLastPathComponent()).first(where: isCheckout) {
             return (root, .executable)
         }
+        if includeInstalled, contains(installed) {
+            return (installed, .installed)
+        }
         throw SetupError(description: includeInstalled
-            ? "cannot find the runner project (\(projectPath)); run relay install, pass --project <path to device-relay>, "
-                + "or set \(environmentKey)=<path to device-relay>"
-            : "cannot find a device-relay checkout to install the runner from; pass --project <path to device-relay>, "
-                + "set \(environmentKey)=<path to device-relay>, or run the relay that make install linked from the checkout")
+            ? "cannot find the runner project (\(projectPath)) around the relay executable or in \(installed.path); "
+                + "a relay binary copied away from its directory needs relay install run once from the extracted release "
+                + "directory (or the checkout). Otherwise pass --project <path to device-relay>, or set \(environmentKey)=<path to device-relay>"
+            : "cannot find a device-relay checkout or extracted release to install the runner from; run relay install from inside "
+                + "one, pass --project <path to device-relay>, or set \(environmentKey)=<path to device-relay>")
     }
 
     static func contains(_ root: URL) -> Bool {
