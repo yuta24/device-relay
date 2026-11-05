@@ -1,6 +1,6 @@
 # device-relay リファレンス
 
-[SKILL.md](SKILL.md) の補足です。ここにないことは device-relay の README と docs/ の各文書（ファイル名と節の名前を「」で示します）か `relay --help` / `relay <command> --help` を見てください。`--help` はランナー操作のコマンド（`screenshot`・`tap` など）、`status`・`stop`・`record`、`relay skill` にあります。`start`・`doctor`・`devices`・`install` は `relay --help` の全体のヘルプに書かれています。
+[SKILL.md](SKILL.md) の補足です。ここにないことは device-relay の README と docs/ の各文書（ファイル名と節の名前を「」で示します）か `relay --help` / `relay <command> --help` を見てください。`--help`（`-h`、`relay help <command>` も同じ）はすべてのサブコマンドにあります。
 
 ## ランナーの起動・確認・停止
 
