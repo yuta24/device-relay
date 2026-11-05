@@ -53,7 +53,7 @@ enum Doctor {
             } else {
                 deviceChecks.append(.ok("devices", "\(connected) connected device(s), \(simulators)"))
             }
-            deviceChecks += warnings.map { .warning("devicectl", $0, fix: "check that Xcode 15 or later is selected (xcode-select -p)") }
+            deviceChecks += warnings.map { .warning("devicectl", $0, fix: "check that Xcode 26 or later is selected (xcode-select -p)") }
             // Candidates another relay start holds: the automatic choice below leaves them out, as relay start does.
             let busy = devices.filter {
                 held[$0.udid.uppercased()] != nil && $0.isActive && (!options.simulator || $0.kind == .simulator) && (options.os.map($0.matches(os:)) ?? true)
@@ -185,7 +185,7 @@ enum Doctor {
             checks.append(.ok("devicectl", try commands.xcrun(["--find", "devicectl"], CommandTimeout.query).trimmingCharacters(in: .whitespacesAndNewlines)))
         } catch {
             checks.append(timedOut("devicectl", error)
-                ?? .problem("devicectl", "not found", fix: "relay needs Xcode 15 or later for devicectl"))
+                ?? .problem("devicectl", "not found", fix: "relay needs Xcode 26 or later; select it: sudo xcode-select -s /Applications/Xcode.app"))
         }
         let project = try? resolveProject()
         if let project {
