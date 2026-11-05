@@ -15,6 +15,7 @@
 - **`relay shutdown` を一覧から外しました**: `relay --help` の一覧と SKILL.md には載りません。コマンドは今までどおり動き、`relay shutdown --help` に「通常は `relay stop`」と違いが書いてあります（ランナーだけを止めて即座に戻り、後始末は `relay start` が後から行う）。止めるときは `relay stop` を使ってください。
 - **`relay bench` はランナーを他のコマンドと同じ探し方で見つけます**: `--url` も `--session` も要らなくなり（付けなかったときの書き方の誤りがなくなった）、`--runner` も受け付けます。`--url` と `--token` は runner.json の URL とトークンを上書きする任意のオプションで、`--url` だけならトークンは runner.json のものです。ランナーが見つからなければ終了コード `3` です（`--url` だけでトークンを読めないときは、以前は `1` でした）。`--runner` と `--session` の併用は書き方の誤り（`2`）です。
 - **`relay doctor --json`（追加）**: 人向けの行の代わりに、1 つの JSON オブジェクトを stdout に出します。終了コードは変わりません（✗ があれば `1`）。形は「[relay doctor --json](setup.md#relay-doctor---json)」。
+- **`relay doctor` は、ほかの `relay start` が使用中の端末を考慮します**: 自動選択は使用中の端末を外し（`relay start` と同じ）、Devices に `in use` の行が出ます（`--json` の checks にも入ります）。`--udid` / `--device` で指定した端末が使用中なら target が ✗ で、終了コードは `1` です。
 - **`relay devices --json` は 1 行になりました**: 整形（改行・字下げ）していたのを、ほかの `--json` と同じ 1 行・キー順にそろえました。JSON として読むなら変わりません。`jq` や `JSON.parse` なら影響はなく、行単位で読んでいたなら直してください。
 - **`--help` の行は 100 文字以内**に折り返しました（内容は、上の変更と `ping`・`health`・`status` の使い分けの追記を除いて同じです）。
 

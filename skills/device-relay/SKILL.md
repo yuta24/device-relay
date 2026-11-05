@@ -12,7 +12,7 @@ description: relay CLI（device-relay）で iOS のシミュレータや実機�
 ## セットアップ（初回だけ）
 
 1. `command -v relay` で確認します。なければ、device-relay のチェックアウトで `make install`（`~/.local/bin/relay` にリンク。`~/.local/bin` が PATH にあること）→ `relay install`（Runner プロジェクトとこのスキルを `~/.relay/runner` にコピー）を実行するよう利用者に頼みます。利用者のホームに書き込むので、断りなく実行しないでください。
-2. `relay doctor [--udid <UDID> | --device <名前>] [--simulator] [--os <version>] [--json]` で環境を確かめます（`relay start` に付けるのと同じ指定で、その端末を確認します）。✗ があれば終了コード 1（ローカルの失敗）で、各行に直し方が出ます。! は注意で、起動は止めません。
+2. `relay doctor [--udid <UDID> | --device <名前>] [--simulator] [--os <version>] [--json]` で環境を確かめます（`relay start` に付けるのと同じ指定で、その端末を確認します）。✗ があれば終了コード 1（ローカルの失敗）で、各行に直し方が出ます。! は注意で、起動は止めません。ほかのセッションが使っている端末は `in use` の行に出て、自動選択から外れます（指定した端末が使用中なら ✗）。
 3. このスキル自体は `relay skill install`（対象アプリのリポジトリの `.claude/skills/device-relay` にコピー。`--global` なら `~/.claude/skills`）で入ります。`relay skill status` で ! が出たら（relay の更新でスキルが古い）、`relay skill install` で更新するよう利用者に伝えます。リポジトリやホームのファイルを書き換えるので、断りなく実行しないでください。
 
 ### sandbox の中で動くとき
