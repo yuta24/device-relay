@@ -77,7 +77,8 @@ mkdir -p dist
 rm -f "dist/$archive" "dist/$archive.sha256"
 # COPYFILE_DISABLE: no AppleDouble (._*) entries. The owner in the archive is not this machine's user.
 COPYFILE_DISABLE=1 tar --uid 0 --gid 0 --uname root --gname wheel -czf "dist/$archive" -C "$stage" "$name"
-# From inside dist/, so the file names the bare asset: shasum -c works next to the download, and mise reads it.
+# From inside dist/, so the file names the bare asset: shasum -c works next to the download, and mise, which
+# downloads this file from the release, finds the line for the asset it verifies (with another name it would not).
 (cd dist && shasum -a 256 "$archive" >"$archive.sha256")
 
 echo "dist/$archive"
