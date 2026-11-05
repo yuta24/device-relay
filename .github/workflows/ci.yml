@@ -14,12 +14,21 @@ concurrency:
 
 jobs:
   cli:
-    name: relay CLI (build and test)
-    runs-on: macos-latest
+    name: relay CLI (${{ matrix.xcode }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Each image carries one major Xcode version.
+          - xcode: Xcode 27
+            image: xcode-27
+          - xcode: Xcode 26
+            image: macos-latest
+    runs-on: ${{ matrix.image }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
-      - name: Select the newest Xcode
+      - name: Select the newest Xcode on the image
         run: |
           xcode=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
           sudo xcode-select -s "$xcode"
@@ -31,12 +40,20 @@ jobs:
         run: xcrun swift test
 
   runner:
-    name: Runner (build for testing, simulator)
-    runs-on: macos-latest
+    name: Runner (${{ matrix.xcode }}, simulator build)
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - xcode: Xcode 27
+            image: xcode-27
+          - xcode: Xcode 26
+            image: macos-latest
+    runs-on: ${{ matrix.image }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
-      - name: Select the newest Xcode
+      - name: Select the newest Xcode on the image
         run: |
           xcode=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
           sudo xcode-select -s "$xcode"

@@ -303,7 +303,10 @@ struct HelpWidthTests {
         #expect(lines.count > 1)
         #expect(lines.allSatisfy { $0.count <= 40 })
         #expect(lines.dropFirst().allSatisfy { $0.hasPrefix("  w") })
-        #expect(lines.joined(separator: " ").split(separator: " ").map(String.init) == words.split(separator: " ").map(String.init))
+        // Split up: Swift 6.3 (Xcode 26) cannot type-check it as one #expect in reasonable time.
+        let rejoined: [String] = lines.joined(separator: " ").split(separator: " ").map(String.init)
+        let original: [String] = words.split(separator: " ").map(String.init)
+        #expect(rejoined == original)
     }
 }
 
