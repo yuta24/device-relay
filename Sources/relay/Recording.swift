@@ -307,7 +307,7 @@ enum Recording {
 
         let simulators: [Device]
         do {
-            simulators = try DeviceList.parseSimctl(Data(Shell.xcrun(["simctl", "list", "devices", "--json"]).utf8))
+            simulators = try DeviceList.parseSimctl(Data(Shell.xcrun(["simctl", "list", "devices", "--json"], timeout: CommandTimeout.query).utf8))
         } catch {
             return fail("cannot list the simulators: \(error)", code: .failure)
         }
@@ -324,7 +324,7 @@ enum Recording {
             // devicectl only when it is not a simulator, which keeps recording a simulator as quick as it was.
             let devices: [Device]
             do {
-                devices = try DeviceList.parseDevicectl(HostCommands.live.devicectlJSON(["list", "devices"]))
+                devices = try DeviceList.parseDevicectl(HostCommands.live.devicectlJSON(["list", "devices"], CommandTimeout.devicectl))
             } catch {
                 return fail("the runner runs on \(info.name.map { "\($0) (\(info.udid))" } ?? info.udid), which is not a simulator, "
                     + "and devicectl cannot list the devices: \(error)", code: .failure)
@@ -666,7 +666,7 @@ enum Recording {
     }
 
     private static func isShutDown(udid: String) -> Bool {
-        guard let output = try? Shell.xcrun(["simctl", "list", "devices", "--json"]),
+        guard let output = try? Shell.xcrun(["simctl", "list", "devices", "--json"], timeout: CommandTimeout.query),
               let simulators = try? DeviceList.parseSimctl(Data(output.utf8)),
               case .simulator(let simulator) = target(udid: udid, devices: simulators) else { return false }
         return !simulator.isBooted
@@ -703,6 +703,8 @@ enum Recording {
 /// reports its pid, stops it with SIGINT after `maxDuration`, and exits when it exits.
 enum RecordSupervisor {
     static func run(udid: String, output: String, maxDuration: TimeInterval) -> Int32 {
+        // Not through `Shell`, and without a `CommandTimeout`: a recording runs for as long as it is asked to.
+        // `maxDuration` and `Recording.stopTimeout` below bound it.
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
         process.arguments = Recording.simctlArguments(udid: udid, output: output)

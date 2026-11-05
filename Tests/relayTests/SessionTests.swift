@@ -453,15 +453,15 @@ struct AutomaticDeviceTests {
 
     @Test func prepareClaimsTheDeviceBeforeBooting() throws {
         let commands = HostCommands(
-            xcrun: { arguments in
+            xcrun: { arguments, _ in
                 if arguments.prefix(3) == ["simctl", "list", "devices"] {
                     return #"{"devices":{"com.apple.CoreSimulator.SimRuntime.iOS-27-0":[{"udid":"SIM-C","name":"iPhone Air","state":"Shutdown","isAvailable":true}]}}"#
                 }
                 Issue.record("should not run: \(arguments)")
                 return ""
             },
-            devicectlJSON: { _ in Data() },
-            run: { _, _ in "" }
+            devicectlJSON: { _, _ in Data() },
+            run: { _, _, _ in "" }
         )
         let home = try temporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }
@@ -486,15 +486,15 @@ struct AutoSelectRaceTests {
     private func commands(_ sims: [(udid: String, name: String)]) -> HostCommands {
         let entries = sims.map { #"{"udid":"\#($0.udid)","name":"\#($0.name)","state":"Booted","isAvailable":true}"# }.joined(separator: ",")
         return HostCommands(
-            xcrun: { arguments in
+            xcrun: { arguments, _ in
                 if arguments.prefix(3) == ["simctl", "list", "devices"] {
                     return #"{"devices":{"com.apple.CoreSimulator.SimRuntime.iOS-27-0":[\#(entries)]}}"#
                 }
                 Issue.record("should not run: \(arguments)")
                 return ""
             },
-            devicectlJSON: { _ in Data() },
-            run: { _, _ in "" }
+            devicectlJSON: { _, _ in Data() },
+            run: { _, _, _ in "" }
         )
     }
 

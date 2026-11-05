@@ -69,7 +69,7 @@ struct CheckoutRunnerSource: RunnerSource {
     }
 
     static func commit(of root: URL, commands: HostCommands) -> String? {
-        guard let output = try? commands.run("/usr/bin/git", ["-C", root.path, "rev-parse", "HEAD"]) else { return nil }
+        guard let output = try? commands.run("/usr/bin/git", ["-C", root.path, "rev-parse", "HEAD"], CommandTimeout.query) else { return nil }
         let commit = output.trimmingCharacters(in: .whitespacesAndNewlines)
         return commit.count == 40 ? commit : nil
     }
@@ -202,7 +202,8 @@ enum InstallCommand {
         _ options: InstallOptions,
         commands: HostCommands = .live,
         home: URL = UserHome.url,
-        build: (_ args: [String], _ log: FileHandle, _ echo: Bool) throws -> Void = { try Shell.xcrun($0, log: $1, echo: $2) },
+        // No time limit: a build can rightly take very long, and shows progress in its log.
+        build: (_ args: [String], _ log: FileHandle, _ echo: Bool) throws -> Void = { try Shell.xcrun($0, log: $1, echo: $2, timeout: nil) },
         output: (String) -> Void = { print($0) }
     ) throws -> Int32 {
         if options.remove {

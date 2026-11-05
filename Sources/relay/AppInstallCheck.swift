@@ -67,7 +67,8 @@ enum AppInstallCheck {
         do {
             answer = interpretSimctl(status: 0, output: try probe.xcrun(["simctl", "get_app_container", udid, bundleID]))
         } catch let error as ShellError {
-            answer = interpretSimctl(status: error.status, output: error.output)
+            answer = error.timeoutDetail.map { .state(.unknown(reason: "simctl \($0)")) }
+                ?? interpretSimctl(status: error.status, output: error.output)
         } catch {
             answer = .state(.unknown(reason: "simctl did not run: \(error)"))
         }
@@ -80,7 +81,7 @@ enum AppInstallCheck {
         do {
             return interpretDevicectl(try probe.devicectlJSON(devicectlArguments(bundleID: bundleID, udid: udid)), bundleID: bundleID)
         } catch let error as ShellError {
-            return .unknown(reason: "devicectl failed (\(error.status))")
+            return .unknown(reason: "devicectl \(error.timeoutDetail ?? "failed (\(error.status))")")
         } catch {
             return .unknown(reason: "devicectl did not run: \(error)")
         }

@@ -44,9 +44,9 @@ struct SkillTests {
         var commands: HostCommands {
             let app = app
             return HostCommands(
-                xcrun: { throw ShellError(args: $0, status: 1, output: "") },
-                devicectlJSON: { throw ShellError(args: $0, status: 1, output: "") },
-                run: { executable, args in
+                xcrun: { args, _ in throw ShellError(args: args, status: 1, output: "") },
+                devicectlJSON: { args, _ in throw ShellError(args: args, status: 1, output: "") },
+                run: { executable, args, _ in
                     guard executable == "/usr/bin/git", args.count == 4 else { throw ShellError(args: args, status: 1, output: "") }
                     if args[3] == "HEAD" { return String(repeating: "c", count: 40) + "\n" }
                     guard args[1].hasPrefix(app.path) else { throw ShellError(args: args, status: 128, output: "not a git repository") }
@@ -275,7 +275,7 @@ struct SkillTests {
 
     @Test func doctorListsTheSkill() {
         var lines: [String] = []
-        _ = Doctor.run(DoctorOptions(), commands: HostCommands(xcrun: { _ in "" }, devicectlJSON: { _ in Data() }, run: { _, _ in "" }),
+        _ = Doctor.run(DoctorOptions(), commands: HostCommands(xcrun: { _, _ in "" }, devicectlJSON: { _, _ in Data() }, run: { _, _, _ in "" }),
                        configURL: URL(fileURLWithPath: "/nonexistent/config.json"),
                        resolveProject: { _ in (URL(fileURLWithPath: "/relay"), .environment) }, home: URL(fileURLWithPath: "/nonexistent"),
                        output: { lines.append($0) })

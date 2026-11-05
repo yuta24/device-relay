@@ -104,7 +104,7 @@ private final class FakeHost: Sendable {
 
     var commands: HostCommands {
         HostCommands(
-            xcrun: { [self] args in
+            xcrun: { [self] args, _ in
                 state.withLock { $0.xcrunCalls.append(args) }
                 switch args.first {
                 case "simctl" where args.dropFirst().first == "list": return simctl
@@ -114,7 +114,7 @@ private final class FakeHost: Sendable {
                 default: return ""
                 }
             },
-            devicectlJSON: { [self] args in
+            devicectlJSON: { [self] args, _ in
                 if args.starts(with: ["list", "devices"]) {
                     return Data(devicectl.utf8)
                 }
@@ -123,7 +123,7 @@ private final class FakeHost: Sendable {
                 }
                 throw ShellError(args: args, status: 1, output: "")
             },
-            run: { [self] executable, args in
+            run: { [self] executable, args, _ in
                 switch (executable, args.first) {
                 case ("/usr/bin/security", "find-identity"): return findIdentity
                 case ("/usr/bin/security", "find-certificate"):
@@ -207,10 +207,19 @@ struct DeviceListTests {
     @Test func loadsSimulatorsEvenWhenDevicectlFails() throws {
         let host = FakeHost()
         var commands = host.commands
-        commands.devicectlJSON = { _ in throw ShellError(args: ["devicectl"], status: 1, output: "") }
+        commands.devicectlJSON = { _, _ in throw ShellError(args: ["devicectl"], status: 1, output: "") }
         let (devices, warnings) = try DeviceList.load(commands)
         #expect(devices.map(\.udid) == [simulatorUDID])
         #expect(warnings.count == 1)
+    }
+
+    @Test func aDevicectlThatTimesOutLeavesTheSimulatorsAndAWarning() throws {
+        var commands = FakeHost().commands
+        commands.devicectlJSON = { args, timeout in throw ShellError(args: ["devicectl"] + args, status: 15, output: "", timedOutAfter: timeout) }
+        let (devices, warnings) = try DeviceList.load(commands)
+        #expect(devices.map(\.udid) == [simulatorUDID])
+        #expect(warnings.count == 1)
+        #expect(warnings.first?.hasPrefix("cannot list devices with devicectl: xcrun devicectl list devices timed out after 60 s; ") == true)
     }
 
     @Test func skipsDevicectlWhenOnlySimulatorsCanBePicked() throws {
@@ -224,9 +233,9 @@ struct DeviceListTests {
         let devicectlCalls = Locked(0)
         var commands = FakeHost().commands
         let devicectlJSON = commands.devicectlJSON
-        commands.devicectlJSON = { args in
+        commands.devicectlJSON = { args, timeout in
             devicectlCalls.withLock { $0 += 1 }
-            return try devicectlJSON(args)
+            return try devicectlJSON(args, timeout)
         }
         let (simulatorOnly, warnings) = try DeviceList.load(commands, udid: simulatorUDID)
         #expect(devicectlCalls.value == 0)
@@ -702,8 +711,8 @@ struct StartSetupTests {
             host.devicectl = #"{"result":{"devices":[]}}"#
             var commands = host.commands
             let xcrun = commands.xcrun
-            commands.xcrun = { args in
-                let output = try xcrun(args)
+            commands.xcrun = { args, timeout in
+                let output = try xcrun(args, timeout)
                 // simctl boot stopped by Ctrl-C (or failing on its own).
                 if args.prefix(2) == ["simctl", "boot"] { throw ShellError(args: args, status: 15, output: "") }
                 return output
@@ -715,6 +724,100 @@ struct StartSetupTests {
             // Only a stopped boot is undone: a boot that failed on its own may be someone else's simulator.
             #expect(host.xcrunCalls.last == (cancelled ? ["simctl", "shutdown", simulatorUDID] : ["simctl", "boot", simulatorUDID]))
         }
+    }
+
+    @Test func aSimulatorWhoseBootTimesOutIsShutDown() throws {
+        let host = FakeHost()
+        host.devicectl = #"{"result":{"devices":[]}}"#
+        var commands = host.commands
+        let xcrun = commands.xcrun
+        commands.xcrun = { args, timeout in
+            let output = try xcrun(args, timeout)
+            if args.prefix(2) == ["simctl", "boot"] { throw ShellError(args: args, status: 15, output: "", timedOutAfter: timeout) }
+            return output
+        }
+        #expect {
+            try StartSetup.prepare(StartOptions(udid: simulatorUDID), commands: commands, configURL: URL(fileURLWithPath: "/nonexistent/config.json"),
+                                   resolveProject: project, isCancelled: { false }, info: { _ in })
+        } throws: { "\($0)".contains("simctl boot \(simulatorUDID) timed out after 300 s") }
+        // The boot simctl asked for goes on without simctl.
+        #expect(host.xcrunCalls.last == ["simctl", "shutdown", simulatorUDID])
+    }
+
+    @Test func startGivesEachCommandItsTimeLimit() throws {
+        let host = FakeHost()
+        host.devicectl = #"{"result":{"devices":[]}}"#
+        let limits = Locked<[String: TimeInterval]>([:])
+        var commands = host.commands
+        let xcrun = commands.xcrun
+        commands.xcrun = { args, timeout in
+            limits.withLock { $0[args.prefix(2).joined(separator: " ")] = timeout }
+            return try xcrun(args, timeout)
+        }
+        let devicectlJSON = commands.devicectlJSON
+        commands.devicectlJSON = { args, timeout in
+            limits.withLock { $0["devicectl " + args.prefix(2).joined(separator: " ")] = timeout }
+            return try devicectlJSON(args, timeout)
+        }
+        let setup = try StartSetup.prepare(StartOptions(device: "iphone 17 pro"), commands: commands,
+                                           configURL: URL(fileURLWithPath: "/nonexistent/config.json"), resolveProject: project, info: { _ in })
+        setup.finish(commands: commands) { _ in }
+        #expect(limits.value == [
+            "simctl list": CommandTimeout.query,
+            "devicectl list devices": CommandTimeout.devicectl,
+            "simctl boot": CommandTimeout.simctlBoot,
+            "simctl bootstatus": CommandTimeout.simctlBootStatus,
+            "simctl shutdown": CommandTimeout.simctlShutdown
+        ])
+    }
+
+    @Test func doctorGivesEachCommandItsTimeLimit() {
+        let host = FakeHost()
+        let limits = Locked<[String: TimeInterval]>([:])
+        var commands = host.commands
+        let xcrun = commands.xcrun
+        commands.xcrun = { args, timeout in
+            limits.withLock { $0[args.first ?? ""] = timeout }
+            return try xcrun(args, timeout)
+        }
+        let devicectlJSON = commands.devicectlJSON
+        commands.devicectlJSON = { args, timeout in
+            limits.withLock { $0[args.prefix(3).joined(separator: " ")] = timeout }
+            return try devicectlJSON(args, timeout)
+        }
+        let run = commands.run
+        commands.run = { executable, args, timeout in
+            limits.withLock { $0[executable] = timeout }
+            return try run(executable, args, timeout)
+        }
+        _ = Doctor.run(DoctorOptions(udid: deviceUDID), commands: commands, configURL: URL(fileURLWithPath: "/nonexistent/config.json"),
+                       resolveProject: project, home: URL(fileURLWithPath: "/nonexistent"), sandbox: { _ in [] }, output: { _ in })
+        for command in ["xcodebuild", "--version", "--find", "simctl", "/usr/bin/xcode-select", "/usr/bin/security"] {
+            #expect(limits.value[command] == CommandTimeout.query, "\(command)")
+        }
+        #expect(limits.value["list devices"] == CommandTimeout.devicectl)
+        #expect(limits.value["device info lockState"] == CommandTimeout.devicectl)
+    }
+
+    /// Everything that does not answer: doctor says so where it would say the tool is missing, and goes on.
+    @Test func doctorReportsCommandsThatTimeOutAndGoesOn() {
+        var commands = FakeHost().commands
+        commands.xcrun = { args, timeout in throw ShellError(args: args, status: 15, output: "", timedOutAfter: timeout) }
+        commands.devicectlJSON = { args, timeout in throw ShellError(args: ["devicectl"] + args, status: 15, output: "", timedOutAfter: timeout) }
+        commands.run = { executable, args, timeout in
+            throw ShellError(tool: URL(fileURLWithPath: executable).lastPathComponent, args: args, status: 9, output: "", timedOutAfter: timeout)
+        }
+        var lines: [String] = []
+        let status = Doctor.run(DoctorOptions(), commands: commands, configURL: URL(fileURLWithPath: "/nonexistent/config.json"),
+                                resolveProject: project, home: URL(fileURLWithPath: "/nonexistent"), sandbox: { _ in [] }, output: { lines.append($0) })
+        #expect(status == RunnerExitCode.failure.rawValue)
+        #expect(lines.contains { $0.hasPrefix("  ✗ Xcode            xcrun xcodebuild -version timed out after 30 s\n") })
+        #expect(lines.contains { $0.hasPrefix("  ✗ xcrun            xcrun --version timed out after 30 s\n") })
+        #expect(lines.contains { $0.hasPrefix("  ✗ devicectl        xcrun --find devicectl timed out after 30 s\n") })
+        #expect(lines.contains { $0.hasPrefix("  ✗ devices") && $0.contains("xcrun simctl list devices --json timed out after 30 s") })
+        #expect(lines.contains { $0.contains("signing") && $0.contains("security find-identity -v -p codesigning timed out after 30 s") })
+        // The fix for a missing Xcode would mislead: nothing says it is missing.
+        #expect(!lines.contains { $0.contains("install Xcode") })
     }
 
     @Test func picksTheConnectedDeviceAndRemembersTheKeychainTeam() throws {
@@ -877,7 +980,7 @@ struct DoctorTests {
     @Test func aSimulatorUDIDIsCheckedWithoutDevicectl() {
         let host = FakeHost()
         var commands = host.commands
-        commands.devicectlJSON = { args in
+        commands.devicectlJSON = { args, _ in
             Issue.record("devicectl \(args)")
             throw ShellError(args: args, status: 1, output: "")
         }
@@ -1036,9 +1139,9 @@ struct DoctorTests {
         let configURL = RelayConfig.defaultURL(home: home)
         try RelayConfig(teamID: "ABCDE12345").write(to: configURL)
         var commands = FakeHost().commands
-        commands.run = { executable, args in
+        commands.run = { executable, args, timeout in
             if executable == "/usr/bin/security" { throw ShellError(tool: "security", args: args, status: 1, output: "") }
-            return try FakeHost().commands.run(executable, args)
+            return try FakeHost().commands.run(executable, args, timeout)
         }
         var lines: [String] = []
         let status = Doctor.run(DoctorOptions(udid: deviceUDID), commands: commands, configURL: configURL,
@@ -1087,7 +1190,7 @@ struct RunnerInstallTests {
 
     private func source(_ tree: Tree, commit: String = String(repeating: "a", count: 40)) -> CheckoutRunnerSource {
         var commands = FakeHost().commands
-        commands.run = { executable, args in
+        commands.run = { executable, args, _ in
             guard executable == "/usr/bin/git", args.suffix(2) == ["rev-parse", "HEAD"] else { throw ShellError(args: args, status: 1, output: "") }
             return commit + "\n"
         }

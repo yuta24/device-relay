@@ -183,7 +183,9 @@ final class RunnerLauncher: Sendable {
             )
             RunnerBuildStamp.remove(derivedData: derivedData)
             let buildStart = Date()
-            try Shell.xcrun(buildArguments, log: buildLog, echo: options.verbose)
+            // No time limit: a build can rightly take very long, and shows progress in its log. Ctrl-C and relay
+            // stop end it (`StartCancellation`).
+            try Shell.xcrun(buildArguments, log: buildLog, echo: options.verbose, timeout: nil)
             guard let built = XCTestRunSelection.built(Self.xctestrunFiles(in: derivedData), since: buildStart) else {
                 throw SetupError(description: "build succeeded but no .xctestrun was found under \(derivedData.path)")
             }
@@ -391,6 +393,8 @@ final class RunnerLauncher: Sendable {
     private func launch(xctestrun: URL, testData: URL, logURL: URL) throws -> Process {
         let log = try FileHandle(forWritingTo: logURL)
 
+        // Not through `Shell`, and without a `CommandTimeout`: the runner stays until it is stopped. `--ready-timeout`
+        // and the liveness checks watch it.
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
         process.arguments = Self.testArguments(xctestrun: xctestrun, udid: udid, derivedData: testData)
@@ -615,7 +619,8 @@ final class RunnerLauncher: Sendable {
     private static func tunnelAddress(udid: String) -> String? {
         let output = FileManager.default.temporaryDirectory.appendingPathComponent("relay-devicectl-\(UUID().uuidString).json")
         defer { try? FileManager.default.removeItem(at: output) }
-        guard (try? Shell.xcrun(["devicectl", "device", "info", "details", "--device", udid, "--json-output", output.path])) != nil,
+        guard (try? Shell.xcrun(["devicectl", "device", "info", "details", "--device", udid, "--json-output", output.path],
+                                timeout: CommandTimeout.devicectl)) != nil,
               let data = try? Data(contentsOf: output) else {
             return nil
         }
@@ -637,7 +642,7 @@ final class RunnerLauncher: Sendable {
     /// The SDK version of this Xcode (`DEVELOPER_DIR`, else `xcode-select`'s), e.g. `27.2`; nil if xcrun
     /// cannot tell.
     private static func sdkVersion(platform: String) -> String? {
-        guard let output = try? Shell.xcrun(["--sdk", platform, "--show-sdk-version"]) else { return nil }
+        guard let output = try? Shell.xcrun(["--sdk", platform, "--show-sdk-version"], timeout: CommandTimeout.query) else { return nil }
         let version = output.trimmingCharacters(in: .whitespacesAndNewlines)
         return XCTestRunSelection.isVersion(version) ? version : nil
     }

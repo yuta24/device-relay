@@ -109,7 +109,7 @@ enum DeviceChecks {
 
     /// Whether the device is locked, from `devicectl device info lockState` (`passcodeRequired`).
     static func lockState(udid: String, commands: HostCommands) -> Bool? {
-        guard let data = try? commands.devicectlJSON(["device", "info", "lockState", "--device", udid]) else { return nil }
+        guard let data = try? commands.devicectlJSON(["device", "info", "lockState", "--device", udid], CommandTimeout.devicectl) else { return nil }
         return parseLockState(data)
     }
 
@@ -217,10 +217,10 @@ struct StartSetup {
         if device.kind == .simulator, !device.isBooted {
             info("booting simulator \(device.name) (\(device.udid)); it is shut down when relay exits")
             do {
-                _ = try commands.xcrun(["simctl", "boot", device.udid])
+                _ = try commands.xcrun(["simctl", "boot", device.udid], CommandTimeout.simctlBoot)
             } catch {
-                // Stopping simctl does not stop the boot it asked for.
-                if isCancelled() {
+                // Stopping simctl, by request or at the time limit, does not stop the boot it asked for.
+                if isCancelled() || (error as? ShellError)?.timedOutAfter != nil {
                     setup.bootedSimulator = device.udid
                     setup.finish(commands: commands, info: info)
                 }
@@ -229,7 +229,7 @@ struct StartSetup {
             setup.bootedSimulator = device.udid
             do {
                 // Blocks until the simulator has finished booting.
-                _ = try commands.xcrun(["simctl", "bootstatus", device.udid])
+                _ = try commands.xcrun(["simctl", "bootstatus", device.udid], CommandTimeout.simctlBootStatus)
             } catch {
                 setup.finish(commands: commands, info: info)
                 throw error
@@ -254,7 +254,7 @@ struct StartSetup {
         guard let udid = bootedSimulator else { return }
         info("shutting down simulator \(device.name) (\(udid)), which relay booted")
         do {
-            _ = try commands.xcrun(["simctl", "shutdown", udid])
+            _ = try commands.xcrun(["simctl", "shutdown", udid], CommandTimeout.simctlShutdown)
         } catch {
             info("cannot shut down \(udid): \(error)")
         }

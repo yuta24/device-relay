@@ -155,7 +155,7 @@ enum SkillInstaller {
 
     /// The git root of `currentDirectory`, else `currentDirectory`.
     static func projectRoot(currentDirectory: URL, commands: HostCommands) -> URL {
-        if let output = try? commands.run("/usr/bin/git", ["-C", currentDirectory.path, "rev-parse", "--show-toplevel"]) {
+        if let output = try? commands.run("/usr/bin/git", ["-C", currentDirectory.path, "rev-parse", "--show-toplevel"], CommandTimeout.query) {
             let path = output.trimmingCharacters(in: .whitespacesAndNewlines)
             if path.hasPrefix("/") {
                 return URL(fileURLWithPath: path, isDirectory: true).canonicalFileURL
