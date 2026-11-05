@@ -192,7 +192,7 @@ enum Doctor {
             checks.append(.ok("runner project", "\(project.root.path) (from \(project.source.label))"))
         } else {
             checks.append(.problem("runner project", "\(RunnerProject.projectPath) not found",
-                                   fix: "run relay install (or pass --project <path to device-relay>, or set \(RunnerProject.environmentKey))"))
+                                   fix: "run relay install from the extracted release or the checkout (or pass --project <path to device-relay>, or set \(RunnerProject.environmentKey))"))
         }
         checks.append(installCheck(project: project, home: home, staleness: staleness))
         let currentDirectory = WorkingDirectory.url
@@ -208,10 +208,16 @@ enum Doctor {
         (error as? ShellError)?.timeoutSummary.map { .problem(title, $0, fix: "run it in a terminal to see what it is waiting for") }
     }
 
-    /// The copy in `~/.relay/runner`: its record, and whether it matches this relay.
+    /// The copy in `~/.relay/runner`: its record, and whether it matches this relay. With the runner next to
+    /// the relay executable (a release, or `make install`), the copy is neither needed nor used, so its absence
+    /// or age is no reason to warn: only a relay binary moved away from there would use it.
     static func installCheck(project: (root: URL, source: RunnerProject.Source)?, home: URL, staleness: (URL, RunnerProject.Source) -> String?) -> Check {
         let installed = RunnerProject.installedRoot(home: home)
+        let besideExecutable = project?.source == .executable
         guard RunnerProject.contains(installed) else {
+            if besideExecutable {
+                return .ok("runner install", "not needed; using the runner project of the relay executable")
+            }
             return .warning("runner install", "not installed\(project.map { "; using \($0.root.path)" } ?? "")",
                             fix: "run relay install so relay start works without the checkout")
         }
@@ -219,7 +225,7 @@ enum Doctor {
         let detail = record.map { record in
             "relay \(record.relayVersion)\(record.commit.map { ", commit \($0.prefix(12))" } ?? ""), from \(record.source), \(record.installedAt)"
         } ?? "\(installed.path) (no \(RunnerInstallRecord.fileName))"
-        if let reason = staleness(installed, .installed) {
+        if !besideExecutable, let reason = staleness(installed, .installed) {
             return .warning("runner install", reason, fix: "run relay install again to update \(installed.path)")
         }
         if let project, project.source != .installed {

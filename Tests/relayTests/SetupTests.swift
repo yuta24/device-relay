@@ -587,22 +587,63 @@ struct RunnerProjectTests {
         #expect(try tree.resolve(environment: [RunnerProject.environmentKey: ""], executable: tree.link).source == .executable)
     }
 
-    @Test func theInstalledCopyComesAfterTheCurrentCheckoutAndBeforeTheExecutable() throws {
+    @Test func theInstalledCopyComesLast() throws {
         let tree = try Tree()
         defer { try? FileManager.default.removeItem(at: tree.root) }
         let installed = RunnerProject.installedRoot(home: tree.home)
         try FileManager.default.createDirectory(at: installed.appendingPathComponent(RunnerProject.projectPath), withIntermediateDirectories: true)
+        // A relay binary copied away from its directory.
+        let copied = tree.root.appendingPathComponent("elsewhere/bin/relay")
 
-        // From the app's repository (no checkout around the current directory): the installed copy.
-        #expect(try tree.resolve(executable: tree.link) == (installed, .installed))
+        // After an upgrade, an old relay install must not keep being built: the executable's directory wins.
+        #expect(try tree.resolve(executable: tree.link) == (tree.checkout, .executable))
+        // Nothing around the executable: the installed copy.
+        #expect(try tree.resolve(executable: copied) == (installed, .installed))
+        #expect(try tree.resolve() == (installed, .installed))
         // Inside the checkout (xcrun swift run relay start): its sources, not an older installed copy.
-        #expect(try tree.resolve(current: tree.checkout, executable: tree.link) == (tree.checkout, .currentDirectory))
+        #expect(try tree.resolve(current: tree.checkout, executable: copied) == (tree.checkout, .currentDirectory))
         #expect(try tree.resolve(current: tree.checkout.appendingPathComponent("Runner")) == (tree.checkout, .currentDirectory))
         #expect(try tree.resolve(environment: [RunnerProject.environmentKey: tree.checkout.path]) == (tree.checkout, .environment))
-        // Inside the installed copy itself it is the installed copy, not a checkout.
-        #expect(try tree.resolve(current: installed, executable: tree.link) == (installed, .installed))
+        // Inside the installed copy itself it is not a checkout.
+        #expect(try tree.resolve(current: installed, executable: copied) == (installed, .installed))
+        #expect(try tree.resolve(current: installed, executable: tree.link) == (tree.checkout, .executable))
         // relay install looks for a checkout only, even from inside the installed copy.
         #expect(try tree.resolve(current: installed, executable: tree.link, includeInstalled: false) == (tree.checkout, .executable))
+        #expect(throws: SetupError.self) { try tree.resolve(current: installed, executable: copied, includeInstalled: false) }
+    }
+
+    /// The layout of a release tarball, as extracted by hand or by mise, with `bin/relay` linked from elsewhere.
+    @Test func aLinkToAnExtractedReleaseFindsItsRunner() throws {
+        let tree = try Tree()
+        defer { try? FileManager.default.removeItem(at: tree.root) }
+        let manager = FileManager.default
+        let release = tree.root.appendingPathComponent("device-relay-v1.2.3")
+        let binary = release.appendingPathComponent("bin/relay")
+        try manager.createDirectory(at: release.appendingPathComponent(RunnerProject.projectPath), withIntermediateDirectories: true)
+        try manager.createDirectory(at: binary.deletingLastPathComponent(), withIntermediateDirectories: true)
+        manager.createFile(atPath: binary.path, contents: Data())
+        let link = tree.root.appendingPathComponent("links/release-relay")
+        try manager.createSymbolicLink(at: link, withDestinationURL: binary)
+        // An older relay install does not get in the way.
+        try manager.createDirectory(at: RunnerProject.installedRoot(home: tree.home).appendingPathComponent(RunnerProject.projectPath), withIntermediateDirectories: true)
+
+        #expect(try tree.resolve(executable: binary).source == .executable)
+        let found = try tree.resolve(executable: link)
+        #expect(found.source == .executable)
+        #expect(found.root.canonicalFileURL.path == release.canonicalFileURL.path)
+        #expect(try tree.resolve(executable: link, includeInstalled: false).source == .executable)
+    }
+
+    @Test func aMissingRunnerSaysWhatACopiedBinaryNeeds() throws {
+        let tree = try Tree()
+        defer { try? FileManager.default.removeItem(at: tree.root) }
+        let copied = tree.root.appendingPathComponent("elsewhere/bin/relay")
+
+        let missing: String = #expect(throws: SetupError.self) { try tree.resolve(executable: copied) }?.description ?? ""
+        #expect(missing.contains("copied away from its directory needs relay install run once from the extracted release directory (or the checkout)"))
+        #expect(missing.contains("--project"))
+        let toInstall: String = #expect(throws: SetupError.self) { try tree.resolve(executable: copied, includeInstalled: false) }?.description ?? ""
+        #expect(toInstall.contains("run relay install from inside one"))
     }
 
     @Test func buildsGoUnderTheHomeDirectoryPerSource() {
@@ -1131,6 +1172,22 @@ struct DoctorTests {
         // An outdated copy is a note even while a checkout wins, so it is updated before it is used again.
         let outdated = Doctor.installCheck(project: (checkout, .currentDirectory), home: home) { _, _ in "the runner was installed by relay 0.1.0" }
         #expect(outdated.status == .warning)
+        // Next to the relay executable (a release, or make install) the copy is out of the picture, however old.
+        let beside = Doctor.installCheck(project: (checkout, .executable), home: home) { _, _ in "the runner was installed by relay 0.1.0" }
+        #expect(beside.status == .ok)
+        #expect(beside.detail.hasSuffix("(not used: relay executable wins)"))
+        #expect(RunnerInstaller.staleness(root: checkout, source: .executable) { Issue.record("not a copy"); return nil } == nil)
+    }
+
+    @Test func noInstalledCopyIsFineNextToTheExecutableOnly() throws {
+        let home = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let root = URL(fileURLWithPath: "/opt/device-relay-v1.2.3")
+
+        let release = Doctor.installCheck(project: (root, .executable), home: home) { _, _ in nil }
+        #expect(release == .ok("runner install", "not needed; using the runner project of the relay executable"))
+        #expect(Doctor.installCheck(project: (root, .currentDirectory), home: home) { _, _ in nil }.status == .warning)
+        #expect(Doctor.installCheck(project: nil, home: home) { _, _ in nil }.status == .warning)
     }
 
     @Test func aSavedTeamIsEnoughWithoutTheKeychain() throws {

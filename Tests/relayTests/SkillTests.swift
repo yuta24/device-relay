@@ -109,10 +109,10 @@ struct SkillTests {
             == tree.app.appendingPathComponent("agents/device-relay").path)
     }
 
-    @Test func copiesTheInstalledSkillAndRecordsTheVersion() throws {
+    @Test func fallsBackToTheInstalledCopyAndRecordsTheVersion() throws {
         let tree = try Tree()
         defer { try? FileManager.default.removeItem(at: tree.root) }
-        let (status, lines) = try tree.run(["install"])
+        let (status, lines) = try tree.run(["install"], checkout: false)
         #expect(status == 0)
         #expect(lines == ["installed the device-relay skill in \(tree.projectSkill.path) (relay \(RelayVersion.current), commit aaaaaaaaaaaa, from \(tree.installedSkill.path))"])
         #expect(tree.text(tree.projectSkill) == "installed skill")
@@ -124,7 +124,7 @@ struct SkillTests {
         #expect(!FileManager.default.fileExists(atPath: tree.globalSkill.deletingLastPathComponent().path))
     }
 
-    @Test func fallsBackToTheCheckout() throws {
+    @Test func comesFromTheCheckoutWithoutAnInstalledCopy() throws {
         let tree = try Tree(installed: false)
         defer { try? FileManager.default.removeItem(at: tree.root) }
         try tree.run(["install", "--global"])
@@ -135,14 +135,36 @@ struct SkillTests {
         #expect(throws: SetupError.self) { try tree.run(["install"], checkout: false) }
     }
 
+    /// After an upgrade, an old relay install must not keep handing out its skill: the same order as the runner.
+    @Test func theCheckoutWinsOverAnOutdatedInstalledCopy() throws {
+        let tree = try Tree(installedVersion: "0.0.1")
+        defer { try? FileManager.default.removeItem(at: tree.root) }
+        let (_, lines) = try tree.run(["install"])
+        #expect(lines.first?.hasSuffix("from \(tree.checkout.appendingPathComponent(AgentSkill.path).path))") == true)
+        #expect(tree.text(tree.projectSkill) == "checkout skill")
+        #expect(SkillInstallRecord.read(directory: tree.projectSkill)?.relayVersion == RelayVersion.current)
+        // Nothing to warn about: the outdated copy is not the source.
+        let status = try tree.run(["status"]).lines
+        #expect(status[0].hasPrefix("  ✓ source"))
+        #expect(status[0].hasSuffix("from checkout)"))
+        #expect(status[1].hasPrefix("  ✓ project"))
+
+        // --link follows the same order, and falls back the same way.
+        try tree.run(["install", "--global", "--link"])
+        #expect(InstalledSkill.inspect(tree.globalSkill) == .link(tree.checkout.appendingPathComponent(AgentSkill.path).standardizedFileURL))
+        let directory = tree.root.appendingPathComponent("links")
+        try tree.run(["install", "--dir", directory.path, "--link"], checkout: false)
+        #expect(InstalledSkill.inspect(directory.appendingPathComponent(AgentSkill.name)) == .link(tree.installedSkill.standardizedFileURL))
+    }
+
     @Test func updatesItsOwnCopyButNotSomethingElse() throws {
         let tree = try Tree()
         defer { try? FileManager.default.removeItem(at: tree.root) }
         try tree.run(["install"])
         try tree.write("leftover", to: tree.projectSkill.appendingPathComponent("old.md"))
-        try tree.write("installed skill v2", to: tree.installedSkill.appendingPathComponent("SKILL.md"))
+        try tree.write("checkout skill v2", to: tree.checkout.appendingPathComponent(AgentSkill.path + "/SKILL.md"))
         #expect(try tree.run(["install"]).lines.first?.hasPrefix("updated the device-relay skill in \(tree.projectSkill.path)") == true)
-        #expect(tree.text(tree.projectSkill) == "installed skill v2")
+        #expect(tree.text(tree.projectSkill) == "checkout skill v2")
         #expect(tree.text(tree.projectSkill, "old.md") == nil)
 
         // A skill of the same name that relay did not install.
@@ -153,7 +175,7 @@ struct SkillTests {
         #expect(throws: SetupError.self) { try tree.run(["uninstall", "--dir", "../../other"]) }
         #expect(tree.text(other) == "someone else's")
         #expect(try tree.run(["install", "--dir", "../../other", "--force"]).lines.first?.hasPrefix("replaced") == true)
-        #expect(tree.text(other) == "installed skill v2")
+        #expect(tree.text(other) == "checkout skill v2")
     }
 
     @Test func linksToTheCheckoutForDevelopment() throws {
@@ -165,7 +187,8 @@ struct SkillTests {
         #expect(InstalledSkill.inspect(tree.projectSkill) == .link(URL(fileURLWithPath: target)))
         // A copy replaces the link; the checkout stays as it is.
         try tree.run(["install"])
-        #expect(tree.text(tree.projectSkill) == "installed skill")
+        #expect(InstalledSkill.inspect(tree.projectSkill) != .link(URL(fileURLWithPath: target)))
+        #expect(tree.text(tree.projectSkill) == "checkout skill")
         #expect(tree.text(tree.checkout.appendingPathComponent(AgentSkill.path)) == "checkout skill")
         // A link elsewhere is not relay's.
         try FileManager.default.removeItem(at: tree.projectSkill)
@@ -215,22 +238,26 @@ struct SkillTests {
         #expect(try tree.run(["status", "--global"]).lines[1].contains("was not installed by relay"))
     }
 
-    @Test func statusAsksForRelayInstallWhenItsCopyIsOutdated() throws {
+    /// A relay binary with no checkout to find: its source is the copy, however old.
+    @Test func statusAsksForRelayInstallWhenItsCopyIsOutdatedAndTheOnlySource() throws {
         let tree = try Tree(installedVersion: "0.0.1")
         defer { try? FileManager.default.removeItem(at: tree.root) }
-        try tree.run(["install"])
-        try tree.run(["install", "--global"])
-        var lines = try tree.run(["status"]).lines
+        try tree.run(["install"], checkout: false)
+        try tree.run(["install", "--global"], checkout: false)
+        var lines = try tree.run(["status"], checkout: false).lines
         #expect(lines[1].hasPrefix("  ! project"))
         #expect(lines[1].contains("written for relay 0.0.1"))
         #expect(lines[1].contains("→ run relay install, then relay skill install"))
-        #expect(try tree.run(["status", "--global"]).lines[1].hasSuffix("→ run relay install, then relay skill install --global"))
+        #expect(try tree.run(["status", "--global"], checkout: false).lines[1].hasSuffix("→ run relay install, then relay skill install --global"))
+
+        // Once a checkout can be found, relay install is not part of the fix.
+        #expect(try tree.run(["status"]).lines[1].hasSuffix("→ run relay skill install to update it"))
 
         // Once relay install has refreshed its copy, only the installed skill is out of date.
         var runner = try #require(RunnerInstallRecord.read(root: RunnerProject.installedRoot(home: tree.home)))
         runner.relayVersion = RelayVersion.current
         try runner.write(root: RunnerProject.installedRoot(home: tree.home))
-        lines = try tree.run(["status"]).lines
+        lines = try tree.run(["status"], checkout: false).lines
         #expect(lines[1].hasPrefix("  ! project"))
         #expect(lines[1].hasSuffix("→ run relay skill install to update it"))
     }
@@ -246,7 +273,7 @@ struct SkillTests {
         #expect(tree.text(tree.installedSkill) == "checkout skill")
         #expect(tree.text(tree.installedSkill, "reference.md") == "checkout reference")
         #expect(lines.last == "the device-relay agent skill is in \(tree.installedSkill.path); relay skill install adds it to a project")
-        #expect(try tree.run(["install"]).lines.first?.contains("from \(tree.installedSkill.path)") == true)
+        #expect(try tree.run(["install"], checkout: false).lines.first?.contains("from \(tree.installedSkill.path)") == true)
     }
 
     @Test func doctorShowsTheSkillsAndMarksOutdatedOnes() throws {

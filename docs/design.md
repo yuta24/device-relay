@@ -28,7 +28,8 @@ WebDriverAgent と同じ「常駐 XCTest ランナー」方式を使います。
 Package.swift / Sources/relay      ホスト CLI (relay start / status / stop / install / devices / doctor / ランナー操作のサブコマンドなど)
 Tests/relayTests                   CLI のユニットテスト (Swift Testing)
 Runner/RelayRunner.xcodeproj       RelayRunnerHost (文字入力を試すためのホストアプリ) + RelayRunnerUITests (常駐ランナー)
-Makefile                           make install / make uninstall (relay を ~/.local/bin にリンク)
+Makefile                           make install / make uninstall (relay を ~/.local/bin にリンク)、make dist
+scripts/package.sh                 リリースの tarball を作る (.github/workflows/release.yml も使う)
 skills/device-relay/               コーディングエージェント向けのスキル (SKILL.md と reference.md)
 
 ~/.relay/runner/                   relay install がコピーした Runner プロジェクト、エージェントスキル (skills/device-relay) と install.json

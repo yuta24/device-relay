@@ -2,7 +2,7 @@ import Foundation
 
 enum RelayVersion {
     /// Recorded by `relay install`; a different value in the record means the installed runner is out of date.
-    static let current = "0.3.0"
+    static let current = "0.4.0"
 }
 
 /// What `relay install` records in `~/.relay/runner/install.json`.
@@ -12,7 +12,7 @@ struct RunnerInstallRecord: Codable, Equatable {
     var relayVersion: String
     /// The source's git commit, when it is a checkout.
     var commit: String?
-    /// Where the runner was copied from (a checkout path, or a release URL in the future).
+    /// Where the runner was copied from (the path of a checkout or an extracted release).
     var source: String
     var installedAt: String
 
@@ -45,8 +45,7 @@ struct RunnerInstallRecord: Codable, Equatable {
     }
 }
 
-/// Where `relay install` gets the runner project from. A checkout today; a GitHub Release download can
-/// implement this later without changing the installer.
+/// Where `relay install` gets the runner project from.
 protocol RunnerSource {
     /// Recorded as `source` in install.json.
     var location: String { get }
@@ -56,8 +55,9 @@ protocol RunnerSource {
     func copy(into directory: URL) throws
 }
 
-/// The runner project of a device-relay checkout. Besides `Runner/`, the project compiles some of the
-/// CLI's sources (`../Sources/relay/*.swift`), so those files are copied too.
+/// The runner project of a device-relay checkout or extracted release (same layout; a release has no commit).
+/// Besides `Runner/`, the project compiles some of the CLI's sources (`../Sources/relay/*.swift`), so those
+/// files are copied too, and `scripts/package.sh` puts them in the release.
 struct CheckoutRunnerSource: RunnerSource {
     var root: URL
     var commands: HostCommands = .live

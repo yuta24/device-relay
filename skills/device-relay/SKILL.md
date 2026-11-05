@@ -11,7 +11,7 @@ Option details, the element tree, what to do for each failure reason, and troubl
 
 ## Setup (first time only)
 
-1. Check with `command -v relay`. If it is missing, ask the user to run `make install` in a device-relay checkout (links `~/.local/bin/relay`; `~/.local/bin` must be in PATH) and then `relay install` (copies the Runner project and this skill to `~/.relay/runner`). These write to the user's home directory, so don't run them without asking.
+1. Check with `command -v relay`. If it is missing, ask the user to install it: `mise use -g github:yuta24/device-relay`, or the manual steps in the device-relay README. These write to the user's home directory, so don't run them without asking.
 2. Check the environment with `relay doctor [--udid <UDID> | --device <name>] [--simulator] [--os <version>] [--json]` (given what you would pass to `relay start`, it checks that device). Any ✗ means exit code 1 (local failure), and each line says how to fix it. ! is a warning and does not block starting. A device another session is using appears on an `in use` line and is left out of automatic selection (✗ if you named it).
 3. This skill itself is installed by `relay skill install` (copies it to `.claude/skills/device-relay` in the target app's repository; `--global` uses `~/.claude/skills`). If `relay skill status` shows ! (relay was updated and the skill is out of date), tell the user to update it with `relay skill install`. This rewrites files in the repository or home directory, so don't run it without asking.
 

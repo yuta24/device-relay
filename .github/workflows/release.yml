@@ -1,0 +1,45 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+# Only this workflow writes: gh release create needs it.
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Publish the release
+    # Xcode 26, the oldest Xcode relay supports, so the binaries run wherever relay does.
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - name: Show the Xcode in use
+        run: |
+          xcodebuild -version
+          xcrun swift --version
+      # Before anything is built; scripts/package.sh checks the version it is given as well.
+      - name: Check the tag against RelayVersion.current
+        run: |
+          current=$(sed -n 's/^ *static let current = "\(.*\)"$/\1/p' Sources/relay/RunnerInstall.swift)
+          if [ "$GITHUB_REF_NAME" != "v$current" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match RelayVersion.current ($current); expected v$current"
+            exit 1
+          fi
+      - name: Test
+        # One test at a time, as in ci.yml: run in parallel on the hosted runner, the tests hang.
+        run: xcrun swift test --no-parallel
+        timeout-minutes: 10
+      - name: Package
+        # Cross-compiling on one runner: the runner is arm64, and SwiftPM builds x86_64 from the same SDK.
+        run: |
+          version=${GITHUB_REF_NAME#v}
+          scripts/package.sh "$version" arm64
+          scripts/package.sh "$version" x86_64
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # --verify-tag: never let gh create a tag if the one that triggered this is gone.
+        run: gh release create "$GITHUB_REF_NAME" dist/*.tar.gz dist/*.sha256 --verify-tag --generate-notes

@@ -57,9 +57,10 @@ struct SkillSource: Equatable {
     /// "relay install" or "checkout", for messages.
     var label: String
 
-    /// `relay install`'s copy first, so a project gets the skill matching the installed runner; then the
-    /// checkout `relay install` would copy from. `--link` prefers the checkout, so edits to it show at once.
-    static func resolve(link: Bool, home: URL, commands: HostCommands, findCheckout: () -> URL?) throws -> SkillSource {
+    /// The checkout or extracted release `relay install` would copy from first, as for the runner
+    /// (`RunnerProject.resolve`), so upgrading relay never keeps handing out the skill of an older
+    /// `relay install`, and a `--link` shows edits at once. `relay install`'s copy is the fallback.
+    static func resolve(home: URL, commands: HostCommands, findCheckout: () -> URL?) throws -> SkillSource {
         func installed() -> SkillSource? {
             let directory = AgentSkill.installedSource(home: home)
             guard AgentSkill.contains(directory) else { return nil }
@@ -74,9 +75,9 @@ struct SkillSource: Equatable {
             return SkillSource(directory: directory, relayVersion: RelayVersion.current,
                                commit: CheckoutRunnerSource.commit(of: root, commands: commands), label: "checkout")
         }
-        guard let source = link ? (checkout() ?? installed()) : (installed() ?? checkout()) else {
-            throw SetupError(description: "cannot find the \(AgentSkill.name) skill (\(AgentSkill.path)); run relay install from a "
-                + "device-relay checkout, or set \(RunnerProject.environmentKey)=<path to device-relay>")
+        guard let source = checkout() ?? installed() else {
+            throw SetupError(description: "cannot find the \(AgentSkill.name) skill (\(AgentSkill.path)); run relay install from an "
+                + "extracted release or a device-relay checkout, or set \(RunnerProject.environmentKey)=<path to device-relay>")
         }
         return source
     }
@@ -251,7 +252,8 @@ enum SkillInstaller {
             }
             return .ok(title, "\(destination.path) -> \(target.path) (link)")
         case .copy(let record):
-            // relay install's copy is itself from another relay, so installing from it again would not help.
+            // The source fell back to relay install's copy, which is itself from another relay, so installing
+            // from it again would not help.
             let staleSource = source.map {
                 $0.directory.canonicalFileURL.path == AgentSkill.installedSource(home: home).canonicalFileURL.path
                     && $0.relayVersion != RelayVersion.current
@@ -274,7 +276,7 @@ extension SkillInstaller {
     /// What `relay doctor` shows about the skill: the project's and the global one, ! when out of date or
     /// not relay's. Not having the skill is fine (relay works without it), so that is ✓ with a hint.
     static func doctorChecks(home: URL, currentDirectory: URL, commands: HostCommands, findCheckout: () -> URL?) -> [Check] {
-        let source = try? SkillSource.resolve(link: false, home: home, commands: commands, findCheckout: findCheckout)
+        let source = try? SkillSource.resolve(home: home, commands: commands, findCheckout: findCheckout)
         let scopes: [(String, SkillOptions.Scope)] = [("skill (project)", .project), ("skill (global)", .global)]
         let checks = scopes.compactMap { title, scope in
             check(title, scope: scope,
@@ -298,8 +300,8 @@ enum SkillCommand {
     the git root of the current directory (else the current directory), where the team can commit it.
     --global installs it to ~/.claude/skills/device-relay, --dir to <skills dir>/device-relay.
     --link makes a symbolic link instead of a copy, for working on the skill in a checkout.
-    The skill comes from the copy relay install made in ~/.relay/runner/skills (with --link, a checkout
-    first), else from the device-relay checkout relay install copies from. A copy records the relay
+    The skill comes from the extracted release or device-relay checkout relay install copies from, else
+    from the copy relay install made in ~/.relay/runner/skills. A copy records the relay
     version in .relay-skill.json next to SKILL.md. A skill relay installed is updated in place; anything
     else at the destination is replaced only with --force. uninstall removes only what relay installed.
     status shows where the skill is installed, marking with ! one that is out of date.
@@ -325,7 +327,7 @@ enum SkillCommand {
         case .help:
             output(usage)
         case .install:
-            let source = try SkillSource.resolve(link: options.link, home: home, commands: commands, findCheckout: findCheckout)
+            let source = try SkillSource.resolve(home: home, commands: commands, findCheckout: findCheckout)
             let target = destination(options.scope ?? .project)
             let previous = try SkillInstaller.install(source, to: target, link: options.link, force: options.force, now: now)
             let verb = previous == .none ? "installed" : previous == .foreign ? "replaced" : "updated"
@@ -337,9 +339,9 @@ enum SkillCommand {
             let target = destination(options.scope ?? .project)
             output(try SkillInstaller.remove(target) ? "removed \(target.path)" : "the \(AgentSkill.name) skill is not installed in \(target.path)")
         case .status:
-            let source = try? SkillSource.resolve(link: false, home: home, commands: commands, findCheckout: findCheckout)
+            let source = try? SkillSource.resolve(home: home, commands: commands, findCheckout: findCheckout)
             output((source.map { Check.ok("source", "\($0.directory.path) (relay \($0.relayVersion), from \($0.label))") }
-                ?? .warning("source", "\(AgentSkill.path) not found", fix: "run relay install from a device-relay checkout")).formatted())
+                ?? .warning("source", "\(AgentSkill.path) not found", fix: "run relay install from an extracted release or a device-relay checkout")).formatted())
             let scopes: [(String, SkillOptions.Scope)]
             switch options.scope {
             case nil: scopes = [("project", .project), ("global", .global)]

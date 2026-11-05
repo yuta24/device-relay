@@ -21,18 +21,59 @@ Mac から iOS のシミュレータや実機を操作する CLI です。人も
   - 端末側で「デベロッパモード」と「UI オートメーション」が有効になっていること
   - Mac とペアリング済みで、USB または同じネットワーク経由で CoreDevice 接続できること
 
-> **ツールチェーンに関する注意**: `swiftly` などで入れた別の Swift ツールチェーンが PATH の先頭にあると、Xcode SDK と食い違って `unknown argument: '-target-arch-variant'` のようなエラーになることがあります。その場合は `xcrun swift build` / `xcrun swift test` / `xcrun swift run` を使い、Xcode のツールチェーンでビルドしてください（Makefile も `xcrun swift` を使います）。
+> **ツールチェーンに関する注意（ソースからビルドするとき）**: `swiftly` などで入れた別の Swift ツールチェーンが PATH の先頭にあると、Xcode SDK と食い違って `unknown argument: '-target-arch-variant'` のようなエラーになることがあります。その場合は `xcrun swift build` / `xcrun swift test` / `xcrun swift run` を使い、Xcode のツールチェーンでビルドしてください（Makefile も `xcrun swift` を使います）。
 
 > **非公開 API に関する注意**: ランナーは XCTest の非公開 API を使います。Xcode / iOS の更新で予告なく変わることがあります。使うのは端末上の UI テストバンドルの中だけで、対象アプリには何も入りません。何を使っていて、使えないときにどうなるかは [docs/private-api.md](docs/private-api.md) を参照してください。
+
+## インストール
+
+`relay` CLI はビルド済みで配布するので、Xcode のバージョンの違いで CLI のビルドが壊れることはありません。Runner はソースのまま同梱し、`relay start` が手元の Mac の Xcode でビルドします。
+
+### mise（推奨）
+
+```sh
+mise use -g github:yuta24/device-relay
+```
+
+更新は `mise upgrade github:yuta24/device-relay` です。
+
+### 手動でインストールする
+
+```sh
+VERSION=0.4.0      # https://github.com/yuta24/device-relay/releases の最新のバージョン
+ARCH=$(uname -m)   # arm64 または x86_64
+NAME=device-relay-v$VERSION-macos-$ARCH
+BASE=https://github.com/yuta24/device-relay/releases/download/v$VERSION
+
+curl -fLO "$BASE/$NAME.tar.gz"
+curl -fLO "$BASE/$NAME.tar.gz.sha256"
+shasum -a 256 -c "$NAME.tar.gz.sha256"
+
+mkdir -p ~/.local/share/device-relay ~/.local/bin
+tar -xzf "$NAME.tar.gz" -C ~/.local/share/device-relay
+ln -sfn ~/.local/share/device-relay/device-relay-v$VERSION/bin/relay ~/.local/bin/relay
+```
+
+- `~/.local/bin` が PATH になければ追加してください。更新するときは新しいバージョンで同じ手順を繰り返し、古いディレクトリを削除します。
+- バイナリは公証（notarize）していません。ブラウザでダウンロードしたファイルは quarantine が付いて macOS が実行を拒否するので、上のように `curl` でダウンロードするか、展開したディレクトリで `xattr -d com.apple.quarantine bin/relay` を実行してください。
+- `bin/relay` はコピーせずリンクしてください。relay は自分の場所から Runner を探します。バイナリだけを別の場所にコピーした場合は、展開したディレクトリで `relay install` を 1 回実行します。
+
+### ソースからビルドする
+
+開発に参加するとき、または `main` を使うときの手順です。
+
+```sh
+git clone https://github.com/yuta24/device-relay
+cd device-relay
+make install   # xcrun swift build -c release して ~/.local/bin/relay にリンク（PREFIX=... で変更可）
+```
+
+リンクはチェックアウトを指し、relay はそこの Runner をビルドします。リポジトリを更新したら `make install` をやり直します。`make uninstall` はそのリンクがこのチェックアウトを指している場合だけ削除します。
 
 ## クイックスタート
 
 ```sh
-# device-relay のリポジトリで（1 回だけ）
-make install          # xcrun swift build -c release して ~/.local/bin/relay にリンク（PREFIX=... で変更可）
-relay install         # Runner プロジェクトを ~/.relay/runner にコピー（--build でシミュレータ用に事前ビルド）
-
-# 以降はどのディレクトリからでも（対象アプリのリポジトリなど）。まずはシミュレータで試します
+# どのディレクトリからでも（対象アプリのリポジトリなど）。まずはシミュレータで試します
 relay doctor --simulator   # Xcode・Runner・シミュレータを確認（署名は実機でだけ必要）
 relay devices              # シミュレータの名前を確かめる（下の "iPhone 17 Pro" は例）
 relay start --background --device "iPhone 17 Pro"   # 停止中なら boot してランナーを起動し、ready になったらプロンプトに戻る
@@ -46,8 +87,6 @@ relay stop                 # ランナーを止める（relay が boot したシ
 - `--udid` / `--device` / `--simulator` を付けずに `relay start` すると、接続中の実機があればそれを優先します。実機は署名や UI オートメーションの準備が要るので、「[実機](docs/setup.md#実機)」の手順を済ませてから使ってください。
 
 エージェントや CI、スクリプトからは、`relay start --background` → 操作 → `relay stop` が基本の流れです（「[バックグラウンドで動かす](docs/setup.md#バックグラウンドで動かすrelay-start---background--status--stop)」）。人が手元で見ながら使うときは、`relay start`（フォアグラウンド。Ctrl-C で停止）でもかまいません。
-
-- `make install` は `.build/release/relay` へのシンボリックリンクを `$(PREFIX)/bin/relay`（既定 `~/.local/bin/relay`）に作ります。`~/.local/bin` が PATH になければ追加してください。`make uninstall` はそのリンクがこのチェックアウトを指している場合だけ削除します。リポジトリを更新したら `make install` と `relay install` をやり直します。
 
 ## 最初の操作
 
@@ -82,7 +121,7 @@ relay screenshot --scale 1                            # 1 px = 1 pt に縮小し
 
 | コマンド | 内容 |
 | --- | --- |
-| `relay install` / `relay uninstall` | Runner プロジェクトを `~/.relay/runner` にコピーする / 削除する |
+| `relay install` / `relay uninstall` | Runner プロジェクトを `~/.relay/runner` にコピーする / 削除する（`relay` のバイナリだけを別の場所にコピーしたときにだけ必要） |
 | `relay doctor` | Xcode・Runner・端末・署名などの環境を確認する |
 | `relay devices` | 実機とシミュレータを一覧表示する |
 | `relay start [--background]` | ランナーをビルドして起動する（`--background` なら ready で戻る） |
@@ -119,7 +158,7 @@ RELAY_SESSION=agent-2 codex    # 別のターミナルで、別のセッショ�
 
 | 文書 | 内容 |
 | --- | --- |
-| [docs/setup.md](docs/setup.md) | Runner の用意（`relay install`）、端末の選択、Team ID、環境の確認（`relay doctor`）、シミュレータ、バックグラウンドでの起動、実機 |
+| [docs/setup.md](docs/setup.md) | インストールと更新、Runner の探し方（`relay install`）、端末の選択、Team ID、環境の確認（`relay doctor`）、シミュレータ、バックグラウンドでの起動、実機 |
 | [docs/cli.md](docs/cli.md) | CLI のサブコマンドと終了コード、接続先（runner.json、セッション）の探し方、シナリオの実行（`relay run`、実験的）、録画（`relay record`。シミュレータと USB 接続の実機）、エージェントスキル |
 | [docs/http-api.md](docs/http-api.md) | HTTP API のエンドポイントとステータスコード、認証、同時リクエストと生存確認（`/ping`）、前面アプリ、文字入力と特殊キー |
 | [docs/elements.md](docs/elements.md) | 要素ツリー（`/source`、compact、interactive）、要素セレクタ、待機（timeout） |
@@ -127,7 +166,7 @@ RELAY_SESSION=agent-2 codex    # 別のターミナルで、別のセッショ�
 | [docs/design.md](docs/design.md) | アーキテクチャとファイル配置、タッチ合成の経路、計測したレイテンシ |
 | [docs/limitations.md](docs/limitations.md) | 既知の制約 |
 | [docs/private-api.md](docs/private-api.md) | ランナーが使う Apple の非公開 API の一覧と、使えないときの挙動 |
-| [docs/development.md](docs/development.md) | 開発者向け: リポジトリ内での実行、ランナーの手動起動、検証用のホストアプリ |
+| [docs/development.md](docs/development.md) | 開発者向け: リポジトリ内での実行、ランナーの手動起動、検証用のホストアプリ、リリースの手順 |
 | [skills/device-relay/](skills/device-relay/) | コーディングエージェント向けのスキル（`SKILL.md` と `reference.md`） |
 
 ## ライセンス

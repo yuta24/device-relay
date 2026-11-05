@@ -27,7 +27,7 @@ Main options of `relay start` (they can be combined with `--background`):
 | `--rebuild` | Rebuilds the runner even if a build exists (when the Runner sources, Xcode's SDK, or the bundle ID prefix change, it rebuilds without this) |
 | `--ready-timeout 180` | Seconds to wait until ready |
 | `--team-id <TEAM_ID>` | The signing team for a physical device (normally detected automatically) |
-| `--project <path>` | Where the Runner project is (normally the one from `relay install`) |
+| `--project <path>` | Where the Runner project is (normally found from the location of the relay executable) |
 | `--verbose` | Shows xcodebuild's output as it is |
 | `--allow-wifi` | Also uses a physical device's Wi-Fi addresses. The token and the screen travel over the LAN in plain text, so use it only when the user asks |
 
@@ -69,7 +69,7 @@ pid:         <PID> (relay start running)
 started:     <date and time>
 host app:    <bundle ID of RelayRunnerHost>
 ping:        ok (idle)
-runner:      0.3.0 (sources <12 characters>)
+runner:      0.4.0 (sources <12 characters>)
 runner.json: /Users/<you>/.relay/runner.json
 ```
 
