@@ -1,133 +1,137 @@
+[日本語](README.ja.md)
+
 # device-relay
 
-対象アプリに何も埋め込まずに、iOS の実機・シミュレータを Mac から HTTP で操作するためのプロトタイプです。
+A prototype for driving physical iOS devices and simulators from a Mac over HTTP, without embedding anything in the app under test.
 
-## 概要
+## Overview
 
-- WebDriverAgent と同じ「常駐 XCTest ランナー」方式です。端末上で UI テストとして動くランナーが HTTP サーバを立ち上げ、XCUITest の API でタップ・スワイプ・文字入力・スクリーンショット・要素ツリーの取得などを行います。対象アプリの改修や SDK の組み込みは要りません。
-- Mac 側の `relay` CLI が、ランナーのビルドと起動、接続先の探索、後片付けをまとめて行い、ランナーの操作も 1 コマンドずつ呼べます。人もスクリプトもコーディングエージェントも同じ形で使えます。
-- 通信にはトークン認証が必要です。ビルド成果物やログは `~/.relay` に置き、対象アプリのリポジトリには何も作りません。
+- It uses the same "long-running XCTest runner" approach as WebDriverAgent. A runner, running on the device as a UI test, starts an HTTP server and uses the XCUITest APIs to tap, swipe, type, take screenshots, read the element tree, and more. You don't need to modify the target app or add an SDK to it.
+- The `relay` CLI on the Mac builds and launches the runner, finds how to reach it, and cleans up afterwards. It also exposes each runner operation as a single command, so people, scripts, and coding agents all use it the same way.
+- Connections to the runner require a token. Build products and logs go in `~/.relay`, and nothing is created in the target app's repository.
 
-仕組みの詳細は [docs/design.md](docs/design.md) を参照してください。
+See [docs/design.md](docs/design.md) for how it works. Detailed documentation in docs/ is currently in Japanese.
 
-## 要件
+## Requirements
 
-- macOS 上の Xcode（Xcode 27 で動作確認。`devicectl` を使うので Xcode 15 以上）
-- **iOS 17.0 以上**（CoreDevice トンネルを前提とします。デプロイメントターゲットは 17.0）
-- 実機の場合
-  - Apple Development 証明書（Xcode > Settings > Accounts でサインインして作成）。Team ID は証明書から自動で検出します
-  - 端末側で「デベロッパモード」と「UI オートメーション」が有効になっていること
-  - Mac とペアリング済みで、USB または同じネットワーク経由で CoreDevice 接続できること
+- Xcode on macOS (tested with Xcode 27; Xcode 15 or later is needed for `devicectl`)
+- **iOS 17.0 or later** (relay relies on the CoreDevice tunnel; the deployment target is 17.0)
+- For a physical device:
+  - An Apple Development certificate (sign in under Xcode > Settings > Accounts to create one). The Team ID is detected from the certificate.
+  - Developer Mode and UI Automation turned on on the device
+  - The device paired with the Mac and reachable through CoreDevice, over USB or the same network
 
-> **ツールチェーンに関する注意**: `swiftly` などで入れた別の Swift ツールチェーンが PATH の先頭にあると、Xcode SDK と食い違って `unknown argument: '-target-arch-variant'` のようなエラーになることがあります。その場合は `xcrun swift build` / `xcrun swift test` / `xcrun swift run` を使い、Xcode のツールチェーンでビルドしてください（Makefile も `xcrun swift` を使います）。
+> **Toolchains**: if another Swift toolchain (installed with `swiftly`, for example) comes first in your PATH, it can disagree with the Xcode SDK and fail with errors such as `unknown argument: '-target-arch-variant'`. In that case, build with Xcode's toolchain through `xcrun swift build` / `xcrun swift test` / `xcrun swift run` (the Makefile uses `xcrun swift` too).
 
-> **非公開 API に関する注意**: ランナーは XCTest の非公開 API を使います。Xcode / iOS の更新で予告なく変わることがあります。使うのは端末上の UI テストバンドルの中だけで、対象アプリには何も入りません。何を使っていて、使えないときにどうなるかは [docs/private-api.md](docs/private-api.md) を参照してください。
+> **Private APIs**: the runner uses private XCTest APIs, which can change without notice when Xcode or iOS is updated. They are used only inside the UI test bundle on the device; nothing is added to the target app. See [docs/private-api.md](docs/private-api.md) for what is used and what happens when it is unavailable.
 
-## クイックスタート
-
-```sh
-# device-relay のリポジトリで（1 回だけ）
-make install          # xcrun swift build -c release して ~/.local/bin/relay にリンク（PREFIX=... で変更可）
-relay install         # Runner プロジェクトを ~/.relay/runner にコピー（--build でシミュレータ用に事前ビルド）
-
-# 以降はどのディレクトリからでも（対象アプリのリポジトリなど）。まずはシミュレータで試します
-relay doctor --simulator   # Xcode・Runner・シミュレータを確認（署名は実機でだけ必要）
-relay devices              # シミュレータの名前を確かめる（下の "iPhone 17 Pro" は例）
-relay start --background --device "iPhone 17 Pro"   # 停止中なら boot してランナーを起動し、ready になったらプロンプトに戻る
-relay status               # 動いているランナーの確認（生きていれば終了コード 0）
-relay screenshot           # 操作（docs/cli.md の「CLI から操作する」）
-relay stop                 # ランナーを止める（relay が boot したシミュレータも shutdown）
-```
-
-- 同じ名前のシミュレータが iOS のランタイムごとにあっても、`--device` は最も新しい iOS のものを選び、`relay: using …` に OS つきで表示します。古い iOS で試すときは `--os 26.5` のように絞ります（「[端末の選択](docs/setup.md#端末の選択relay-devices)」）。
-- すでに起動しているシミュレータを使うなら `relay start --background --simulator` でも構いません。実機が接続されていても、シミュレータの中から選びます。
-- `--udid` / `--device` / `--simulator` を付けずに `relay start` すると、接続中の実機があればそれを優先します。実機は署名や UI オートメーションの準備が要るので、「[実機](docs/setup.md#実機)」の手順を済ませてから使ってください。
-
-エージェントや CI、スクリプトからは、`relay start --background` → 操作 → `relay stop` が基本の流れです（「[バックグラウンドで動かす](docs/setup.md#バックグラウンドで動かすrelay-start---background--status--stop)」）。人が手元で見ながら使うときは、`relay start`（フォアグラウンド。Ctrl-C で停止）でもかまいません。
-
-- `make install` は `.build/release/relay` へのシンボリックリンクを `$(PREFIX)/bin/relay`（既定 `~/.local/bin/relay`）に作ります。`~/.local/bin` が PATH になければ追加してください。`make uninstall` はそのリンクがこのチェックアウトを指している場合だけ削除します。リポジトリを更新したら `make install` と `relay install` をやり直します。
-
-## 最初の操作
-
-ランナーと一緒に、操作を試すためのホストアプリ RelayRunnerHost がインストールされます。対象アプリの代わりに、起動・観察・操作・確認の流れを試せます。
+## Quick start
 
 ```sh
-relay launch host                                     # host は RelayRunnerHost のバンドル ID の別名
-relay source --format compact --filter interactive   # 操作できる要素を 1 行 1 要素で確かめる
-relay tap --id relay.input --timeout 3                # identifier で入力欄をタップ（現れるまで最大 3 秒待つ）
-relay type "hello" --key return                       # 文字を入力して Return
-relay find --id relay.submitted                       # 確定した文字列（label）を確かめる
-relay screenshot --scale 1                            # 1 px = 1 pt に縮小して保存し、パスを出力
+# In the device-relay repository (once)
+make install          # xcrun swift build -c release, and link it to ~/.local/bin/relay (change with PREFIX=...)
+relay install         # copy the Runner project to ~/.relay/runner (--build also builds it for simulators)
+
+# From then on, from any directory (such as the target app's repository). Start with a simulator
+relay doctor --simulator   # check Xcode, the Runner, and simulators (signing is only needed for devices)
+relay devices              # find a simulator's name ("iPhone 17 Pro" below is an example)
+relay start --background --device "iPhone 17 Pro"   # boot it if shut down, launch the runner, and return once ready
+relay status               # check the running runner (exit code 0 if it is alive)
+relay screenshot           # operate it (the section "CLI から操作する" of docs/cli.md)
+relay stop                 # stop the runner (and shut down a simulator relay booted)
 ```
 
-- 座標で操作する場合は、前面アプリの表示の向きでのポイント単位です（[docs/screen.md](docs/screen.md)）。
-- `relay` を使わずに、`curl` などから HTTP で直接操作することもできます。トークンは `~/.relay/runner.json` にあります（[docs/http-api.md](docs/http-api.md)）。
-- 要素の指定方法（`--id`・`--label`・`--type`・`--index`）と待ち方は [docs/elements.md](docs/elements.md) にあります。
+- When several iOS runtimes have a simulator with the same name, `--device` picks the one with the newest iOS and shows it, with its OS, in `relay: using …`. To try an older iOS, narrow it down with something like `--os 26.5` ("[端末の選択](docs/setup.md#端末の選択relay-devices)").
+- To use a simulator that is already booted, `relay start --background --simulator` works too. It chooses among simulators even when a device is connected.
+- `relay start` without `--udid` / `--device` / `--simulator` prefers a connected physical device. A device needs signing and UI Automation set up, so follow the steps in "[実機](docs/setup.md#実機)" first.
 
-## 実機の準備（要点）
+From agents, CI, and scripts, the basic flow is `relay start --background`, then your operations, then `relay stop` ("[バックグラウンドで動かす](docs/setup.md#バックグラウンドで動かすrelay-start---background--status--stop)"). When you are at the machine and watching, `relay start` in the foreground (stop with Ctrl-C) is fine too.
 
-実機では、`relay start` の前に次の準備が要ります。手順の詳細は [docs/setup.md の「実機」](docs/setup.md#実機) と「[Team ID（実機の署名）](docs/setup.md#team-id実機の署名)」を参照してください。
+- `make install` creates a symbolic link to `.build/release/relay` at `$(PREFIX)/bin/relay` (`~/.local/bin/relay` by default). Add `~/.local/bin` to your PATH if it isn't there. `make uninstall` removes that link only if it points into this checkout. After updating the repository, run `make install` and `relay install` again.
 
-1. 端末で「デベロッパモード」を有効にし、USB で接続して Mac とペアリングする（`relay devices` で `connected` と表示される）
-2. Xcode の Devices and Simulators で端末を準備完了にする（初回は開発用ディスクイメージが適用される）
-3. 端末の 設定 > デベロッパ で「UI オートメーションを有効にする」をオンにする
-4. Xcode でサインインして Apple Development 証明書を用意する（Team ID は証明書から自動で検出）
-5. `relay doctor` で ✗ がないことを確かめてから `relay start` する。起動中は端末を手元に置き、パスコードを求められたら入力する
+## First steps
 
-## よく使うコマンド
+The runner comes with a host app, RelayRunnerHost, for trying things out. Use it in place of a target app to go through launching, observing, operating, and checking.
 
-各コマンドの使い方は `relay --help` / `relay <command> --help` で表示できます。詳しくは [docs/cli.md](docs/cli.md) を参照してください。
+```sh
+relay launch host                                     # host is an alias for RelayRunnerHost's bundle ID
+relay source --format compact --filter interactive   # see the elements you can operate, one per line
+relay tap --id relay.input --timeout 3                # tap the text field by identifier (wait up to 3 seconds for it)
+relay type "hello" --key return                       # type text and press Return
+relay find --id relay.submitted                       # check the submitted text (its label)
+relay screenshot --scale 1                            # save a screenshot shrunk to 1 px = 1 pt, and print its path
+```
 
-| コマンド | 内容 |
+- Coordinates are in points, in the displayed orientation of the foreground app ([docs/screen.md](docs/screen.md)).
+- You can also skip `relay` and call the HTTP API directly with `curl` or similar. The token is in `~/.relay/runner.json` ([docs/http-api.md](docs/http-api.md)).
+- [docs/elements.md](docs/elements.md) covers how to select elements (`--id`, `--label`, `--type`, `--index`) and how to wait for them.
+
+## Preparing a physical device (summary)
+
+A physical device needs the following before `relay start`. For details, see [実機 in docs/setup.md](docs/setup.md#実機) and "[Team ID（実機の署名）](docs/setup.md#team-id実機の署名)".
+
+1. Turn on Developer Mode on the device, connect it with USB, and pair it with the Mac (`relay devices` shows it as `connected`)
+2. Get the device ready in Xcode's Devices and Simulators window (the developer disk image is applied the first time)
+3. On the device, turn on Settings > Developer > Enable UI Automation
+4. Sign in to Xcode and set up an Apple Development certificate (the Team ID is detected from it)
+5. Check that `relay doctor` shows no ✗, then run `relay start`. Keep the device at hand while it starts, and enter the passcode if asked
+
+## Common commands
+
+`relay --help` / `relay <command> --help` show how to use each command. See [docs/cli.md](docs/cli.md) for more.
+
+| Command | What it does |
 | --- | --- |
-| `relay install` / `relay uninstall` | Runner プロジェクトを `~/.relay/runner` にコピーする / 削除する |
-| `relay doctor` | Xcode・Runner・端末・署名などの環境を確認する |
-| `relay devices` | 実機とシミュレータを一覧表示する |
-| `relay start [--background]` | ランナーをビルドして起動する（`--background` なら ready で戻る） |
-| `relay status` / `relay stop` | 動いているランナーを確認する / 止める（`--all` で全セッション） |
-| `relay screenshot` | スクリーンショットを保存してパスを出力する（`--scale 1` で縮小） |
-| `relay source` | 要素ツリーを取得する（`--format compact --filter interactive` で操作できる要素だけ） |
-| `relay find` | セレクタに一致する要素を探す（`--timeout` で待つ、`--require` で必須にする） |
-| `relay tap` / `relay press` / `relay swipe` | 座標か要素セレクタ（`--id`・`--label`・`--type`）でタッチ操作する |
-| `relay type` / `relay key` | フォーカスのある要素に文字・特殊キーを入力する |
-| `relay launch` / `relay terminate` | アプリを起動（前面化）する / 終了する |
-| `relay button` / `relay orientation` | ハードウェアボタンを押す / 端末の向きを変える |
-| `relay run`（実験的） | 1 行 1 手順のシナリオを順に実行する |
-| `relay record start` / `relay record stop` | シミュレータか実機（USB 接続）の画面を MP4 に録画する / 止めて保存先を出力する（実機は初回にカメラの許可が要る） |
-| `relay skill install` | コーディングエージェント向けのスキルを対象アプリのリポジトリなどに入れる |
-| `relay config` | 設定（Team ID）を表示・変更する |
+| `relay install` / `relay uninstall` | Copy the Runner project to `~/.relay/runner` / remove it |
+| `relay doctor` | Check the environment: Xcode, the Runner, the device, signing, and so on |
+| `relay devices` | List physical devices and simulators |
+| `relay start [--background]` | Build and launch the runner (`--background` returns once it is ready) |
+| `relay status` / `relay stop` | Check the running runner / stop it (`--all` for every session) |
+| `relay screenshot` | Save a screenshot and print its path (`--scale 1` to shrink it) |
+| `relay source` | Get the element tree (`--format compact --filter interactive` for only the elements you can operate) |
+| `relay find` | Find elements matching a selector (`--timeout` to wait, `--require` to fail if there is none) |
+| `relay tap` / `relay press` / `relay swipe` | Touch by coordinates or by element selector (`--id`, `--label`, `--type`) |
+| `relay type` / `relay key` | Send text or special keys to the element with keyboard focus |
+| `relay launch` / `relay terminate` | Launch an app (or bring it to the foreground) / terminate it |
+| `relay button` / `relay orientation` | Press a hardware button / change the device orientation |
+| `relay run` (experimental) | Run a scenario of one step per line, in order |
+| `relay record start` / `relay record stop` | Record the screen of a simulator or a device connected with USB to an MP4 / stop and print where it was saved (a device needs camera access the first time) |
+| `relay skill install` | Install the skill for coding agents, into the target app's repository for example |
+| `relay config` | Show or change settings (Team ID, bundle ID prefix) |
 
-複数のエージェントを並列に動かすときは、エージェントを起動するときに `RELAY_SESSION` を環境変数で渡し、端末を分けます。エージェントが実行するコマンドのシェルはこの値を引き継ぐので、状態ファイルとポートはセッションごとに分かれ、ほかのセッションと干渉しません（[docs/setup.md](docs/setup.md#複数のセッションを並列に動かすrelay-start---session)）。
+To run several agents in parallel, pass `RELAY_SESSION` as an environment variable when launching each agent, and give each one its own device. The shells of the commands the agent runs inherit the value, so state files and ports are kept per session and sessions don't interfere with each other ([docs/setup.md](docs/setup.md#複数のセッションを並列に動かすrelay-start---session)).
 
 ```sh
-RELAY_SESSION=agent-1 claude   # このエージェントの relay はすべて agent-1 を使う
-RELAY_SESSION=agent-2 codex    # 別のターミナルで、別のセッションとして
+RELAY_SESSION=agent-1 claude   # every relay this agent runs uses agent-1
+RELAY_SESSION=agent-2 codex    # in another terminal, as another session
 ```
 
-環境変数を渡せないときは、各コマンドに `--session <名前>` を付けます。コマンドごとに新しいシェルになるエージェントでは、コマンドの中の `export` は次のコマンドに残りません。
+If you can't pass the environment variable, add `--session <name>` to each command. With agents that start a new shell for each command, an `export` inside a command does not carry over to the next one.
 
-## うまくいかないとき
+## Troubleshooting
 
-- まず `relay doctor`（シミュレータなら `relay doctor --simulator`）で環境を確かめます。✗ と ! の項目には直し方が 1 行添えてあります。
-- ログは `~/.relay/logs/` にあります（`start-*.log`、`build-*.log`、`runner-*.log`）。`relay start --background` は失敗したときに原因とログの末尾を表示します。
-- サブコマンドの終了コード（`2` = 書き方の誤り、`3` = ランナーに届かない、`5` = busy、`6` = XCUI で失敗 など）は [docs/cli.md](docs/cli.md) にまとめています。
-- 実機特有の問題（UI オートメーション、パスコード、ホームボタンなど）は [docs/limitations.md](docs/limitations.md) を参照してください。
+- Start with `relay doctor` (`relay doctor --simulator` for a simulator) to check the environment. Items marked ✗ and ! come with a one-line fix.
+- Logs are in `~/.relay/logs/` (`start-*.log`, `build-*.log`, `runner-*.log`). When `relay start --background` fails, it prints the cause and the end of the log.
+- Subcommand exit codes (`2` = usage error, `3` = can't reach the runner, `5` = busy, `6` = XCUI action failed, and so on) are listed in [docs/cli.md](docs/cli.md).
+- For problems specific to physical devices (UI Automation, the passcode, the home button, and so on), see [docs/limitations.md](docs/limitations.md).
 
-## ドキュメント
+## Documentation
 
-| 文書 | 内容 |
+Detailed documentation in docs/ is currently in Japanese.
+
+| Document | Contents |
 | --- | --- |
-| [docs/setup.md](docs/setup.md) | Runner の用意（`relay install`）、端末の選択、Team ID、環境の確認（`relay doctor`）、シミュレータ、バックグラウンドでの起動、実機 |
-| [docs/cli.md](docs/cli.md) | CLI のサブコマンドと終了コード、接続先（runner.json、セッション）の探し方、シナリオの実行（`relay run`、実験的）、録画（`relay record`。シミュレータと USB 接続の実機）、エージェントスキル |
-| [docs/http-api.md](docs/http-api.md) | HTTP API のエンドポイントとステータスコード、認証、同時リクエストと生存確認（`/ping`）、前面アプリ、文字入力と特殊キー |
-| [docs/elements.md](docs/elements.md) | 要素ツリー（`/source`、compact、interactive）、要素セレクタ、待機（timeout） |
-| [docs/screen.md](docs/screen.md) | 座標系と画面の向き、スクリーンショットの縮小 |
-| [docs/design.md](docs/design.md) | アーキテクチャとファイル配置、タッチ合成の経路、計測したレイテンシ |
-| [docs/limitations.md](docs/limitations.md) | 既知の制約 |
-| [docs/private-api.md](docs/private-api.md) | ランナーが使う Apple の非公開 API の一覧と、使えないときの挙動 |
-| [docs/development.md](docs/development.md) | 開発者向け: リポジトリ内での実行、ランナーの手動起動、検証用のホストアプリ |
-| [skills/device-relay/](skills/device-relay/) | コーディングエージェント向けのスキル（`SKILL.md` と `reference.md`） |
+| [docs/setup.md](docs/setup.md) | Preparing the Runner (`relay install`), choosing a device, Team ID, checking the environment (`relay doctor`), simulators, starting in the background, physical devices |
+| [docs/cli.md](docs/cli.md) | CLI subcommands and exit codes, how the runner is found (runner.json, sessions), running scenarios (`relay run`, experimental), recording (`relay record`, for simulators and devices connected with USB), the agent skill |
+| [docs/http-api.md](docs/http-api.md) | HTTP API endpoints and status codes, authentication, concurrent requests and liveness checks (`/ping`), the foreground app, text input and special keys |
+| [docs/elements.md](docs/elements.md) | The element tree (`/source`, compact, interactive), element selectors, waiting (timeout) |
+| [docs/screen.md](docs/screen.md) | The coordinate system and screen orientation, shrinking screenshots |
+| [docs/design.md](docs/design.md) | Architecture and file layout, touch synthesis paths, measured latency |
+| [docs/limitations.md](docs/limitations.md) | Known limitations |
+| [docs/private-api.md](docs/private-api.md) | The private Apple APIs the runner uses, and what happens when they are unavailable |
+| [docs/development.md](docs/development.md) | For developers: running from the repository, launching the runner by hand, the host app used for verification |
+| [skills/device-relay/](skills/device-relay/) | The skill for coding agents (`SKILL.md` and `reference.md`, in English) |
 
-## ライセンス
+## License
 
-[LICENSE](LICENSE)（Apache License 2.0）を参照してください。
+See [LICENSE](LICENSE) (Apache License 2.0).

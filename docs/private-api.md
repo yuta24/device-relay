@@ -1,6 +1,6 @@
 # 非公開 API の一覧
 
-ランナーが使っている Apple の非公開 API（XCTest の SPI）と、それが使えなくなったときの挙動をまとめます。全体の入口は [README](../README.md) です。
+ランナーが使っている Apple の非公開 API（XCTest の SPI）と、それが使えなくなったときの挙動をまとめます。全体の入口は [README](../README.ja.md) です。
 
 ## 全体の注意
 
