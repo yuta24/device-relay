@@ -916,6 +916,15 @@ struct DoctorTests {
         #expect(inUseLine.contains("(\(heldText))") && inUseLine.contains("(session b, relay start pid 456)"))
     }
 
+    @Test func aNamedDeviceNotFoundSaysNothingAboutTheOnesInUse() {
+        let result = run(DoctorOptions(udid: "44444444-4444-4444-4444-444444444444", simulator: true), host: twoBootedSimulators(),
+                         inUse: [busyUDID: heldBySession])
+        #expect(result.status == RunnerExitCode.failure.rawValue)
+        let target = result.lines.first { $0.hasPrefix("  ✗ target") } ?? ""
+        #expect(target.contains("no iOS simulator with UDID"))
+        #expect(!target.contains("in use by another relay start"))
+    }
+
     @Test func nothingInUseLeavesTheOutputAsItWas() {
         let result = run(DoctorOptions(simulator: true), host: twoBootedSimulators(), inUse: [:])
         #expect(!result.lines.contains { $0.contains("in use") })

@@ -84,8 +84,9 @@ enum Doctor {
                 // The candidates follow on the next lines; the table below lists them.
                 let message = String(describing: error)
                 var firstLine = message.split(separator: "\n").first.map { String($0.hasSuffix(":") ? $0.dropLast() : $0) } ?? ""
-                // The error may list the devices another relay start holds; here that list is the "in use" line above.
-                if !busy.isEmpty {
+                // Only the automatic choice's error lists the devices another relay start holds; here that list is
+                // the "in use" line above. A named device that is not found has nothing to do with them.
+                if !busy.isEmpty, options.udid == nil, options.device == nil {
                     firstLine += "; \(busy.count) in use by another relay start (see the in use line)"
                 }
                 // Without --udid/--device nothing is wrong yet: relay start can still be told which one to use.
