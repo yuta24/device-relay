@@ -23,7 +23,7 @@ Runner の用意、端末の選択、環境の確認から、シミュレータ�
 
 対象アプリのリポジトリなど、チェックアウトの外から実行すると 4 の `~/.relay/runner` を使います。device-relay のリポジトリ内で実行すると 3 のチェックアウトを使うので、`relay install` 済みでも、編集中（未コミットを含む）の Runner がそのままビルドされます。
 
-1 と 2 で指定した場所にプロジェクトがなければ、ほかを探さずにエラーにします。どこにも見つからなければ、`relay install` などの設定方法を示して終了します。DerivedData は Runner プロジェクトごとに `~/.relay/build/installed`（インストールしたもの）か `~/.relay/build/<ディレクトリ名>-<パスのハッシュ>` に分けるので、別のソースでビルドした `.xctestrun` を使い回すことはありません。Xcode では分けないので、`DEVELOPER_DIR` で Xcode を切り替えてビルドすると、SDK のバージョン入りの名前（`RelayRunner_iphonesimulator27.2-….xctestrun` など）の `.xctestrun` が並びますが、指すビルド成果物（`Debug-iphonesimulator` など）は共有で、最後のビルドのものです。そのため relay は、ビルドした直後はそのビルドが書いた（更新日時が新しい）ものを、使い回すときは最後のビルドのもの（更新日時が最も新しいもの）を使い、その名前の SDK のバージョンが今の Xcode の SDK（`xcrun --sdk iphonesimulator|iphoneos --show-sdk-version`）と違えば `… is not for this Xcode's … SDK …; rebuilding` と出して再ビルドします（SDK のバージョンが取れないときや、名前から読めないときは、そのまま使い回します）。Xcode を切り替えるたびにビルドし直すことになりますが、同じ Xcode のままなら今までどおりビルドせずに使い回します。SDK が同じでも、Runner のソースがビルドの後に変わっていれば作り直します（下の「ランナーの版」）。ランナーを起動する `xcodebuild test-without-building` にも同じ `-derivedDataPath` を渡すので、テストのログと xcresult も `~/.relay/build/…/DerivedData-*/Logs/Test` に入り、`~/Library/Developer/Xcode/DerivedData` には何も作りません。
+1 と 2 で指定した場所にプロジェクトがなければ、ほかを探さずにエラーにします。どこにも見つからなければ、`relay install` などの設定方法を示して終了します。DerivedData は Runner プロジェクトごとに `~/.relay/build/installed`（インストールしたもの）か `~/.relay/build/<ディレクトリ名>-<パスのハッシュ>` に分けるので、別のソースでビルドした `.xctestrun` を使い回すことはありません。Xcode では分けないので、`DEVELOPER_DIR` で Xcode を切り替えてビルドすると、SDK のバージョン入りの名前（`RelayRunner_iphonesimulator27.2-….xctestrun` など）の `.xctestrun` が並びますが、指すビルド成果物（`Debug-iphonesimulator` など）は共有で、最後のビルドのものです。そのため relay は、ビルドした直後はそのビルドが書いた（更新日時が新しい）ものを、使い回すときは最後のビルドのもの（更新日時が最も新しいもの）を使い、その名前の SDK のバージョンが今の Xcode の SDK（`xcrun --sdk iphonesimulator|iphoneos --show-sdk-version`）と違えば `… is not for this Xcode's … SDK …; rebuilding` と出して再ビルドします（SDK のバージョンが取れないときや、名前から読めないときは、そのまま使い回します）。Xcode を切り替えるたびにビルドし直すことになりますが、同じ Xcode のままなら今までどおりビルドせずに使い回します。SDK が同じでも、Runner のソースがビルドの後に変わっていれば作り直します（下の「ランナーの版」）。ランナーを起動する `xcodebuild test-without-building` には、ポートごとの `~/.relay/build/…/TestData/port-<port>` を `-derivedDataPath` として渡すので、テストのログと xcresult はそこの `Logs/Test` に入り、`~/Library/Developer/Xcode/DerivedData` には何も作りません（以前の relay は `DerivedData-*/Logs/Test` に書いていました）。古いものは `relay start` が消します（「[ログとテスト結果の掃除](#ログとテスト結果の掃除)」）。
 
 ### ランナーの版（ソースのハッシュ）
 
@@ -272,8 +272,8 @@ relay: warning: no session selected; using /Users/you/.relay/runner.json, while 
 - **端末の排他**: 1 台の端末で動かせるランナーは 1 つです（2 つ目の XCTest がテストのセッションを奪います）。これはセッションなしの `relay start` にも適用されます。`relay start` は端末を選んだ直後、boot とビルドの前に `~/.relay/locks/device-<UDID>.lock` を終了まで `flock` します。使用中の端末を `--udid` や `--device` で指定すると、使っているセッションと PID、止め方を示すエラー（終了コード `1`）になります。指定した端末が使用中のときに別の端末へ移ることはありません。
 - **端末の自動選択**: `--udid` も `--device` もないときは、ほかの `relay start` が使用中の端末を候補から外して、「接続中の実機が 1 台ならそれ、なければ起動中のシミュレータが 1 台ならそれ」で選びます。空いている候補が複数あれば、これまでどおり候補つきのエラーです。空きがなければ、使用中の端末とその持ち主も示します。ただしセッション付き（`--session` か `$RELAY_SESSION`）の `relay start` は、空いている起動中のシミュレータが複数あっても、エラーにせず iOS の新しい順 → 名前（大文字小文字を無視）→ UDID の先頭の 1 台を選びます（`the first of 3 free booted simulators (newest iOS, then name), for session <名前>`）。複数のセッションを同時に起動しても、先に取られた側が下の選び直しで残りの 1 台を取ります。接続中の実機が複数あるときと、セッションなしのときは、これまでどおり候補つきのエラーです。選んだ端末のロックを取る直前にほかの `relay start` に取られたとき（ほぼ同時に起動したとき）は、`relay: <端末> was just taken by <持ち主>; selecting again` と出して、その端末を使用中に加えて選び直します（候補の数までで、空きがなければ上のエラーです）。
 - **ビルド**: ビルド成果物（`~/.relay/build/…/DerivedData-*`）は共有のままで、同じソースのビルドを使い回します。同時に起動しても同じ DerivedData へのビルドは 1 つだけで、後のものは `relay: waiting for another relay start's build …` と出して待ち、終わったらそのビルドを使い回します（待っている間に同じソースのビルドが終われば `--rebuild` も満たされたものとします）。ビルドしない起動どうしは並列に進みます。`~/.relay/locks/build-<ハッシュ>.lock` を、ビルド中は排他で、成果物からランナーを起動して ready になるまでは共有で持つので、起動の途中で成果物が書き換えられることもありません。待っている間も Ctrl-C と `relay stop` で止められます。`relay install --build` も同じロックを取ります。
-- **テスト実行の出力**: xcodebuild の `test-without-building` が書くログと xcresult は、ポートごとの `~/.relay/build/…/TestData/port-<port>/` に分けます。同じ `-derivedDataPath` を共有すると、同じ秒に始まったテストの xcresult の名前が同じになり、`Logs/Test/LogStoreManifest.plist` も同時に書き換えられるためです。
-- **ログ**: `~/.relay/logs` の `start-`・`build-`・`runner-`・`record-` のログは `<種類>-<時刻>-<セッション>-<port>.log` という名前になります。既定の出力先のスクリーンショットと録画の名前にもセッション名が入ります。
+- **テスト実行の出力**: xcodebuild の `test-without-building` が書くログと xcresult は、ポートごとの `~/.relay/build/…/TestData/port-<port>/` に分けます。同じ `-derivedDataPath` を共有すると、同じ秒に始まったテストの xcresult の名前が同じになり、`Logs/Test/LogStoreManifest.plist` も同時に書き換えられるためです。ポートごとに新しい 3 個の xcresult を残します（「[ログとテスト結果の掃除](#ログとテスト結果の掃除)」）。
+- **ログ**: `~/.relay/logs` の `start-`・`build-`・`runner-`・`record-` のログは `<種類>-<時刻>-<セッション>-<port>.log` という名前になります。更新から 7 日を過ぎたものは消しますが、種類ごとに新しい 20 件は残します（「[ログとテスト結果の掃除](#ログとテスト結果の掃除)」）。既定の出力先のスクリーンショットと録画の名前にもセッション名が入ります。
 - **セッションなしのコマンドへの警告**: セッションも `--runner` も `RELAY_RUNNER` もないコマンド（ランナー操作、`relay run`、`relay status`、`relay stop`、`relay record`、`relay bench`）が `~/.relay/runner.json` を使うとき、`~/.relay/sessions/*/runner.json` があるか `session.lock` が握られているセッションがあれば、警告を stderr に出します。失敗にはせず、終了コードも変えません。セッションなしのランナーを意図して使っているなら無視でき、警告を消すには `--runner` で指定します。調べるのはファイルとロックだけでランナーには問い合わせないので、コマンドは遅くなりません。その代わり、強制終了で残った runner.json も「動いている」と数えます（`relay stop --session <名前>` で片付きます）。
 - **録画**: 録画の状態はこれまでどおりポートごとです（ポートはランナーごとに違います）。セッションを指定した `relay record stop` / `status` は、そのセッションの runner.json がなければ終了コード 3 で、ほかのセッションの録画には進みません。止まったランナーの録画は `--port <n>` で指定できます。
 
@@ -289,6 +289,21 @@ agent-3  no answer  iPhone 17 (<SIM_UDID_2>)      http://127.0.0.1:8103/  12347 
 STATE は `starting`（boot かビルドの途中で、まだ runner.json がない）、`running`、`busy`（コマンドの実行中）、`no answer`（応答がない。`relay stop --session <名前>` で片付く）、`rejected`（そのポートで別のランナーが応答している）、`unknown`（sandbox などで接続が拒否された）です。`--json` は 1 つの配列で、各要素は `session`（`~/.relay/runner.json` なら `null`）、`state`、`alive`、`url`、`udid`、`name`、`pid`、`processRunning`、`runnerInfo` です。トークンは含みません。
 
 `relay stop --all` は一覧の全部を順に止め、`<セッション>: stopped` を 1 行ずつ出します。ほかのエージェントのランナーも止めるので、エージェントは通常、自分のセッションだけを止めます。`relay stop --session <名前>` は、boot やビルドの途中でまだ runner.json がないセッションも止めます。
+
+## ログとテスト結果の掃除
+
+ログとテストの結果は使うたびに増えるので、`relay start` が始めに（ポートのロックを取った後、端末を選ぶ前に）古いものを消します。`relay start --background` では起動した側の `relay start` が消します。`relay record start` も `record-` のログを同じように消します（ランナーを動かしたまま何度も録画できるためです）。消すコマンドはなく、普段は意識する必要がありません。
+
+| 対象 | 残すもの |
+| --- | --- |
+| `~/.relay/logs/` の `start-`・`build-`・`runner-`・`record-` のログ | 更新から 7 日以内のものすべてと、種類ごとに新しい 20 件（日数によらず） |
+| `~/.relay/build/*/TestData/port-<port>/Logs/Test/*.xcresult` | ポートごとに新しい 3 個と、更新から 1 時間以内のもの |
+| `~/.relay/build/*/DerivedData-*/Logs/Test/*.xcresult`（以前の relay が書いたもの） | ディレクトリごとに新しい 3 個と、更新から 1 時間以内のもの |
+
+- **使用中のものは消しません**: ほかの `relay start` がロック（`~/.relay/locks/start-<port>.lock`）を持つポートと、runner.json（セッションのものを含む）が指すポートは使用中とみなします。そのポートの xcresult には触れず、ログは種類ごとに最新の 1 件を残します。何日も静かなランナーのログや、書き込み中でも更新日時が変わらない実行中の xcresult は、この判定で残ります。録画中のログも `~/.relay/recording-<port>.json` が指すので残します。同時に起動した `relay start` が同じものを消しても問題ありません。
+- **ほかのものは消しません**: 上の名前の形でないファイル（利用者のファイルなど）、`LogStoreManifest.plist`（消した xcresult の記載は、次に実行するときに xcodebuild 自身が外します）、DerivedData のビルド成果物、ロックファイル、`~/.relay/sessions/<名前>/`、`relay screenshot` や `relay record` が書いた出力ファイルです。
+- **失敗しても止めません**: 消せないものがあれば `relay: cannot remove …` を 1 行出して続けます。何かを消せたときは何も表示しません。
+- **調べたいログを残すには**: 原因の調査に使うログや xcresult は `~/.relay` の外へコピーしてください。すぐ消したいときは、ランナーが動いていなければ `~/.relay/logs` の中身を削除してかまいません。
 
 ## エージェントの sandbox から使う
 
