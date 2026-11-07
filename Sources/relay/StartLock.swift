@@ -212,6 +212,28 @@ struct StartLock {
     }
 }
 
+/// `~/.relay/locks/start-<port>.build.json`: the build directory of the `relay start` holding that port's lock, for
+/// `RelayPrune`, written right after the lock is taken and before the start touches the directory. It counts only
+/// while its pid is the lock's holder, so a file left by an earlier start says nothing. The file stays afterwards,
+/// like the lock file. Not in the lock file: an earlier relay reading it would take another line for the session.
+struct StartBuildClaim: Codable, Equatable {
+    var pid: pid_t
+    /// The name of the directory under `~/.relay/build`.
+    var buildDirectory: String
+
+    static func url(port: Int, home: URL = UserHome.url) -> URL {
+        home.appendingPathComponent(".relay/locks", isDirectory: true).appendingPathComponent("start-\(port).build.json")
+    }
+
+    static func read(port: Int, home: URL = UserHome.url) -> StartBuildClaim? {
+        (try? Data(contentsOf: url(port: port, home: home))).flatMap { try? JSONDecoder().decode(StartBuildClaim.self, from: $0) }
+    }
+
+    func write(port: Int, home: URL = UserHome.url) throws {
+        try JSONEncoder().encode(self).write(to: Self.url(port: port, home: home), options: .atomic)
+    }
+}
+
 /// Another `relay start` holds the lock of `device`. Shows as `relay: <message>` and exits 1 like a `SetupError`.
 struct DeviceInUseError: Error, CustomStringConvertible {
     let device: Device
@@ -320,6 +342,11 @@ final class BuildLock: Sendable {
             Thread.sleep(forTimeInterval: Self.pollInterval)
         }
         return waited
+    }
+
+    /// Takes the lock exclusively if nobody holds it, without waiting: `RelayPrune` keeps away from a build in use.
+    func tryExclusive() -> Bool {
+        flock(fileDescriptor, LOCK_EX | LOCK_NB) == 0
     }
 
     func release() {

@@ -17,7 +17,7 @@ do {
             throw SetupError(description: conflict)
         }
         // Here, not in --background's waiting process: every start comes through here, and holds its port now.
-        RelayPrune.atStart(port: options.port)
+        RelayPrune.atStart(port: options.port, project: options.project)
         StartCancellation.install()
         let setup = try StartSetup.prepare(
             options,

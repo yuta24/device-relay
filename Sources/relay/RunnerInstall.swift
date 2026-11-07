@@ -249,6 +249,7 @@ enum InstallCommand {
             let buildLock = try BuildLock(derivedData: derivedData, relayDirectory: home.appendingPathComponent(".relay", isDirectory: true))
             defer { buildLock.release() }
             try buildLock.wait(for: .exclusive, info: output)
+            try? BuildDirectoryRecord.refresh(root: root, buildDirectory: RunnerProject.buildDirectory(root: root, home: home))
             RunnerBuildStamp.remove(derivedData: derivedData)
             try build(arguments, buildLog, options.verbose)
             // relay start reuses the build only with this record (RunnerBuildPlan).

@@ -159,6 +159,13 @@ final class RunnerLauncher: Sendable {
             try buildLock.wait(for: .exclusive, info: info)
             plan = decidePlan(rebuild: rebuildIsNeeded())
         }
+        // With the build lock held, so RelayPrune cannot be moving the directory away right now.
+        do {
+            try BuildDirectoryRecord.refresh(root: rootURL, buildDirectory: buildURL)
+        } catch {
+            // Without it, a later start only knows less about this directory and keeps it longer.
+            info("cannot record the use of \(buildURL.path): \(error)")
+        }
 
         let xctestrun: URL
         switch plan {
@@ -280,7 +287,7 @@ final class RunnerLauncher: Sendable {
                                         runner: RunnerBuildVersion(version: RelayVersion.current, sourceHash: sourceHash),
                                         hostBundleID: RunnerBundleID.builtHost(xctestrun: xctestrun)
                                             ?? RunnerBundleID.host(prefix: bundleIDPrefix),
-                                        session: options.session)
+                                        session: options.session, buildDirectory: buildURL.lastPathComponent)
             do {
                 // The token goes only to the 0600 file: stdout often ends up in CI logs and terminal scrollback.
                 try runnerInfo.write(to: infoURL)

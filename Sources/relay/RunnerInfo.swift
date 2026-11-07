@@ -21,6 +21,9 @@ struct RunnerInfo: Codable, Equatable {
     var hostBundleID: String?
     /// The session of the `relay start` that wrote the file (see `RelaySession`); nil without one.
     var session: String?
+    /// The name of the directory under `~/.relay/build` the runner runs from, which `RelayPrune` keeps even after
+    /// its `relay start` was killed. Nil in a file from a relay before this: anything could be its directory.
+    var buildDirectory: String?
 
     static func defaultURL(rootURL: URL = WorkingDirectory.url) -> URL {
         rootURL.appendingPathComponent(".relay", isDirectory: true).appendingPathComponent(fileName)
