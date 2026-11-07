@@ -219,7 +219,7 @@ enum Doctor {
                 return .ok("runner install", "not needed; using the runner project of the relay executable")
             }
             return .warning("runner install", "not installed\(project.map { "; using \($0.root.path)" } ?? "")",
-                            fix: "run relay install so relay start works without the checkout")
+                            fix: "run relay install so relay start works without the extracted release or checkout")
         }
         let record = RunnerInstallRecord.read(root: installed)
         let detail = record.map { record in

@@ -54,7 +54,8 @@ struct SkillSource: Equatable {
     var directory: URL
     var relayVersion: String
     var commit: String?
-    /// "relay install" or "checkout", for messages.
+    /// For messages: "relay install" (the copy `relay install` made), "checkout" (a git checkout), or
+    /// "release" (an extracted release, which has no `.git`).
     var label: String
 
     /// The checkout or extracted release `relay install` would copy from first, as for the runner
@@ -73,7 +74,8 @@ struct SkillSource: Equatable {
             let directory = root.appendingPathComponent(AgentSkill.path, isDirectory: true)
             guard AgentSkill.contains(directory) else { return nil }
             return SkillSource(directory: directory, relayVersion: RelayVersion.current,
-                               commit: CheckoutRunnerSource.commit(of: root, commands: commands), label: "checkout")
+                               commit: CheckoutRunnerSource.commit(of: root, commands: commands),
+                               label: CheckoutRunnerSource.isGitCheckout(root) ? "checkout" : "release")
         }
         guard let source = checkout() ?? installed() else {
             throw SetupError(description: "cannot find the \(AgentSkill.name) skill (\(AgentSkill.path)); run relay install from an "
@@ -264,7 +266,8 @@ enum SkillInstaller {
                 return .warning(title, "\(detail): written for relay \(record.relayVersion), but this is relay \(RelayVersion.current)", fix: fix)
             }
             if let source, source.relayVersion != record.relayVersion || (source.commit != nil && record.commit != nil && source.commit != record.commit) {
-                return .warning(title, "\(detail): \(source.directory.path) is newer (relay \(source.relayVersion)"
+                // Nothing says which is newer: the source may be an older checkout, or relay install's older copy.
+                return .warning(title, "\(detail): differs from the source \(source.directory.path) (relay \(source.relayVersion)"
                     + "\(source.commit.map { ", commit \($0.prefix(12))" } ?? ""))", fix: fix)
             }
             return .ok(title, detail)

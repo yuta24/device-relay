@@ -68,10 +68,18 @@ struct CheckoutRunnerSource: RunnerSource {
         Self.commit(of: root, commands: commands)
     }
 
+    /// The commit of a git checkout; nil for an extracted release, even one inside another repository, whose
+    /// commit git would answer with otherwise.
     static func commit(of root: URL, commands: HostCommands) -> String? {
-        guard let output = try? commands.run("/usr/bin/git", ["-C", root.path, "rev-parse", "HEAD"], CommandTimeout.query) else { return nil }
+        guard isGitCheckout(root), let output = try? commands.run("/usr/bin/git", ["-C", root.path, "rev-parse", "HEAD"], CommandTimeout.query) else { return nil }
         let commit = output.trimmingCharacters(in: .whitespacesAndNewlines)
         return commit.count == 40 ? commit : nil
+    }
+
+    /// Whether `root` is a git checkout rather than an extracted release: it has `.git` (a directory, or a
+    /// file in a git worktree). Not decided by `commit(of:)`, so a checkout stays one when git is missing or fails.
+    static func isGitCheckout(_ root: URL) -> Bool {
+        FileManager.default.fileExists(atPath: root.appendingPathComponent(".git").path)
     }
 
     func copy(into directory: URL) throws {

@@ -10,7 +10,7 @@ struct RunnerInstallTests {
     D = {isa = PBXFileReference; path = ../Sources/Relay/Shared/RunnerAuth.swift; sourceTree = "<group>"; };
     """
 
-    /// <root>/checkout with Runner/ and the shared sources, and <root>/home.
+    /// <root>/checkout (a git checkout: it has `.git`) with Runner/ and the shared sources, and <root>/home.
     private struct Tree {
         let root: URL
         var checkout: URL { root.appendingPathComponent("checkout") }
@@ -21,6 +21,7 @@ struct RunnerInstallTests {
             root = try temporaryDirectory()
             let project = checkout.appendingPathComponent(RunnerProject.projectPath)
             try FileManager.default.createDirectory(at: project.appendingPathComponent("xcuserdata"), withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: checkout.appendingPathComponent(".git"), withIntermediateDirectories: true)
             try RunnerInstallTests.pbxproj.write(to: project.appendingPathComponent("project.pbxproj"), atomically: true, encoding: .utf8)
             try write("test", to: "Runner/RelayRunnerUITests/RelayRunnerUITests.swift")
             try write("auth", to: "Sources/Relay/Shared/RunnerAuth.swift")
@@ -87,6 +88,16 @@ struct RunnerInstallTests {
         #expect(record.commit == String(repeating: "b", count: 40))
         #expect(tree.installedText("Runner/RelayRunnerUITests/RelayRunnerUITests.swift") == "test v2")
         #expect(tree.installedText("Runner/leftover.txt") == nil)
+    }
+
+    /// An extracted release has no commit, even inside another repository, whose commit git would answer with.
+    @Test func aReleaseRecordsNoCommit() throws {
+        let tree = try Tree()
+        defer { try? FileManager.default.removeItem(at: tree.root) }
+        try FileManager.default.removeItem(at: tree.checkout.appendingPathComponent(".git"))
+        let record = try RunnerInstaller.install(from: source(tree), home: tree.home)
+        #expect(record.commit == nil)
+        #expect(RunnerInstallRecord.read(root: tree.installed)?.commit == nil)
     }
 
     @Test func aFailedInstallKeepsThePreviousCopy() throws {

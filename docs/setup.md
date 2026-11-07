@@ -153,7 +153,7 @@ relay doctor            # bundle ID の行が prefix dev.yuta24.devicerelay (fro
 - 署名: 証明書と Team ID（実機なら見つからなければ ✗、シミュレータなら !）
 - バンドル ID: `relay start` が使う接頭辞と出どころ（`bundleIDPrefix` の設定、Team ID から作った既定値、Team が分からない、シミュレータの既定値）。表示だけで、config の値が不正なときだけ ✗（「[バンドル ID の接頭辞](#バンドル-id-の接頭辞)」）
 - sandbox: 127.0.0.1 への接続と、`~/.relay`（あれば）へのファイルの作成を試します。OS に拒否された（`Operation not permitted`）ら、エージェントなどの sandbox の中で動いているようだとして ✗ にします（「[エージェントの sandbox から使う](#エージェントの-sandbox-から使う)」）
-- エージェントスキル: カレントディレクトリの git のルートの `.claude/skills/device-relay` と `~/.claude/skills/device-relay` の状態（`relay skill status` と同じ判定。古い・relay が入れたものでなければ !。入っていなくても問題にはしません）
+- エージェントスキル: カレントディレクトリの git のルートの `.claude/skills/device-relay` と `~/.claude/skills/device-relay` の状態（`relay skill status` と同じ判定。relay や取り出し元とバージョン・コミットが違う、relay が入れたものでない、のどれかなら !。入っていなくても問題にはしません）
 
 ### relay doctor --json
 
