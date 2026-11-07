@@ -96,7 +96,7 @@ struct RunnerSourceHashTests {
 
     /// The real checkout: fast enough to run on every relay start, and covering the shared sources the project names.
     @Test func hashesThisCheckoutQuickly() throws {
-        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let files = try RunnerSourceHash.files(root: root)
         #expect(files.contains("Runner/RelayRunnerUITests/RelayRunnerUITests.swift"))
         #expect(files.contains("Runner/RelayRunnerUITests/Info.plist"))
@@ -110,7 +110,7 @@ struct RunnerSourceHashTests {
     /// `Sources/Relay/Shared/` holds exactly the CLI sources the Runner project compiles: moving a file in or out
     /// of it without updating the project (or the other way round) fails here.
     @Test func sharedDirectoryMatchesTheProjectReferences() throws {
-        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let pbxproj = try String(contentsOf: root.appendingPathComponent("Runner/RelayRunner.xcodeproj/project.pbxproj"), encoding: .utf8)
         let shared = "Sources/Relay/Shared"
         let files = try FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent(shared).path)
@@ -200,7 +200,7 @@ struct RunnerBuildPlanTests {
 
     /// The UI test bundle's Info.plist expands the settings relay passes, which the runner reads back.
     @Test func runnerInfoPlistExpandsTheBuildSettings() throws {
-        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let data = try Data(contentsOf: root.appendingPathComponent("Runner/RelayRunnerUITests/Info.plist"))
         let plist = try #require(try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: String])
         #expect(plist["RelayRunnerSourceHash"] == "$(\(RunnerBuildVersion.sourceHashSetting))")

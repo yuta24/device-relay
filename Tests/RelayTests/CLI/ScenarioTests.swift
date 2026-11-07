@@ -387,30 +387,3 @@ struct ScenarioByteOrderMarkTests {
         #expect(throws: ScenarioLineErrors.self) { try Scenario.parse(versioned) }
     }
 }
-
-struct CommandNamesTests {
-    @Test func theUsageListsEveryCommandOfTheTable() {
-        for entry in Arguments.commandSynopses {
-            for name in entry.names {
-                #expect(entry.synopsis.contains("relay \(name)"), "\(name)")
-                #expect(Arguments.usage.contains(entry.synopsis.components(separatedBy: "\n")[0]), "\(name)")
-            }
-            // A command shown in a synopsis has its name in the table.
-            let shown = entry.synopsis.components(separatedBy: "relay ").dropFirst().compactMap { $0.split(separator: " ").first.map(String.init) }
-            #expect(Set(shown).isSubset(of: entry.names), "\(shown)")
-        }
-    }
-
-    @Test func everyNameIsACommandArgumentsParses() {
-        for name in Arguments.commandNames.sorted() {
-            do {
-                _ = try Arguments.parse([name], standardInput: { Data() })
-            } catch {
-                // Missing arguments are fine; an unknown command is not.
-                #expect("\(error)" != "unknown command: \(name)", "\(name)")
-            }
-        }
-        #expect(Arguments.commandNames.isSuperset(of: ["start", "install", "uninstall", "skill", "devices", "doctor", "config", "bench",
-                                                       "status", "stop", "run", "tap", "shutdown"]))
-    }
-}
