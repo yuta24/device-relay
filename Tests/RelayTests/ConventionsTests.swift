@@ -1,5 +1,5 @@
 import Foundation
-@testable import relay
+@testable import Relay
 import Testing
 
 /// `text` with every run of white space (line breaks of a wrapped help included) as one space, to look for a phrase in.

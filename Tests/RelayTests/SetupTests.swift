@@ -1,5 +1,5 @@
 import Foundation
-@testable import relay
+@testable import Relay
 import Testing
 
 // Canned output of the external commands. UDIDs, names, and Team IDs are dummies.
@@ -1210,10 +1210,10 @@ struct DoctorTests {
 
 struct RunnerInstallTests {
     private static let pbxproj = """
-    A /* RunnerAuth.swift */ = {isa = PBXFileReference; path = ../Sources/relay/RunnerAuth.swift; sourceTree = "<group>"; };
-    B /* Shared.swift */ = {isa = PBXFileReference; path = "../Sources/relay/Shared.swift"; sourceTree = "<group>"; };
+    A /* RunnerAuth.swift */ = {isa = PBXFileReference; path = ../Sources/Relay/Shared/RunnerAuth.swift; sourceTree = "<group>"; };
+    B /* Shared.swift */ = {isa = PBXFileReference; path = "../Sources/Relay/Shared/Shared.swift"; sourceTree = "<group>"; };
     C /* RelayRunnerUITests.swift */ = {isa = PBXFileReference; path = RelayRunnerUITests.swift; sourceTree = "<group>"; };
-    D = {isa = PBXFileReference; path = ../Sources/relay/RunnerAuth.swift; sourceTree = "<group>"; };
+    D = {isa = PBXFileReference; path = ../Sources/Relay/Shared/RunnerAuth.swift; sourceTree = "<group>"; };
     """
 
     /// <root>/checkout with Runner/ and the shared sources, and <root>/home.
@@ -1229,9 +1229,9 @@ struct RunnerInstallTests {
             try FileManager.default.createDirectory(at: project.appendingPathComponent("xcuserdata"), withIntermediateDirectories: true)
             try RunnerInstallTests.pbxproj.write(to: project.appendingPathComponent("project.pbxproj"), atomically: true, encoding: .utf8)
             try write("test", to: "Runner/RelayRunnerUITests/RelayRunnerUITests.swift")
-            try write("auth", to: "Sources/relay/RunnerAuth.swift")
-            try write("shared", to: "Sources/relay/Shared.swift")
-            try write("cli", to: "Sources/relay/main.swift")
+            try write("auth", to: "Sources/Relay/Shared/RunnerAuth.swift")
+            try write("shared", to: "Sources/Relay/Shared/Shared.swift")
+            try write("cli", to: "Sources/Relay/main.swift")
         }
 
         func write(_ text: String, to path: String) throws {
@@ -1256,7 +1256,7 @@ struct RunnerInstallTests {
 
     @Test func findsTheSharedSourcesTheProjectCompiles() {
         #expect(CheckoutRunnerSource.referencedFiles(pbxproj: Self.pbxproj)
-            == ["Sources/relay/RunnerAuth.swift", "Sources/relay/Shared.swift"])
+            == ["Sources/Relay/Shared/RunnerAuth.swift", "Sources/Relay/Shared/Shared.swift"])
     }
 
     @Test func copiesTheRunnerAndRecordsTheVersion() throws {
@@ -1271,9 +1271,9 @@ struct RunnerInstallTests {
         #expect(RunnerInstallRecord.read(root: tree.installed) == record)
         #expect(RunnerProject.contains(tree.installed))
         #expect(tree.installedText("Runner/RelayRunnerUITests/RelayRunnerUITests.swift") == "test")
-        #expect(tree.installedText("Sources/relay/Shared.swift") == "shared")
+        #expect(tree.installedText("Sources/Relay/Shared/Shared.swift") == "shared")
         // Only what the project compiles, and no per-user Xcode state.
-        #expect(tree.installedText("Sources/relay/main.swift") == nil)
+        #expect(tree.installedText("Sources/Relay/main.swift") == nil)
         #expect(!FileManager.default.fileExists(atPath: tree.installed.appendingPathComponent(RunnerProject.projectPath + "/xcuserdata").path))
         // Builds of the replaced sources are dropped.
         #expect(!FileManager.default.fileExists(atPath: build.path))
@@ -1299,10 +1299,10 @@ struct RunnerInstallTests {
         let tree = try Tree()
         defer { try? FileManager.default.removeItem(at: tree.root) }
         try RunnerInstaller.install(from: source(tree), home: tree.home)
-        try FileManager.default.removeItem(at: tree.checkout.appendingPathComponent("Sources/relay/Shared.swift"))
+        try FileManager.default.removeItem(at: tree.checkout.appendingPathComponent("Sources/Relay/Shared/Shared.swift"))
 
         #expect(throws: (any Error).self) { try RunnerInstaller.install(from: source(tree), home: tree.home) }
-        #expect(tree.installedText("Sources/relay/Shared.swift") == "shared")
+        #expect(tree.installedText("Sources/Relay/Shared/Shared.swift") == "shared")
         let entries = try FileManager.default.contentsOfDirectory(atPath: tree.installed.deletingLastPathComponent().path)
         #expect(entries == ["runner"])
     }

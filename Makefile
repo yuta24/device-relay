@@ -36,5 +36,5 @@ test:
 
 # The release tarballs of RelayVersion.current, in dist/ (the release workflow runs the same script).
 dist:
-	@version=$$(sed -n 's/^ *static let current = "\(.*\)"$$/\1/p' Sources/relay/RunnerInstall.swift); \
+	@version=$$(sed -n 's/^ *static let current = "\(.*\)"$$/\1/p' Sources/Relay/Setup/RunnerInstall.swift); \
 	SWIFT="$(SWIFT)" scripts/package.sh "$$version" arm64 && SWIFT="$(SWIFT)" scripts/package.sh "$$version" x86_64

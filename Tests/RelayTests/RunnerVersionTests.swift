@@ -1,5 +1,5 @@
 import Foundation
-@testable import relay
+@testable import Relay
 import Testing
 
 struct RunnerSourceHashTests {
@@ -10,15 +10,15 @@ struct RunnerSourceHashTests {
         init() throws {
             url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
             let pbxproj = """
-            A /* RunnerAuth.swift */ = {isa = PBXFileReference; path = ../Sources/relay/RunnerAuth.swift; sourceTree = "<group>"; };
+            A /* RunnerAuth.swift */ = {isa = PBXFileReference; path = ../Sources/Relay/Shared/RunnerAuth.swift; sourceTree = "<group>"; };
             B /* RelayRunnerUITests.swift */ = {isa = PBXFileReference; path = RelayRunnerUITests/RelayRunnerUITests.swift; sourceTree = "<group>"; };
             """
             try write(pbxproj, to: "Runner/RelayRunner.xcodeproj/project.pbxproj")
             try write("<Scheme/>", to: "Runner/RelayRunner.xcodeproj/xcshareddata/xcschemes/RelayRunner.xcscheme")
             try write("tests", to: "Runner/RelayRunnerUITests/RelayRunnerUITests.swift")
             try write("plist", to: "Runner/RelayRunnerUITests/Info.plist")
-            try write("auth", to: "Sources/relay/RunnerAuth.swift")
-            try write("cli", to: "Sources/relay/main.swift")
+            try write("auth", to: "Sources/Relay/Shared/RunnerAuth.swift")
+            try write("cli", to: "Sources/Relay/main.swift")
             try write("per user", to: "Runner/RelayRunner.xcodeproj/xcuserdata/me.xcuserdatad/UserInterfaceState.xcuserstate")
             try write("finder", to: "Runner/.DS_Store")
         }
@@ -42,7 +42,7 @@ struct RunnerSourceHashTests {
             "Runner/RelayRunner.xcodeproj/xcshareddata/xcschemes/RelayRunner.xcscheme",
             "Runner/RelayRunnerUITests/Info.plist",
             "Runner/RelayRunnerUITests/RelayRunnerUITests.swift",
-            "Sources/relay/RunnerAuth.swift"
+            "Sources/Relay/Shared/RunnerAuth.swift"
         ])
     }
 
@@ -54,13 +54,13 @@ struct RunnerSourceHashTests {
         #expect(try RunnerSourceHash.compute(root: root.url) == original)
 
         // Not built from: the CLI's own sources, per-user Xcode state, hidden files.
-        try root.write("cli changed", to: "Sources/relay/main.swift")
+        try root.write("cli changed", to: "Sources/Relay/main.swift")
         try root.write("moved a window", to: "Runner/RelayRunner.xcodeproj/xcuserdata/me.xcuserdatad/UserInterfaceState.xcuserstate")
         try root.write("finder again", to: "Runner/.DS_Store")
         #expect(try RunnerSourceHash.compute(root: root.url) == original)
 
         for (path, text) in [("Runner/RelayRunnerUITests/RelayRunnerUITests.swift", "tests // a comment"),
-                             ("Sources/relay/RunnerAuth.swift", "auth "),
+                             ("Sources/Relay/Shared/RunnerAuth.swift", "auth "),
                              ("Runner/RelayRunner.xcodeproj/xcshareddata/xcschemes/RelayRunner.xcscheme", "<Scheme a=\"1\"/>")] {
             let before = try String(contentsOf: root.url.appendingPathComponent(path), encoding: .utf8)
             try root.write(text, to: path)
@@ -77,7 +77,7 @@ struct RunnerSourceHashTests {
     @Test func doesNotDependOnTheOrderFilesAreListedIn() {
         let a = (path: "Runner/a.swift", contents: Data("a".utf8))
         let b = (path: "Runner/b.swift", contents: Data("b".utf8))
-        let c = (path: "Sources/relay/c.swift", contents: Data("c".utf8))
+        let c = (path: "Sources/Relay/Shared/c.swift", contents: Data("c".utf8))
         let hash = RunnerSourceHash.digest([a, b, c])
         #expect(RunnerSourceHash.digest([c, a, b]) == hash)
         #expect(RunnerSourceHash.digest([b, c, a]) == hash)
@@ -100,11 +100,24 @@ struct RunnerSourceHashTests {
         let files = try RunnerSourceHash.files(root: root)
         #expect(files.contains("Runner/RelayRunnerUITests/RelayRunnerUITests.swift"))
         #expect(files.contains("Runner/RelayRunnerUITests/Info.plist"))
-        #expect(files.contains("Sources/relay/RunnerAuth.swift"))
-        #expect(!files.contains("Sources/relay/main.swift"))
+        #expect(files.contains("Sources/Relay/Shared/RunnerAuth.swift"))
+        #expect(!files.contains("Sources/Relay/main.swift"))
         let start = Date()
         _ = try RunnerSourceHash.compute(root: root)
         #expect(Date().timeIntervalSince(start) < 1)
+    }
+
+    /// `Sources/Relay/Shared/` holds exactly the CLI sources the Runner project compiles: moving a file in or out
+    /// of it without updating the project (or the other way round) fails here.
+    @Test func sharedDirectoryMatchesTheProjectReferences() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let pbxproj = try String(contentsOf: root.appendingPathComponent("Runner/RelayRunner.xcodeproj/project.pbxproj"), encoding: .utf8)
+        let shared = "Sources/Relay/Shared"
+        let files = try FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent(shared).path)
+            .filter { $0.hasSuffix(".swift") }
+            .map { "\(shared)/\($0)" }
+        #expect(!files.isEmpty)
+        #expect(CheckoutRunnerSource.referencedFiles(pbxproj: pbxproj).sorted() == files.sorted())
     }
 
     @Test func failsWithoutTheProject() {

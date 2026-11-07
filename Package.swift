@@ -8,10 +8,10 @@ let package = Package(
         .macOS(.v26)
     ],
     products: [
-        .executable(name: "relay", targets: ["relay"])
+        .executable(name: "relay", targets: ["Relay"])
     ],
     targets: [
-        .executableTarget(name: "relay"),
-        .testTarget(name: "relayTests", dependencies: ["relay"])
+        .executableTarget(name: "Relay"),
+        .testTarget(name: "RelayTests", dependencies: ["Relay"])
     ]
 )

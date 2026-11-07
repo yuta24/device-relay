@@ -1,5 +1,5 @@
 import Foundation
-@testable import relay
+@testable import Relay
 import Testing
 
 // relay start --background, relay status, and relay stop. UDIDs and names are dummies.

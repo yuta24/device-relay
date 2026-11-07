@@ -26,7 +26,7 @@ jobs:
       # Before anything is built; scripts/package.sh checks the version it is given as well.
       - name: Check the tag against RelayVersion.current
         run: |
-          current=$(sed -n 's/^ *static let current = "\(.*\)"$/\1/p' Sources/relay/RunnerInstall.swift)
+          current=$(sed -n 's/^ *static let current = "\(.*\)"$/\1/p' Sources/Relay/Setup/RunnerInstall.swift)
           if [ "$GITHUB_REF_NAME" != "v$current" ]; then
             echo "::error::tag $GITHUB_REF_NAME does not match RelayVersion.current ($current); expected v$current"
             exit 1

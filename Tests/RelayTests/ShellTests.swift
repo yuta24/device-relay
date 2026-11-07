@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import relay
+@testable import Relay
 
 /// `Shell.run` with real processes. Each test ends in about a second or less, far below the 30 s its sleep
 /// would take if `run` waited for it.

@@ -61,7 +61,7 @@ iOS 27 では UIScene のライフサイクルを採用していないアプリ�
 
 ## リリースの手順
 
-1. `Sources/relay/RunnerInstall.swift` の `RelayVersion.current` を上げて、main にマージします。
+1. `Sources/Relay/Setup/RunnerInstall.swift` の `RelayVersion.current` を上げて、main にマージします。
 2. マージしたコミットにタグ `vX.Y.Z`（`RelayVersion.current` と同じ）を付けて push します。
 
 ```sh
@@ -149,4 +149,4 @@ Release は作られていないので、利用者への影響はありません
 - **asset の名前**: mise の github backend は、名前の OS（`macos`）とアーキテクチャ（`arm64`、`x86_64`）で asset を選びます。`.sha256` は選ばれず、mise は同じ名前に `.sha256` を付けたファイルを Release からダウンロードし、その中から asset の名前の行を探して検証します。名前が違うと照合する行が見つからないので、中のファイル名は asset の名前そのままにします（`dist/` などを付けない）。
 - **配置**: トップレベルがディレクトリ 1 つだけのアーカイブは mise がその 1 段を取り除くので、`bin/` がインストール先の直下に来て PATH に入ります。
 - **`bin/` と `Runner/` の位置関係**: relay は実行ファイルの親をたどって `Runner/` を探します（`RunnerProject.resolve`）。
-- **共有ソース**: Runner のプロジェクトは `../Sources/relay/*.swift` を参照するので、`scripts/package.sh` は `project.pbxproj` から読んだファイルも同梱します。`Runner/` だけではビルドできません。
+- **共有ソース**: Runner のプロジェクトは `../Sources/Relay/Shared/*.swift` を参照するので、`scripts/package.sh` は `project.pbxproj` から読んだファイルも同梱します。`Runner/` だけではビルドできません。

@@ -9,9 +9,9 @@
 ```
 device-relay-v<version>/
   bin/relay
-  Runner/          Xcode プロジェクト
-  Sources/relay/   Runner が参照する CLI との共有ソースだけ
-  skills/          エージェントスキル
+  Runner/                 Xcode プロジェクト
+  Sources/Relay/Shared/   Runner が参照する CLI との共有ソースだけ
+  skills/                 エージェントスキル
   LICENSE README.md README.ja.md
 ```
 
@@ -30,7 +30,7 @@ device-relay-v<version>/
 `relay install` が要るのは、`relay` のバイナリだけを別の場所にコピーして、そこから Runner が見つからないときです。展開したディレクトリ（またはチェックアウト）で 1 回実行します。Runner プロジェクトを `~/.relay/runner/` にコピーし、relay のバージョンと、元がチェックアウトならそのコミットを `~/.relay/runner/install.json` に記録します。
 
 - コピー元は `--project <path>` > `$RELAY_HOME` > カレントディレクトリとその親 > `relay` の実行ファイルの場所（シンボリックリンクを解決）とその親、の順に探した、展開したリリースか device-relay のチェックアウトです（どちらも同じ配置です）。
-- コピーするのは `Runner/` と、プロジェクトが参照している CLI 側の共有ソース（`Sources/relay/RunnerAuth.swift` など、`project.pbxproj` の `../Sources/...` の参照）、それにエージェントスキル（`skills/device-relay`。「[エージェントスキル](cli.md#エージェントスキル)」を参照）です。リポジトリと同じ配置（`~/.relay/runner/Runner/RelayRunner.xcodeproj`、`~/.relay/runner/skills/device-relay`）にします。
+- コピーするのは `Runner/` と、プロジェクトが参照している CLI 側の共有ソース（`Sources/Relay/Shared/RunnerAuth.swift` など、`project.pbxproj` の `../Sources/...` の参照）、それにエージェントスキル（`skills/device-relay`。「[エージェントスキル](cli.md#エージェントスキル)」を参照）です。リポジトリと同じ配置（`~/.relay/runner/Runner/RelayRunner.xcodeproj`、`~/.relay/runner/skills/device-relay`）にします。
 - 再実行すると上書き更新します。一時ディレクトリにコピーしてから入れ替えるので、途中で失敗しても前の Runner は残ります。入れ替えたときは、古いソースのビルド成果物（`~/.relay/build/installed`）を削除します。
 - `relay install --build` は、コピーの後にシミュレータ用の `build-for-testing`（`generic/platform=iOS Simulator`）を行い、初回の `relay start` でビルドを省きます（下の「ランナーの版」の記録も書くので、ソースが同じなら `relay start` はそのビルドを使い回します）。ビルドログは `relay start` と同じく `~/.relay/logs/` の `build-<時刻>.log`（ポートはないので付けません）に保存し、失敗したときはそのパスを示します（コピーした Runner は残ります）。`--verbose` を付けると xcodebuild の出力をそのまま表示します。
 - `relay uninstall`（= `relay install --remove`）は `~/.relay/runner` とそのビルド成果物を削除します。`config.json`、`runner.json`、ログは残します。
@@ -52,7 +52,7 @@ device-relay-v<version>/
 
 `git pull` や `relay install` の後に、古いソースでビルドしたランナーが黙って使われないよう、relay はランナーのソースのハッシュでビルドを見分けます。
 
-- **対象**: `Runner/` 以下のすべてのファイル（プロジェクト、スキーム、ランナーのソース、`Info.plist` など）と、プロジェクトが `../Sources/relay/*.swift` として参照する CLI との共有ファイル（`relay install` がコピーするものと同じ）です。Xcode の利用者ごとの状態（`xcuserdata`）と隠しファイル（`.DS_Store` など）は含めません。ファイルのパスと内容を、パスの順に SHA-256 にかけます（列挙の順には依りません）。`relay install` したコピーは元のチェックアウトと同じファイルなので、同じハッシュになります。計算は `relay start` のたびに行い、数 ms です。
+- **対象**: `Runner/` 以下のすべてのファイル（プロジェクト、スキーム、ランナーのソース、`Info.plist` など）と、プロジェクトが `../Sources/Relay/Shared/*.swift` として参照する CLI との共有ファイル（`relay install` がコピーするものと同じ）です。Xcode の利用者ごとの状態（`xcuserdata`）と隠しファイル（`.DS_Store` など）は含めません。ファイルのパスと内容を、パスの順に SHA-256 にかけます（列挙の順には依りません）。`relay install` したコピーは元のチェックアウトと同じファイルなので、同じハッシュになります。計算は `relay start` のたびに行い、数 ms です。
 - **記録**: ビルドに成功すると、`.xctestrun` の横（`DerivedData-*/Build/Products/relay-runner-build.json`）にハッシュと relay のバージョン、バンドル ID の接頭辞を記録します（`relay install --build` も同じ）。ビルドの前には消すので、失敗したビルドは記録を持ちません。
 - **使い回しの判断**: 最後のビルドが今の Xcode の SDK のものでも、記録がない（古い relay のビルド、失敗したビルド）、バンドル ID の接頭辞が違う（記録に接頭辞がない場合も）、ハッシュが今のソースと違う、relay のバージョンが違う、のどれかなら、この順に調べて最初の理由を `runner sources changed since the last build (<前> -> <今>); rebuilding` などと出し、 `--rebuild` なしでも再ビルドします。ハッシュだけが変わった再ビルドは、Xcode の差分ビルドなので変わったファイルの分だけで済みます。
 - **ランナーが名乗る版**: ビルドのときに `RELAY_RUNNER_VERSION=<relay のバージョン>` と `RELAY_RUNNER_SOURCE_HASH=<ハッシュ>` をビルド設定として渡し、UI テストバンドルの Info.plist（`Runner/RelayRunnerUITests/Info.plist`。自動生成の Info.plist に足されます）に埋め込みます。ランナーは自分のバンドルから読み、`/ping` と `/health` の `runner`（`{"version":"0.4.0","sourceHash":"<64 桁>"}`）で返します。起動時の環境変数ではないので、ビルドしたものを表します。Xcode から直接ビルドしたランナーでは値が `null` です。

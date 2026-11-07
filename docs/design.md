@@ -25,8 +25,16 @@ WebDriverAgent と同じ「常駐 XCTest ランナー」方式を使います。
 - `relay` CLI（SwiftPM）は、ビルド、ランナーの起動、到達可能なアドレスの探索、Ctrl-C（または `relay stop`）での後片付けをまとめて行います。
 
 ```
-Package.swift / Sources/relay      ホスト CLI (relay start / status / stop / install / devices / doctor / ランナー操作のサブコマンドなど)
-Tests/relayTests                   CLI のユニットテスト (Swift Testing)
+Package.swift / Sources/Relay      ホスト CLI (relay start / status / stop / install / devices / doctor / ランナー操作のサブコマンドなど)
+  main.swift                       エントリポイント
+  Shared/                          Runner のプロジェクトもコンパイルする共有ソース (認証、HTTP の framing、要素の判定、エラーなど)
+  CLI/                             引数の解釈、出力、ランナー操作のサブコマンド、シナリオ、ベンチマーク
+  Setup/                           relay install / doctor / skill、Runner プロジェクトの場所・ハッシュ・バンドル ID・Team ID
+  Start/                           relay start (ビルドとランナーの起動、バックグラウンド起動、ロック、ビルドディレクトリの掃除)
+  Client/                          起動中のランナーへの接続 (HTTP クライアント、状態、ランナーの探索、セッション)
+  Device/                          端末の一覧、アプリのインストール確認、録画
+  Support/                         外部コマンドの実行 (Shell、HostCommands)、ロック付きの値、プロセスの扱い
+Tests/RelayTests                   CLI のユニットテスト (Swift Testing)
 Runner/RelayRunner.xcodeproj       RelayRunnerHost (文字入力を試すためのホストアプリ) + RelayRunnerUITests (常駐ランナー)
 Makefile                           make install / make uninstall (relay を ~/.local/bin にリンク)、make dist
 scripts/package.sh                 リリースの tarball を作る (.github/workflows/release.yml も使う)

@@ -1,5 +1,5 @@
 import Foundation
-@testable import relay
+@testable import Relay
 import Testing
 
 // relay record (simulators, and devices connected with USB). UDIDs, names, and paths are dummies.

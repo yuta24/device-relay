@@ -1,6 +1,6 @@
 import CoreGraphics
 import Foundation
-@testable import relay
+@testable import Relay
 import Testing
 
 struct RunnerErrorCodeTests {
