@@ -3,8 +3,8 @@ import Foundation
 import Testing
 
 struct SkillTests {
-    /// <root>/home (with relay install's copy when `installed`), <root>/checkout, and <root>/app, a git
-    /// repository whose root the fake git reports for <root>/app/sub.
+    /// <root>/home (with relay install's copy when `installed`), <root>/checkout (a git checkout: it has
+    /// `.git`), and <root>/app, a git repository whose root the fake git reports for <root>/app/sub.
     private struct Tree {
         let root: URL
         var home: URL { root.appendingPathComponent("home") }
@@ -17,7 +17,7 @@ struct SkillTests {
 
         init(installed: Bool = true, installedVersion: String = RelayVersion.current) throws {
             root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).resolvingSymlinksInPath()
-            for directory in [checkout.appendingPathComponent(RunnerProject.projectPath), appSub] {
+            for directory in [checkout.appendingPathComponent(RunnerProject.projectPath), checkout.appendingPathComponent(".git"), appSub] {
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             }
             try write("checkout skill", to: checkout.appendingPathComponent(AgentSkill.path + "/SKILL.md"))
@@ -232,10 +232,61 @@ struct SkillTests {
         record.relayVersion = RelayVersion.current
         record.commit = String(repeating: "b", count: 40)
         try record.write(directory: tree.projectSkill)
+        lines = try tree.run(["status"]).lines
+        #expect(lines[1].hasPrefix("  ! project"))
+        #expect(lines[1].contains(", commit bbbbbbbbbbbb, 1970-01-01T00:00:00Z): differs from the source "
+            + "\(tree.checkout.appendingPathComponent(AgentSkill.path).path) (relay \(RelayVersion.current), commit cccccccccccc)"))
+        #expect(lines[1].hasSuffix("→ run relay skill install to update it"))
         #expect(try tree.run(["status", "--dir", "../.claude/skills"]).lines[1].hasPrefix("  ! directory"))
 
         try tree.write("x", to: tree.globalSkill.appendingPathComponent("SKILL.md"))
         #expect(try tree.run(["status", "--global"]).lines[1].contains("was not installed by relay"))
+    }
+
+    /// Where the source is from: a root with `.git` (a directory, or a file in a git worktree) is a checkout,
+    /// one without is an extracted release, whatever git says; else relay install's copy.
+    @Test func statusNamesWhereTheSourceIsFrom() throws {
+        let tree = try Tree()
+        defer { try? FileManager.default.removeItem(at: tree.root) }
+        let git = tree.checkout.appendingPathComponent(".git")
+        func sourceLine(checkout: Bool = true) throws -> String { try tree.run(["status"], checkout: checkout).lines[0] }
+        #expect(try sourceLine().hasSuffix("(relay \(RelayVersion.current), from checkout)"))
+
+        try FileManager.default.removeItem(at: git)
+        #expect(try sourceLine().hasSuffix("(relay \(RelayVersion.current), from release)"))
+        // git would answer with a commit for a release extracted inside another repository: that commit is the other
+        // repository's, so the release has none, and is not a checkout.
+        let release = try SkillSource.resolve(home: tree.home, commands: tree.commands) { tree.checkout }
+        #expect(release.commit == nil)
+        #expect(release.label == "release")
+
+        try tree.write("gitdir: /elsewhere/.git/worktrees/checkout", to: git)
+        #expect(try sourceLine().hasSuffix("from checkout)"))
+
+        // A checkout where git is missing or fails is still a checkout.
+        try FileManager.default.removeItem(at: git)
+        try FileManager.default.createDirectory(at: git, withIntermediateDirectories: true)
+        let noGit = HostCommands(xcrun: tree.commands.xcrun, devicectlJSON: tree.commands.devicectlJSON,
+                                 run: { _, args, _ in throw ShellError(args: args, status: 127, output: "") })
+        let source = try SkillSource.resolve(home: tree.home, commands: noGit) { tree.checkout }
+        #expect(source.label == "checkout")
+        #expect(source.commit == nil)
+
+        #expect(try sourceLine(checkout: false).hasSuffix("\(tree.installedSkill.path) (relay \(RelayVersion.current), from relay install)"))
+    }
+
+    /// The source may be older than the installed copy: the message says they differ, not which is newer.
+    @Test func statusSaysAnOlderSourceDiffers() throws {
+        let tree = try Tree()
+        defer { try? FileManager.default.removeItem(at: tree.root) }
+        // Installed from the checkout at commit ccc…; relay install's copy is from the older commit aaa….
+        try tree.run(["install"])
+        let line = try tree.run(["status"], checkout: false).lines[1]
+        #expect(line.hasPrefix("  ! project"))
+        #expect(line.contains("(relay \(RelayVersion.current), commit cccccccccccc, 1970-01-01T00:00:00Z): differs from the source "
+            + "\(tree.installedSkill.path) (relay \(RelayVersion.current), commit aaaaaaaaaaaa)"))
+        #expect(!line.contains("newer"))
+        #expect(line.hasSuffix("→ run relay skill install to update it"))
     }
 
     /// A relay binary with no checkout to find: its source is the copy, however old.
