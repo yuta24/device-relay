@@ -169,7 +169,7 @@ Detailed documentation in docs/ is currently in Japanese.
 | [docs/limitations.md](docs/limitations.md) | Known limitations |
 | [docs/private-api.md](docs/private-api.md) | The private Apple APIs the runner uses, and what happens when they are unavailable |
 | [docs/development.md](docs/development.md) | For developers: running from the repository, launching the runner by hand, the host app used for verification, cutting a release |
-| [skills/device-relay/](skills/device-relay/) | The skill for coding agents (`SKILL.md` and `reference.md`, in English) |
+| [skills/device-relay/](skills/device-relay/) | The skill for coding agents (`SKILL.md`, and `references/` with one file per topic indexed by `reference.md`, in English) |
 
 ## License
 

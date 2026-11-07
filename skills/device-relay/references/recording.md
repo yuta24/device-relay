@@ -1,0 +1,17 @@
+# Recording (relay record)
+
+To keep evidence of behavior, use `relay record start`, then your operations, then `relay record stop`. It works on simulators (the host's `simctl io recordVideo`) and on physical devices connected with USB (as a capture device on the Mac, the same mechanism as QuickTime). A physical device needs macOS camera access for the app running relay (the terminal, for example), which the first `record start` requests with a dialog. See "録画（relay record）" in docs/cli.md and `relay record --help`.
+
+| Command | Output, exit code |
+| --- | --- |
+| `relay record start [-o <file>] [--force] [--max-duration 600] [--runner <path> \| --session <name>]` | Once recording has started, prints the absolute path of the video on stdout and exits 0. Default `$TMPDIR/relay/relay-recording-<time>.mp4`; a relative path is under the current directory. 1: the simulator isn't booted, the device isn't connected with USB (Wi-Fi only, or not connected), no camera access (ask the user to allow it in System Settings > Privacy & Security > Camera), the device's screen doesn't appear as a capture device (ask the user to check the USB connection, unlock it, and "Trust"), several devices with the same name are connected, the directory doesn't exist, the file already exists (`--force` overwrites; if it is the user's file, ask first), already recording, or recording fails to start (stderr has the output of simctl or the recording process). 3: no runner, or it doesn't answer. 4: token rejected (401) |
+| `relay record stop [--runner <path> \| --session <name> \| --port <n>]` | Waits for the video to be written (up to 30 seconds), prints the absolute path of the non-empty MP4 on stdout, and exits 0. `not recording` and 0 if nothing is recording. A recording that stopped by itself (`--max-duration`) is retrieved here too. 1: writing didn't finish (you can stop again), the video is empty, or there is no runner.json and several recordings exist (choose with `--port <n>` from the list by port) |
+| `relay record status [--json] [--runner <path> \| --session <name> \| --port <n>]` | Whether it is recording (`yes` / `ended`), the video's location, and the elapsed time. If a physical device has sent no frame for 5 seconds or more, a `frames:` line (`stall` with `--json`). Always 0 |
+
+- On a physical device, the first `record start` shows a macOS dialog for camera access and waits: ask the user to press Allow. If access was denied earlier, ask them to allow it in System Settings > Privacy & Security > Camera. Don't change the setting yourself or use `tccutil`.
+- Tell the user the video's path that `record stop` prints.
+- A recording continues detached from the terminal, so you can run other commands after `record start`. `relay stop` also writes the recording first (the path goes to stderr).
+- If the simulator shuts down or the device is unplugged during a recording, `record stop` returns the video up to that point.
+- `record stop` on a physical device takes about 4 seconds (it waits so that a `record start` right after can find the screen). A `record start` right after another recording stopped tries once more with a new process, so it can take about 20 seconds.
+- If frames stop because the device was locked during a recording, for example, the recording continues (the video holds the last frame). If `record status` shows `frames: no frame for 5s …`, ask the user to unlock it.
+- A physical device's video is a QuickTime movie only when `-o` ends in `.mov`, otherwise an MP4 (both H.264, no audio).

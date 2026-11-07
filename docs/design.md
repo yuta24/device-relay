@@ -39,7 +39,7 @@ Tests/RelayTests                   CLI のユニットテスト (Swift Testing)
 Runner/RelayRunner.xcodeproj       RelayRunnerHost (文字入力を試すためのホストアプリ) + RelayRunnerUITests (常駐ランナー)
 Makefile                           make install / make uninstall (relay を ~/.local/bin にリンク)、make dist
 scripts/package.sh                 リリースの tarball を作る (.github/workflows/release.yml も使う)
-skills/device-relay/               コーディングエージェント向けのスキル (SKILL.md と reference.md)
+skills/device-relay/               コーディングエージェント向けのスキル (SKILL.md、references/ の話題別ファイルと索引の reference.md)
 
 ~/.relay/runner/                   relay install がコピーした Runner プロジェクト、エージェントスキル (skills/device-relay) と install.json
 ~/.relay/build/                    DerivedData (Runner プロジェクトごと)、テスト実行のログと xcresult (TestData/port-<port>)、使用の記録 (relay-build-dir.json)。古い結果と、元の Runner がないか 30 日使っていないディレクトリは relay start が消す

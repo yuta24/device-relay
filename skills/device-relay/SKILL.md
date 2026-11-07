@@ -6,13 +6,13 @@ description: Drive iOS simulators and physical devices with the relay CLI (devic
 # device-relay
 
 `relay` controls iOS simulators and physical devices from the Mac through a long-running XCTest runner; the target app needs no changes.
-Details are in [reference.md](reference.md): read the section named here when the case comes up.
+Details are in topic files under `references/` (index: [reference.md](reference.md)): read the one named here when the case comes up.
 
 ## Before you start
 
 - If `command -v relay` finds nothing, ask the user to install it (`mise use -g github:yuta24/device-relay`, or the README). Don't install it yourself.
-- Sandbox: if relay prints `Operation not permitted`, or `relay doctor` shows ✗ for `localhost` / `~/.relay`, the runner has not stopped; relay is inside a sandbox. Don't stop or restart anything; ask the user to run relay outside it, and don't edit their settings yourself ([sandbox](reference.md#using-relay-from-inside-a-sandbox)). Call relay alone, not with `cd … &&`, `>`, or `$(…)`.
-- Sessions: run `echo "$RELAY_SESSION"`. If it is empty and other agents may use relay, pick a name and pass `--session <name>` on every command; `export` doesn't carry over to the next command ([sessions](reference.md#sessions)).
+- Sandbox: if relay prints `Operation not permitted`, or `relay doctor` shows ✗ for `localhost` / `~/.relay`, the runner has not stopped; relay is inside a sandbox. Don't stop or restart anything; ask the user to run relay outside it, and don't edit their settings yourself ([sandbox](references/sandbox.md)). Call relay alone, not with `cd … &&`, `>`, or `$(…)`.
+- Sessions: run `echo "$RELAY_SESSION"`. If it is empty and other agents may use relay, pick a name and pass `--session <name>` on every command; `export` doesn't carry over to the next command ([sessions](references/sessions.md#sessions)).
 
 ## Flow
 
@@ -31,7 +31,7 @@ relay stop                                   # when done, if you started it
 
 - The first start builds the runner for minutes: give it a long timeout (up to 30 min).
 - `waiting for another relay start's build` is not a failure: wait. If start exits 1 because another start is starting on that port, wait for `relay status` to return 0 and use that runner.
-- If start fails, read the log tail it prints before acting ([troubleshooting](reference.md#troubleshooting)).
+- If start fails, read the log tail it prints before acting ([troubleshooting](references/troubleshooting.md)).
 
 ## Rules
 
@@ -47,11 +47,11 @@ relay stop                                   # when done, if you started it
 ## Observe and operate
 
 - `relay screenshot --scale 1`: 1 px = 1 pt, so pixels are tap coordinates. Plain `relay screenshot` (full resolution) only for small text.
-- Pick selectors from `relay source --format compact --filter interactive` or `relay find`: a line's `type`, `label`, `id`, `value` are selectors. Use the whole tree only when needed ([formats](reference.md#element-tree-formats)).
+- Pick selectors from `relay source --format compact --filter interactive` or `relay find`: a line's `type`, `label`, `id`, `value` are selectors. Use the whole tree only when needed ([formats](references/element-tree.md)).
 - Prefer selectors (`--id`, else `--label` + `--type`) over coordinates. On `ambiguous`, add `--type` or `--index`.
 - Coordinates are points from the top left (`relay tap x y`; `relay swipe x1 y1 x2 y2` to scroll).
 - Text: tap the field, `relay type "text"` (`--key return` submits); `relay key return|delete|space`.
-- Wait with `relay find <selector> --timeout <s>` (≤ 10 s, repeat for longer) or `tap --timeout`, never `sleep`, except to let a swipe's scroll stop ([scrolling](reference.md#scrolling-example)).
+- Wait with `relay find <selector> --timeout <s>` (≤ 10 s, repeat for longer) or `tap --timeout`, never `sleep`, except to let a swipe's scroll stop ([scrolling](references/scrolling.md)).
 - After the screen changes, observe again: don't reuse selectors, indexes, or coordinates.
 - One command at a time; overlapping ones get busy (5).
 - Right after `relay launch`, add `--bundle-id <id>` to `find` / `tap` / `type` / `source`.
@@ -68,16 +68,26 @@ relay stop                                   # when done, if you started it
   - `no_keyboard_focus`: tap the text field, resend
   - `app_not_installed`: check the bundle ID (case-sensitive) or install the app
   - `point_offscreen` (7): re-read `screen` in `relay health`
-  - others: [exit codes](reference.md#exit-codes), [list of codes](reference.md#list-of-codes)
+  - others: [failures](references/failures.md), [list of codes](references/failures.md#list-of-codes)
 
 ## When a person is needed
 
-Device asking for its passcode during automation mode (`Failed to initialize for UI testing`), Untrusted Developer, locked device, Local Network permission: tell the user what to do on the device, then start again. Don't work around it ([troubleshooting](reference.md#troubleshooting)).
+Device asking for its passcode during automation mode (`Failed to initialize for UI testing`), Untrusted Developer, locked device, Local Network permission: tell the user what to do on the device, then start again. Don't work around it ([troubleshooting](references/troubleshooting.md)).
 
 ## More
 
-- iPad windowed mode, iPhone Duo displays: [coordinates](reference.md#coordinates-and-orientation)
-- Recording: [record](reference.md#recording-relay-record). Replaying steps: [relay run](reference.md#running-scenarios-relay-run-experimental)
-- All exit codes, `code`s, `reason`s: [exit codes](reference.md#exit-codes), [action failures](reference.md#when-an-action-fails-exit-code-6)
-- `relay doctor`, `relay skill install` / `status`: [doctor and skill](reference.md#relay-doctor-and-relay-skill)
-- Parallel sessions: [sessions](reference.md#sessions). Problems: [troubleshooting](reference.md#troubleshooting)
+Each file in `references/` stands alone; read only the one you need:
+
+- [starting-and-stopping](references/starting-and-stopping.md): `start` options, which device, the app, doctor, `relay skill`
+- [start-status-stop](references/start-status-stop.md): their output and exit codes
+- [sessions](references/sessions.md): parallel sessions, runner.json lookup
+- [sandbox](references/sandbox.md): `Operation not permitted`
+- [commands](references/commands.md): options and timeouts of each command
+- [element-tree](references/element-tree.md): `source` formats, selectors
+- [failures](references/failures.md): all exit codes, `code`s, `reason`s
+- [coordinates](references/coordinates.md): orientation, iPad windows, iPhone Duo
+- [scrolling](references/scrolling.md): to an element off the screen
+- [recording](references/recording.md): `relay record`
+- [relay-run](references/relay-run.md): replaying confirmed steps
+- [test-app](references/test-app.md): an app to try things on
+- [troubleshooting](references/troubleshooting.md): start failures, prompts, logs

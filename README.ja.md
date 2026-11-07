@@ -167,7 +167,7 @@ RELAY_SESSION=agent-2 codex    # 別のターミナルで、別のセッショ�
 | [docs/limitations.md](docs/limitations.md) | 既知の制約 |
 | [docs/private-api.md](docs/private-api.md) | ランナーが使う Apple の非公開 API の一覧と、使えないときの挙動 |
 | [docs/development.md](docs/development.md) | 開発者向け: リポジトリ内での実行、ランナーの手動起動、検証用のホストアプリ、リリースの手順 |
-| [skills/device-relay/](skills/device-relay/) | コーディングエージェント向けのスキル（`SKILL.md` と `reference.md`） |
+| [skills/device-relay/](skills/device-relay/) | コーディングエージェント向けのスキル（`SKILL.md` と、話題ごとのファイルを置く `references/` とその索引 `reference.md`） |
 
 ## ライセンス
 
