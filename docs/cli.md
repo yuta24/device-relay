@@ -257,7 +257,7 @@ relay record stop --port 8101         # runner.json によらず、そのポー�
 
 ## エージェントスキル
 
-`skills/device-relay/` は、コーディングエージェント（Claude Code など）が対象アプリのリポジトリで作業しながら relay でアプリの動作を確かめるためのスキルです。`SKILL.md` に基本の流れ（`relay status` → `relay start --background` → `relay launch` → スクリーンショットと要素の観察 → 操作 → 確認 → `relay stop`）、要素セレクタを優先する操作のコツ、終了コードごとの対処、安全上の注意をまとめ、オプションやトラブルシューティングの詳細は `reference.md` に分けています。
+`skills/device-relay/` は、コーディングエージェント（Claude Code など）が対象アプリのリポジトリで作業しながら relay でアプリの動作を確かめるためのスキルです。`SKILL.md` はスキルを使うたびに全文が読み込まれるので、8 KB 以内に保ちます。基本の流れ（`relay status` → `relay start --background` → `relay launch` → スクリーンショットと要素の観察 → 操作 → 確認 → `relay stop`）、事故を防ぐ決まり（動いているランナーを止めない、対象アプリの外に出ない、パスワードを勝手に入力しないなど）、操作のコツ、よく出る終了コードと `code` の対処だけを書き、必要になったときに読む `reference.md` の節を示します。オプション、終了コードと `code` の全一覧、並列実行、録画、`relay run`、トラブルシューティングの詳細は `reference.md` にあります。
 
 使う前に、relay をインストールし、`relay doctor` で確認しておきます（「[インストール](../README.ja.md#インストール)」）。`relay skill install` は、展開したリリースやチェックアウトの `skills/device-relay` から対象アプリのリポジトリなどへスキルを入れます。どちらも見つからないとき（`relay` のバイナリだけをコピーしたとき）は、`relay install` が一緒にコピーした `~/.relay/runner/skills/device-relay` を使います。
 

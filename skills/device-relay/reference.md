@@ -2,6 +2,10 @@
 
 This supplements [SKILL.md](SKILL.md). For anything not here, see the device-relay README and the documents in docs/, or `relay --help` / `relay <command> --help`. `--help` (also `-h` and `relay help <command>`) exists for every subcommand. The documents in docs/ are in Japanese, so their file and section names are given below as they appear there, in quotation marks.
 
+relay works from any directory (such as the target app's repository) and creates nothing there: the runner's URL and token go in `~/.relay/runner.json`, screenshots and recordings in `$TMPDIR/relay/`.
+
+Contents: [Starting, checking, and stopping the runner](#starting-checking-and-stopping-the-runner) ([start --background / status / stop](#start---background--status--stop), [relay doctor and relay skill](#relay-doctor-and-relay-skill)) · [Recording](#recording-relay-record) · [Sandbox](#using-relay-from-inside-a-sandbox) · [runner.json](#where-the-runner-is-found-runnerjson) ([Sessions](#sessions)) · [Commands and options](#commands-and-options) · [relay run](#running-scenarios-relay-run-experimental) · [Element tree formats](#element-tree-formats) · [Element selectors](#element-selectors) · [Exit codes](#exit-codes) · [When an action fails](#when-an-action-fails-exit-code-6) ([List of codes](#list-of-codes)) · [Coordinates and orientation](#coordinates-and-orientation) · [Scrolling](#scrolling-example) · [The app for trying things out](#the-app-for-trying-things-out) · [Troubleshooting](#troubleshooting)
+
 ## Starting, checking, and stopping the runner
 
 | Command | What it does |
@@ -31,7 +35,12 @@ Main options of `relay start` (they can be combined with `--background`):
 | `--verbose` | Shows xcodebuild's output as it is |
 | `--allow-wifi` | Also uses a physical device's Wi-Fi addresses. The token and the screen travel over the LAN in plain text, so use it only when the user asks |
 
-With `--background`, it waits up to 30 minutes until the runner is launched (booting a simulator and building), then `--ready-timeout` + 15 seconds.
+With `--background`, it waits up to 30 minutes until the runner is launched (booting a simulator and building), then `--ready-timeout` + 15 seconds. Progress (boot, build, launch) goes to `relay:` lines on stderr; give your own command a timeout that long.
+
+- **Which device without `--udid` / `--device`**: the only connected physical device, else the only booted simulator, otherwise an error listing the candidates. A connected physical device wins over a simulator, so unless the user asked for a physical device, name a simulator from `relay devices` (or add `--simulator` to use the booted one). Of several simulators with the same name, `--device` picks the newest iOS and shows its OS in `relay: using …`; narrow with `--os 26.5` or use `--udid`. A shut-down simulator you name is booted, and `relay stop` shuts it down again.
+- **The target app** must already be installed on the device (build and install it the project's way: Xcode, `xcodebuild`, or `xcrun simctl install`). `relay launch` only launches or foregrounds it. Its bundle ID is the project's `PRODUCT_BUNDLE_IDENTIFIER`, or bring the app to the foreground and run `relay foreground`.
+- **`status`, `ping`, or `health`**: `relay status` also reads runner.json and the `relay start` process (PID, device, version) and is the check after starting (`--json` for machines). `relay ping` answers at once whether the runner is alive and `busy`, even during an operation. `relay health` gives what you need before operating (screen size and so on) and returns 409 (exit code 5) during an operation.
+- **Remember your own runner**: note the `pid:` that `relay start --background` prints, and before `relay stop` check that `pid` in `relay status` is the same.
 
 ### start --background / status / stop
 
@@ -55,7 +64,7 @@ Paths are absolute, including the home directory (`/Users/<you>` is the user's h
 | Exit code | When |
 | --- | --- |
 | 0 | Ready |
-| 1 | The child `relay start` exited before ready (build failure, device not found, `Failed to initialize for UI testing`, and so on). The runner in `~/.relay/runner.json` already answers on the same port. Interrupted while waiting |
+| 1 | The child `relay start` exited before ready (build failure, device not found, `Failed to initialize for UI testing`, and so on). The runner in `~/.relay/runner.json` already answers on the same port (it points to `relay stop`; use that runner instead, and stop it only if you started it). Another `relay start` on the same port is still booting or building (`another relay start ... is starting or running a runner on port ...`; wait for `relay status` to return 0 and use that runner). Interrupted while waiting |
 | 3 | Timed out (30 minutes until launch, then `--ready-timeout` + 15 seconds) |
 
 On failure it stops the child (including an xcodebuild in progress, and a simulator relay booted is shut down), and prints the last 20 lines of the log, the cause, and the log's path (`(log: …)`) to stderr. If the end of the log isn't enough, read the whole file.
@@ -94,6 +103,11 @@ runner.json: /Users/<you>/.relay/runner.json
 
 For preparing a physical device (Developer Mode, pairing, UI Automation, Team ID), see "実機" and "Team ID（実機の署名）" in docs/setup.md of device-relay.
 
+### relay doctor and relay skill
+
+- `relay doctor [--udid <UDID> | --device <name>] [--simulator] [--os <version>] [--json]` checks the environment and, given what you would pass to `relay start`, that device. ✗ is a problem (exit code 1) and each line says how to fix it. ! is a warning and does not block starting. A device another session is using is on an `in use` line and left out of automatic selection (✗ if you named it).
+- This skill is installed by `relay skill install`: it copies the skill to `.claude/skills/device-relay` at the root of the current git repository (`--global`: `~/.claude/skills/device-relay`). If `relay skill status` shows ! (relay was updated and the skill is out of date), tell the user to run `relay skill install` again. It rewrites files in the repository or the home directory, so don't run it without asking.
+
 ## Recording (relay record)
 
 To keep evidence of behavior, use `relay record start`, then your operations, then `relay record stop`. It works on simulators (the host's `simctl io recordVideo`) and on physical devices connected with USB (as a capture device on the Mac, the same mechanism as QuickTime). A physical device needs macOS camera access for the app running relay (the terminal, for example), which the first `record start` requests with a dialog. See "録画（relay record）" in docs/cli.md and `relay record --help`.
@@ -104,6 +118,8 @@ To keep evidence of behavior, use `relay record start`, then your operations, th
 | `relay record stop [--runner <path> \| --session <name> \| --port <n>]` | Waits for the video to be written (up to 30 seconds), prints the absolute path of the non-empty MP4 on stdout, and exits 0. `not recording` and 0 if nothing is recording. A recording that stopped by itself (`--max-duration`) is retrieved here too. 1: writing didn't finish (you can stop again), the video is empty, or there is no runner.json and several recordings exist (choose with `--port <n>` from the list by port) |
 | `relay record status [--json] [--runner <path> \| --session <name> \| --port <n>]` | Whether it is recording (`yes` / `ended`), the video's location, and the elapsed time. If a physical device has sent no frame for 5 seconds or more, a `frames:` line (`stall` with `--json`). Always 0 |
 
+- On a physical device, the first `record start` shows a macOS dialog for camera access and waits: ask the user to press Allow. If access was denied earlier, ask them to allow it in System Settings > Privacy & Security > Camera. Don't change the setting yourself or use `tccutil`.
+- Tell the user the video's path that `record stop` prints.
 - A recording continues detached from the terminal, so you can run other commands after `record start`. `relay stop` also writes the recording first (the path goes to stderr).
 - If the simulator shuts down or the device is unplugged during a recording, `record stop` returns the video up to that point.
 - `record stop` on a physical device takes about 4 seconds (it waits so that a `record start` right after can find the screen). A `record start` right after another recording stopped tries once more with a new process, so it can take about 20 seconds.
@@ -149,7 +165,16 @@ If the file or session named in 1 or 2 doesn't exist, the exit code is 3, withou
 
 ### Sessions
 
-When several agents work in parallel, keep them in separate sessions (names start with a letter or digit, with up to 64 letters, digits, `.`, `_`, and `-`). If `$RELAY_SESSION` isn't set, add `--session <name>` to every command. In environments that start a new shell for each command, `export` doesn't carry over to the next one.
+When several agents work in parallel, keep them in separate sessions (names start with a letter or digit, with up to 64 letters, digits, `.`, `_`, and `-`). Check `echo "$RELAY_SESSION"` first: if the user set it when launching the agent (`RELAY_SESSION=agent-1 claude`, for example), every command already uses that session. If it isn't set, add `--session <name>` to every command. In environments that start a new shell for each command, `export` doesn't carry over to the next one, and a command without the session either exits 3 or operates someone else's runner.
+
+```sh
+relay status --all                                                     # every session (which devices are in use)
+relay start --background --session agent-1 --device "<name>" --os 27.0  # one device per session; the port is automatic
+relay tap --session agent-1 --id <id>                                  # reaches only your runner
+relay stop --session agent-1                                           # stops only your session
+```
+
+Don't stop other sessions' runners, and don't use `relay stop --all`.
 
 | What is separate | Details |
 | --- | --- |
@@ -159,7 +184,7 @@ When several agents work in parallel, keep them in separate sessions (names star
 | Build | Shared. Builds to the same DerivedData go one at a time, and during another start's build and while launching from the same build (until ready), relay prints `waiting for another relay start's build` and waits. It can take minutes but isn't a failure |
 | Logs | `~/.relay/logs/start-<time>-<name>-<port>.log` and so on |
 
-If a command without a session uses the file from 3, and other sessions are running, stderr gets `relay: warning: no session selected; using <path>, while sessions <names> are running; pass --session or set RELAY_SESSION`. The exit code doesn't change.
+If a command without a session uses the file from 3, and other sessions are running, stderr gets `relay: warning: no session selected; using <path>, while sessions <names> are running; pass --session or set RELAY_SESSION`. The exit code doesn't change. If you meant your own runner, add `--session` and check which device that operation reached.
 
 `relay status --all [--json]` lists every session and the runner in `~/.relay/runner.json` (`(default)`; `session` is `null` in JSON), with SESSION, STATE, DEVICE, URL, and PID. STATE is `starting`, `running`, `busy`, `no answer`, `rejected`, or `unknown`. The exit code is always 0. `relay stop --session <name>` also stops a session that is still building. See "複数のセッションを並列に動かす" in docs/setup.md of device-relay.
 
@@ -167,13 +192,13 @@ If a command without a session uses the file from 3, and other sessions are runn
 
 | Command | Usage |
 | --- | --- |
-| `screenshot` | `relay screenshot [-o <file>\|-] [--format png\|jpeg] [--quality 0.05-1.0] [--max-size <px>] [--scale <px/pt>]`. Prints the saved file's absolute path as one line (default `$TMPDIR/relay/screenshot-<time>.png`). A `.jpg` / `.jpeg` extension or `--quality` selects JPEG (default quality 0.7). `--max-size` is the pixel count of the longer edge and `--scale` the upper limit of pixels per point; the device shrinks the image (with both, the smaller wins; it never enlarges). When shrunk, stderr gets the image size, the screen size, and px/pt ("Coordinates and orientation" below) |
+| `screenshot` | `relay screenshot [-o <file>\|-] [--format png\|jpeg] [--quality 0.05-1.0] [--max-size <px>] [--scale <px/pt>]`. Prints the saved file's absolute path as one line (default `$TMPDIR/relay/screenshot-<time>.png`). A `.jpg` / `.jpeg` extension or `--quality` selects JPEG (default quality 0.7). `--max-size` is the pixel count of the longer edge and `--scale` the upper limit of pixels per point; the device shrinks the image (with both, the smaller wins; it never enlarges). When shrunk, stderr gets the image size, the screen size, and px/pt ("Coordinates and orientation" below). `--scale 1` gives about 400×870 px on an iPhone (a full-resolution image is 1206×2622 px); on large screens such as an iPad, also add `--max-size 1024` |
 | `source` | `relay source [--format json\|text\|compact] [--filter interactive] [--max-depth <n>] [--bundle-id <id>]`. `--max-depth 0` is the root only. `compact` is one element per line, and `--filter interactive` keeps only the elements you can operate ("Element tree formats" below) |
-| `find` | `relay find <selector> [--limit 20] [--timeout <s>] [--require] [--bundle-id <id>]`. `--limit` is 1–100 and `--timeout` up to 10 seconds. No match is exit code 0 (`"count":0`), or 6 with `--require` |
+| `find` | `relay find <selector> [--limit 20] [--timeout <s>] [--require] [--bundle-id <id>]`. `--limit` is 1–100 and `--timeout` up to 10 seconds. Each match has `type`, `identifier`, `label`, `value`, `frame`, `enabled`, and `index`. No match is exit code 0 (`"count":0`), or 6 with `--require`. For a wait longer than 10 seconds, repeat a short `--timeout` |
 | `tap` | `relay tap (<x> <y> \| <selector>) [--mode private\|xcui] [--timeout <s>] [--bundle-id <id>]`. `--timeout` and `--bundle-id` apply to selectors only |
 | `press` | `relay press (<x> <y> \| <selector>) [--duration 1.0] [--mode private\|xcui] [--timeout <s>] [--bundle-id <id>]` |
 | `swipe` | `relay swipe <x1> <y1> <x2> <y2> [--duration 0.3] [--hold 0.05] [--mode private\|xcui]`. Holds at the start for `--hold` seconds, then moves to the end over `--duration` seconds |
-| `type` | `relay type [<text> \| --stdin] [--key return\|delete\|space]... [--bundle-id <id>]`. `--key` can repeat and is sent in order after the text. It doesn't return until typing finishes (about 15 ms per character on a simulator), and waits for the response up to 30 seconds + 0.1 seconds per character + 1 second per key |
+| `type` | `relay type [<text> \| --stdin] [--key return\|delete\|space]... [--bundle-id <id>]`. `--key` can repeat and is sent in order after the text. It doesn't return until typing finishes (about 15 ms per character on a simulator), and waits for the response up to 30 seconds + 0.1 seconds per character + 1 second per key. For text starting with `-`, put `--` first: `relay type -- -text`. Tap the text field first |
 | `key` | `relay key return\|delete\|space [--bundle-id <id>]` |
 | `button` | `relay button home\|volumeUp\|volumeDown` (volume buttons on physical devices only) |
 | `orientation` | `relay orientation portrait\|portraitUpsideDown\|landscapeLeft\|landscapeRight\|landscape` (`landscape` is an alias for `landscapeLeft`) |
@@ -187,7 +212,11 @@ If a command without a session uses the file from 3, and other sessions are runn
 
 ## Running scenarios (relay run, experimental)
 
-This is an experimental feature. How steps are written and the output may change. Use it to replay fixed or already-confirmed steps in one call.
+This is an experimental feature. How steps are written and the output may change. Use it to replay fixed or already-confirmed steps in one call. Go through an unfamiliar screen one command at a time while observing first.
+
+1. Write the confirmed steps to `<name>.relay` (ask the user whether to keep it in the repository). Where the screen changes, wait with `find <selector> --timeout 5 --require` or `tap … --timeout 5`.
+2. Validate it with `relay run <file> --check`, then replay it with `relay run <file>`.
+3. If it fails, observe the screen where it stopped (screenshot, `relay source --format compact --filter interactive`), fix the selector or wait on line N, and go back to step 2.
 
 ```sh
 relay run steps.relay        # a file (one step per line; blank lines and lines starting with # are ignored)
@@ -205,6 +234,8 @@ relay run steps.relay --check   # validate only (no runner needed, runs nothing;
 - Each step's stdout (including a failed step's `{"ok":false,"code":…}`) goes to stdout as it is, and per-step progress (`relay: [i/n] … ok (… ms)`) and the total go to stderr (`--quiet` removes them). Progress and failure lines mask `type` text as `***`, but the scenario file keeps what is written in it. Don't write passwords the user gave you in a scenario (use `relay type --stdin`, one command at a time).
 
 ## Element tree formats
+
+Normally use shrunk screenshots (`--scale 1`) and filtered trees: full-resolution images and whole trees use up context each time you read them. The screenshot is what the user sees; the tree is what you can address. Use the screenshot to understand the screen and the filtered tree or `find` to choose a selector. To check elements the filter leaves out (headings, result text, disabled buttons), use `relay find <selector>` or `relay source --format compact`; narrow JSON with `jq` or `--max-depth <n>`. All of them target the foreground app unless you pass `--bundle-id`.
 
 | Command | Output | Size at the top of Settings |
 | --- | --- | --- |
@@ -236,6 +267,24 @@ What `--filter interactive` keeps and leaves out:
 - When a name is ambiguous, get a list with `relay find --type <type>` and use its `identifier` or `index`.
 - The tap point is the center of the element's frame (the part overlapping the screen).
 - For an element covered by the keyboard or a sheet, if its frame is on the screen, the tap hits whatever is covering it. Before tapping, confirm with a screenshot that it is visible, and if it is covered, close the keyboard (in some apps `relay key return` closes it) or scroll.
+
+## Exit codes
+
+| Code | Meaning | What to do |
+| --- | --- | --- |
+| 0 | Success | – |
+| 1 | Local failure (runner.json unreadable, device in use, build failure, "already running" from `relay start --background`, and so on; nothing was sent) | Read the reason in the JSON on stdout or the `relay:` line on stderr, and fix it |
+| 2 | Usage error (unknown option, missing or invalid value, incompatible options, invalid session name, and so on). stderr gets only `relay: <error>` and `relay: see relay <command> --help` (no JSON, no stdout) | Fix the command. `relay <command> --help` |
+| 3 | Can't reach the runner (no runner.json, can't connect, `no response within <seconds>s`) | For `no response within`, the runner is still working: wait for `busy` in `relay ping` to become `false` (`launch` / `terminate` wait up to 150 seconds, a long `type` 0.1 seconds per character, so give your own command a longer timeout). After a `launch` timeout, busy can last several more minutes, so if you started the runner yourself, `relay stop` and restarting is faster. Otherwise, `relay status`. No runner.json: `relay start --background …`. runner.json exists but doesn't answer (`relay start` was killed, for example): `relay stop` to clean up, then start. `the OS refused the connection`: relay is inside a sandbox ("Using relay from inside a sandbox"), so neither stop nor start anything |
+| 4 | Token rejected (401). runner.json is stale or belongs to another runner | Check the URL, device, and PID with `relay status`, and `--runner` / `--session` / `$RELAY_RUNNER` / `$RELAY_SESSION` / `~/.relay/runner.json`. If you started it yourself, `relay stop` and restart. Otherwise, ask the user without stopping it |
+| 5 | Busy (409). Another command is running | Wait about a second, or retry once `relay ping` shows `"busy":false` |
+| 6 | Action failed (422): element not found, not unique, disabled, or offscreen; no keyboard focus; the app for `relay launch` isn't installed | Branch on `code` in the JSON on stdout ("List of codes" below). For element failures, read `reason` and `candidates`, observe again, and fix the selector |
+| 7 | Request rejected (400 and other 4xx) | `point_offscreen`: the coordinates are off the screen (read `screen` in `relay health` again; rotating swaps width and height). `touch_mode_unavailable`: drop `--mode` and send it again. `invalid_request` and others: read the error text and fix it |
+| 8 | Runner error (5xx and the like) | Retry once. If it persists, check `relay status` and the logs |
+
+Runner commands always output JSON, exactly one object on stdout whether they succeed or fail (`--json` makes no difference). `relay:` lines on stderr are hints for people, so there is no need to merge them with `2>&1`. The exceptions are `relay screenshot` (one line with the saved path on success; with `-o -` the image is on stdout, so a failure's JSON goes to stderr) and usage errors (exit code 2, no JSON). Options can also be written `--opt=value`, such as `--port=8101`.
+
+Failures on relay's side have the same JSON shape as the runner's: `runner_unavailable` and `runner_timeout` (exit code 3), `runner_info_invalid` and `screenshot_save_failed` (1), `app_not_installed` (6), and so on.
 
 ## When an action fails (exit code 6)
 
@@ -300,7 +349,7 @@ relay swipe 200 700 200 250           # from bottom to top (moves the content up
 relay find --label "Privacy" --type button
 ```
 
-An element off the screen is `offscreen`, so repeat swiping and observing until `find` locates it. Keep swipe start points away from the navigation bar and the home indicator (the top and bottom edges of the screen).
+An element off the screen is `offscreen`, so repeat swiping and observing until `find` locates it. After a swipe, let the momentum scroll stop before tapping (about 2 seconds; this is the one place for a fixed wait, such as a `sleep 2` step in `relay run`): a tap during the scroll only stops it, and the element isn't pressed although `tap` succeeds. Keep swipe start points away from the navigation bar and the home indicator (the top and bottom edges of the screen).
 
 ## The app for trying things out
 
