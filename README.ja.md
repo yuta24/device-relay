@@ -40,7 +40,7 @@ mise use -g github:yuta24/device-relay
 ### 手動でインストールする
 
 ```sh
-VERSION=0.5.0      # https://github.com/yuta24/device-relay/releases の最新のバージョン
+VERSION=0.6.0      # https://github.com/yuta24/device-relay/releases の最新のバージョン
 ARCH=$(uname -m)   # arm64 または x86_64
 NAME=device-relay-v$VERSION-macos-$ARCH
 BASE=https://github.com/yuta24/device-relay/releases/download/v$VERSION
