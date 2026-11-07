@@ -32,8 +32,8 @@ jobs:
             exit 1
           fi
       - name: Test
-        # One test at a time, as in ci.yml: run in parallel on the hosted runner, the tests hang.
-        run: xcrun swift test --no-parallel
+        # As in ci.yml.
+        run: xcrun swift test
         timeout-minutes: 10
       # After the tests, so they run without the secrets and the unlocked keychain.
       - name: Import the signing certificate and the notary key

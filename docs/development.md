@@ -74,7 +74,7 @@ git push origin v0.4.0
 
 タグの push で `.github/workflows/release.yml` が動きます。タグと `RelayVersion.current` が違えば失敗し、同じなら次の順に進みます。どこかで失敗すると、以降は実行されず Release は作られません。
 
-1. `swift test --no-parallel`
+1. `swift test`
 2. 証明書と API キーを一時的な keychain とファイルに取り込む（`$RUNNER_TEMP` の下）
 3. arm64 と x86_64 をビルドして署名する（Hardened Runtime、secure timestamp。`scripts/package.sh --build-only`）
 4. 両方のバイナリを 1 回の提出で公証する（`scripts/notarize.sh`。Accepted でなければ失敗）
