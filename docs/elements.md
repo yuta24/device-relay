@@ -76,7 +76,7 @@ searchField label="Search" placeholder="Search" frame=28,808,346,28
 
 各要素は、セレクタに使う `type`・`identifier`・`label`・`value` と、`placeholder`、`frame`、`selected` を持ちます（子要素はありません）。`relay tap --type button --label General` や `--id` のように、そのままセレクタに使えます。
 
-- 絞り込みはランナー（端末側）で行います。スナップショットの取得はどちらでも同じ時間がかかりますが、ランナーで絞れば JSON に変換して送るのが短い一覧だけで済み、curl などほかのクライアントからも使えます。判定は SwiftPM のテストで確かめられるよう、CLI と共有するソース（`Sources/relay/RunnerElementTree.swift`）に置いています。
+- 絞り込みはランナー（端末側）で行います。スナップショットの取得はどちらでも同じ時間がかかりますが、ランナーで絞れば JSON に変換して送るのが短い一覧だけで済み、curl などほかのクライアントからも使えます。判定は SwiftPM のテストで確かめられるよう、CLI と共有するソース（`Sources/Relay/Shared/RunnerElementTree.swift`）に置いています。
 - XCUI のスナップショットはヒット可能か（`isHittable`）を持たず、要素ごとに問い合わせると遅いので、重なりは近似で判定します。後に続く（＝手前に描かれる）コントロールがタップ位置を覆っていれば外します（iOS 27 の設定アプリでは、下部の検索バーに中心が隠れた最後のセルと、検索欄の中で重なった 2 つの Dictate ボタンの片方が外れます）。コントロールでないシートや覆いの下にある要素は外れません。
 - 一覧から外れても、セレクタは全体のツリーから探します。`--label General` だけでは同じラベルの `staticText` にも一致して `ambiguous` になることがあるので、一覧の `type` も付けるか `--id` を使います。
 

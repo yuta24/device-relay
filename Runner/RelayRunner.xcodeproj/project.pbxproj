@@ -41,18 +41,18 @@
 		222222222222222222222226 /* RelayTouchSynthesizer.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = RelayRunnerUITests/RelayTouchSynthesizer.m; sourceTree = "<group>"; };
 		222222222222222222222227 /* RelayTouchSynthesizer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = RelayRunnerUITests/RelayTouchSynthesizer.h; sourceTree = "<group>"; };
 		222222222222222222222228 /* RelayRunnerUITests-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "RelayRunnerUITests/RelayRunnerUITests-Bridging-Header.h"; sourceTree = "<group>"; };
-		222222222222222222222229 /* RunnerAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/relay/RunnerAuth.swift; sourceTree = "<group>"; };
-		22222222222222222222222A /* RunnerHTTPFraming.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/relay/RunnerHTTPFraming.swift; sourceTree = "<group>"; };
-		22222222222222222222222B /* RunnerRequestValues.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/relay/RunnerRequestValues.swift; sourceTree = "<group>"; };
+		222222222222222222222229 /* RunnerAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/Relay/Shared/RunnerAuth.swift; sourceTree = "<group>"; };
+		22222222222222222222222A /* RunnerHTTPFraming.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/Relay/Shared/RunnerHTTPFraming.swift; sourceTree = "<group>"; };
+		22222222222222222222222B /* RunnerRequestValues.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/Relay/Shared/RunnerRequestValues.swift; sourceTree = "<group>"; };
 		22222222222222222222222F /* RelayActiveApplication.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = RelayRunnerUITests/RelayActiveApplication.m; sourceTree = "<group>"; };
 		22222222222222222222222C /* RelayActiveApplication.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = RelayRunnerUITests/RelayActiveApplication.h; sourceTree = "<group>"; };
-		22222222222222222222222D /* RunnerKeyboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/relay/RunnerKeyboard.swift; sourceTree = "<group>"; };
-		22222222222222222222222E /* RunnerElementTree.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/relay/RunnerElementTree.swift; sourceTree = "<group>"; };
-		222222222222222222222230 /* RunnerCommandGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/relay/RunnerCommandGate.swift; sourceTree = "<group>"; };
-		222222222222222222222231 /* RunnerElementSelector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/relay/RunnerElementSelector.swift; sourceTree = "<group>"; };
-		222222222222222222222232 /* RunnerDisplays.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/relay/RunnerDisplays.swift; sourceTree = "<group>"; };
-		222222222222222222222233 /* RunnerError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/relay/RunnerError.swift; sourceTree = "<group>"; };
-		222222222222222222222234 /* RunnerWindows.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/relay/RunnerWindows.swift; sourceTree = "<group>"; };
+		22222222222222222222222D /* RunnerKeyboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/Relay/Shared/RunnerKeyboard.swift; sourceTree = "<group>"; };
+		22222222222222222222222E /* RunnerElementTree.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/Relay/Shared/RunnerElementTree.swift; sourceTree = "<group>"; };
+		222222222222222222222230 /* RunnerCommandGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/Relay/Shared/RunnerCommandGate.swift; sourceTree = "<group>"; };
+		222222222222222222222231 /* RunnerElementSelector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/Relay/Shared/RunnerElementSelector.swift; sourceTree = "<group>"; };
+		222222222222222222222232 /* RunnerDisplays.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/Relay/Shared/RunnerDisplays.swift; sourceTree = "<group>"; };
+		222222222222222222222233 /* RunnerError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/Relay/Shared/RunnerError.swift; sourceTree = "<group>"; };
+		222222222222222222222234 /* RunnerWindows.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/Relay/Shared/RunnerWindows.swift; sourceTree = "<group>"; };
 		222222222222222222222224 /* RelayRunnerHost.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RelayRunnerHost.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		222222222222222222222225 /* RelayRunnerUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RelayRunnerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */

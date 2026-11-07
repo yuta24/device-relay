@@ -1,6 +1,6 @@
 import Darwin
 import Foundation
-@testable import relay
+@testable import Relay
 import Testing
 
 // relay start --session, and what keeps several relay starts apart. UDIDs and names are dummies.

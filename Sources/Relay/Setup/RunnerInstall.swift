@@ -56,7 +56,7 @@ protocol RunnerSource {
 }
 
 /// The runner project of a device-relay checkout or extracted release (same layout; a release has no commit).
-/// Besides `Runner/`, the project compiles some of the CLI's sources (`../Sources/relay/*.swift`), so those
+/// Besides `Runner/`, the project compiles some of the CLI's sources (`../Sources/Relay/Shared/*.swift`), so those
 /// files are copied too, and `scripts/package.sh` puts them in the release.
 struct CheckoutRunnerSource: RunnerSource {
     var root: URL
@@ -99,7 +99,7 @@ struct CheckoutRunnerSource: RunnerSource {
     }
 
     /// Root-relative paths of the files the project refers to with `path = ../<path>;` (relative to the
-    /// `Runner` group), e.g. `Sources/relay/RunnerAuth.swift`.
+    /// `Runner` group), e.g. `Sources/Relay/Shared/RunnerAuth.swift`.
     static func referencedFiles(pbxproj: String) -> [String] {
         var paths: [String] = []
         for line in pbxproj.split(whereSeparator: \.isNewline) {

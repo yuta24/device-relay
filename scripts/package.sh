@@ -4,8 +4,8 @@
 #
 #   device-relay-v<version>/
 #     bin/relay
-#     Runner/         built by relay start on the user's Mac
-#     Sources/relay/  only the files Runner's project compiles (path = ../Sources/relay/... in its pbxproj)
+#     Runner/                built by relay start on the user's Mac
+#     Sources/Relay/Shared/  only the files Runner's project compiles (path = ../Sources/Relay/Shared/... in its pbxproj)
 #     skills/
 #     LICENSE README.md README.ja.md
 #
@@ -48,7 +48,7 @@ esac
 root=$(cd "$(dirname "$0")/.." && pwd)
 cd "$root"
 
-current=$(sed -n 's/^ *static let current = "\(.*\)"$/\1/p' Sources/relay/RunnerInstall.swift)
+current=$(sed -n 's/^ *static let current = "\(.*\)"$/\1/p' Sources/Relay/Setup/RunnerInstall.swift)
 if [ "$version" != "$current" ]; then
 	echo "package.sh: version $version is not RelayVersion.current ($current)" >&2
 	exit 1

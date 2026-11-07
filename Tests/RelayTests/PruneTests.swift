@@ -1,6 +1,6 @@
 import Darwin
 import Foundation
-@testable import relay
+@testable import Relay
 import Testing
 
 // The cleanup of logs and test results (RelayPrune). Everything is in a temporary directory used as the home.
