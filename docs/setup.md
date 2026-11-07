@@ -22,7 +22,7 @@ device-relay-v<version>/
 | ソース | `git clone` して `make install` | `git pull` して `make install` |
 
 - どの入れ方でも、`relay` は自分の実行ファイルの場所から Runner を見つけるので、`relay install` は要りません。
-- 更新の後の最初の `relay start` は Runner をビルドし直します。DerivedData は Runner の場所ごとに分かれるので（`~/.relay/build/<ディレクトリ名>-<パスのハッシュ>`）、古いバージョンの分は残ります。自動では消さないので、要らなければ手で削除してください。
+- 更新の後の最初の `relay start` は Runner をビルドし直します。DerivedData は Runner の場所ごとに分かれるので（`~/.relay/build/<ディレクトリ名>-<パスのハッシュ>`）、古いバージョンの分は別のディレクトリに残ります。元の Runner がなくなったものと 30 日使っていないものは `relay start` が消します（「[ログとテスト結果の掃除](#ログとテスト結果の掃除)」）。
 - 以前 `relay install` したコピー（`~/.relay/runner`）は、更新の後は使われません。`relay skill install` の取り出し元にもなりません（「[エージェントスキル](cli.md#エージェントスキル)」）。要らなければ `relay uninstall` で削除できます。
 
 ## Runner の用意（relay install）
@@ -315,16 +315,37 @@ STATE は `starting`（boot かビルドの途中で、まだ runner.json がな
 
 ## ログとテスト結果の掃除
 
-ログとテストの結果は使うたびに増えるので、`relay start` が始めに（ポートのロックを取った後、端末を選ぶ前に）古いものを消します。`relay start --background` では起動した側の `relay start` が消します。`relay record start` も `record-` のログを同じように消します（ランナーを動かしたまま何度も録画できるためです）。消すコマンドはなく、普段は意識する必要がありません。
+ログとテストの結果とビルドは使うたびに増えるので、`relay start` が始めに（ポートのロックを取った後、端末を選ぶ前に）古いものを消します。`relay start --background` では起動した側の `relay start` が消します。`relay record start` も `record-` のログを同じように消します（ランナーを動かしたまま何度も録画できるためです。ビルドは消しません）。消すコマンドはなく、普段は意識する必要がありません。
 
 | 対象 | 残すもの |
 | --- | --- |
 | `~/.relay/logs/` の `start-`・`build-`・`runner-`・`record-` のログ | 更新から 7 日以内のものすべてと、種類ごとに新しい 20 件（日数によらず） |
 | `~/.relay/build/*/TestData/port-<port>/Logs/Test/*.xcresult` | ポートごとに新しい 3 個と、更新から 1 時間以内のもの |
 | `~/.relay/build/*/DerivedData-*/Logs/Test/*.xcresult`（以前の relay が書いたもの） | ディレクトリごとに新しい 3 個と、更新から 1 時間以内のもの |
+| `~/.relay/build/<ディレクトリ名>-<パスのハッシュ>`（ディレクトリごと） | 元の Runner プロジェクトがあり、最後に使ってから 30 日以内のもの（下の「ビルドディレクトリ」） |
+
+### ビルドディレクトリ
+
+`relay start` と `relay install --build` は、ビルドディレクトリを作るか使い回すたびに、その直下の `relay-build-dir.json`（`{"root": "<Runner の正規のパス>", "lastUsed": "<ISO 8601 の日時>"}`）を書き直します。`DerivedData-*` の外にあるので、Xcode も Runner のソースのハッシュも読みません。次のどちらかなら、ディレクトリごと消します。消されたものが要るときは、次の `relay start` がビルドし直します。
+
+- **元の Runner がなくなった**: 記録の `root` に `Runner/RelayRunner.xcodeproj` がありません（古いバージョンのディレクトリの削除、`mise prune`、消した worktree など）。外付けボリュームを外しているときも同じ扱いです。
+- **30 日使っていない**: `root` がまだあっても、`lastUsed` から 30 日を過ぎています（`mise` が残している古いバージョンなど）。休みや別の作業の後に戻るには十分で、誤って消してもビルドし直すだけなので、この長さにしています。
+
+記録のないディレクトリ（以前の relay が作ったもの）は、Xcode が書いた `DerivedData-*/info.plist` の `WorkspacePath`（`<root>/Runner/RelayRunner.xcodeproj`）から `root` を読み、元の Runner がなくなっていれば消します。最後に使った日は分からないので、30 日の判定はしません。一度使えば記録が付きます。
+
+次のものは消しません。
+
+- `~/.relay/build/installed`（`relay install` と `relay uninstall` が管理します）と、いま起動している `relay start` のディレクトリ。
+- **使用中のディレクトリ**: 動いている `relay start` はポートのロックを取った直後に自分のディレクトリを `~/.relay/locks/start-<port>.build.json` に書き、runner.json にも `buildDirectory` として書きます。ビルドや起動の途中のものは、ビルドのロック（`~/.relay/locks/build-<ハッシュ>.lock`）でも分かります。
+- **どれを使っているか分からない起動があるとき**: 以前の relay の `relay start` やその runner.json（`relay stop` すれば解消します）、ロックを取った直後の `relay start` がいるときは、どれもそのものかもしれないので、その回はどのビルドディレクトリも消しません。
+- **出どころが確かでないもの**: `root` から求めたディレクトリ名（`info.plist` の場合は `<root の最後の要素>-<12 桁の 16 進数>`）が実際の名前と違うもの、記録も `info.plist` もないもの、シンボリックリンク、`.` で始まる名前のもの。
+
+消すときは、まず `~/.relay/build/.removing-<ランダムな名前>` へ名前を変えてから削除するので、同時に起動した `relay start` が作りかけのディレクトリを見ることはありません。途中で止まって残った `.removing-*` は次の `relay start` が消します。消す量によっては、その回の `relay start` が数秒長くかかります。
+
+### 共通の規則
 
 - **使用中のものは消しません**: ほかの `relay start` がロック（`~/.relay/locks/start-<port>.lock`）を持つポートと、runner.json（セッションのものを含む）が指すポートは使用中とみなします。そのポートの xcresult には触れず、ログは種類ごとに最新の 1 件を残します。何日も静かなランナーのログや、書き込み中でも更新日時が変わらない実行中の xcresult は、この判定で残ります。録画中のログも `~/.relay/recording-<port>.json` が指すので残します。同時に起動した `relay start` が同じものを消しても問題ありません。
-- **ほかのものは消しません**: 上の名前の形でないファイル（利用者のファイルなど）、`LogStoreManifest.plist`（消した xcresult の記載は、次に実行するときに xcodebuild 自身が外します）、DerivedData のビルド成果物、ロックファイル、`~/.relay/sessions/<名前>/`、`relay screenshot` や `relay record` が書いた出力ファイルです。
+- **ほかのものは消しません**: 上の名前の形でないファイル（利用者のファイルなど）、`LogStoreManifest.plist`（消した xcresult の記載は、次に実行するときに xcodebuild 自身が外します）、残すビルドディレクトリの中のビルド成果物、ロックファイル、`~/.relay/sessions/<名前>/`、`relay screenshot` や `relay record` が書いた出力ファイルです。
 - **失敗しても止めません**: 消せないものがあれば `relay: cannot remove …` を 1 行出して続けます。何かを消せたときは何も表示しません。
 - **調べたいログを残すには**: 原因の調査に使うログや xcresult は `~/.relay` の外へコピーしてください。すぐ消したいときは、ランナーが動いていなければ `~/.relay/logs` の中身を削除してかまいません。
 

@@ -128,3 +128,37 @@ enum RunnerProject {
         return directories
     }
 }
+
+/// `~/.relay/build/<dir>/relay-build-dir.json`: which runner project a build directory belongs to and when
+/// relay last used it, for `RelayPrune`. It sits next to `DerivedData-*`, so neither Xcode nor the runner
+/// source hash (files under the root) ever reads it.
+///
+/// A runner that stays up for longer than `RelayPrune.buildUnusedMaxAge` is not refreshed while it runs: being
+/// in use protects its directory until it stops, and at worst the next start after that rebuilds.
+struct BuildDirectoryRecord: Codable, Equatable {
+    static let fileName = "relay-build-dir.json"
+
+    /// The canonical path of the runner root.
+    var root: String
+    var lastUsed: Date
+
+    static func url(buildDirectory: URL) -> URL {
+        buildDirectory.appendingPathComponent(fileName)
+    }
+
+    static func read(buildDirectory: URL) -> BuildDirectoryRecord? {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return (try? Data(contentsOf: url(buildDirectory: buildDirectory))).flatMap { try? decoder.decode(BuildDirectoryRecord.self, from: $0) }
+    }
+
+    /// Records that `root` uses `buildDirectory` now, creating the directory for a first build.
+    static func refresh(root: URL, buildDirectory: URL, now: Date = Date()) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        encoder.dateEncodingStrategy = .iso8601
+        let data = try encoder.encode(BuildDirectoryRecord(root: root.canonicalFileURL.path, lastUsed: now))
+        try FileManager.default.createDirectory(at: buildDirectory, withIntermediateDirectories: true)
+        try data.write(to: url(buildDirectory: buildDirectory), options: .atomic)
+    }
+}

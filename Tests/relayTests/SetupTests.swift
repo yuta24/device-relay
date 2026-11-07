@@ -1364,6 +1364,8 @@ struct RunnerInstallTests {
         #expect(RunnerBuildStamp.read(derivedData: derivedData) == RunnerBuildStamp(sourceHash: sourceHash, relayVersion: RelayVersion.current,
                                                                                           bundleIDPrefix: "dev.devicerelay.local"))
         #expect(builds.first?.args.contains("RELAY_BUNDLE_ID_PREFIX=dev.devicerelay.local") == true)
+        let record = BuildDirectoryRecord.read(buildDirectory: derivedData.deletingLastPathComponent())
+        #expect(record?.root == tree.installed.canonicalFileURL.path)
         let files = try FileManager.default.contentsOfDirectory(atPath: logs.path)
         #expect(files.count == 1)
         #expect(files.first?.hasPrefix("build-") == true && files.first?.hasSuffix(".log") == true)
