@@ -5,6 +5,18 @@ import Testing
 
 // relay start --session, and what keeps several relay starts apart. UDIDs and names are dummies.
 
+/// Runs `body` on a thread of its own, after `delay`. Not on `DispatchQueue.global()`: a test that waits for `body`
+/// blocks one of the threads Swift Testing runs tests on, which are as many as the CPUs. On a runner with 3 CPUs, three
+/// such tests blocked all of them, and the global queue then got no thread to run `body` on, so none ever finished.
+private func onThreadOfItsOwn(after delay: TimeInterval = 0, _ body: @escaping @Sendable () -> Void) {
+    Thread.detachNewThread {
+        if delay > 0 {
+            Thread.sleep(forTimeInterval: delay)
+        }
+        body()
+    }
+}
+
 struct DeviceLockTests {
     @Test func oneStartPerDevice() throws {
         let home = try temporaryHome()
@@ -266,7 +278,7 @@ struct AutoSelectRaceTests {
         let held = Locked<[StartLock]>([])
         for index in 0..<8 {
             group.enter()
-            DispatchQueue.global().async {
+            onThreadOfItsOwn {
                 start.wait()
                 do {
                     let lock = try StartLock.acquire(device: phone, session: "s\(index)", home: home)
@@ -348,7 +360,7 @@ struct BuildLockTests {
         var lines: [String] = []
         let waited = try waiter.wait(for: .shared, isCancelled: { false }, info: { line in
             lines.append(line)
-            DispatchQueue.global().asyncAfter(deadline: .now() + 0.05) { builder.release() }
+            onThreadOfItsOwn(after: 0.05) { builder.release() }
         })
         #expect(waited)
         #expect(lines.count == 1)
@@ -363,7 +375,7 @@ struct BuildLockTests {
         let builder = try makeLock(home)
         defer { builder.release() }
         let waited = try builder.wait(for: .exclusive, isCancelled: { false }, info: { _ in
-            DispatchQueue.global().asyncAfter(deadline: .now() + 0.05) { launching.release() }
+            onThreadOfItsOwn(after: 0.05) { launching.release() }
         })
         #expect(waited)
     }
