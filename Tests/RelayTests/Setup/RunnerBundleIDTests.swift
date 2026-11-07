@@ -72,7 +72,7 @@ struct RunnerBundleIDTests {
     }
 
     @Test func theProjectFileUsesThePrefix() throws {
-        let pbxproj = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let pbxproj = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("Runner/RelayRunner.xcodeproj/project.pbxproj")
         let contents = try String(contentsOf: pbxproj, encoding: .utf8)
         #expect(contents.contains(#"PRODUCT_BUNDLE_IDENTIFIER = "$(RELAY_BUNDLE_ID_PREFIX).RelayRunnerHost";"#))

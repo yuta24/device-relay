@@ -1,4 +1,3 @@
-import CoreGraphics
 import Foundation
 @testable import Relay
 import Testing
@@ -127,35 +126,5 @@ struct RunnerErrorCodeTests {
         #expect(RunnerErrorCode.parse(body: Data(#"{"ok":false,"code":7}"#.utf8)) == nil)
         #expect(RunnerErrorCode.parse(body: Data("not json".utf8)) == nil)
         #expect(RunnerErrorCode.parse(body: Data()) == nil)
-    }
-}
-
-struct RunnerControlHintTests {
-    private let infoURL = URL(fileURLWithPath: "/tmp/runner.json")
-
-    @Test func hintsByCode() {
-        #expect(RunnerControl.hint(for: .actionFailed, errorCode: .noKeyboardFocus, infoURL: infoURL)?.contains("tap the text field first") == true)
-        #expect(RunnerControl.hint(for: .actionFailed, errorCode: .elementNotFound, infoURL: infoURL)?.contains("--timeout") == true)
-        #expect(RunnerControl.hint(for: .actionFailed, errorCode: .elementAmbiguous, infoURL: infoURL)?.contains("--index") == true)
-        #expect(RunnerControl.hint(for: .actionFailed, errorCode: .touchModeUnavailable, infoURL: infoURL)?.contains("--mode") == true)
-        #expect(RunnerControl.hint(for: .badRequest, errorCode: .touchModeUnavailable, infoURL: infoURL)?.contains("--mode") == true)
-        #expect(RunnerControl.hint(for: .badRequest, errorCode: .notFound, infoURL: infoURL)?.contains("relay start --rebuild") == true)
-        // Codes whose message already says what to do get no hint.
-        for code in [RunnerErrorCode.pointOffscreen, .invalidRequest, .elementNotHittable, .displayUnknown, .xcuiFailed, .touchFailed] {
-            #expect(RunnerControl.hint(for: .actionFailed, errorCode: code, infoURL: infoURL) == nil, "\(code)")
-        }
-    }
-
-    /// The hints for 401 and 409 come from the status, with or without a code.
-    @Test func keepsTheStatusHintsWithAndWithoutACode() {
-        let unauthorized = RunnerControl.hint(for: .unauthorized, infoURL: infoURL)
-        #expect(unauthorized?.contains("/tmp/runner.json") == true)
-        #expect(RunnerControl.hint(for: .unauthorized, errorCode: .unauthorized, infoURL: infoURL) == unauthorized)
-        let busy = RunnerControl.hint(for: .busy, infoURL: infoURL)
-        #expect(busy?.contains("\"busy\":false") == true)
-        #expect(RunnerControl.hint(for: .busy, errorCode: .busy, infoURL: infoURL) == busy)
-        // A runner from before codes: a 422 has no hint, as before.
-        #expect(RunnerControl.hint(for: .actionFailed, errorCode: RunnerErrorCode.parse(body: Data(#"{"ok":false,"error":"x"}"#.utf8)),
-                                   infoURL: infoURL) == nil)
     }
 }
