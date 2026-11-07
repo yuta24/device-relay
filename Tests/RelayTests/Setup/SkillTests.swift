@@ -22,6 +22,7 @@ struct SkillTests {
             }
             try write("checkout skill", to: checkout.appendingPathComponent(AgentSkill.path + "/SKILL.md"))
             try write("checkout reference", to: checkout.appendingPathComponent(AgentSkill.path + "/reference.md"))
+            try write("checkout topic", to: checkout.appendingPathComponent(AgentSkill.path + "/references/topic.md"))
             if installed {
                 let runner = RunnerProject.installedRoot(home: home)
                 try FileManager.default.createDirectory(at: runner.appendingPathComponent(RunnerProject.projectPath), withIntermediateDirectories: true)
@@ -130,6 +131,7 @@ struct SkillTests {
         try tree.run(["install", "--global"])
         #expect(tree.text(tree.globalSkill) == "checkout skill")
         #expect(tree.text(tree.globalSkill, "reference.md") == "checkout reference")
+        #expect(tree.text(tree.globalSkill, "references/topic.md") == "checkout topic")
         #expect(SkillInstallRecord.read(directory: tree.globalSkill)?.commit == String(repeating: "c", count: 40))
 
         #expect(throws: SetupError.self) { try tree.run(["install"], checkout: false) }
@@ -323,6 +325,7 @@ struct SkillTests {
                                        output: { lines.append($0) }) == 0)
         #expect(tree.text(tree.installedSkill) == "checkout skill")
         #expect(tree.text(tree.installedSkill, "reference.md") == "checkout reference")
+        #expect(tree.text(tree.installedSkill, "references/topic.md") == "checkout topic")
         #expect(lines.last == "the device-relay agent skill is in \(tree.installedSkill.path); relay skill install adds it to a project")
         #expect(try tree.run(["install"], checkout: false).lines.first?.contains("from \(tree.installedSkill.path)") == true)
     }
