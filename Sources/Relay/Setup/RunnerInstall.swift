@@ -2,7 +2,7 @@ import Foundation
 
 enum RelayVersion {
     /// Recorded by `relay install`; a different value in the record means the installed runner is out of date.
-    static let current = "0.4.0"
+    static let current = "0.5.0"
 }
 
 /// What `relay install` records in `~/.relay/runner/install.json`.
