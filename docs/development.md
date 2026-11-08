@@ -12,6 +12,34 @@ xcrun swift test
 xcrun swift run relay doctor
 ```
 
+## CI のカバレッジ計測
+
+push（main）と pull request の CLI ジョブで、Xcode 26・27 のそれぞれについて
+`swift test --enable-code-coverage` を実行します。Actions のジョブサマリーに
+全体・領域別・ファイル別の結果を表示し、`coverage-<image>` artifact に生の LLVM JSON、
+`summary.json`、`summary.md` を30日間保存します。実行ごとの artifact で推移を比較できます。
+artifact の保存方法は [GitHub の公式ドキュメント](https://docs.github.com/en/actions/tutorials/store-and-share-data) を参照してください。
+
+集計対象は `Sources/Relay/**/*.swift`（`main.swift` を含む）のみです。
+テスト、生成コード、端末側 Runner は含みません。行・関数・region のカバレッジを計測します。
+region は LLVM の実行領域であり、分岐カバレッジとは異なります。
+
+`scripts/coverage-thresholds.json` の全体の行・関数・region 下限と領域別の行下限を
+下回ると CI が失敗します。初期下限はコミット `4c60eb3` のローカル計測を基に、
+環境差を考慮して少し切り下げています。Xcode ごとの初回 CI 結果は確認してください。
+これは固定下限で、直前実行からのすべての低下を検出するものではありません。
+テストを追加して安定して改善した際には、同じ PR で下限も引き上げてください。
+閾値を下げる場合は、その理由と検証への影響を PR に記載してください。
+新しい Swift ファイルが計測結果から欠落した場合も失敗します。
+
+ローカルで同じチェックを実行するには:
+
+```sh
+xcrun swift test --enable-code-coverage
+python3 -m unittest discover -s scripts -p 'test_*.py'
+python3 scripts/coverage.py "$(xcrun swift test --show-codecov-path)" --output coverage
+```
+
 ## ランナーを手動で起動する
 
 手動で起動する場合（リポジトリのルートで）:

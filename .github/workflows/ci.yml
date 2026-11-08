@@ -38,8 +38,21 @@ jobs:
       - name: Test
         # In parallel, which takes about 5 seconds here. The limit ends a test that hangs: the hosted runners
         # have 3 CPUs, so three tests that block their threads waiting for each other can stop the whole run.
-        run: xcrun swift test
+        run: xcrun swift test --enable-code-coverage
         timeout-minutes: 10
+      - name: Check coverage
+        run: |
+          python3 -m unittest discover -s scripts -p 'test_*.py'
+          coverage_path="$(xcrun swift test --show-codecov-path)"
+          python3 scripts/coverage.py "$coverage_path" --output coverage
+      - name: Save coverage reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.image }}
+          path: coverage/
+          if-no-files-found: warn
+          retention-days: 30
 
   runner:
     name: Runner (${{ matrix.xcode }}, simulator build)

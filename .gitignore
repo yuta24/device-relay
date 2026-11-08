@@ -4,3 +4,5 @@
 xcuserdata/
 .DS_Store
 dist/
+coverage/
+__pycache__/
