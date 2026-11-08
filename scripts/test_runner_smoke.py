@@ -104,3 +104,22 @@ sys.exit(result)
                 kill.assert_called_once()
                 self.assertEqual(process.wait.call_count, 2)
                 self.assertFalse(session_directory.exists())
+
+    def test_cleanup_removes_owned_session_even_when_simulator_delete_fails(self):
+        command = ("xcrun", "simctl", "delete", "OWNED-UDID")
+        for error in (subprocess.CalledProcessError(1, command), subprocess.TimeoutExpired(command, 120)):
+            with self.subTest(error=type(error).__name__), tempfile.TemporaryDirectory() as directory:
+                diagnostics = Path(directory)
+                session_directory = diagnostics / "owned-session"
+                session_directory.mkdir()
+                (session_directory / "runner.json").write_text("{}")
+                existing_session = diagnostics / "existing-session"
+                existing_session.mkdir()
+                with patch("runner_smoke.subprocess.run", return_value=subprocess.CompletedProcess([], 0)), \
+                     patch("runner_smoke.run", side_effect=error) as delete:
+                    with self.assertRaises(type(error)) as raised:
+                        cleanup(None, "relay", "owned-session", {}, diagnostics, "OWNED-UDID", session_directory)
+                    delete.assert_called_once_with(*command, capture_output=True)
+                    self.assertIs(raised.exception, error)
+                    self.assertFalse(session_directory.exists())
+                    self.assertTrue(existing_session.is_dir())

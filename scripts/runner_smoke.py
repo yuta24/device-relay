@@ -125,10 +125,12 @@ def cleanup(process, binary, session, environment, diagnostics, udid, directory)
         try:
             subprocess.run(["xcrun", "simctl", "shutdown", udid], capture_output=True, timeout=60)
         finally:
-            run("xcrun", "simctl", "delete", udid, capture_output=True)
-            # Only this UUID-named session, after its owned processes/device are stopped.
-            if directory.exists():
-                shutil.rmtree(directory)
+            try:
+                run("xcrun", "simctl", "delete", udid, capture_output=True)
+            finally:
+                # Only remove this run's UUID-named session.
+                if directory.exists():
+                    shutil.rmtree(directory)
 
 
 def smoke(cancellation):
