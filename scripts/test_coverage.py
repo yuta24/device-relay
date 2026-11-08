@@ -1,6 +1,6 @@
 import tempfile
-from pathlib import Path
 import unittest
+from pathlib import Path
 
 from coverage import METRICS, report
 
@@ -20,7 +20,9 @@ class CoverageTests(unittest.TestCase):
         self.thresholds = {"total": {m: 80 for m in METRICS}, "areas": {"Shared": 80}}
 
     def test_filters_tests_and_accepts_exact_floor(self):
-        excluded = dict(self.entry, filename=str(self.root.parent / "Tests/Example.swift"))
+        excluded = dict(
+            self.entry, filename=str(self.root.parent / "Tests/Example.swift")
+        )
         self.export["data"][0]["files"].append(excluded)
         result, markdown = report(self.export, self.thresholds, self.root)
         self.assertEqual(result["total"]["lines"]["count"], 10)
@@ -29,10 +31,12 @@ class CoverageTests(unittest.TestCase):
 
     def test_uses_weighted_counts_instead_of_average_percentages(self):
         (self.root / "Shared/Other.swift").touch()
-        self.export["data"][0]["files"].append({
-            "filename": str(self.root / "Shared/Other.swift"),
-            "summary": {m: {"count": 90, "covered": 90} for m in METRICS},
-        })
+        self.export["data"][0]["files"].append(
+            {
+                "filename": str(self.root / "Shared/Other.swift"),
+                "summary": {m: {"count": 90, "covered": 90} for m in METRICS},
+            }
+        )
         result, _ = report(self.export, self.thresholds, self.root)
         self.assertEqual(result["total"]["lines"]["percent"], 98)
 
@@ -62,7 +66,9 @@ class CoverageTests(unittest.TestCase):
     def test_new_areas_require_floors_even_when_fully_exported(self):
         self.add_source("New/Example.swift")
         self.add_source("Another/Example.swift")
-        with self.assertRaisesRegex(ValueError, "missing coverage floors for areas: Another, New"):
+        with self.assertRaisesRegex(
+            ValueError, "missing coverage floors for areas: Another, New"
+        ):
             report(self.export, self.thresholds, self.root)
 
     def test_new_area_with_floor_passes(self):

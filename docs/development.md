@@ -14,7 +14,7 @@ xcrun swift run relay doctor
 
 変更後の CLI の一括検証は、リポジトリ内で `mise run check` を実行します。
 初回は `mise trust` と `mise install --locked` を実行してください。
-Swift の整形検査、Workflow・Shell の静的検査、カバレッジ付き Swift テストと Python テストを実行し、Swift テスト成功後に
+Swift・Python の整形検査、Python・Workflow・Shell の静的検査、カバレッジ付き Swift テストと Python テストを実行し、Swift テスト成功後に
 カバレッジ下限を検証します。Python テストは独立して並列実行できます。
 いずれかが失敗するとタスク全体が失敗します。CI の CLI ジョブも同じタスクを使います。
 結果は `coverage/` に出力します。端末側 Runner のビルドとシミュレータ動作は CI の別ジョブで検証します。
@@ -25,18 +25,20 @@ Swift の整形検査、Workflow・Shell の静的検査、カバレッジ付き
 | --- | --- |
 | `mise run build` | CLI のビルド |
 | `mise run test:swift` | Swift テストとカバレッジ計測（ビルドも含む） |
-| `mise run test:python` | カバレッジ集計スクリプトの Python テスト |
+| `mise run test:python` | カバレッジ集計・ツール更新確認・Runnerスモークの Python テスト |
 | `mise run coverage` | Swift テストを実行してからカバレッジ下限を検証 |
 | `mise run lint:workflow` | 全 Workflow を actionlint で検査（埋め込み Shell の ShellCheck も含む） |
 | `mise run lint:shell` | `scripts/*.sh` を ShellCheck で検査 |
 | `mise run format` | Swift ソースと Package.swift を自動整形 |
 | `mise run lint:swift` | 同じ設定で整形漏れを検査（ファイルは変更しない） |
+| `mise run format:python` | Python スクリプトのimport順序と書式を Ruff で自動整形 |
+| `mise run lint:python` | Python の静的検査と整形チェック（ファイルは変更しない） |
 | `mise run check` | 静的検査、Python テスト、Swift テストとカバレッジ検証を一括実行 |
 | `mise run test:package` | 署名なしの arm64・Intel 配布パッケージを生成・検証 |
 | `mise run test:runner` | 専用シミュレータでRunnerの起動・認証・ping・停止を検証 |
 | `mise run tools:outdated` | プロジェクトのツール更新候補を確認（候補があれば終了コード1） |
 
-`check` は `lint:swift`・`lint:workflow`・`lint:shell`・`coverage`・`test:python` に、`coverage` は `test:swift` に依存します。
+`check` は `lint:swift`・`lint:python`・`lint:workflow`・`lint:shell`・`coverage`・`test:python` に、`coverage` は `test:swift` に依存します。
 `swift test` がビルドも行うため、`check` から `build` を別途呼び出すことはありません。
 `test:package` は Release ビルドを行うため `check` には含めず、CI の専用ジョブで実行します。
 PR では `Sources/`・`Runner/`・`skills/`・`scripts/`・`Package.swift`・`Makefile`・mise 設定とロック・
@@ -60,6 +62,20 @@ Runner と両ターゲットでコンパイルする `Sources/Relay/Shared/` は
 
 初回の一括整形コミットは `.git-blame-ignore-revs` に記録しています。
 ローカルでも履歴調査から除外する場合は `git config blame.ignoreRevsFile .git-blame-ignore-revs` を実行してください。
+
+### Python の静的検査・整形
+
+Ruff 0.17.4 を mise と `mise.lock` で固定しています。
+`mise run format:python` でimport順序を整えてから整形し、`mise run lint:python` で
+静的検査と整形チェックを行います。CI も `check` 経由で同じ検査を実行します。
+対象はテストを含む `scripts/` の Python ファイルです。
+
+設定は `ruff.toml` に置き、Python 3.14を対象に基本的な構文・名前の検査
+（`E4`・`E7`・`E9`・`F`）とimport順序（`I`）を有効にしています。
+書式は4スペース・行長88・LFを使用し、`.editorconfig` にも4スペース・LF・末尾改行を定義しています。
+`format:python` の自動修正はimport順序と整形のみです。
+未使用importなどの指摘は `lint:python` で確認して修正してください。
+Ruff のキャッシュ `.ruff_cache/` は Git の管理対象外です。
 
 ### 配布パッケージのスモークテスト
 
@@ -132,7 +148,7 @@ Release は以下のとおり、Xcode のバージョンとビルド番号を明
 mise run check
 ```
 
-`mise.lock` はプロジェクトの4ツールについて、`macos-arm64`（Apple Silicon）と
+`mise.lock` はプロジェクトの5ツールについて、`macos-arm64`（Apple Silicon）と
 `macos-x64`（Intel）のバージョン・取得先 URL・SHA-256 チェックサムを管理します。
 CI の mise セットアップにも `--locked` を指定しています。未記録のプラットフォームや
 バージョンでは、取得先を自動解決せずインストールを失敗させます。
@@ -153,7 +169,7 @@ mise run check
 ## mise 管理ツールの更新確認
 
 `mise run tools:outdated` は `mise outdated --bump --no-global --json` を使い、
-Python・actionlint・ShellCheck・SwiftFormat の更新候補を調べます。グローバルのツールは対象外です。
+Python・actionlint・ShellCheck・SwiftFormat・Ruff の更新候補を調べます。グローバルのツールは対象外です。
 完全固定バージョンにも更新候補を出すため `--bump` を使用し、メジャー更新も含みます。
 通常の `check` には含めず、ネットワークを使う保守タスクとして分けています。
 
