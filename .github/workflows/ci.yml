@@ -51,7 +51,7 @@ jobs:
           mise exec -- python3 scripts/coverage.py "$coverage_path" --output coverage
       - name: Save coverage reports
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: coverage-${{ matrix.image }}
           path: coverage/
