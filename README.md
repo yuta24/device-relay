@@ -80,9 +80,10 @@ mise install --locked
 mise run check
 ```
 
-`check` lints workflows and shell scripts, runs Swift and Python tests, and enforces coverage floors, using the same task as CI.
+`check` checks Swift formatting, lints workflows and shell scripts, runs Swift and Python tests, and enforces coverage floors, using the same task as CI.
 `mise.lock` records tool download URLs and checksums for Apple Silicon and Intel Macs.
 For individual tasks (`build`, `test:swift`, `test:python`, `coverage`, `lint:workflow`, and `lint:shell`), see [Development](docs/development.md).
+Run `mise run format` to format Swift code, or `mise run lint:swift` to check it without making changes.
 Run `mise run test:package` separately to build and smoke-test unsigned release packages.
 Use `mise run tools:outdated` to report tool update candidates; the same check runs weekly in Actions. It does not update versions automatically.
 

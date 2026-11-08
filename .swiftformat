@@ -1,0 +1,7 @@
+# Keep formatting independent of the selected Xcode. Start with whitespace rules;
+# syntax rewrites and coding-convention rules are deliberately not enabled.
+--swift-version 6.2
+--language-mode 6
+--indent 2
+--linebreaks lf
+--rules blankLinesAtEndOfScope,blankLinesAtStartOfScope,consecutiveBlankLines,consecutiveSpaces,indent,linebreakAtEndOfFile,linebreaks,spaceAroundBraces,spaceAroundBrackets,spaceAroundComments,spaceAroundGenerics,spaceAroundOperators,spaceAroundParens,spaceInsideBraces,spaceInsideBrackets,spaceInsideGenerics,spaceInsideParens,trailingSpace

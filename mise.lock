@@ -36,6 +36,23 @@ url = "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_
 url_api = "https://api.github.com/repos/rhysd/actionlint/releases/assets/384924880"
 provenance = "github-attestations"
 
+[[tools."github:nicklockwood/SwiftFormat"]]
+version = "0.64.6"
+backend = "github:nicklockwood/SwiftFormat"
+specifiers = ["0.64.6"]
+
+[tools."github:nicklockwood/SwiftFormat"."platforms.macos-arm64"]
+checksum = "sha256:70e6b2057647fb1c54d620ebbb6649274de56534c57f91f67461a129ebaaba3e"
+checksum_source = "mise-versions"
+url = "https://github.com/nicklockwood/SwiftFormat/releases/download/0.64.6/swiftformat.zip"
+url_api = "https://api.github.com/repos/nicklockwood/SwiftFormat/releases/assets/716496056"
+
+[tools."github:nicklockwood/SwiftFormat"."platforms.macos-x64"]
+checksum = "sha256:70e6b2057647fb1c54d620ebbb6649274de56534c57f91f67461a129ebaaba3e"
+checksum_source = "mise-versions"
+url = "https://github.com/nicklockwood/SwiftFormat/releases/download/0.64.6/swiftformat.zip"
+url_api = "https://api.github.com/repos/nicklockwood/SwiftFormat/releases/assets/716496056"
+
 [[tools.python]]
 version = "3.14.3"
 backend = "core:python"
