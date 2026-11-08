@@ -38,3 +38,7 @@ run = "actionlint -pyflakes="
 [tasks."lint:shell"]
 description = "Lint release shell scripts"
 run = "shellcheck scripts/*.sh"
+
+[tasks."test:package"]
+description = "Build and smoke-test unsigned arm64 and Intel release packages"
+run = "bash scripts/package-smoke.sh arm64 x86_64"

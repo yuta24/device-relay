@@ -55,6 +55,74 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
+  package-changes:
+    name: Check package inputs
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.changes.outputs.run }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Detect package-related changes
+        id: changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "$EVENT_NAME" != pull_request ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" -- \
+            Sources Runner skills scripts Package.swift Makefile mise.toml mise.lock \
+            .github/workflows/ci.yml .github/workflows/release.yml)
+          if [ -n "$changed" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  package:
+    name: Release package smoke test
+    needs: package-changes
+    if: needs.package-changes.outputs.run == 'true'
+    runs-on: xcode-27
+    timeout-minutes: 20
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up development tools
+        uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+        with:
+          version: 2026.11.4
+          install_args: --locked
+      - name: Identify the package build toolchain
+        id: toolchain
+        run: |
+          {
+            printf '%s\n' "$DEVELOPER_DIR"
+            xcodebuild -version
+            xcrun swift --version
+            xcrun --sdk macosx --show-sdk-version
+            sw_vers
+          } > "$RUNNER_TEMP/package-toolchain.txt"
+          fingerprint=$(shasum -a 256 "$RUNNER_TEMP/package-toolchain.txt" | awk '{print $1}')
+          cat "$RUNNER_TEMP/package-toolchain.txt"
+          echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
+      - name: Cache Swift release build
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .build
+          key: swift-package-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.fingerprint }}-release-arm64-x86_64-${{ hashFiles('Package.swift', 'Package.resolved') }}-${{ hashFiles('Sources/**/*.swift', 'scripts/package.sh') }}
+          restore-keys: |
+            swift-package-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.fingerprint }}-release-arm64-x86_64-${{ hashFiles('Package.swift', 'Package.resolved') }}-
+      - name: Smoke-test unsigned release packages
+        run: mise run test:package
+
   runner:
     name: Runner (${{ matrix.xcode }}, simulator build)
     strategy:

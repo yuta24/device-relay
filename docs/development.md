@@ -30,9 +30,40 @@ Workflow・Shell の静的検査、カバレッジ付き Swift テストと Pyth
 | `mise run lint:workflow` | 全 Workflow を actionlint で検査（埋め込み Shell の ShellCheck も含む） |
 | `mise run lint:shell` | `scripts/*.sh` を ShellCheck で検査 |
 | `mise run check` | 静的検査、Python テスト、Swift テストとカバレッジ検証を一括実行 |
+| `mise run test:package` | 署名なしの arm64・Intel 配布パッケージを生成・検証 |
 
 `check` は `lint:workflow`・`lint:shell`・`coverage`・`test:python` に、`coverage` は `test:swift` に依存します。
 `swift test` がビルドも行うため、`check` から `build` を別途呼び出すことはありません。
+`test:package` は Release ビルドを行うため `check` には含めず、CI の専用ジョブで実行します。
+PR では `Sources/`・`Runner/`・`skills/`・`scripts/`・`Package.swift`・`Makefile`・mise 設定とロック・
+CI／Release Workflow の変更時に実行し、文書だけの変更では省略します。`main` への push では毎回実行します。
+同じビルドディレクトリを使うため、ローカルで `check` と `test:package` を同時実行しないでください。
+
+### 配布パッケージのスモークテスト
+
+```sh
+mise run test:package
+```
+
+リリースと同じ `scripts/package.sh` で両アーキテクチャの tarball と `.sha256` を生成し、
+リポジトリ外の空白を含む一時パスへコピー・展開して検証します。署名用の環境変数は除去します。
+チェックサム、アーカイブのトップディレクトリ、実行権限、バイナリのアーキテクチャ、
+Runner・スキル・文書の全追跡ファイルと Xcode プロジェクトが参照する共有ソースの内容を確認します。
+ホストと同じアーキテクチャでは、展開した CLI の `--version` と `--help` も実行します。
+別アーキテクチャの実行確認、署名・公証、実機操作は対象外です。
+
+CI のパッケージ専用ジョブでは `.build` を `actions/cache` で保存します。
+OS・ホストアーキテクチャ・Xcode のパスとビルド番号・Swift・macOS SDK・macOS バージョン・
+Release 構成と対象アーキテクチャの組・Package 定義でキャッシュを分離します。
+同じ条件なら直近のソース版のキャッシュも復元し、Swift が必要な再ビルドを行います。
+キャッシュ命中時も、パッケージ生成とスモークテストは毎回実行します。
+CLI のテスト用 `.build` や Runner の DerivedData とは共有しません。
+初回やツールチェーン更新時はキャッシュミスになります。実際の短縮効果は CI で確認します。
+正式な Release Workflow はこのキャッシュを復元・保存せず、毎回ビルドして署名・公証します。
+
+生成物は `dist/` に残し、一時展開先は終了時に削除します。
+`package.sh` は配布ファイルを `HEAD` から取得するため、同梱ファイルの変更を検証するときは
+先にコミットしてください。ネイティブ向けだけ試す場合は `bash scripts/package-smoke.sh` で実行できます。
 
 actionlint 1.7.12 と ShellCheck 0.11.0 は `mise.toml` で固定しています。
 既存チェックアウトでは `mise install --locked` で追加ツールをインストールしてください。
