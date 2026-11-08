@@ -80,10 +80,11 @@ mise install --locked
 mise run check
 ```
 
-`check` は CI と同じタスクで Swift の整形検査、Workflow・Shell の静的検査、Swift・Python のテストとカバレッジ下限チェックを実行します。
+`check` は CI と同じタスクで Swift・Python の整形検査、Python・Workflow・Shell の静的検査、Swift・Python のテストとカバレッジ下限チェックを実行します。
 `mise.lock` に Apple Silicon・Intel Mac 向けのツール取得先とチェックサムを記録しています。
-個別タスク（`build`・`test:swift`・`test:python`・`coverage`・`lint:workflow`・`lint:shell`）は[開発者向けドキュメント](docs/development.md)を参照してください。
+個別タスク（`build`・`test:swift`・`test:python`・`coverage`・`lint:python`・`lint:workflow`・`lint:shell`）は[開発者向けドキュメント](docs/development.md)を参照してください。
 Swift の自動整形は `mise run format`、変更せずに検査する場合は `mise run lint:swift` を実行します。
+Python は Ruff を使い、`mise run format:python` でimport順序と書式を整え、`mise run lint:python` で変更せずに静的検査・整形チェックを行います。
 署名なし配布パッケージの生成とスモークテストは、別途 `mise run test:package` で実行します。
 専用シミュレータでRunnerの起動・認証・ping・停止を検証する場合は、別途 `mise run test:runner` を実行します。
 `mise run tools:outdated` でツールの更新候補を確認できます。同じ確認を Actions でも週次実行し、バージョンは自動変更しません。

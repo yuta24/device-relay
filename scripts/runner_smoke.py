@@ -4,7 +4,6 @@ import contextlib
 import fcntl
 import json
 import os
-from pathlib import Path
 import shutil
 import signal
 import socket
@@ -15,9 +14,12 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
-
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+# relay stop allows 180 seconds for the launcher, plus its own setup/cleanup.
+STOP_TIMEOUT = 240
+DEVICE_TYPE = "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro"
 
 
 class Cancelled(Exception):
@@ -28,6 +30,7 @@ class Cancelled(Exception):
 
 class Cancellation:
     """Turn SIGINT/SIGTERM into exceptions, deferring during resource acquisition/cleanup."""
+
     def __init__(self):
         self.requested = None
         self.deferred = 0
@@ -51,7 +54,9 @@ class Cancellation:
             self.deferred -= 1
 
     def __enter__(self):
-        self.previous = {sig: signal.getsignal(sig) for sig in (signal.SIGINT, signal.SIGTERM)}
+        self.previous = {
+            sig: signal.getsignal(sig) for sig in (signal.SIGINT, signal.SIGTERM)
+        }
         for sig in self.previous:
             signal.signal(sig, self.receive)
         return self
@@ -69,15 +74,28 @@ def simulator_target(runtimes, sdk):
     def version(value):
         parts = tuple(int(part) for part in value.split("."))
         return parts + (0,) * (3 - len(parts))
-    candidates = [r for r in runtimes if r.get("isAvailable")
-                  and ".iOS-" in r["identifier"] and version(r["version"]) <= version(sdk)]
-    for runtime in sorted(candidates, key=lambda r: version(r["version"]), reverse=True):
-        devices = sorted(runtime.get("supportedDeviceTypes", []),
-                         key=lambda d: (not d["identifier"].endswith(".iPhone-17-Pro"), d["identifier"]))
-        for device in devices:
-            if device.get("productFamily") == "iPhone":
-                return device["identifier"], runtime["identifier"]
-    raise RuntimeError(f"no available iPhone runtime compatible with simulator SDK {sdk}")
+
+    candidates = [
+        r
+        for r in runtimes
+        if r.get("isAvailable")
+        and ".iOS-" in r["identifier"]
+        and version(r["version"]) <= version(sdk)
+        and any(
+            device["identifier"] == DEVICE_TYPE
+            and device.get("productFamily") == "iPhone"
+            for device in r.get("supportedDeviceTypes", [])
+        )
+    ]
+    if candidates:
+        # Resolve equal OS versions by identifier, never simctl's enumeration order.
+        runtime = max(
+            candidates, key=lambda r: (version(r["version"]), r["identifier"])
+        )
+        return DEVICE_TYPE, runtime["identifier"]
+    raise RuntimeError(
+        f"no available iPhone 17 Pro runtime compatible with simulator SDK {sdk}"
+    )
 
 
 def ping(url, token=None):
@@ -100,14 +118,25 @@ def group_exists(pid):
         return False
 
 
+def stop(binary, session, environment, log, *, check=True):
+    return subprocess.run(
+        [str(binary), "stop", "--session", session],
+        env=environment,
+        stdout=log,
+        stderr=subprocess.STDOUT,
+        timeout=STOP_TIMEOUT,
+        check=check,
+        text=True,
+    )
+
+
 def cleanup(process, binary, session, environment, diagnostics, udid, directory):
     try:
         if process is not None:
             try:
                 if process.poll() is None:
                     with (diagnostics / "cleanup.log").open("w") as log:
-                        subprocess.run([str(binary), "stop", "--session", session], env=environment,
-                                       stdout=log, stderr=subprocess.STDOUT, timeout=90)
+                        stop(binary, session, environment, log, check=False)
             finally:
                 # Reap a stopped launcher before probing its group. On macOS a
                 # group containing only an unreaped zombie can report EPERM.
@@ -123,7 +152,9 @@ def cleanup(process, binary, session, environment, diagnostics, udid, directory)
                 process.wait(timeout=15)
     finally:
         try:
-            subprocess.run(["xcrun", "simctl", "shutdown", udid], capture_output=True, timeout=60)
+            subprocess.run(
+                ["xcrun", "simctl", "shutdown", udid], capture_output=True, timeout=120
+            )
         finally:
             try:
                 run("xcrun", "simctl", "delete", udid, capture_output=True)
@@ -137,9 +168,20 @@ def smoke(cancellation):
     environment = dict(os.environ)
     for key in ("RELAY_RUNNER", "RELAY_SESSION", "RELAY_HOME"):
         environment.pop(key, None)
-    binary = Path(run("xcrun", "swift", "build", "--show-bin-path", capture_output=True).stdout.strip()) / "relay"
-    sdk = run("xcrun", "--sdk", "iphonesimulator", "--show-sdk-version", capture_output=True).stdout.strip()
-    runtimes = json.loads(run("xcrun", "simctl", "list", "runtimes", "--json", capture_output=True).stdout)["runtimes"]
+    binary = (
+        Path(
+            run(
+                "xcrun", "swift", "build", "--show-bin-path", capture_output=True
+            ).stdout.strip()
+        )
+        / "relay"
+    )
+    sdk = run(
+        "xcrun", "--sdk", "iphonesimulator", "--show-sdk-version", capture_output=True
+    ).stdout.strip()
+    runtimes = json.loads(
+        run("xcrun", "simctl", "list", "runtimes", "--json", capture_output=True).stdout
+    )["runtimes"]
     device, runtime = simulator_target(runtimes, sdk)
     session = "smoke-" + uuid.uuid4().hex
     directory = Path.home() / ".relay/sessions" / session
@@ -151,20 +193,45 @@ def smoke(cancellation):
     try:
         # Record ownership before a pending signal can raise and enter cleanup.
         with cancellation.defer():
-            udid = run("xcrun", "simctl", "create", session, device, runtime, capture_output=True).stdout.strip()
+            udid = run(
+                "xcrun",
+                "simctl",
+                "create",
+                session,
+                device,
+                runtime,
+                capture_output=True,
+            ).stdout.strip()
         cancellation.check()
         with (diagnostics / "start.log").open("w") as log:
             with cancellation.defer():
                 process = subprocess.Popen(
-                    [str(binary), "start", "--udid", udid, "--simulator", "--session", session,
-                     "--project", str(ROOT), "--ready-timeout", "240"],
-                    cwd=ROOT, env=environment, stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
+                    [
+                        str(binary),
+                        "start",
+                        "--udid",
+                        udid,
+                        "--simulator",
+                        "--session",
+                        session,
+                        "--project",
+                        str(ROOT),
+                        "--ready-timeout",
+                        "240",
+                    ],
+                    cwd=ROOT,
+                    env=environment,
+                    stdout=log,
+                    stderr=subprocess.STDOUT,
+                    start_new_session=True,
                 )
             cancellation.check()
             deadline = time.monotonic() + 600
             while not info_path.exists():
                 if process.poll() is not None:
-                    raise RuntimeError("relay start exited before ready; see runner-smoke/start.log")
+                    raise RuntimeError(
+                        "relay start exited before ready; see runner-smoke/start.log"
+                    )
                 if time.monotonic() >= deadline:
                     raise TimeoutError("runner did not become ready within 600 seconds")
                 time.sleep(0.25)
@@ -177,21 +244,36 @@ def smoke(cancellation):
                     if time.monotonic() >= deadline:
                         raise TimeoutError("runner.json was not completed")
                     time.sleep(0.1)
-            if info["udid"] != udid or info["pid"] != process.pid or info["session"] != session:
+            if (
+                info["udid"] != udid
+                or info["pid"] != process.pid
+                or info["session"] != session
+            ):
                 raise RuntimeError("runner state does not belong to this smoke test")
             for token in (None, "invalid-smoke-token"):
                 status, body = ping(info["url"], token)
                 if status != 401 or body.get("ok") is not False:
-                    raise RuntimeError("runner did not reject missing/invalid authentication")
+                    raise RuntimeError(
+                        "runner did not reject missing/invalid authentication"
+                    )
             status, body = ping(info["url"], info["token"])
             if status != 200 or body.get("ok") is not True:
                 raise RuntimeError("authenticated ping failed")
-            run(str(binary), "ping", "--session", session, env=environment, capture_output=True)
+            run(
+                str(binary),
+                "ping",
+                "--session",
+                session,
+                env=environment,
+                capture_output=True,
+            )
             with (diagnostics / "stop.log").open("w") as log_stop:
-                run(str(binary), "stop", "--session", session, env=environment, stdout=log_stop, stderr=subprocess.STDOUT)
+                stop(binary, session, environment, log_stop)
             process.wait(timeout=30)
             if info_path.exists() or group_exists(process.pid):
-                raise RuntimeError("runner state or launch process group remains after stop")
+                raise RuntimeError(
+                    "runner state or launch process group remains after stop"
+                )
             with (directory / "session.lock").open() as lock:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             address = urllib.parse.urlsplit(info["url"])
@@ -199,12 +281,16 @@ def smoke(cancellation):
                 connection.settimeout(5)
                 if connection.connect_ex((address.hostname, address.port)) == 0:
                     raise RuntimeError("runner still listens after stop")
-            print("PASS: Runner startup, authentication, ping, stop, state removal and lock release")
+            print(
+                "PASS: Runner startup, authentication, ping, stop, state removal and lock release"
+            )
     finally:
         # Further cancellation signals must not interrupt the owned-resource teardown.
         with cancellation.defer():
             if udid is not None:
-                cleanup(process, binary, session, environment, diagnostics, udid, directory)
+                cleanup(
+                    process, binary, session, environment, diagnostics, udid, directory
+                )
     cancellation.check()
 
 

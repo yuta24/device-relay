@@ -8,3 +8,4 @@ coverage/
 __pycache__/
 tool-updates/
 runner-smoke/
+.ruff_cache/

@@ -6,6 +6,7 @@ python = "3.14.3"
 "aqua:rhysd/actionlint" = "1.7.12"
 "aqua:koalaman/shellcheck" = "0.11.0"
 "github:nicklockwood/SwiftFormat" = "0.64.6"
+"aqua:astral-sh/ruff" = "0.17.4"
 
 [tasks.build]
 description = "Build the CLI"
@@ -16,7 +17,7 @@ description = "Build and run Swift tests with code coverage"
 run = "xcrun swift test --enable-code-coverage"
 
 [tasks."test:python"]
-description = "Run coverage reporter tests"
+description = "Run Python maintenance script tests"
 run = "python3 -m unittest discover -s scripts -p 'test_*.py'"
 
 [tasks.coverage]
@@ -30,7 +31,7 @@ python3 scripts/coverage.py "$coverage_path" --output coverage
 
 [tasks.check]
 description = "Lint workflows/scripts, run Swift/Python tests, and enforce coverage floors"
-depends = ["lint:swift", "lint:workflow", "lint:shell", "coverage", "test:python"]
+depends = ["lint:swift", "lint:python", "lint:workflow", "lint:shell", "coverage", "test:python"]
 
 [tasks.format]
 description = "Format tracked Swift source directories and the package manifest"
@@ -39,6 +40,14 @@ run = "swiftformat Package.swift Sources Tests Runner --cache ignore"
 [tasks."lint:swift"]
 description = "Check Swift formatting without modifying files"
 run = "swiftformat Package.swift Sources Tests Runner --lint --cache ignore"
+
+[tasks."format:python"]
+description = "Sort imports and format Python maintenance scripts"
+run = ["ruff check scripts --select I --fix", "ruff format scripts"]
+
+[tasks."lint:python"]
+description = "Lint Python maintenance scripts and check formatting without modifying files"
+run = ["ruff check scripts", "ruff format scripts --check"]
 
 [tasks."lint:workflow"]
 description = "Lint GitHub Actions workflows, including embedded shell scripts"

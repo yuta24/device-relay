@@ -144,6 +144,7 @@ struct BackgroundArgumentsTests {
     #expect(try Arguments.parse(["help", "status"]) == .commandHelp("status"))
     #expect(Arguments.usage(for: "status").contains("relay status [--json]"))
     #expect(Arguments.usage(for: "stop").contains("not running"))
+    #expect(Arguments.usage(for: "stop").contains("within \(Int(RunnerStop.exitTimeout)) seconds"))
     #expect(Arguments.usage.contains("relay start --background"))
     #expect(Arguments.usage.contains("relay stop [--runner <PATH> | --session <NAME> | --all]"))
   }

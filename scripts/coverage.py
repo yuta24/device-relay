@@ -3,9 +3,8 @@
 import argparse
 import json
 import os
-from pathlib import Path
 import sys
-
+from pathlib import Path
 
 METRICS = ("lines", "functions", "regions")
 ROOT = Path(__file__).resolve().parents[1]
@@ -38,37 +37,69 @@ def report(export, thresholds, source_root):
             if name in files:
                 raise ValueError(f"duplicate coverage entry: {name}")
             files[name] = entry
-    expected = {p.relative_to(source_root).as_posix() for p in source_root.rglob("*.swift")}
+    expected = {
+        p.relative_to(source_root).as_posix() for p in source_root.rglob("*.swift")
+    }
     if not expected or set(files) != expected:
-        raise ValueError(f"source coverage mismatch: missing={sorted(expected - set(files))}, "
-                         f"unexpected={sorted(set(files) - expected)}")
+        raise ValueError(
+            f"source coverage mismatch: missing={sorted(expected - set(files))}, "
+            f"unexpected={sorted(set(files) - expected)}"
+        )
     total = aggregate(files.values())
-    areas = {area: aggregate([f for name, f in files.items() if name.startswith(area + "/")])
-             for area in sorted({name.split('/')[0] for name in files if '/' in name})}
+    areas = {
+        area: aggregate([f for name, f in files.items() if name.startswith(area + "/")])
+        for area in sorted({name.split("/")[0] for name in files if "/" in name})
+    }
     unconfigured = sorted(set(areas) - set(thresholds["areas"]))
     if unconfigured:
-        raise ValueError(f"missing coverage floors for areas: {', '.join(unconfigured)}")
+        raise ValueError(
+            f"missing coverage floors for areas: {', '.join(unconfigured)}"
+        )
     failures = []
     for metric, floor in thresholds["total"].items():
         if total[metric]["percent"] < floor:
-            failures.append(f"Total {metric}: {total[metric]['percent']:.2f}% < {floor:.2f}%")
+            failures.append(
+                f"Total {metric}: {total[metric]['percent']:.2f}% < {floor:.2f}%"
+            )
     for area, floor in thresholds["areas"].items():
         if area not in areas:
             raise ValueError(f"missing coverage area: {area}")
         if areas[area]["lines"]["percent"] < floor:
-            failures.append(f"{area} lines: {areas[area]['lines']['percent']:.2f}% < {floor:.2f}%")
-    summary = ["## CLI coverage", "", "Sources/Relay only, including main.swift. Tests, generated code and the device Runner are excluded.",
-               "", "| Area | Lines | Functions | Regions | Line floor |", "| --- | ---: | ---: | ---: | ---: |"]
+            failures.append(
+                f"{area} lines: {areas[area]['lines']['percent']:.2f}% < {floor:.2f}%"
+            )
+    summary = [
+        "## CLI coverage",
+        "",
+        "Sources/Relay only, including main.swift. Tests, generated code and the device Runner are excluded.",
+        "",
+        "| Area | Lines | Functions | Regions | Line floor |",
+        "| --- | ---: | ---: | ---: | ---: |",
+    ]
     for name, metrics in [("Total", total), *areas.items()]:
-        cells = [f"{metrics[m]['percent']:.2f}% ({metrics[m]['covered']}/{metrics[m]['count']})" for m in METRICS]
-        floor = thresholds["total"]["lines"] if name == "Total" else thresholds["areas"][name]
+        cells = [
+            f"{metrics[m]['percent']:.2f}% ({metrics[m]['covered']}/{metrics[m]['count']})"
+            for m in METRICS
+        ]
+        floor = (
+            thresholds["total"]["lines"]
+            if name == "Total"
+            else thresholds["areas"][name]
+        )
         summary.append(f"| {name} | " + " | ".join(cells) + f" | {floor}% |")
     summary += ["", "### Files", "", "| File | Line coverage |", "| --- | ---: |"]
     for name, f in sorted(files.items()):
         line = f["summary"]["lines"]
         percent = 100 * line["covered"] / line["count"] if line["count"] else 0
-        summary.append(f"| {name} | {percent:.2f}% ({line['covered']}/{line['count']}) |")
-    summary += ["", "Coverage floors: " + ("FAILED" if failures else "passed"), *[f"- {f}" for f in failures], ""]
+        summary.append(
+            f"| {name} | {percent:.2f}% ({line['covered']}/{line['count']}) |"
+        )
+    summary += [
+        "",
+        "Coverage floors: " + ("FAILED" if failures else "passed"),
+        *[f"- {f}" for f in failures],
+        "",
+    ]
     return {"total": total, "areas": areas, "failures": failures}, "\n".join(summary)
 
 
