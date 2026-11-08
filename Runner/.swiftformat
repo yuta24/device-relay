@@ -1,1 +1,2 @@
+# Runner targets compile in Swift 5 language mode.
 --language-mode 5
