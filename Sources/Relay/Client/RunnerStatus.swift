@@ -236,8 +236,8 @@ enum RunnerStatus {
 /// `relay stop`: stops the `relay start` in runner.json the way Ctrl-C does, or, when that process is
 /// gone, the runner itself, and removes the stale runner.json.
 enum RunnerStop {
-  /// `relay start` needs up to 10 seconds to stop the runner, then shuts down a simulator it booted.
-  static let exitTimeout: TimeInterval = 60
+  /// Allow the simulator's full shutdown budget plus runner shutdown, tool termination and scheduling.
+  static let exitTimeout: TimeInterval = CommandTimeout.simctlShutdown + 60
 
   static func run(_ options: RunnerStopOptions) -> Int32 {
     if options.all {

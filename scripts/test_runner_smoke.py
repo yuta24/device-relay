@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from runner_smoke import cleanup, simulator_target
+from runner_smoke import cleanup, simulator_target, stop
 
 
 def runtime(version, available=True):
@@ -19,6 +19,22 @@ def runtime(version, available=True):
 
 
 class RunnerSmokeTests(unittest.TestCase):
+    def test_stop_gives_cli_time_to_finish_and_keeps_failure_checks(self):
+        for check in (True, False):
+            with (
+                self.subTest(check=check),
+                patch("runner_smoke.subprocess.run") as command,
+            ):
+                log = Mock()
+                stop("relay", "owned-session", {}, log, check=check)
+                self.assertEqual(
+                    command.call_args.args[0],
+                    ["relay", "stop", "--session", "owned-session"],
+                )
+                # Outer watchdog must exceed relay stop's 180-second launcher wait.
+                self.assertGreater(command.call_args.kwargs["timeout"], 180)
+                self.assertEqual(command.call_args.kwargs["check"], check)
+
     def test_signals_during_acquisition_preserve_ownership_and_finish_cleanup(self):
         # Use a child interpreter so real signals never target the test runner.
         program = r"""
@@ -109,7 +125,7 @@ sys.exit(result)
 
             def command(args, **kwargs):
                 if args[0] == "relay":
-                    raise subprocess.TimeoutExpired(args, 90)
+                    raise subprocess.TimeoutExpired(args, kwargs["timeout"])
                 return subprocess.CompletedProcess(args, 0)
 
             with (

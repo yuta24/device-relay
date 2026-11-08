@@ -16,7 +16,7 @@ enum BackgroundStart {
   /// The detached `relay start` reports a startup failure itself; this is on top of `--ready-timeout`.
   static let readyGrace: TimeInterval = 15
   /// How long the detached process gets to stop the runner and shut down a simulator after SIGTERM.
-  static let stopTimeout: TimeInterval = 60
+  static let stopTimeout: TimeInterval = RunnerStop.exitTimeout
 
   /// What the log of the detached `relay start` says so far.
   struct Progress: Equatable {

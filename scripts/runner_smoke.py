@@ -17,6 +17,8 @@ import uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+# relay stop allows 180 seconds for the launcher, plus its own setup/cleanup.
+STOP_TIMEOUT = 240
 
 
 class Cancelled(Exception):
@@ -117,19 +119,25 @@ def group_exists(pid):
         return False
 
 
+def stop(binary, session, environment, log, *, check=True):
+    return subprocess.run(
+        [str(binary), "stop", "--session", session],
+        env=environment,
+        stdout=log,
+        stderr=subprocess.STDOUT,
+        timeout=STOP_TIMEOUT,
+        check=check,
+        text=True,
+    )
+
+
 def cleanup(process, binary, session, environment, diagnostics, udid, directory):
     try:
         if process is not None:
             try:
                 if process.poll() is None:
                     with (diagnostics / "cleanup.log").open("w") as log:
-                        subprocess.run(
-                            [str(binary), "stop", "--session", session],
-                            env=environment,
-                            stdout=log,
-                            stderr=subprocess.STDOUT,
-                            timeout=90,
-                        )
+                        stop(binary, session, environment, log, check=False)
             finally:
                 # Reap a stopped launcher before probing its group. On macOS a
                 # group containing only an unreaped zombie can report EPERM.
@@ -146,7 +154,7 @@ def cleanup(process, binary, session, environment, diagnostics, udid, directory)
     finally:
         try:
             subprocess.run(
-                ["xcrun", "simctl", "shutdown", udid], capture_output=True, timeout=60
+                ["xcrun", "simctl", "shutdown", udid], capture_output=True, timeout=120
             )
         finally:
             try:
@@ -261,15 +269,7 @@ def smoke(cancellation):
                 capture_output=True,
             )
             with (diagnostics / "stop.log").open("w") as log_stop:
-                run(
-                    str(binary),
-                    "stop",
-                    "--session",
-                    session,
-                    env=environment,
-                    stdout=log_stop,
-                    stderr=subprocess.STDOUT,
-                )
+                stop(binary, session, environment, log_stop)
             process.wait(timeout=30)
             if info_path.exists() or group_exists(process.pid):
                 raise RuntimeError(

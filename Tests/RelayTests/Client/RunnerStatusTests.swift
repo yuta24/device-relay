@@ -5,6 +5,12 @@ import Testing
 // relay start --background, relay status, and relay stop. UDIDs and names are dummies.
 
 struct RunnerStatusTests {
+  @Test func stopWaitsBeyondTheSimulatorAndRunnerShutdownBudgets() {
+    // The caller must not time out while relay start is still within its shutdown budget.
+    #expect(RunnerStop.exitTimeout > CommandTimeout.simctlShutdown + 10)
+    #expect(BackgroundStart.stopTimeout > CommandTimeout.simctlShutdown + 10)
+  }
+
   private let info = RunnerInfo(url: "http://127.0.0.1:8100/", token: "t", udid: "SIM", name: "iPhone 17 Pro",
                                 pid: 1234, startedAt: Date(timeIntervalSince1970: 1_800_000_000))
 

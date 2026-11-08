@@ -255,7 +255,7 @@ extension Arguments {
       Sends SIGTERM to the relay start in runner.json (like Ctrl-C: it shuts the runner down, shuts down a
       simulator it booted, and removes runner.json) and waits for it to exit. Without that process, it
       sends /shutdown to the runner and removes the stale runner.json. Prints "stopped", or "not running"
-      if nothing runs; both exit 0. Exits 1 if relay start does not exit within 60 seconds.
+      if nothing runs; both exit 0. Exits 1 if relay start does not exit within \(Int(RunnerStop.exitTimeout)) seconds.
       A recording of that runner (relay record) is finished first; its path goes to stderr.
       A session still booting or building (no runner.json yet) is stopped too. --all stops every session
       and the runner of ~/.relay/runner.json, one after the other, printing <session>: stopped for each;
