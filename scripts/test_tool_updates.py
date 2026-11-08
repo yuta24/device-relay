@@ -45,3 +45,30 @@ class ToolUpdatesTests(unittest.TestCase):
         with patch("tool_updates.subprocess.run", side_effect=subprocess.CalledProcessError(1, "mise")):
             with self.assertRaises(subprocess.CalledProcessError):
                 main()
+
+    def test_zero_exit_with_unchecked_tools_fails_and_preserves_partial_results(self):
+        candidate = {"python": {"requested": "3.14.3", "current": "3.14.3", "latest": "3.15.2"}}
+        for updates in [{}, candidate]:
+            for warning in ["Could not check 1 tool for updates: python@3.14.3",
+                            "Could not check 2 tools for updates: python@3.14.3, aqua:rhysd/actionlint@1.7.12"]:
+                with self.subTest(updates=updates, warning=warning), tempfile.TemporaryDirectory() as directory:
+                    summary = Path(directory) / "actions-summary.md"
+                    result = subprocess.CompletedProcess([], 0, json.dumps(updates), "mise WARN  " + warning + "\n")
+                    with contextlib.chdir(directory), patch.dict(os.environ, {"GITHUB_STEP_SUMMARY": str(summary)}), \
+                         patch("tool_updates.subprocess.run", return_value=result), \
+                         contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                        self.assertTrue(main())
+                        markdown = summary.read_text()
+                        self.assertIn("Update check incomplete", markdown)
+                        self.assertIn(warning, markdown)
+                        self.assertNotIn("All project tools are up to date", markdown)
+                        self.assertEqual(markdown, Path("tool-updates/summary.md").read_text())
+                        self.assertEqual(json.loads(Path("tool-updates/updates.json").read_text()), updates)
+
+    def test_unrelated_warning_does_not_fail_a_complete_check(self):
+        result = subprocess.CompletedProcess([], 0, "{}", "mise WARN  unrelated configuration notice\n")
+        with tempfile.TemporaryDirectory() as directory, contextlib.chdir(directory), \
+             patch.dict(os.environ, {"GITHUB_STEP_SUMMARY": str(Path(directory) / "summary.md")}), \
+             patch("tool_updates.subprocess.run", return_value=result), \
+             contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            self.assertFalse(main())
