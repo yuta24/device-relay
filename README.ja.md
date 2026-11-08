@@ -84,6 +84,7 @@ mise run check
 `mise.lock` に Apple Silicon・Intel Mac 向けのツール取得先とチェックサムを記録しています。
 個別タスク（`build`・`test:swift`・`test:python`・`coverage`・`lint:workflow`・`lint:shell`）は[開発者向けドキュメント](docs/development.md)を参照してください。
 署名なし配布パッケージの生成とスモークテストは、別途 `mise run test:package` で実行します。
+`mise run tools:outdated` でツールの更新候補を確認できます。同じ確認を Actions でも週次実行し、バージョンは自動変更しません。
 
 ## クイックスタート
 

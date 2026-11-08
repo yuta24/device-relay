@@ -84,6 +84,7 @@ mise run check
 `mise.lock` records tool download URLs and checksums for Apple Silicon and Intel Macs.
 For individual tasks (`build`, `test:swift`, `test:python`, `coverage`, `lint:workflow`, and `lint:shell`), see [Development](docs/development.md).
 Run `mise run test:package` separately to build and smoke-test unsigned release packages.
+Use `mise run tools:outdated` to report tool update candidates; the same check runs weekly in Actions. It does not update versions automatically.
 
 ## Quick start
 

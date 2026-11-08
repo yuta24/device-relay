@@ -42,3 +42,7 @@ run = "shellcheck scripts/*.sh"
 [tasks."test:package"]
 description = "Build and smoke-test unsigned arm64 and Intel release packages"
 run = "bash scripts/package-smoke.sh arm64 x86_64"
+
+[tasks."tools:outdated"]
+description = "Report project tool update candidates; exit 1 when updates are available"
+run = "python3 scripts/tool_updates.py"
