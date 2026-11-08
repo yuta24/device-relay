@@ -31,6 +31,7 @@ Workflow・Shell の静的検査、カバレッジ付き Swift テストと Pyth
 | `mise run lint:shell` | `scripts/*.sh` を ShellCheck で検査 |
 | `mise run check` | 静的検査、Python テスト、Swift テストとカバレッジ検証を一括実行 |
 | `mise run test:package` | 署名なしの arm64・Intel 配布パッケージを生成・検証 |
+| `mise run tools:outdated` | プロジェクトのツール更新候補を確認（候補があれば終了コード1） |
 
 `check` は `lint:workflow`・`lint:shell`・`coverage`・`test:python` に、`coverage` は `test:swift` に依存します。
 `swift test` がビルドも行うため、`check` から `build` を別途呼び出すことはありません。
@@ -122,6 +123,26 @@ mise lock --platform macos-arm64,macos-x64
 mise install --locked
 mise run check
 ```
+
+## mise 管理ツールの更新確認
+
+`mise run tools:outdated` は `mise outdated --bump --no-global --json` を使い、
+Python・actionlint・ShellCheck の更新候補を調べます。グローバルのツールは対象外です。
+完全固定バージョンにも更新候補を出すため `--bump` を使用し、メジャー更新も含みます。
+通常の `check` には含めず、ネットワークを使う保守タスクとして分けています。
+
+`.github/workflows/tool-updates.yml` が毎週月曜00:23 UTC（日本時間09:23）に実行します。
+Actions の `mise tool updates` から手動実行も可能です（定期実行は main へのマージ後に有効）。
+候補がある場合はジョブを失敗させ、サマリーに現在版・候補版を表示し、
+`tool-updates/` の JSON と Markdown を30日間 artifact として保存します。
+候補がなければ成功します。取得エラーも失敗として扱い、更新なしとは判断しません。
+通知を受け取るかどうかは個人の GitHub Actions 通知設定に従います。
+
+この処理はバージョンやロックファイルの変更、自動PR作成、マージを行いません。
+候補が見つかったら、リリースノートと公開脆弱性情報を確認し、`mise.toml` の対象バージョンを変更して
+`mise lock --platform macos-arm64,macos-x64`、`mise install --locked`、`mise run check` を実行します。
+配布処理への影響がある場合は `mise run test:package` も実行し、設定とロックを同じPRで更新してください。
+ツールのバージョンを記載した README・開発ドキュメントも更新します。
 
 ## ランナーを手動で起動する
 
