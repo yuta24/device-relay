@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from runner_smoke import cleanup, simulator_target, stop
+from runner_smoke import DEVICE_TYPE, cleanup, simulator_target, stop
 
 
 def runtime(version, available=True):
@@ -14,7 +14,9 @@ def runtime(version, available=True):
         + version.replace(".", "-"),
         "version": version,
         "isAvailable": available,
-        "supportedDeviceTypes": [{"identifier": "iphone", "productFamily": "iPhone"}],
+        "supportedDeviceTypes": [
+            {"identifier": DEVICE_TYPE, "productFamily": "iPhone"}
+        ],
     }
 
 
@@ -61,7 +63,7 @@ def command(*args, **kwargs):
     if "runtimes" in args:
         data = {"runtimes": [{"identifier": "com.apple.CoreSimulator.SimRuntime.iOS-27-2",
                 "version": "27.2", "isAvailable": True,
-                "supportedDeviceTypes": [{"identifier": "iphone", "productFamily": "iPhone"}]}]}
+                "supportedDeviceTypes": [{"identifier": smoke.DEVICE_TYPE, "productFamily": "iPhone"}]}]}
         return subprocess.CompletedProcess(args, 0, json.dumps(data))
     return subprocess.CompletedProcess(args, 0, "27.2" if "--show-sdk-version" in args else "/tmp/bin")
 
@@ -113,8 +115,41 @@ sys.exit(result)
         )
 
     def test_missing_compatible_runtime_fails_instead_of_skipping(self):
-        with self.assertRaisesRegex(RuntimeError, "no available iPhone runtime"):
+        with self.assertRaisesRegex(RuntimeError, "no available iPhone 17 Pro runtime"):
             simulator_target([runtime("27.2")], "26.6")
+
+    def test_same_version_device_specific_runtime_never_changes_the_device(self):
+        generic = runtime("27.2")
+        duo = runtime("27.2")
+        duo["identifier"] += "-iPhone19-4"
+        duo["supportedDeviceTypes"] = [
+            {
+                "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-Duo",
+                "productFamily": "iPhone",
+            }
+        ]
+        for options in ([duo, generic], [generic, duo]):
+            with self.subTest(order=[item["identifier"] for item in options]):
+                self.assertEqual(
+                    simulator_target(options, "27.2"),
+                    (DEVICE_TYPE, generic["identifier"]),
+                )
+
+    def test_uses_latest_runtime_that_supports_iphone_17_pro(self):
+        newer = runtime("27.2")
+        newer["supportedDeviceTypes"] = []
+        older = runtime("26.2")
+        self.assertEqual(
+            simulator_target([newer, older], "27.2"), (DEVICE_TYPE, older["identifier"])
+        )
+
+    def test_other_iphone_models_do_not_substitute_for_iphone_17_pro(self):
+        unsupported = runtime("27.2")
+        unsupported["supportedDeviceTypes"] = [
+            {"identifier": "iphone", "productFamily": "iPhone"}
+        ]
+        with self.assertRaisesRegex(RuntimeError, "no available iPhone 17 Pro runtime"):
+            simulator_target([unsupported], "27.2")
 
     def test_cleanup_deletes_only_owned_device_even_after_stop_timeout(self):
         with tempfile.TemporaryDirectory() as directory:

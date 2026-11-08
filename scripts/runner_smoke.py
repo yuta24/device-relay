@@ -19,6 +19,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 # relay stop allows 180 seconds for the launcher, plus its own setup/cleanup.
 STOP_TIMEOUT = 240
+DEVICE_TYPE = "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro"
 
 
 class Cancelled(Exception):
@@ -80,22 +81,20 @@ def simulator_target(runtimes, sdk):
         if r.get("isAvailable")
         and ".iOS-" in r["identifier"]
         and version(r["version"]) <= version(sdk)
-    ]
-    for runtime in sorted(
-        candidates, key=lambda r: version(r["version"]), reverse=True
-    ):
-        devices = sorted(
-            runtime.get("supportedDeviceTypes", []),
-            key=lambda d: (
-                not d["identifier"].endswith(".iPhone-17-Pro"),
-                d["identifier"],
-            ),
+        and any(
+            device["identifier"] == DEVICE_TYPE
+            and device.get("productFamily") == "iPhone"
+            for device in r.get("supportedDeviceTypes", [])
         )
-        for device in devices:
-            if device.get("productFamily") == "iPhone":
-                return device["identifier"], runtime["identifier"]
+    ]
+    if candidates:
+        # Resolve equal OS versions by identifier, never simctl's enumeration order.
+        runtime = max(
+            candidates, key=lambda r: (version(r["version"]), r["identifier"])
+        )
+        return DEVICE_TYPE, runtime["identifier"]
     raise RuntimeError(
-        f"no available iPhone runtime compatible with simulator SDK {sdk}"
+        f"no available iPhone 17 Pro runtime compatible with simulator SDK {sdk}"
     )
 
 
