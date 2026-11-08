@@ -70,6 +70,17 @@ make install   # xcrun swift build -c release, and link it to ~/.local/bin/relay
 
 The link points into the checkout, and relay builds the Runner from there. After updating the repository, run `make install` again. `make uninstall` removes the link only if it points into this checkout.
 
+To validate changes, install [mise](https://mise.jdx.dev/) and run these commands from the checkout:
+
+```sh
+mise trust
+mise install
+mise run check
+```
+
+`check` runs Swift and Python tests and enforces coverage floors, using the same task as CI.
+For individual tasks (`build`, `test:swift`, `test:python`, and `coverage`), see [Development](docs/development.md).
+
 ## Quick start
 
 ```sh

@@ -70,6 +70,17 @@ make install   # xcrun swift build -c release して ~/.local/bin/relay にリ�
 
 リンクはチェックアウトを指し、relay はそこの Runner をビルドします。リポジトリを更新したら `make install` をやり直します。`make uninstall` はそのリンクがこのチェックアウトを指している場合だけ削除します。
 
+変更を検証するには [mise](https://mise.jdx.dev/) を用意し、チェックアウト内で実行します。
+
+```sh
+mise trust
+mise install
+mise run check
+```
+
+`check` は CI と同じタスクで Swift・Python のテストとカバレッジ下限チェックを実行します。
+個別タスク（`build`・`test:swift`・`test:python`・`coverage`）は[開発者向けドキュメント](docs/development.md)を参照してください。
+
 ## クイックスタート
 
 ```sh
