@@ -1,0 +1,12 @@
+{
+  "total": {"lines": 74.0, "functions": 76.0, "regions": 73.0},
+  "areas": {
+    "CLI": 88.0,
+    "Client": 70.0,
+    "Device": 54.0,
+    "Setup": 93.0,
+    "Shared": 99.0,
+    "Start": 48.0,
+    "Support": 90.0
+  }
+}

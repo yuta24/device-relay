@@ -27,7 +27,11 @@ jobs:
     runs-on: ${{ matrix.image }}
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up coverage tools
+        uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+        with:
+          version: 2026.11.4
       # The image's default Xcode: a release, where the newest one installed may be a release candidate.
       - name: Show the Xcode in use
         run: |
@@ -38,8 +42,21 @@ jobs:
       - name: Test
         # In parallel, which takes about 5 seconds here. The limit ends a test that hangs: the hosted runners
         # have 3 CPUs, so three tests that block their threads waiting for each other can stop the whole run.
-        run: xcrun swift test
+        run: xcrun swift test --enable-code-coverage
         timeout-minutes: 10
+      - name: Check coverage
+        run: |
+          mise exec -- python3 -m unittest discover -s scripts -p 'test_*.py'
+          coverage_path="$(xcrun swift test --show-codecov-path)"
+          mise exec -- python3 scripts/coverage.py "$coverage_path" --output coverage
+      - name: Save coverage reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-${{ matrix.image }}
+          path: coverage/
+          if-no-files-found: warn
+          retention-days: 30
 
   runner:
     name: Runner (${{ matrix.xcode }}, simulator build)
@@ -54,7 +71,7 @@ jobs:
     runs-on: ${{ matrix.image }}
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Show the Xcode in use
         run: xcodebuild -version
       - name: Build the runner for the iOS simulator
