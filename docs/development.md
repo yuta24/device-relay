@@ -13,7 +13,7 @@ xcrun swift run relay doctor
 ```
 
 変更後の CLI の一括検証は、リポジトリ内で `mise run check` を実行します。
-初回は `mise trust` と `mise install` を実行してください。
+初回は `mise trust` と `mise install --locked` を実行してください。
 Workflow・Shell の静的検査、カバレッジ付き Swift テストと Python テストを実行し、Swift テスト成功後に
 カバレッジ下限を検証します。Python テストは独立して並列実行できます。
 いずれかが失敗するとタスク全体が失敗します。CI の CLI ジョブも同じタスクを使います。
@@ -35,7 +35,7 @@ Workflow・Shell の静的検査、カバレッジ付き Swift テストと Pyth
 `swift test` がビルドも行うため、`check` から `build` を別途呼び出すことはありません。
 
 actionlint 1.7.12 と ShellCheck 0.11.0 は `mise.toml` で固定しています。
-既存チェックアウトでは `mise install` で追加ツールをインストールしてください。
+既存チェックアウトでは `mise install --locked` で追加ツールをインストールしてください。
 actionlint は全 `.github/workflows/` を検査し、PATH 上の固定版 ShellCheck と連携します。
 未導入ツールの有無で結果が変わらないよう、任意の Python 検査連携（Pyflakes）は無効です。
 既知ラベル一覧にない既存の `xcode-27` のみ `.github/actionlint.yaml` に明示しています。
@@ -64,11 +64,29 @@ region は LLVM の実行領域であり、分岐カバレッジとは異なり�
 
 カバレッジ集計用の Python は `mise.toml` で 3.14.3 に固定しています。
 CI も同じ設定を使用し、mise 本体は 2026.11.4 に固定しています。
-初回は `mise trust` と `mise install` を実行してください。
+初回は `mise trust` と `mise install --locked` を実行してください。
 Swift は Xcode 付属のものを `xcrun` で選択し、CI では Xcode 26・27 の互換性を確認します。
 Xcode のパッチ版とランナーイメージは固定していません。
 
 ```sh
+mise run check
+```
+
+`mise.lock` はプロジェクトの3ツールについて、`macos-arm64`（Apple Silicon）と
+`macos-x64`（Intel）のバージョン・取得先 URL・SHA-256 チェックサムを管理します。
+CI の mise セットアップにも `--locked` を指定しています。未記録のプラットフォームや
+バージョンでは、取得先を自動解決せずインストールを失敗させます。
+`mise.toml` の `[tool_config] locked = true` により、通常の `mise install` や
+タスク実行でもプロジェクトのツールにはロックを強制します。
+グローバルや親ディレクトリで定義されたツールの方針には影響しません。
+Xcode・macOS 自体はこのロックの対象外です。
+
+ツールを更新するときは `mise.toml` のバージョンを変更し、次を実行して
+`mise.lock` と一緒にレビュー・コミットしてください。ロックファイルは手編集しません。
+
+```sh
+mise lock --platform macos-arm64,macos-x64
+mise install --locked
 mise run check
 ```
 
