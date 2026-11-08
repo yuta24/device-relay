@@ -14,7 +14,7 @@ xcrun swift run relay doctor
 
 変更後の CLI の一括検証は、リポジトリ内で `mise run check` を実行します。
 初回は `mise trust` と `mise install --locked` を実行してください。
-Workflow・Shell の静的検査、カバレッジ付き Swift テストと Python テストを実行し、Swift テスト成功後に
+Swift の整形検査、Workflow・Shell の静的検査、カバレッジ付き Swift テストと Python テストを実行し、Swift テスト成功後に
 カバレッジ下限を検証します。Python テストは独立して並列実行できます。
 いずれかが失敗するとタスク全体が失敗します。CI の CLI ジョブも同じタスクを使います。
 結果は `coverage/` に出力します。端末側 Runner のビルドは CI の別ジョブで検証します。
@@ -29,16 +29,36 @@ Workflow・Shell の静的検査、カバレッジ付き Swift テストと Pyth
 | `mise run coverage` | Swift テストを実行してからカバレッジ下限を検証 |
 | `mise run lint:workflow` | 全 Workflow を actionlint で検査（埋め込み Shell の ShellCheck も含む） |
 | `mise run lint:shell` | `scripts/*.sh` を ShellCheck で検査 |
+| `mise run format` | Swift ソースと Package.swift を自動整形 |
+| `mise run lint:swift` | 同じ設定で整形漏れを検査（ファイルは変更しない） |
 | `mise run check` | 静的検査、Python テスト、Swift テストとカバレッジ検証を一括実行 |
 | `mise run test:package` | 署名なしの arm64・Intel 配布パッケージを生成・検証 |
 | `mise run tools:outdated` | プロジェクトのツール更新候補を確認（候補があれば終了コード1） |
 
-`check` は `lint:workflow`・`lint:shell`・`coverage`・`test:python` に、`coverage` は `test:swift` に依存します。
+`check` は `lint:swift`・`lint:workflow`・`lint:shell`・`coverage`・`test:python` に、`coverage` は `test:swift` に依存します。
 `swift test` がビルドも行うため、`check` から `build` を別途呼び出すことはありません。
 `test:package` は Release ビルドを行うため `check` には含めず、CI の専用ジョブで実行します。
 PR では `Sources/`・`Runner/`・`skills/`・`scripts/`・`Package.swift`・`Makefile`・mise 設定とロック・
 CI／Release Workflow の変更時に実行し、文書だけの変更では省略します。`main` への push では毎回実行します。
 同じビルドディレクトリを使うため、ローカルで `check` と `test:package` を同時実行しないでください。
+
+### Swift の整形
+
+SwiftFormat（nicklockwood版）0.64.6 を mise と `mise.lock` で固定しています。
+`mise run format` で整形し、`mise run lint:swift` で同じルールによる検査を行います。
+CI の `mise run check` も整形漏れがあると失敗します。
+対象は `Package.swift`・`Sources/`・`Tests/`・`Runner/` の Swift ファイルで、
+生成物のある `.build/`・`.relay/` は対象に含めません。グローバルの整形キャッシュは使用しません。
+
+ルールは `.swiftformat` に明示し、2スペース・LF、空白・インデント・改行の整形に限定しています。
+`.editorconfig` にも Swift ファイルの2スペース・LF・末尾改行を定義しています。
+構文や宣言を書き換えるルールは導入していません。
+最低コンパイラ版は Swift 6.2、言語モードはCLI・Tests・Package.swiftで6です。
+Runner と両ターゲットでコンパイルする `Sources/Relay/Shared/` は、各ディレクトリの
+`.swiftformat` で言語モード5を指定しています。
+
+初回の一括整形コミットは `.git-blame-ignore-revs` に記録しています。
+ローカルでも履歴調査から除外する場合は `git config blame.ignoreRevsFile .git-blame-ignore-revs` を実行してください。
 
 ### 配布パッケージのスモークテスト
 
@@ -111,7 +131,7 @@ Release は以下のとおり、Xcode のバージョンとビルド番号を明
 mise run check
 ```
 
-`mise.lock` はプロジェクトの3ツールについて、`macos-arm64`（Apple Silicon）と
+`mise.lock` はプロジェクトの4ツールについて、`macos-arm64`（Apple Silicon）と
 `macos-x64`（Intel）のバージョン・取得先 URL・SHA-256 チェックサムを管理します。
 CI の mise セットアップにも `--locked` を指定しています。未記録のプラットフォームや
 バージョンでは、取得先を自動解決せずインストールを失敗させます。
@@ -132,7 +152,7 @@ mise run check
 ## mise 管理ツールの更新確認
 
 `mise run tools:outdated` は `mise outdated --bump --no-global --json` を使い、
-Python・actionlint・ShellCheck の更新候補を調べます。グローバルのツールは対象外です。
+Python・actionlint・ShellCheck・SwiftFormat の更新候補を調べます。グローバルのツールは対象外です。
 完全固定バージョンにも更新候補を出すため `--bump` を使用し、メジャー更新も含みます。
 通常の `check` には含めず、ネットワークを使う保守タスクとして分けています。
 

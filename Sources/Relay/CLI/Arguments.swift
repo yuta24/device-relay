@@ -1,627 +1,627 @@
 import Foundation
 
 enum Command: Equatable {
-    case start(StartOptions)
-    case bench(BenchOptions)
-    case runner(RunnerControlOptions)
-    /// `relay run` (experimental).
-    case run(ScenarioOptions)
-    case status(RunnerStatusOptions)
-    case stop(RunnerStopOptions)
-    /// `relay record start|stop|status` (simulators, and devices plugged in with USB).
-    case record(RecordOptions)
-    case devices(json: Bool, os: String?)
-    case doctor(DoctorOptions)
-    case config(ConfigOptions)
-    case install(InstallOptions)
-    case skill(SkillOptions)
-    case version
-    case help
-    /// `relay <command> --help`.
-    case commandHelp(String)
+  case start(StartOptions)
+  case bench(BenchOptions)
+  case runner(RunnerControlOptions)
+  /// `relay run` (experimental).
+  case run(ScenarioOptions)
+  case status(RunnerStatusOptions)
+  case stop(RunnerStopOptions)
+  /// `relay record start|stop|status` (simulators, and devices plugged in with USB).
+  case record(RecordOptions)
+  case devices(json: Bool, os: String?)
+  case doctor(DoctorOptions)
+  case config(ConfigOptions)
+  case install(InstallOptions)
+  case skill(SkillOptions)
+  case version
+  case help
+  /// `relay <command> --help`.
+  case commandHelp(String)
 }
 
 struct StartOptions: Equatable {
-    /// `--udid`; nil picks the device by `--device` or automatically (see `DeviceSelector`).
-    var udid: String?
-    /// `--device <name>`: a device or simulator name, case-insensitive.
-    var device: String?
-    /// `--simulator`: pick among simulators only.
-    var simulator = false
-    /// `--os <version>`: pick among devices and simulators of that OS version.
-    var os: String?
-    /// `--project <path>`: the device-relay checkout (see `RunnerProject`).
-    var project: String?
-    var port: Int = 8100
-    /// `--port` was given. A session without it gets a free port (`PortPicker`).
-    var portGiven = false
-    var teamID: String?
-    /// The prefix of the runner's bundle IDs (see `RunnerBundleID`). Set by `StartSetup`, not an option.
-    var bundleIDPrefix: String?
-    var rebuild = false
-    var verbose = false
-    var readyTimeout: TimeInterval = 180
-    /// Also probe the runner's Wi-Fi (and other interface) addresses, not only the CoreDevice tunnel.
-    var allowWiFi = false
-    /// `--background`: run `relay start` detached and return once the runner is ready (see `BackgroundStart`).
-    var background = false
-    /// `--session <name>`, or `$RELAY_SESSION` once `main` has resolved it (see `RelaySession`).
-    var session: String?
+  /// `--udid`; nil picks the device by `--device` or automatically (see `DeviceSelector`).
+  var udid: String?
+  /// `--device <name>`: a device or simulator name, case-insensitive.
+  var device: String?
+  /// `--simulator`: pick among simulators only.
+  var simulator = false
+  /// `--os <version>`: pick among devices and simulators of that OS version.
+  var os: String?
+  /// `--project <path>`: the device-relay checkout (see `RunnerProject`).
+  var project: String?
+  var port: Int = 8100
+  /// `--port` was given. A session without it gets a free port (`PortPicker`).
+  var portGiven = false
+  var teamID: String?
+  /// The prefix of the runner's bundle IDs (see `RunnerBundleID`). Set by `StartSetup`, not an option.
+  var bundleIDPrefix: String?
+  var rebuild = false
+  var verbose = false
+  var readyTimeout: TimeInterval = 180
+  /// Also probe the runner's Wi-Fi (and other interface) addresses, not only the CoreDevice tunnel.
+  var allowWiFi = false
+  /// `--background`: run `relay start` detached and return once the runner is ready (see `BackgroundStart`).
+  var background = false
+  /// `--session <name>`, or `$RELAY_SESSION` once `main` has resolved it (see `RelaySession`).
+  var session: String?
 
-    /// The arguments of the same `relay start` without `--background`, for the detached process.
-    var foregroundArguments: [String] {
-        var arguments = ["start"]
-        if let udid { arguments += ["--udid", udid] }
-        if let device { arguments += ["--device", device] }
-        if simulator { arguments.append("--simulator") }
-        if let os { arguments += ["--os", os] }
-        if let project { arguments += ["--project", project] }
-        if portGiven { arguments += ["--port", "\(port)"] }
-        if let session { arguments += ["--session", session] }
-        if let teamID { arguments += ["--team-id", teamID] }
-        if rebuild { arguments.append("--rebuild") }
-        if verbose { arguments.append("--verbose") }
-        arguments += ["--ready-timeout", "\(readyTimeout)"]
-        if allowWiFi { arguments.append("--allow-wifi") }
-        return arguments
-    }
+  /// The arguments of the same `relay start` without `--background`, for the detached process.
+  var foregroundArguments: [String] {
+    var arguments = ["start"]
+    if let udid { arguments += ["--udid", udid] }
+    if let device { arguments += ["--device", device] }
+    if simulator { arguments.append("--simulator") }
+    if let os { arguments += ["--os", os] }
+    if let project { arguments += ["--project", project] }
+    if portGiven { arguments += ["--port", "\(port)"] }
+    if let session { arguments += ["--session", session] }
+    if let teamID { arguments += ["--team-id", teamID] }
+    if rebuild { arguments.append("--rebuild") }
+    if verbose { arguments.append("--verbose") }
+    arguments += ["--ready-timeout", "\(readyTimeout)"]
+    if allowWiFi { arguments.append("--allow-wifi") }
+    return arguments
+  }
 }
 
 struct BenchOptions: Equatable {
-    var url: String
-    var count = 10
-    var tap: (x: Double, y: Double)?
-    /// Touch path for `/tap`: `private` or `xcui`. Nil lets the runner choose.
-    var mode: String?
-    /// Bearer token for the runner. Nil reads it from the runner.json `RunnerLocator` finds.
-    var token: String?
-    /// `--session <name>`: the URL (when `--url` is not given) and the token of that session's runner.
-    var session: String?
-    /// `--runner <path>`: the runner.json to read them from, as for the other runner commands.
-    var runnerPath: String?
+  var url: String
+  var count = 10
+  var tap: (x: Double, y: Double)?
+  /// Touch path for `/tap`: `private` or `xcui`. Nil lets the runner choose.
+  var mode: String?
+  /// Bearer token for the runner. Nil reads it from the runner.json `RunnerLocator` finds.
+  var token: String?
+  /// `--session <name>`: the URL (when `--url` is not given) and the token of that session's runner.
+  var session: String?
+  /// `--runner <path>`: the runner.json to read them from, as for the other runner commands.
+  var runnerPath: String?
 
-    static func == (lhs: BenchOptions, rhs: BenchOptions) -> Bool {
-        lhs.url == rhs.url && lhs.count == rhs.count && lhs.tap?.x == rhs.tap?.x && lhs.tap?.y == rhs.tap?.y
-            && lhs.mode == rhs.mode && lhs.token == rhs.token && lhs.session == rhs.session && lhs.runnerPath == rhs.runnerPath
-    }
+  static func == (lhs: BenchOptions, rhs: BenchOptions) -> Bool {
+    lhs.url == rhs.url && lhs.count == rhs.count && lhs.tap?.x == rhs.tap?.x && lhs.tap?.y == rhs.tap?.y
+      && lhs.mode == rhs.mode && lhs.token == rhs.token && lhs.session == rhs.session && lhs.runnerPath == rhs.runnerPath
+  }
 }
 
 /// `relay config [get|set|unset] [<key> [<value>]]`. No action prints the whole file.
 struct ConfigOptions: Equatable {
-    enum Action: Equatable {
-        case show
-        case get(String)
-        case set(String, String)
-        case unset(String)
-    }
+  enum Action: Equatable {
+    case show
+    case get(String)
+    case set(String, String)
+    case unset(String)
+  }
 
-    var action: Action
+  var action: Action
 }
 
 /// A command line that is wrong, found while reading the arguments (or, for a `relay run` scenario, its steps):
 /// exit status 2, and two lines on stderr (see `CLIOutput.usageError`). A failure that is not about how the
 /// command was written is a `SetupError`.
 struct ArgumentError: Error, CustomStringConvertible {
-    let description: String
+  let description: String
 }
 
 enum Arguments {
-    /// Every option that takes no value, whichever command it belongs to: `--opt=value` on one of them is an error.
-    static let valuelessOptions: Set<String> = [
-        "--json", "--simulator", "--rebuild", "--verbose", "--allow-wifi", "--background", "--all", "--stdin",
-        "--require", "--quiet", "--check", "--force", "--build", "--remove", "--link", "--global", "--help", "--version"
-    ]
+  /// Every option that takes no value, whichever command it belongs to: `--opt=value` on one of them is an error.
+  static let valuelessOptions: Set<String> = [
+    "--json", "--simulator", "--rebuild", "--verbose", "--allow-wifi", "--background", "--all", "--stdin",
+    "--require", "--quiet", "--check", "--force", "--build", "--remove", "--link", "--global", "--help", "--version"
+  ]
 
-    /// Rewrites `--opt=value` as `--opt value`, the one form the parsers read, before any of them looks at the
-    /// arguments. Only an argument that starts with `--` and has a name before the first `=` is split, so
-    /// `-o=file`, a positional such as `a=b`, and everything after a bare `--` (text to type) stay as given.
-    /// A flag with a value (`--json=true`) is an error rather than a flag followed by an argument.
-    static func splittingEquals(_ arguments: [String]) throws -> [String] {
-        var result: [String] = []
-        var rest = arguments[...]
-        while let argument = rest.popFirst() {
-            if argument == "--" {
-                result.append(argument)
-                result += rest
-                break
-            }
-            guard argument.hasPrefix("--"), let equals = argument.firstIndex(of: "="), argument.distance(from: argument.startIndex, to: equals) > 2 else {
-                result.append(argument)
-                continue
-            }
-            let name = String(argument[..<equals])
-            guard !valuelessOptions.contains(name) else {
-                throw ArgumentError(description: "\(name) does not take a value (got \(argument))")
-            }
-            result.append(name)
-            result.append(String(argument[argument.index(after: equals)...]))
-        }
-        return result
+  /// Rewrites `--opt=value` as `--opt value`, the one form the parsers read, before any of them looks at the
+  /// arguments. Only an argument that starts with `--` and has a name before the first `=` is split, so
+  /// `-o=file`, a positional such as `a=b`, and everything after a bare `--` (text to type) stay as given.
+  /// A flag with a value (`--json=true`) is an error rather than a flag followed by an argument.
+  static func splittingEquals(_ arguments: [String]) throws -> [String] {
+    var result: [String] = []
+    var rest = arguments[...]
+    while let argument = rest.popFirst() {
+      if argument == "--" {
+        result.append(argument)
+        result += rest
+        break
+      }
+      guard argument.hasPrefix("--"), let equals = argument.firstIndex(of: "="), argument.distance(from: argument.startIndex, to: equals) > 2 else {
+        result.append(argument)
+        continue
+      }
+      let name = String(argument[..<equals])
+      guard !valuelessOptions.contains(name) else {
+        throw ArgumentError(description: "\(name) does not take a value (got \(argument))")
+      }
+      result.append(name)
+      result.append(String(argument[argument.index(after: equals)...]))
+    }
+    return result
+  }
+
+  /// `standardInput` is read only by `relay type --stdin`; tests pass their own.
+  static func parse(_ raw: [String], standardInput: () -> Data = { FileHandle.standardInput.readDataToEndOfFile() }) throws -> Command {
+    let raw = try splittingEquals(raw)
+    guard let subcommand = raw.first else { return .help }
+    var rest = Array(raw.dropFirst())
+    // These read --help themselves (status, stop, record, run, skill and the runner commands).
+    let readsHelpItself: Set = ["status", "stop", "record", "run", "skill"]
+    if commandNames.contains(subcommand), !readsHelpItself.contains(subcommand), runnerUsages[subcommand] == nil,
+       rest.contains(where: { $0 == "--help" || $0 == "-h" }) {
+      return .commandHelp(subcommand)
     }
 
-    /// `standardInput` is read only by `relay type --stdin`; tests pass their own.
-    static func parse(_ raw: [String], standardInput: () -> Data = { FileHandle.standardInput.readDataToEndOfFile() }) throws -> Command {
-        let raw = try splittingEquals(raw)
-        guard let subcommand = raw.first else { return .help }
-        var rest = Array(raw.dropFirst())
-        // These read --help themselves (status, stop, record, run, skill and the runner commands).
-        let readsHelpItself: Set = ["status", "stop", "record", "run", "skill"]
-        if commandNames.contains(subcommand), !readsHelpItself.contains(subcommand), runnerUsages[subcommand] == nil,
-           rest.contains(where: { $0 == "--help" || $0 == "-h" }) {
-            return .commandHelp(subcommand)
-        }
-
-        func value(for option: String) throws -> String {
-            guard !rest.isEmpty, !rest[0].hasPrefix("--") else {
-                throw ArgumentError(description: "\(option) requires a value")
-            }
-            return rest.removeFirst()
-        }
-
-        switch subcommand {
-        case "start":
-            var options = StartOptions()
-            while !rest.isEmpty {
-                let option = rest.removeFirst()
-                switch option {
-                case "--udid": options.udid = try value(for: option)
-                case "--device": options.device = try value(for: option)
-                case "--simulator": options.simulator = true
-                case "--os": options.os = try osVersion(try value(for: option))
-                case "--project": options.project = try value(for: option)
-                case "--port":
-                    guard let port = Int(try value(for: option)), (1...65535).contains(port) else {
-                        throw ArgumentError(description: "--port requires a valid TCP port")
-                    }
-                    options.port = port
-                    options.portGiven = true
-                case "--session": options.session = try sessionName(try value(for: option))
-                case "--team-id": options.teamID = try teamID(try value(for: option))
-                case "--ready-timeout":
-                    guard let timeout = TimeInterval(try value(for: option)), timeout > 0 else {
-                        throw ArgumentError(description: "--ready-timeout requires seconds greater than zero")
-                    }
-                    options.readyTimeout = timeout
-                case "--rebuild": options.rebuild = true
-                case "--verbose": options.verbose = true
-                case "--allow-wifi": options.allowWiFi = true
-                case "--background": options.background = true
-                default: throw ArgumentError(description: "unknown option: \(option)")
-                }
-            }
-            guard options.udid == nil || options.device == nil else {
-                throw ArgumentError(description: "start takes either --udid or --device, not both")
-            }
-            return .start(options)
-        case "status", "stop":
-            var json = false
-            var runnerPath: String?
-            var session: String?
-            var all = false
-            while !rest.isEmpty {
-                let option = rest.removeFirst()
-                switch option {
-                case "--json" where subcommand == "status": json = true
-                case "--runner": runnerPath = try value(for: option)
-                case "--session": session = try sessionName(try value(for: option))
-                case "--all": all = true
-                case "-h", "--help": return .commandHelp(subcommand)
-                default: throw ArgumentError(description: "unknown option: \(option)")
-                }
-            }
-            guard runnerPath == nil || session == nil else {
-                throw ArgumentError(description: "\(subcommand) takes either --runner or --session, not both")
-            }
-            guard !all || (runnerPath == nil && session == nil) else {
-                throw ArgumentError(description: "\(subcommand) --all takes neither --runner nor --session")
-            }
-            return subcommand == "status"
-                ? .status(RunnerStatusOptions(json: json, runnerPath: runnerPath, session: session, all: all))
-                : .stop(RunnerStopOptions(runnerPath: runnerPath, session: session, all: all))
-        case "run":
-            return try parseRun(rest)
-        case "record":
-            return try parseRecord(rest)
-        case "devices":
-            var json = false
-            var os: String?
-            while !rest.isEmpty {
-                let option = rest.removeFirst()
-                switch option {
-                case "--json": json = true
-                case "--os": os = try osVersion(try value(for: option))
-                default: throw ArgumentError(description: "unknown option: \(option)")
-                }
-            }
-            return .devices(json: json, os: os)
-        case "doctor":
-            var options = DoctorOptions()
-            while !rest.isEmpty {
-                let option = rest.removeFirst()
-                switch option {
-                case "--udid": options.udid = try value(for: option)
-                case "--device": options.device = try value(for: option)
-                case "--simulator": options.simulator = true
-                case "--os": options.os = try osVersion(try value(for: option))
-                case "--project": options.project = try value(for: option)
-                case "--json": options.json = true
-                default: throw ArgumentError(description: "unknown option: \(option)")
-                }
-            }
-            guard options.udid == nil || options.device == nil else {
-                throw ArgumentError(description: "doctor takes either --udid or --device, not both")
-            }
-            return .doctor(options)
-        case "config":
-            return .config(try parseConfig(rest))
-        case "install", "uninstall":
-            var options = InstallOptions(remove: subcommand == "uninstall")
-            while !rest.isEmpty {
-                let option = rest.removeFirst()
-                switch option {
-                case "--project" where subcommand == "install": options.project = try value(for: option)
-                case "--build" where subcommand == "install": options.build = true
-                case "--verbose" where subcommand == "install": options.verbose = true
-                case "--remove" where subcommand == "install": options.remove = true
-                default: throw ArgumentError(description: "unknown option: \(option)")
-                }
-            }
-            guard !(options.remove && (options.build || options.verbose || options.project != nil)) else {
-                throw ArgumentError(description: "install --remove takes no other options")
-            }
-            return .install(options)
-        case "skill":
-            return .skill(try parseSkill(rest))
-        case "--version", "version":
-            return .version
-        case "bench":
-            var options = BenchOptions(url: "")
-            while !rest.isEmpty {
-                let option = rest.removeFirst()
-                switch option {
-                case "--url": options.url = try value(for: option)
-                case "--count":
-                    guard let count = Int(try value(for: option)), count > 0 else {
-                        throw ArgumentError(description: "--count requires a positive integer")
-                    }
-                    options.count = count
-                case "--tap":
-                    let parts = try value(for: option).split(separator: ",").compactMap { Double($0) }
-                    guard parts.count == 2 else {
-                        throw ArgumentError(description: "--tap requires x,y")
-                    }
-                    options.tap = (parts[0], parts[1])
-                case "--mode":
-                    let mode = try value(for: option)
-                    guard ["private", "xcui"].contains(mode) else {
-                        throw ArgumentError(description: "--mode requires private or xcui")
-                    }
-                    options.mode = mode
-                case "--token": options.token = try value(for: option)
-                case "--session": options.session = try sessionName(try value(for: option))
-                case "--runner": options.runnerPath = try value(for: option)
-                default: throw ArgumentError(description: "unknown option: \(option)")
-                }
-            }
-            guard options.runnerPath == nil || options.session == nil else {
-                throw ArgumentError(description: "bench takes either --runner or --session, not both")
-            }
-            return .bench(options)
-        case "-h", "--help", "help":
-            if rest.first == "skill" { return .skill(SkillOptions(action: .help)) }
-            if let name = rest.first, commandNames.contains(name) {
-                return .commandHelp(name)
-            }
-            return .help
-        default:
-            if runnerUsages[subcommand] != nil {
-                return try parseRunnerCommand(subcommand, rest, standardInput: standardInput)
-            }
-            throw ArgumentError(description: "unknown command: \(subcommand)")
-        }
+    func value(for option: String) throws -> String {
+      guard !rest.isEmpty, !rest[0].hasPrefix("--") else {
+        throw ArgumentError(description: "\(option) requires a value")
+      }
+      return rest.removeFirst()
     }
 
-    /// `relay run (<file> | - | --step <step>...) [--check] [--runner <path> | --session <name>] [--quiet]`: exactly one source of steps.
-    static func parseRun(_ raw: [String]) throws -> Command {
-        var rest = raw
-        var files: [String] = []
-        var steps: [String] = []
-        var runnerPath: String?
-        var session: String?
-        var quiet = false
-        var check = false
-        while !rest.isEmpty {
-            let argument = rest.removeFirst()
-            switch argument {
-            case "--step", "--runner", "--session":
-                // A step may start with -, so only a missing value is rejected here.
-                guard !rest.isEmpty else { throw ArgumentError(description: "\(argument) requires a value") }
-                let value = rest.removeFirst()
-                if argument == "--step" {
-                    steps.append(value)
-                } else if argument == "--session" {
-                    guard session == nil else { throw ArgumentError(description: "--session is given more than once") }
-                    session = try sessionName(value)
-                } else {
-                    guard runnerPath == nil else { throw ArgumentError(description: "--runner is given more than once") }
-                    runnerPath = value
-                }
-            case "--quiet", "-q": quiet = true
-            case "--check": check = true
-            case "-h", "--help": return .commandHelp("run")
-            case "-": files.append(argument)
-            default:
-                guard !argument.hasPrefix("-") else { throw ArgumentError(description: "unknown option for run: \(argument)") }
-                files.append(argument)
-            }
+    switch subcommand {
+    case "start":
+      var options = StartOptions()
+      while !rest.isEmpty {
+        let option = rest.removeFirst()
+        switch option {
+        case "--udid": options.udid = try value(for: option)
+        case "--device": options.device = try value(for: option)
+        case "--simulator": options.simulator = true
+        case "--os": options.os = try osVersion(try value(for: option))
+        case "--project": options.project = try value(for: option)
+        case "--port":
+          guard let port = Int(try value(for: option)), (1 ... 65535).contains(port) else {
+            throw ArgumentError(description: "--port requires a valid TCP port")
+          }
+          options.port = port
+          options.portGiven = true
+        case "--session": options.session = try sessionName(try value(for: option))
+        case "--team-id": options.teamID = try teamID(try value(for: option))
+        case "--ready-timeout":
+          guard let timeout = TimeInterval(try value(for: option)), timeout > 0 else {
+            throw ArgumentError(description: "--ready-timeout requires seconds greater than zero")
+          }
+          options.readyTimeout = timeout
+        case "--rebuild": options.rebuild = true
+        case "--verbose": options.verbose = true
+        case "--allow-wifi": options.allowWiFi = true
+        case "--background": options.background = true
+        default: throw ArgumentError(description: "unknown option: \(option)")
         }
-        let source: ScenarioOptions.Source
-        switch (files.count, steps.isEmpty) {
-        case (0, false): source = .steps(steps)
-        case (1, true): source = files[0] == "-" ? .standardInput : .file(files[0])
-        case (0, true): throw ArgumentError(description: "run requires <file>, - (standard input), or --step <step>")
-        default: throw ArgumentError(description: "run takes one of <file>, -, or --step <step>...")
+      }
+      guard options.udid == nil || options.device == nil else {
+        throw ArgumentError(description: "start takes either --udid or --device, not both")
+      }
+      return .start(options)
+    case "status", "stop":
+      var json = false
+      var runnerPath: String?
+      var session: String?
+      var all = false
+      while !rest.isEmpty {
+        let option = rest.removeFirst()
+        switch option {
+        case "--json" where subcommand == "status": json = true
+        case "--runner": runnerPath = try value(for: option)
+        case "--session": session = try sessionName(try value(for: option))
+        case "--all": all = true
+        case "-h", "--help": return .commandHelp(subcommand)
+        default: throw ArgumentError(description: "unknown option: \(option)")
         }
-        guard runnerPath == nil || session == nil else {
-            throw ArgumentError(description: "run takes either --runner or --session, not both")
+      }
+      guard runnerPath == nil || session == nil else {
+        throw ArgumentError(description: "\(subcommand) takes either --runner or --session, not both")
+      }
+      guard !all || (runnerPath == nil && session == nil) else {
+        throw ArgumentError(description: "\(subcommand) --all takes neither --runner nor --session")
+      }
+      return subcommand == "status"
+        ? .status(RunnerStatusOptions(json: json, runnerPath: runnerPath, session: session, all: all))
+        : .stop(RunnerStopOptions(runnerPath: runnerPath, session: session, all: all))
+    case "run":
+      return try parseRun(rest)
+    case "record":
+      return try parseRecord(rest)
+    case "devices":
+      var json = false
+      var os: String?
+      while !rest.isEmpty {
+        let option = rest.removeFirst()
+        switch option {
+        case "--json": json = true
+        case "--os": os = try osVersion(try value(for: option))
+        default: throw ArgumentError(description: "unknown option: \(option)")
         }
-        return .run(ScenarioOptions(source: source, runnerPath: runnerPath, session: session, quiet: quiet, check: check))
+      }
+      return .devices(json: json, os: os)
+    case "doctor":
+      var options = DoctorOptions()
+      while !rest.isEmpty {
+        let option = rest.removeFirst()
+        switch option {
+        case "--udid": options.udid = try value(for: option)
+        case "--device": options.device = try value(for: option)
+        case "--simulator": options.simulator = true
+        case "--os": options.os = try osVersion(try value(for: option))
+        case "--project": options.project = try value(for: option)
+        case "--json": options.json = true
+        default: throw ArgumentError(description: "unknown option: \(option)")
+        }
+      }
+      guard options.udid == nil || options.device == nil else {
+        throw ArgumentError(description: "doctor takes either --udid or --device, not both")
+      }
+      return .doctor(options)
+    case "config":
+      return .config(try parseConfig(rest))
+    case "install", "uninstall":
+      var options = InstallOptions(remove: subcommand == "uninstall")
+      while !rest.isEmpty {
+        let option = rest.removeFirst()
+        switch option {
+        case "--project" where subcommand == "install": options.project = try value(for: option)
+        case "--build" where subcommand == "install": options.build = true
+        case "--verbose" where subcommand == "install": options.verbose = true
+        case "--remove" where subcommand == "install": options.remove = true
+        default: throw ArgumentError(description: "unknown option: \(option)")
+        }
+      }
+      guard !(options.remove && (options.build || options.verbose || options.project != nil)) else {
+        throw ArgumentError(description: "install --remove takes no other options")
+      }
+      return .install(options)
+    case "skill":
+      return .skill(try parseSkill(rest))
+    case "--version", "version":
+      return .version
+    case "bench":
+      var options = BenchOptions(url: "")
+      while !rest.isEmpty {
+        let option = rest.removeFirst()
+        switch option {
+        case "--url": options.url = try value(for: option)
+        case "--count":
+          guard let count = Int(try value(for: option)), count > 0 else {
+            throw ArgumentError(description: "--count requires a positive integer")
+          }
+          options.count = count
+        case "--tap":
+          let parts = try value(for: option).split(separator: ",").compactMap { Double($0) }
+          guard parts.count == 2 else {
+            throw ArgumentError(description: "--tap requires x,y")
+          }
+          options.tap = (parts[0], parts[1])
+        case "--mode":
+          let mode = try value(for: option)
+          guard ["private", "xcui"].contains(mode) else {
+            throw ArgumentError(description: "--mode requires private or xcui")
+          }
+          options.mode = mode
+        case "--token": options.token = try value(for: option)
+        case "--session": options.session = try sessionName(try value(for: option))
+        case "--runner": options.runnerPath = try value(for: option)
+        default: throw ArgumentError(description: "unknown option: \(option)")
+        }
+      }
+      guard options.runnerPath == nil || options.session == nil else {
+        throw ArgumentError(description: "bench takes either --runner or --session, not both")
+      }
+      return .bench(options)
+    case "-h", "--help", "help":
+      if rest.first == "skill" { return .skill(SkillOptions(action: .help)) }
+      if let name = rest.first, commandNames.contains(name) {
+        return .commandHelp(name)
+      }
+      return .help
+    default:
+      if runnerUsages[subcommand] != nil {
+        return try parseRunnerCommand(subcommand, rest, standardInput: standardInput)
+      }
+      throw ArgumentError(description: "unknown command: \(subcommand)")
+    }
+  }
+
+  /// `relay run (<file> | - | --step <step>...) [--check] [--runner <path> | --session <name>] [--quiet]`: exactly one source of steps.
+  static func parseRun(_ raw: [String]) throws -> Command {
+    var rest = raw
+    var files: [String] = []
+    var steps: [String] = []
+    var runnerPath: String?
+    var session: String?
+    var quiet = false
+    var check = false
+    while !rest.isEmpty {
+      let argument = rest.removeFirst()
+      switch argument {
+      case "--step", "--runner", "--session":
+        // A step may start with -, so only a missing value is rejected here.
+        guard !rest.isEmpty else { throw ArgumentError(description: "\(argument) requires a value") }
+        let value = rest.removeFirst()
+        if argument == "--step" {
+          steps.append(value)
+        } else if argument == "--session" {
+          guard session == nil else { throw ArgumentError(description: "--session is given more than once") }
+          session = try sessionName(value)
+        } else {
+          guard runnerPath == nil else { throw ArgumentError(description: "--runner is given more than once") }
+          runnerPath = value
+        }
+      case "--quiet", "-q": quiet = true
+      case "--check": check = true
+      case "-h", "--help": return .commandHelp("run")
+      case "-": files.append(argument)
+      default:
+        guard !argument.hasPrefix("-") else { throw ArgumentError(description: "unknown option for run: \(argument)") }
+        files.append(argument)
+      }
+    }
+    let source: ScenarioOptions.Source
+    switch (files.count, steps.isEmpty) {
+    case (0, false): source = .steps(steps)
+    case (1, true): source = files[0] == "-" ? .standardInput : .file(files[0])
+    case (0, true): throw ArgumentError(description: "run requires <file>, - (standard input), or --step <step>")
+    default: throw ArgumentError(description: "run takes one of <file>, -, or --step <step>...")
+    }
+    guard runnerPath == nil || session == nil else {
+      throw ArgumentError(description: "run takes either --runner or --session, not both")
+    }
+    return .run(ScenarioOptions(source: source, runnerPath: runnerPath, session: session, quiet: quiet, check: check))
+  }
+
+  /// `relay record start [--output <path>] [--force] [--max-duration <s>] [--runner <path>]`, `relay record
+  /// stop [--runner <path> | --port <n>]`, `relay record status [--json] [--runner <path> | --port <n>]`, and the internal `relay record
+  /// supervise`, which `record start` runs detached (see `RecordSupervisor`).
+  static func parseRecord(_ raw: [String]) throws -> Command {
+    var rest = raw
+    guard !rest.isEmpty else {
+      throw ArgumentError(description: "record takes start, stop, or status")
+    }
+    let action = rest.removeFirst()
+    guard ["start", "stop", "status", "supervise"].contains(action) else {
+      if ["-h", "--help", "help"].contains(action) { return .commandHelp("record") }
+      throw ArgumentError(description: "unknown record action: \(action) (start, stop, or status)")
     }
 
-    /// `relay record start [--output <path>] [--force] [--max-duration <s>] [--runner <path>]`, `relay record
-    /// stop [--runner <path> | --port <n>]`, `relay record status [--json] [--runner <path> | --port <n>]`, and the internal `relay record
-    /// supervise`, which `record start` runs detached (see `RecordSupervisor`).
-    static func parseRecord(_ raw: [String]) throws -> Command {
-        var rest = raw
-        guard !rest.isEmpty else {
-            throw ArgumentError(description: "record takes start, stop, or status")
-        }
-        let action = rest.removeFirst()
-        guard ["start", "stop", "status", "supervise"].contains(action) else {
-            if ["-h", "--help", "help"].contains(action) { return .commandHelp("record") }
-            throw ArgumentError(description: "unknown record action: \(action) (start, stop, or status)")
-        }
-
-        func value(for option: String) throws -> String {
-            guard !rest.isEmpty, !rest[0].hasPrefix("--") else {
-                throw ArgumentError(description: "\(option) requires a value")
-            }
-            return rest.removeFirst()
-        }
-
-        var output: String?
-        var maxDuration = Recording.defaultMaxDuration
-        var json = false
-        var runnerPath: String?
-        var session: String?
-        var port: Int?
-        var force = false
-        var udid: String?
-        var deviceName: String?
-        let takesOutput = action == "start" || action == "supervise"
-        while !rest.isEmpty {
-            let option = rest.removeFirst()
-            switch option {
-            case "--output" where takesOutput, "-o" where takesOutput:
-                output = try value(for: option)
-            case "--max-duration" where takesOutput:
-                guard let seconds = TimeInterval(try value(for: option)), seconds > 0, seconds.isFinite else {
-                    throw ArgumentError(description: "--max-duration requires seconds greater than zero")
-                }
-                maxDuration = seconds
-            case "--force" where action == "start": force = true
-            case "--json" where action == "status": json = true
-            case "--runner" where action != "supervise": runnerPath = try value(for: option)
-            case "--session" where action != "supervise": session = try sessionName(try value(for: option))
-            case "--port" where action == "stop" || action == "status":
-                guard let value = Int(try value(for: option)), (1...65535).contains(value) else {
-                    throw ArgumentError(description: "--port requires a valid TCP port")
-                }
-                port = value
-            case "--udid" where action == "supervise": udid = try value(for: option)
-            case "--device-name" where action == "supervise": deviceName = try value(for: option)
-            case "-h", "--help": return .commandHelp("record")
-            default: throw ArgumentError(description: "unknown option for record \(action): \(option)")
-            }
-        }
-        guard [runnerPath != nil, session != nil, port != nil].filter({ $0 }).count <= 1 else {
-            throw ArgumentError(description: "record \(action) takes one of --runner, --session, and --port")
-        }
-        switch action {
-        case "start":
-            return .record(RecordOptions(action: .start(output: output, maxDuration: maxDuration, force: force), runnerPath: runnerPath, session: session))
-        case "stop":
-            return .record(RecordOptions(action: .stop, runnerPath: runnerPath, session: session, port: port))
-        case "status":
-            return .record(RecordOptions(action: .status(json: json), runnerPath: runnerPath, session: session, port: port))
-        default:
-            guard let udid, let output else {
-                throw ArgumentError(description: "record supervise requires --udid and --output")
-            }
-            return .record(RecordOptions(action: .supervise(udid: udid, output: output, maxDuration: maxDuration, deviceName: deviceName)))
-        }
+    func value(for option: String) throws -> String {
+      guard !rest.isEmpty, !rest[0].hasPrefix("--") else {
+        throw ArgumentError(description: "\(option) requires a value")
+      }
+      return rest.removeFirst()
     }
 
-    /// `relay config` arguments: `get <key>`, `set <key> <value>`, `unset <key>`, or nothing.
-    static func parseConfig(_ raw: [String]) throws -> ConfigOptions {
-        func key(_ value: String) throws -> String {
-            guard RelayConfig.keys.contains(value) else {
-                throw ArgumentError(description: "unknown config key: \(value) (known: \(RelayConfig.keys.joined(separator: ", ")))")
-            }
-            return value
+    var output: String?
+    var maxDuration = Recording.defaultMaxDuration
+    var json = false
+    var runnerPath: String?
+    var session: String?
+    var port: Int?
+    var force = false
+    var udid: String?
+    var deviceName: String?
+    let takesOutput = action == "start" || action == "supervise"
+    while !rest.isEmpty {
+      let option = rest.removeFirst()
+      switch option {
+      case "--output" where takesOutput, "-o" where takesOutput:
+        output = try value(for: option)
+      case "--max-duration" where takesOutput:
+        guard let seconds = TimeInterval(try value(for: option)), seconds > 0, seconds.isFinite else {
+          throw ArgumentError(description: "--max-duration requires seconds greater than zero")
         }
-        switch raw.first {
-        case nil:
-            return ConfigOptions(action: .show)
-        case "get" where raw.count == 2:
-            return ConfigOptions(action: .get(try key(raw[1])))
-        case "set" where raw.count == 3:
-            let name = try key(raw[1])
-            return ConfigOptions(action: .set(name, name == "bundleIDPrefix" ? try bundleIDPrefix(raw[2]) : try teamID(raw[2])))
-        case "unset" where raw.count == 2:
-            return ConfigOptions(action: .unset(try key(raw[1])))
-        default:
-            throw ArgumentError(description: "config takes get <key>, set <key> <value>, or unset <key>")
+        maxDuration = seconds
+      case "--force" where action == "start": force = true
+      case "--json" where action == "status": json = true
+      case "--runner" where action != "supervise": runnerPath = try value(for: option)
+      case "--session" where action != "supervise": session = try sessionName(try value(for: option))
+      case "--port" where action == "stop" || action == "status":
+        guard let value = Int(try value(for: option)), (1 ... 65535).contains(value) else {
+          throw ArgumentError(description: "--port requires a valid TCP port")
         }
+        port = value
+      case "--udid" where action == "supervise": udid = try value(for: option)
+      case "--device-name" where action == "supervise": deviceName = try value(for: option)
+      case "-h", "--help": return .commandHelp("record")
+      default: throw ArgumentError(description: "unknown option for record \(action): \(option)")
+      }
     }
-
-    /// A `--session` value; an invalid name is an error here, like any other bad option.
-    static func sessionName(_ value: String) throws -> String {
-        do {
-            return try RelaySession.validated(value)
-        } catch let error as SessionSelectionError {
-            throw ArgumentError(description: error.description)
-        }
+    guard [runnerPath != nil, session != nil, port != nil].filter({ $0 }).count <= 1 else {
+      throw ArgumentError(description: "record \(action) takes one of --runner, --session, and --port")
     }
-
-    private static func teamID(_ value: String) throws -> String {
-        guard RelayConfig.isValidTeamID(value) else {
-            throw ArgumentError(description: "invalid Team ID: \(value) (10 uppercase letters and digits)")
-        }
-        return value
+    switch action {
+    case "start":
+      return .record(RecordOptions(action: .start(output: output, maxDuration: maxDuration, force: force), runnerPath: runnerPath, session: session))
+    case "stop":
+      return .record(RecordOptions(action: .stop, runnerPath: runnerPath, session: session, port: port))
+    case "status":
+      return .record(RecordOptions(action: .status(json: json), runnerPath: runnerPath, session: session, port: port))
+    default:
+      guard let udid, let output else {
+        throw ArgumentError(description: "record supervise requires --udid and --output")
+      }
+      return .record(RecordOptions(action: .supervise(udid: udid, output: output, maxDuration: maxDuration, deviceName: deviceName)))
     }
+  }
 
-    private static func bundleIDPrefix(_ value: String) throws -> String {
-        guard RunnerBundleID.isValidPrefix(value) else {
-            throw ArgumentError(description: "invalid bundle ID prefix: \(value) (letters, digits, and hyphens, separated by dots)")
-        }
-        return value
+  /// `relay config` arguments: `get <key>`, `set <key> <value>`, `unset <key>`, or nothing.
+  static func parseConfig(_ raw: [String]) throws -> ConfigOptions {
+    func key(_ value: String) throws -> String {
+      guard RelayConfig.keys.contains(value) else {
+        throw ArgumentError(description: "unknown config key: \(value) (known: \(RelayConfig.keys.joined(separator: ", ")))")
+      }
+      return value
     }
-
-    private static func osVersion(_ value: String) throws -> String {
-        guard DeviceSelector.isValidOSVersion(value) else {
-            throw ArgumentError(description: "--os requires a version such as 27, 27.0, or 26.5")
-        }
-        return value
+    switch raw.first {
+    case nil:
+      return ConfigOptions(action: .show)
+    case "get" where raw.count == 2:
+      return ConfigOptions(action: .get(try key(raw[1])))
+    case "set" where raw.count == 3:
+      let name = try key(raw[1])
+      return ConfigOptions(action: .set(name, name == "bundleIDPrefix" ? try bundleIDPrefix(raw[2]) : try teamID(raw[2])))
+    case "unset" where raw.count == 2:
+      return ConfigOptions(action: .unset(try key(raw[1])))
+    default:
+      throw ArgumentError(description: "config takes get <key>, set <key> <value>, or unset <key>")
     }
+  }
 
-    /// The synopses at the top of the usage of the commands other than the runner commands, in order, each
-    /// with the command names it shows. The usage is built from it, and so is `commandNames`, so a command
-    /// added here is known everywhere.
-    static let commandSynopses: [(names: [String], synopsis: String)] = [
-        (["start"], """
-        relay start [--udid <UDID> | --device <NAME>] [--simulator] [--os <VERSION>] [--team-id <TEAM_ID>]
-            [--project <PATH>] [--port 8100] [--rebuild] [--verbose] [--ready-timeout 180]
-            [--allow-wifi] [--background] [--session <NAME>]
-        """),
-        (["status"], "relay status [--json] [--runner <PATH> | --session <NAME> | --all]"),
-        (["stop"], "relay stop [--runner <PATH> | --session <NAME> | --all]"),
-        (["record"], """
-        relay record start [-o <file>] [--force] [--max-duration 600] [--runner <PATH> | --session <NAME>]
-        relay record stop
-        relay record status [--json]
-        """),
-        (["install", "uninstall"], "relay install [--project <PATH>] [--build [--verbose]] | relay install --remove | relay uninstall"),
-        (["skill"], """
-        relay skill install [--global | --dir <skills dir>] [--link] [--force]
-        relay skill uninstall
-        relay skill status
-        """),
-        (["devices"], "relay devices [--json] [--os <VERSION>]"),
-        (["doctor"], """
-        relay doctor [--udid <UDID> | --device <NAME>] [--simulator] [--os <VERSION>] [--project <PATH>]
-            [--json]
-        """),
-        (["config"], "relay config [get <key> | set <key> <value> | unset <key>]"),
-        (["bench"], """
-        relay bench [--runner <PATH> | --session <NAME>] [--count 10] [--tap x,y] [--mode private|xcui]
-            [--url <RUNNER_URL>] [--token <TOKEN>]
-        """),
-        (["run"], """
-        relay run (<file> | - | --step <step>...) [--check] [--runner <PATH> | --session <NAME>] [--quiet]
-            (experimental)
-        """)
-    ]
-
-    /// Every command name of relay: the commands of `commandSynopses`, the runner commands, and the
-    /// lifecycle commands (status, stop, run).
-    static var commandNames: Set<String> {
-        Set(commandSynopses.flatMap(\.names)).union(runnerUsages.keys).union(lifecycleUsages.keys)
+  /// A `--session` value; an invalid name is an error here, like any other bad option.
+  static func sessionName(_ value: String) throws -> String {
+    do {
+      return try RelaySession.validated(value)
+    } catch let error as SessionSelectionError {
+      throw ArgumentError(description: error.description)
     }
+  }
 
-    static let usage = """
-    Usage:
-    \(commandSynopses.map { $0.synopsis.split(separator: "\n").map { "  " + $0 }.joined(separator: "\n") }.joined(separator: "\n"))
+  private static func teamID(_ value: String) throws -> String {
+    guard RelayConfig.isValidTeamID(value) else {
+      throw ArgumentError(description: "invalid Team ID: \(value) (10 uppercase letters and digits)")
+    }
+    return value
+  }
 
-    start    Builds the RelayRunner XCTest runner if needed (no build yet, its sources changed, or
-             another Xcode SDK), launches it on the device or simulator, and prints the runner URL once
-             it answers /health. The URL and a per-launch access token are saved to ~/.relay/runner.json
-             (mode 0600) and removed on exit. Ctrl-C shuts the runner down.
-             Without --udid or --device it uses the only connected device, else the only booted
-             simulator; --simulator leaves devices out (to try a simulator with a device connected), and
-             --os 27 or --os 26.5 keeps those whose OS version starts with it. --device picks, of
-             several with that name, the only connected or booted one, else the simulator with the
-             newest iOS, and prints which.
-             A shut-down simulator named with --udid/--device is booted, and shut down again on exit.
-             For devices, the Team ID defaults to teamID in ~/.relay/config.json, else the team of the
-             Apple Development certificates in the keychain; the one used is saved there. The runner's
-             host app is <prefix>.RelayRunnerHost (prefix: bundleIDPrefix in config.json, else
-             dev.devicerelay.<team id in lowercase>, else dev.devicerelay.local); the runner commands
-             take host for its bundle ID.
-             The runner project is --project, else $RELAY_HOME, else a device-relay checkout around the
-             current directory, else the directory of the relay executable (an extracted release or
-             a checkout), else the copy relay install made in ~/.relay/runner. Builds and logs go to
-             ~/.relay/build and ~/.relay/logs.
-             Devices are reached over the CoreDevice tunnel only; --allow-wifi also tries the device's
-             Wi-Fi addresses, where the token travels as plain HTTP.
-             --background runs it detached from the terminal (log: ~/.relay/logs/start-*.log) and exits
-             once the runner is ready, printing ready: <url>; relay stop stops it. Agents and CI should
-             use relay start --background, then the runner commands, then relay stop.
-             --session <name> (or $RELAY_SESSION) keeps this runner apart from the others, for several
-             agents at once: its state is ~/.relay/sessions/<name>/runner.json, and without --port it
-             takes a free port in 8101-8199. The other commands take --session or $RELAY_SESSION too,
-             and never fall back to another runner. A device takes one runner: a device in use is an
-             error when named, and left out when relay start picks one itself. With a session, of
-             several free booted simulators it takes the first (newest iOS, then name) rather than
-             asking which; one another start takes first is left out, and the choice is made again.
-    status   The check after relay start: shows the runner in runner.json (URL, device, relay start pid,
-             start time), whether /ping answers, and the build it reports (relay version and runner
-             source hash). Exits 0 if it does, 3 if there is no runner or it does not answer, 4 if it
-             answers 401 (the token in runner.json is not that runner's). --all lists every session and
-             the default runner (session, state, device, URL, pid) and exits 0.
-    stop     Stops relay start (SIGTERM, like Ctrl-C), which shuts the runner down, shuts down a
-             simulator it booted, and removes runner.json; waits for it and prints "stopped", or "not
-             running" (exit 0) if nothing runs. A recording (relay record) of that runner is finished
-             first. --all stops every session and the default runner, also ones of other agents.
-    record   Records the screen of the runner's simulator, or of its device connected with USB, to an
-             MP4 (detached from the terminal) until relay record stop, which prints the video's path, or
-             until --max-duration seconds. A device needs camera access for the terminal. relay record
-             --help for details.
-    install  Only needed for a relay binary copied away from its directory: copies the runner
-             project and the agent skill from the extracted release or checkout (--project,
-             $RELAY_HOME, the current directory, or the relay executable's directory) to
-             ~/.relay/runner, replacing a previous copy, and records the relay version. --build also
-             builds it for simulators (log: ~/.relay/logs/build-*.log; --verbose also shows
-             xcodebuild's output). --remove (or relay
-             uninstall) deletes ~/.relay/runner and its builds; config.json and runner.json stay.
-    skill    Installs the device-relay agent skill into .claude/skills of the current git repository
-             (--global: ~/.claude/skills; relay skill --help for details).
-    devices  Lists devices (devicectl) and iOS simulators (simctl): name, UDID, kind, OS, and state.
-             --os lists those of that OS version only.
-    doctor   Checks Xcode, the runner project, the agent skill, signing, and the device relay start
-             would use (with the same --udid, --device, --simulator, and --os), marking each ✓, ✗, or !
-             with a fix. Exits 1 if anything is ✗. A device another relay start holds is left out of the
-             automatic choice and is ✗ when named. --json prints one object instead and no other line:
-             {"ok":bool,"problems":n,"warnings":n,"checks":[{"section":..,"name":..,"detail":..,
-             "status":"ok"|"warning"|"problem","fix":null|"..."}]}.
-    config   Shows or changes ~/.relay/config.json (keys: teamID, bundleIDPrefix). bundleIDPrefix
-             replaces the runner's default bundle ID prefix, dev.devicerelay.<team id in lowercase>.
-    bench    Measures round-trip latency of /health, /screenshot, and optionally /tap. The runner is
-             found as for the runner commands (--runner or --session, else $RELAY_RUNNER or
-             $RELAY_SESSION, else ~/.relay/runner.json); exit 3 if there is none. --url and --token
-             replace its URL and token (--url alone still takes the token from runner.json). --mode
-             forces the runner's touch path (private event synthesis or public XCUI).
-    run      Experimental; the format may change. Runs runner commands, one per line (without relay), in
-             order in one process, after checking them all; stops at the first that fails and exits with
-             its status. relay run --help for details.
+  private static func bundleIDPrefix(_ value: String) throws -> String {
+    guard RunnerBundleID.isValidPrefix(value) else {
+      throw ArgumentError(description: "invalid bundle ID prefix: \(value) (letters, digits, and hyphens, separated by dots)")
+    }
+    return value
+  }
 
-    Runner commands (operate the runner relay start launched; relay <command> --help for details):
-    \(listedRunnerCommands.map { "  " + runnerUsages[$0]!.synopsis }.joined(separator: "\n"))
+  private static func osVersion(_ value: String) throws -> String {
+    guard DeviceSelector.isValidOSVersion(value) else {
+      throw ArgumentError(description: "--os requires a version such as 27, 27.0, or 26.5")
+    }
+    return value
+  }
 
-    ping, health, and status: ping asks whether the runner is alive and busy, and answers even while a
-    command runs; health returns the screen size and the like, and fails with exit 5 while a command
-    runs; status also reads runner.json and looks at the relay start behind it.
+  /// The synopses at the top of the usage of the commands other than the runner commands, in order, each
+  /// with the command names it shows. The usage is built from it, and so is `commandNames`, so a command
+  /// added here is known everywhere.
+  static let commandSynopses: [(names: [String], synopsis: String)] = [
+    (["start"], """
+    relay start [--udid <UDID> | --device <NAME>] [--simulator] [--os <VERSION>] [--team-id <TEAM_ID>]
+        [--project <PATH>] [--port 8100] [--rebuild] [--verbose] [--ready-timeout 180]
+        [--allow-wifi] [--background] [--session <NAME>]
+    """),
+    (["status"], "relay status [--json] [--runner <PATH> | --session <NAME> | --all]"),
+    (["stop"], "relay stop [--runner <PATH> | --session <NAME> | --all]"),
+    (["record"], """
+    relay record start [-o <file>] [--force] [--max-duration 600] [--runner <PATH> | --session <NAME>]
+    relay record stop
+    relay record status [--json]
+    """),
+    (["install", "uninstall"], "relay install [--project <PATH>] [--build [--verbose]] | relay install --remove | relay uninstall"),
+    (["skill"], """
+    relay skill install [--global | --dir <skills dir>] [--link] [--force]
+    relay skill uninstall
+    relay skill status
+    """),
+    (["devices"], "relay devices [--json] [--os <VERSION>]"),
+    (["doctor"], """
+    relay doctor [--udid <UDID> | --device <NAME>] [--simulator] [--os <VERSION>] [--project <PATH>]
+        [--json]
+    """),
+    (["config"], "relay config [get <key> | set <key> <value> | unset <key>]"),
+    (["bench"], """
+    relay bench [--runner <PATH> | --session <NAME>] [--count 10] [--tap x,y] [--mode private|xcui]
+        [--url <RUNNER_URL>] [--token <TOKEN>]
+    """),
+    (["run"], """
+    relay run (<file> | - | --step <step>...) [--check] [--runner <PATH> | --session <NAME>] [--quiet]
+        (experimental)
+    """)
+  ]
 
-    \(runnerCommonUsage)
-    """
+  /// Every command name of relay: the commands of `commandSynopses`, the runner commands, and the
+  /// lifecycle commands (status, stop, run).
+  static var commandNames: Set<String> {
+    Set(commandSynopses.flatMap(\.names)).union(runnerUsages.keys).union(lifecycleUsages.keys)
+  }
+
+  static let usage = """
+  Usage:
+  \(commandSynopses.map { $0.synopsis.split(separator: "\n").map { "  " + $0 }.joined(separator: "\n") }.joined(separator: "\n"))
+
+  start    Builds the RelayRunner XCTest runner if needed (no build yet, its sources changed, or
+           another Xcode SDK), launches it on the device or simulator, and prints the runner URL once
+           it answers /health. The URL and a per-launch access token are saved to ~/.relay/runner.json
+           (mode 0600) and removed on exit. Ctrl-C shuts the runner down.
+           Without --udid or --device it uses the only connected device, else the only booted
+           simulator; --simulator leaves devices out (to try a simulator with a device connected), and
+           --os 27 or --os 26.5 keeps those whose OS version starts with it. --device picks, of
+           several with that name, the only connected or booted one, else the simulator with the
+           newest iOS, and prints which.
+           A shut-down simulator named with --udid/--device is booted, and shut down again on exit.
+           For devices, the Team ID defaults to teamID in ~/.relay/config.json, else the team of the
+           Apple Development certificates in the keychain; the one used is saved there. The runner's
+           host app is <prefix>.RelayRunnerHost (prefix: bundleIDPrefix in config.json, else
+           dev.devicerelay.<team id in lowercase>, else dev.devicerelay.local); the runner commands
+           take host for its bundle ID.
+           The runner project is --project, else $RELAY_HOME, else a device-relay checkout around the
+           current directory, else the directory of the relay executable (an extracted release or
+           a checkout), else the copy relay install made in ~/.relay/runner. Builds and logs go to
+           ~/.relay/build and ~/.relay/logs.
+           Devices are reached over the CoreDevice tunnel only; --allow-wifi also tries the device's
+           Wi-Fi addresses, where the token travels as plain HTTP.
+           --background runs it detached from the terminal (log: ~/.relay/logs/start-*.log) and exits
+           once the runner is ready, printing ready: <url>; relay stop stops it. Agents and CI should
+           use relay start --background, then the runner commands, then relay stop.
+           --session <name> (or $RELAY_SESSION) keeps this runner apart from the others, for several
+           agents at once: its state is ~/.relay/sessions/<name>/runner.json, and without --port it
+           takes a free port in 8101-8199. The other commands take --session or $RELAY_SESSION too,
+           and never fall back to another runner. A device takes one runner: a device in use is an
+           error when named, and left out when relay start picks one itself. With a session, of
+           several free booted simulators it takes the first (newest iOS, then name) rather than
+           asking which; one another start takes first is left out, and the choice is made again.
+  status   The check after relay start: shows the runner in runner.json (URL, device, relay start pid,
+           start time), whether /ping answers, and the build it reports (relay version and runner
+           source hash). Exits 0 if it does, 3 if there is no runner or it does not answer, 4 if it
+           answers 401 (the token in runner.json is not that runner's). --all lists every session and
+           the default runner (session, state, device, URL, pid) and exits 0.
+  stop     Stops relay start (SIGTERM, like Ctrl-C), which shuts the runner down, shuts down a
+           simulator it booted, and removes runner.json; waits for it and prints "stopped", or "not
+           running" (exit 0) if nothing runs. A recording (relay record) of that runner is finished
+           first. --all stops every session and the default runner, also ones of other agents.
+  record   Records the screen of the runner's simulator, or of its device connected with USB, to an
+           MP4 (detached from the terminal) until relay record stop, which prints the video's path, or
+           until --max-duration seconds. A device needs camera access for the terminal. relay record
+           --help for details.
+  install  Only needed for a relay binary copied away from its directory: copies the runner
+           project and the agent skill from the extracted release or checkout (--project,
+           $RELAY_HOME, the current directory, or the relay executable's directory) to
+           ~/.relay/runner, replacing a previous copy, and records the relay version. --build also
+           builds it for simulators (log: ~/.relay/logs/build-*.log; --verbose also shows
+           xcodebuild's output). --remove (or relay
+           uninstall) deletes ~/.relay/runner and its builds; config.json and runner.json stay.
+  skill    Installs the device-relay agent skill into .claude/skills of the current git repository
+           (--global: ~/.claude/skills; relay skill --help for details).
+  devices  Lists devices (devicectl) and iOS simulators (simctl): name, UDID, kind, OS, and state.
+           --os lists those of that OS version only.
+  doctor   Checks Xcode, the runner project, the agent skill, signing, and the device relay start
+           would use (with the same --udid, --device, --simulator, and --os), marking each ✓, ✗, or !
+           with a fix. Exits 1 if anything is ✗. A device another relay start holds is left out of the
+           automatic choice and is ✗ when named. --json prints one object instead and no other line:
+           {"ok":bool,"problems":n,"warnings":n,"checks":[{"section":..,"name":..,"detail":..,
+           "status":"ok"|"warning"|"problem","fix":null|"..."}]}.
+  config   Shows or changes ~/.relay/config.json (keys: teamID, bundleIDPrefix). bundleIDPrefix
+           replaces the runner's default bundle ID prefix, dev.devicerelay.<team id in lowercase>.
+  bench    Measures round-trip latency of /health, /screenshot, and optionally /tap. The runner is
+           found as for the runner commands (--runner or --session, else $RELAY_RUNNER or
+           $RELAY_SESSION, else ~/.relay/runner.json); exit 3 if there is none. --url and --token
+           replace its URL and token (--url alone still takes the token from runner.json). --mode
+           forces the runner's touch path (private event synthesis or public XCUI).
+  run      Experimental; the format may change. Runs runner commands, one per line (without relay), in
+           order in one process, after checking them all; stops at the first that fails and exits with
+           its status. relay run --help for details.
+
+  Runner commands (operate the runner relay start launched; relay <command> --help for details):
+  \(listedRunnerCommands.map { "  " + runnerUsages[$0]!.synopsis }.joined(separator: "\n"))
+
+  ping, health, and status: ping asks whether the runner is alive and busy, and answers even while a
+  command runs; health returns the screen size and the like, and fails with exit 5 while a command
+  runs; status also reads runner.json and looks at the relay start behind it.
+
+  \(runnerCommonUsage)
+  """
 }
