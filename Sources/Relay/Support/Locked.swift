@@ -7,26 +7,26 @@ import Foundation
 /// Sendable by hand: every read and write of `stored` is between `lock.lock()` and `lock.unlock()`, which
 /// the compiler cannot see. CLI only, so the runner target does not compile this file.
 final class Locked<Value: Sendable>: @unchecked Sendable {
-    private let lock = NSLock()
-    private var stored: Value
+  private let lock = NSLock()
+  private var stored: Value
 
-    init(_ value: Value) {
-        stored = value
-    }
+  init(_ value: Value) {
+    stored = value
+  }
 
-    var value: Value {
-        withLock { $0 }
-    }
+  var value: Value {
+    withLock { $0 }
+  }
 
-    func set(_ value: Value) {
-        withLock { $0 = value }
-    }
+  func set(_ value: Value) {
+    withLock { $0 = value }
+  }
 
-    /// Don't wait for another thread inside `body`: it holds the lock until it returns.
-    @discardableResult
-    func withLock<Result>(_ body: (inout Value) throws -> Result) rethrows -> Result {
-        lock.lock()
-        defer { lock.unlock() }
-        return try body(&stored)
-    }
+  /// Don't wait for another thread inside `body`: it holds the lock until it returns.
+  @discardableResult
+  func withLock<Result>(_ body: (inout Value) throws -> Result) rethrows -> Result {
+    lock.lock()
+    defer { lock.unlock() }
+    return try body(&stored)
+  }
 }
