@@ -66,7 +66,9 @@ region は LLVM の実行領域であり、分岐カバレッジとは異なり�
 CI も同じ設定を使用し、mise 本体は 2026.11.4 に固定しています。
 初回は `mise trust` と `mise install --locked` を実行してください。
 Swift は Xcode 付属のものを `xcrun` で選択し、CI では Xcode 26・27 の互換性を確認します。
-Xcode のパッチ版とランナーイメージは固定していません。
+CI の27系は CLI・Runner ともに Release と同じ Xcode 27.2 を明示的に選択します。
+26系は引き続きランナー既定の安定版を使用します。ランナーイメージのリビジョンは固定していません。
+Release は以下のとおり、Xcode のバージョンとビルド番号を明示しています。
 
 ```sh
 mise run check
@@ -138,6 +140,17 @@ curl -s -H "$AUTH" "$R/source" | jq -r '.tree | .. | objects | select(.identifie
 iOS 27 では UIScene のライフサイクルを採用していないアプリが起動時に落ちるので、ホストアプリは `UIWindowSceneDelegate` を使います。また起動画面の設定（`UILaunchScreen`）がないと実機で 320×480 の互換モードになるので、Info.plist に生成させています。
 
 ## リリースの手順
+
+Release は `xcode-27` ランナー上で Xcode 27.2（27B52、2026-11-08 時点の最新安定版）を
+`DEVELOPER_DIR` で明示的に選択します。開始時にバージョンとビルド番号を照合し、
+存在しない場合や一致しない場合は失敗します。ランナーの既定 Xcode や beta にフォールバックしません。
+テスト・各アーキテクチャのビルド・公証まで同じ設定を継承します。
+macOS の最低対応バージョンは引き続き `Package.swift` の macOS 26 です。
+
+Xcode を更新するときは [Apple のリリース情報](https://developer.apple.com/news/releases/) と
+[ランナーの搭載ツール](https://github.com/actions/runner-images/blob/main/images/macos/xcode-27-arm64-Readme.md)を確認し、
+`release.yml` の `DEVELOPER_DIR`、バージョン・ビルド番号の照合条件、
+`ci.yml` の27系の選択ステップと、この文書を一緒に更新してください。
 
 1. `Sources/Relay/Setup/RunnerInstall.swift` の `RelayVersion.current` を上げて、main にマージします。
 2. マージしたコミットにタグ `vX.Y.Z`（`RelayVersion.current` と同じ）を付けて push します。

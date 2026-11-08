@@ -11,17 +11,24 @@ permissions:
 jobs:
   release:
     name: Publish the release
-    # Xcode 26, the oldest Xcode relay supports, so the binaries run wherever relay does.
-    runs-on: macos-latest
+    # Use the latest stable Xcode explicitly; never inherit the image's default or a beta.
+    runs-on: xcode-27
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
     # Holds the signing secrets: v* tags only, and the run waits here for a reviewer (docs/development.md).
     environment: release
     # Notarization alone may wait for 30 minutes (scripts/notarize.sh). Waiting for the reviewer doesn't count.
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Show the Xcode in use
+      - name: Verify the release Xcode
         run: |
-          xcodebuild -version
+          version=$(xcodebuild -version)
+          printf '%s\n' "$version"
+          if [ "$version" != $'Xcode 27.2\nBuild version 27B52' ]; then
+            echo "::error::release requires Xcode 27.2 (27B52)"
+            exit 1
+          fi
           xcrun swift --version
       # Before anything is built; scripts/package.sh checks the version it is given as well.
       - name: Check the tag against RelayVersion.current
