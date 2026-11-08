@@ -17,7 +17,7 @@ xcrun swift run relay doctor
 Swift の整形検査、Workflow・Shell の静的検査、カバレッジ付き Swift テストと Python テストを実行し、Swift テスト成功後に
 カバレッジ下限を検証します。Python テストは独立して並列実行できます。
 いずれかが失敗するとタスク全体が失敗します。CI の CLI ジョブも同じタスクを使います。
-結果は `coverage/` に出力します。端末側 Runner のビルドは CI の別ジョブで検証します。
+結果は `coverage/` に出力します。端末側 Runner のビルドとシミュレータ動作は CI の別ジョブで検証します。
 
 必要な検証だけを個別に実行することもできます。
 
@@ -33,6 +33,7 @@ Swift の整形検査、Workflow・Shell の静的検査、カバレッジ付き
 | `mise run lint:swift` | 同じ設定で整形漏れを検査（ファイルは変更しない） |
 | `mise run check` | 静的検査、Python テスト、Swift テストとカバレッジ検証を一括実行 |
 | `mise run test:package` | 署名なしの arm64・Intel 配布パッケージを生成・検証 |
+| `mise run test:runner` | 専用シミュレータでRunnerの起動・認証・ping・停止を検証 |
 | `mise run tools:outdated` | プロジェクトのツール更新候補を確認（候補があれば終了コード1） |
 
 `check` は `lint:swift`・`lint:workflow`・`lint:shell`・`coverage`・`test:python` に、`coverage` は `test:swift` に依存します。
@@ -170,6 +171,26 @@ mise が終了コード0でも、未確認ツールを示す `Could not check ..
 `mise lock --platform macos-arm64,macos-x64`、`mise install --locked`、`mise run check` を実行します。
 配布処理への影響がある場合は `mise run test:package` も実行し、設定とロックを同じPRで更新してください。
 ツールのバージョンを記載した README・開発ドキュメントも更新します。
+
+## Runner のシミュレータ動作テスト
+
+`mise run test:runner` は CLI をビルドし、インストール済みの iOS ランタイムから
+選択した Xcode の Simulator SDK 以下の最新バージョンを選んで、テスト専用の iPhone を作成します。
+互換ランタイムがない場合は失敗します。ランタイムのダウンロードは自動実行しません。
+
+一意のセッションで `relay start` を起動し、待ち受け開始、不正・未指定トークンの401拒否、
+正しいトークンのHTTP pingとCLI ping、`relay stop` を検証します。停止後は起動プロセス群、
+待ち受けポート、runner.json が残っていないことと、セッションロックが解放されることを確認します。
+成功・失敗とも専用シミュレータをshutdown・削除し、専用セッションディレクトリを削除します。
+SIGINT・SIGTERMによるキャンセルでも同じ後片付けを行い、終了コードはそれぞれ130・143になります。
+リソース作成中は所有情報を記録してからキャンセルを処理し、後片付け中の追加シグナルでは中断しません。
+SIGKILLやCIホストの強制停止では後片付けを保証できません。
+既存シミュレータの流用や、既存セッションの停止は行いません。
+
+通常の `check` には含めません。同じビルドディレクトリを使うため、ローカルでは
+`check`・`test:package` と同時実行しないでください。CIでは26・27両系のRunnerジョブで実行します。
+起動・停止ログは `runner-smoke/` に保存し、CIでは7日間artifactとして保存します。
+認証トークンを含むrunner.json自体は保存しません。画面操作・実機・署名公証は検証対象外です。
 
 ## ランナーを手動で起動する
 
