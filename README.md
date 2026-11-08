@@ -78,8 +78,8 @@ mise install
 mise run check
 ```
 
-`check` runs Swift and Python tests and enforces coverage floors, using the same task as CI.
-For individual tasks (`build`, `test:swift`, `test:python`, and `coverage`), see [Development](docs/development.md).
+`check` lints workflows and shell scripts, runs Swift and Python tests, and enforces coverage floors, using the same task as CI.
+For individual tasks (`build`, `test:swift`, `test:python`, `coverage`, `lint:workflow`, and `lint:shell`), see [Development](docs/development.md).
 
 ## Quick start
 

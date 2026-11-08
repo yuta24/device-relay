@@ -78,8 +78,8 @@ mise install
 mise run check
 ```
 
-`check` は CI と同じタスクで Swift・Python のテストとカバレッジ下限チェックを実行します。
-個別タスク（`build`・`test:swift`・`test:python`・`coverage`）は[開発者向けドキュメント](docs/development.md)を参照してください。
+`check` は CI と同じタスクで Workflow・Shell の静的検査、Swift・Python のテストとカバレッジ下限チェックを実行します。
+個別タスク（`build`・`test:swift`・`test:python`・`coverage`・`lint:workflow`・`lint:shell`）は[開発者向けドキュメント](docs/development.md)を参照してください。
 
 ## クイックスタート
 
