@@ -12,6 +12,26 @@ xcrun swift test
 xcrun swift run relay doctor
 ```
 
+変更後の CLI の一括検証は、リポジトリ内で `mise run check` を実行します。
+初回は `mise trust` と `mise install` を実行してください。
+カバレッジ付き Swift テストと Python テストを実行し、Swift テスト成功後に
+カバレッジ下限を検証します。Python テストは独立して並列実行できます。
+いずれかが失敗するとタスク全体が失敗します。CI の CLI ジョブも同じタスクを使います。
+結果は `coverage/` に出力します。端末側 Runner のビルドは CI の別ジョブで検証します。
+
+必要な検証だけを個別に実行することもできます。
+
+| コマンド | 内容 |
+| --- | --- |
+| `mise run build` | CLI のビルド |
+| `mise run test:swift` | Swift テストとカバレッジ計測（ビルドも含む） |
+| `mise run test:python` | カバレッジ集計スクリプトの Python テスト |
+| `mise run coverage` | Swift テストを実行してからカバレッジ下限を検証 |
+| `mise run check` | Python テストと、Swift テストからカバレッジ検証までを一括実行 |
+
+`check` は `coverage` と `test:python` に、`coverage` は `test:swift` に依存します。
+`swift test` がビルドも行うため、`check` から `build` を別途呼び出すことはありません。
+
 ## CI のカバレッジ計測
 
 push（main）と pull request の CLI ジョブで、Xcode 26・27 のそれぞれについて
@@ -32,7 +52,7 @@ region は LLVM の実行領域であり、分岐カバレッジとは異なり�
 閾値を下げる場合は、その理由と検証への影響を PR に記載してください。
 新しい Swift ファイルが計測結果から欠落した場合も失敗します。
 
-ローカルで同じチェックを実行するには:
+ローカルでも CI と同じ `check` タスクを使用します。
 
 カバレッジ集計用の Python は `mise.toml` で 3.14.3 に固定しています。
 CI も同じ設定を使用し、mise 本体は 2026.11.4 に固定しています。
@@ -41,9 +61,7 @@ Swift は Xcode 付属のものを `xcrun` で選択し、CI では Xcode 26・2
 Xcode のパッチ版とランナーイメージは固定していません。
 
 ```sh
-xcrun swift test --enable-code-coverage
-mise exec -- python3 -m unittest discover -s scripts -p 'test_*.py'
-mise exec -- python3 scripts/coverage.py "$(xcrun swift test --show-codecov-path)" --output coverage
+mise run check
 ```
 
 ## ランナーを手動で起動する

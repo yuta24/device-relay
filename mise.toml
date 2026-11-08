@@ -1,2 +1,27 @@
 [tools]
 python = "3.14.3"
+
+[tasks.build]
+description = "Build the CLI"
+run = "xcrun swift build"
+
+[tasks."test:swift"]
+description = "Build and run Swift tests with code coverage"
+run = "xcrun swift test --enable-code-coverage"
+
+[tasks."test:python"]
+description = "Run coverage reporter tests"
+run = "python3 -m unittest discover -s scripts -p 'test_*.py'"
+
+[tasks.coverage]
+description = "Run Swift tests, report coverage, and enforce coverage floors"
+depends = ["test:swift"]
+run = '''
+set -euo pipefail
+coverage_path="$(xcrun swift test --show-codecov-path)"
+python3 scripts/coverage.py "$coverage_path" --output coverage
+'''
+
+[tasks.check]
+description = "Run Swift/Python tests and enforce coverage floors"
+depends = ["coverage", "test:python"]
