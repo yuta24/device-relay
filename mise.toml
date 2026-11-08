@@ -55,3 +55,8 @@ run = "bash scripts/package-smoke.sh arm64 x86_64"
 [tasks."tools:outdated"]
 description = "Report project tool update candidates; exit 1 when updates are available"
 run = "python3 scripts/tool_updates.py"
+
+[tasks."test:runner"]
+description = "Smoke-test Runner startup, authentication, ping and cleanup on a disposable simulator"
+depends = ["build"]
+run = "python3 scripts/runner_smoke.py"

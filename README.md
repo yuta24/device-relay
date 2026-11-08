@@ -85,6 +85,7 @@ mise run check
 For individual tasks (`build`, `test:swift`, `test:python`, `coverage`, `lint:workflow`, and `lint:shell`), see [Development](docs/development.md).
 Run `mise run format` to format Swift code, or `mise run lint:swift` to check it without making changes.
 Run `mise run test:package` separately to build and smoke-test unsigned release packages.
+Run `mise run test:runner` separately to test Runner startup, authentication, ping, and cleanup on a disposable simulator.
 Use `mise run tools:outdated` to report tool update candidates; the same check runs weekly in Actions. It does not update versions automatically.
 
 ## Quick start
