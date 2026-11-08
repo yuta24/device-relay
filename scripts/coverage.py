@@ -45,6 +45,9 @@ def report(export, thresholds, source_root):
     total = aggregate(files.values())
     areas = {area: aggregate([f for name, f in files.items() if name.startswith(area + "/")])
              for area in sorted({name.split('/')[0] for name in files if '/' in name})}
+    unconfigured = sorted(set(areas) - set(thresholds["areas"]))
+    if unconfigured:
+        raise ValueError(f"missing coverage floors for areas: {', '.join(unconfigured)}")
     failures = []
     for metric, floor in thresholds["total"].items():
         if total[metric]["percent"] < floor:
@@ -58,8 +61,8 @@ def report(export, thresholds, source_root):
                "", "| Area | Lines | Functions | Regions | Line floor |", "| --- | ---: | ---: | ---: | ---: |"]
     for name, metrics in [("Total", total), *areas.items()]:
         cells = [f"{metrics[m]['percent']:.2f}% ({metrics[m]['covered']}/{metrics[m]['count']})" for m in METRICS]
-        floor = thresholds["total"]["lines"] if name == "Total" else thresholds["areas"].get(name)
-        summary.append(f"| {name} | " + " | ".join(cells) + f" | {floor if floor is not None else '—'}% |")
+        floor = thresholds["total"]["lines"] if name == "Total" else thresholds["areas"][name]
+        summary.append(f"| {name} | " + " | ".join(cells) + f" | {floor}% |")
     summary += ["", "### Files", "", "| File | Line coverage |", "| --- | ---: |"]
     for name, f in sorted(files.items()):
         line = f["summary"]["lines"]
