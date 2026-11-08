@@ -1,0 +1,4 @@
+# Existing CI runner label not yet included in actionlint's built-in label list.
+self-hosted-runner:
+  labels:
+    - xcode-27

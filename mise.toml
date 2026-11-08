@@ -1,5 +1,7 @@
 [tools]
 python = "3.14.3"
+"aqua:rhysd/actionlint" = "1.7.12"
+"aqua:koalaman/shellcheck" = "0.11.0"
 
 [tasks.build]
 description = "Build the CLI"
@@ -23,5 +25,13 @@ python3 scripts/coverage.py "$coverage_path" --output coverage
 '''
 
 [tasks.check]
-description = "Run Swift/Python tests and enforce coverage floors"
-depends = ["coverage", "test:python"]
+description = "Lint workflows/scripts, run Swift/Python tests, and enforce coverage floors"
+depends = ["lint:workflow", "lint:shell", "coverage", "test:python"]
+
+[tasks."lint:workflow"]
+description = "Lint GitHub Actions workflows, including embedded shell scripts"
+run = "actionlint -pyflakes="
+
+[tasks."lint:shell"]
+description = "Lint release shell scripts"
+run = "shellcheck scripts/*.sh"

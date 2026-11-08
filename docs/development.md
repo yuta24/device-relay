@@ -14,7 +14,7 @@ xcrun swift run relay doctor
 
 変更後の CLI の一括検証は、リポジトリ内で `mise run check` を実行します。
 初回は `mise trust` と `mise install` を実行してください。
-カバレッジ付き Swift テストと Python テストを実行し、Swift テスト成功後に
+Workflow・Shell の静的検査、カバレッジ付き Swift テストと Python テストを実行し、Swift テスト成功後に
 カバレッジ下限を検証します。Python テストは独立して並列実行できます。
 いずれかが失敗するとタスク全体が失敗します。CI の CLI ジョブも同じタスクを使います。
 結果は `coverage/` に出力します。端末側 Runner のビルドは CI の別ジョブで検証します。
@@ -27,10 +27,18 @@ xcrun swift run relay doctor
 | `mise run test:swift` | Swift テストとカバレッジ計測（ビルドも含む） |
 | `mise run test:python` | カバレッジ集計スクリプトの Python テスト |
 | `mise run coverage` | Swift テストを実行してからカバレッジ下限を検証 |
-| `mise run check` | Python テストと、Swift テストからカバレッジ検証までを一括実行 |
+| `mise run lint:workflow` | 全 Workflow を actionlint で検査（埋め込み Shell の ShellCheck も含む） |
+| `mise run lint:shell` | `scripts/*.sh` を ShellCheck で検査 |
+| `mise run check` | 静的検査、Python テスト、Swift テストとカバレッジ検証を一括実行 |
 
-`check` は `coverage` と `test:python` に、`coverage` は `test:swift` に依存します。
+`check` は `lint:workflow`・`lint:shell`・`coverage`・`test:python` に、`coverage` は `test:swift` に依存します。
 `swift test` がビルドも行うため、`check` から `build` を別途呼び出すことはありません。
+
+actionlint 1.7.12 と ShellCheck 0.11.0 は `mise.toml` で固定しています。
+既存チェックアウトでは `mise install` で追加ツールをインストールしてください。
+actionlint は全 `.github/workflows/` を検査し、PATH 上の固定版 ShellCheck と連携します。
+未導入ツールの有無で結果が変わらないよう、任意の Python 検査連携（Pyflakes）は無効です。
+既知ラベル一覧にない既存の `xcode-27` のみ `.github/actionlint.yaml` に明示しています。
 
 ## CI のカバレッジ計測
 
