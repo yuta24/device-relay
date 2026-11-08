@@ -55,4 +55,4 @@ runner.json: /Users/<you>/.relay/runner.json
 | --- | --- |
 | `stopped`, 0 | Stopped. If `relay start` was no longer running, it sent `/shutdown` to the runner and removed runner.json |
 | `not running`, 0 | Nothing is running (no runner.json, or it removed a stale runner.json that didn't answer) |
-| 1 | `relay start` didn't exit within 60 seconds. Look at `~/.relay/logs/start-*.log` and tell the user |
+| 1 | `relay start` didn't exit within 180 seconds (including shutdown of a simulator it booted). Look at `~/.relay/logs/start-*.log` and tell the user |
