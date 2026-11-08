@@ -2,6 +2,8 @@
 
 # device-relay
 
+[![CI](https://github.com/yuta24/device-relay/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/yuta24/device-relay/actions/workflows/ci.yml?query=branch%3Amain)
+
 Mac から iOS のシミュレータや実機を操作する CLI です。人もスクリプトもコーディングエージェントも使え、対象アプリには何も組み込みません。
 
 ## 概要

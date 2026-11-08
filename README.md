@@ -2,6 +2,8 @@
 
 # device-relay
 
+[![CI](https://github.com/yuta24/device-relay/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/yuta24/device-relay/actions/workflows/ci.yml?query=branch%3Amain)
+
 A CLI for driving iOS simulators and physical devices from a Mac — for people, scripts, and coding agents — with nothing embedded in the app under test.
 
 ## Overview
