@@ -34,10 +34,16 @@ region は LLVM の実行領域であり、分岐カバレッジとは異なり�
 
 ローカルで同じチェックを実行するには:
 
+カバレッジ集計用の Python は `mise.toml` で 3.14.3 に固定しています。
+CI も同じ設定を使用し、mise 本体は 2026.11.4 に固定しています。
+初回は `mise trust` と `mise install` を実行してください。
+Swift は Xcode 付属のものを `xcrun` で選択し、CI では Xcode 26・27 の互換性を確認します。
+Xcode のパッチ版とランナーイメージは固定していません。
+
 ```sh
 xcrun swift test --enable-code-coverage
-python3 -m unittest discover -s scripts -p 'test_*.py'
-python3 scripts/coverage.py "$(xcrun swift test --show-codecov-path)" --output coverage
+mise exec -- python3 -m unittest discover -s scripts -p 'test_*.py'
+mise exec -- python3 scripts/coverage.py "$(xcrun swift test --show-codecov-path)" --output coverage
 ```
 
 ## ランナーを手動で起動する

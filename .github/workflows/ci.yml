@@ -28,6 +28,10 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
+      - name: Set up coverage tools
+        uses: jdx/mise-action@v5.0.0
+        with:
+          version: 2026.11.4
       # The image's default Xcode: a release, where the newest one installed may be a release candidate.
       - name: Show the Xcode in use
         run: |
@@ -42,9 +46,9 @@ jobs:
         timeout-minutes: 10
       - name: Check coverage
         run: |
-          python3 -m unittest discover -s scripts -p 'test_*.py'
+          mise exec -- python3 -m unittest discover -s scripts -p 'test_*.py'
           coverage_path="$(xcrun swift test --show-codecov-path)"
-          python3 scripts/coverage.py "$coverage_path" --output coverage
+          mise exec -- python3 scripts/coverage.py "$coverage_path" --output coverage
       - name: Save coverage reports
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
