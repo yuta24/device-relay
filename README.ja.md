@@ -74,11 +74,12 @@ make install   # xcrun swift build -c release して ~/.local/bin/relay にリ�
 
 ```sh
 mise trust
-mise install
+mise install --locked
 mise run check
 ```
 
 `check` は CI と同じタスクで Workflow・Shell の静的検査、Swift・Python のテストとカバレッジ下限チェックを実行します。
+`mise.lock` に Apple Silicon・Intel Mac 向けのツール取得先とチェックサムを記録しています。
 個別タスク（`build`・`test:swift`・`test:python`・`coverage`・`lint:workflow`・`lint:shell`）は[開発者向けドキュメント](docs/development.md)を参照してください。
 
 ## クイックスタート
