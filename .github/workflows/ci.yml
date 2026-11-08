@@ -33,7 +33,10 @@ jobs:
         with:
           version: 2026.11.4
           install_args: --locked
-      # The image's default Xcode: a release, where the newest one installed may be a release candidate.
+      - name: Select Xcode 27.2
+        if: matrix.image == 'xcode-27'
+        run: echo "DEVELOPER_DIR=/Applications/Xcode_27.2.app/Contents/Developer" >> "$GITHUB_ENV"
+      # Xcode 27 matches Release; Xcode 26 retains the image's default stable version.
       - name: Show the Xcode in use
         run: |
           xcodebuild -version
@@ -66,6 +69,9 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Select Xcode 27.2
+        if: matrix.image == 'xcode-27'
+        run: echo "DEVELOPER_DIR=/Applications/Xcode_27.2.app/Contents/Developer" >> "$GITHUB_ENV"
       - name: Show the Xcode in use
         run: xcodebuild -version
       - name: Build the runner for the iOS simulator
