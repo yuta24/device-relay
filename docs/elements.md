@@ -181,7 +181,7 @@ iPad のウィンドウでは、応答（`/tap`・`/press`・`/find`・`/source`
 
 ### 別のアプリに覆われているとき
 
-要素を指定した `/tap`・`/press` は、タッチを送る直前に前面アプリの一覧（「[前面アプリ](http-api.md#前面アプリ)」の `private`）を読み直します。対象アプリ（`bundleId`。省略したときはリクエストの最初に決めた前面アプリ）が一覧になければ、何も送らずに `422`、`covered_by_other_app` を返します。システムの許可ダイアログ・コントロールセンター・通知センターは SpringBoard が描くので、表示中の一覧は SpringBoard だけになります。一方、アプリのスナップショットには後ろの要素が frame つきで残るので、以前はその座標にタッチを送り、`ok: true` のまま何も起きないか、同じ位置にあるダイアログのボタン（「Allow While Using App」「Don’t Allow」など）を押していました。
+要素を指定した `/tap`・`/press` は、タッチを送る直前に前面アプリの一覧（「[前面アプリ](http-api.md#前面アプリ)」の `private`）を読み直します。対象アプリ（`bundleId`。省略したときはリクエストの最初に決めた前面アプリ）が一覧になく、一覧の先頭が SpringBoard なら、何も送らずに `422`、`covered_by_other_app` を返します。システムの許可ダイアログ・コントロールセンター・通知センターは SpringBoard が描くので、表示中の一覧は SpringBoard だけになります。一方、アプリのスナップショットには後ろの要素が frame つきで残るので、以前はその座標にタッチを送り、`ok: true` のまま何も起きないか、同じ位置にあるダイアログのボタン（「Allow While Using App」「Don’t Allow」など）を押していました。
 
 ```json
 {"alert":"Allow “RelayRunner” to use your location?","bundleId":"dev.devicerelay.local.RelayRunnerHost",
@@ -190,13 +190,14 @@ iPad のウィンドウでは、応答（`/tap`・`/press`・`/find`・`/source`
  "foreground":"com.apple.springboard","ok":false}
 ```
 
-- `bundleId` はタッチの対象アプリ、`foreground` は一覧の先頭（Dock のフォルダのサービスを除く）、`alert` は SpringBoard の要素ツリーで最初に見つかった `alert` の label です。alert がなければ（コントロールセンター、通知センターなど）`null` です。alert は SpringBoard をスナップショットするので、止めたときにだけ探します。
+- `bundleId` はタッチの対象アプリ、`foreground` は一覧の先頭（Dock のフォルダのサービスを除く。今は常に `com.apple.springboard`）、`alert` は SpringBoard の要素ツリーで最初に見つかった `alert` の label です。alert がなければ（コントロールセンター、通知センターなど）`null` です。alert は SpringBoard をスナップショットするので、止めたときにだけ探します。
 - 一覧に対象がないときは、0.4 秒の間、0.05 秒ごとに読み直し、対象が一覧に戻ればそのまま送ります。ダイアログを閉じるタップの後、約 230 ms は SpringBoard だけが並ぶためで、閉じた直後のタップは止まりません。
 - 判定しないもの: 対象が `com.apple.springboard` のとき（通知のバナーや音量 HUD は、アプリが前面のまま SpringBoard を指定して操作するため）、非公開 API が使えない（`source: fallback`）とき、座標を指定したタッチと `/swipe`（対象アプリがありません）。
-- iPad のウィンドウ表示では、画面にあるアプリがすべて一覧に並びます（順序はフォーカスと一致しないことがありました）。そのため先頭でなくても、一覧にあれば送ります。対象のウィンドウが別のアプリに全面を覆われると一覧から外れ、`422` になります。
-- 一覧が変わらず止めないもの: アプリ内のアラート、共有シート、写真の選択、キーボード、通知のバナー、音量 HUD。バナーはアプリに重なっても一覧に出ないので、バナーの下の要素へのタップは、これまでどおりバナーに当たります（「[既知の制約](limitations.md)」）。
+- 止めるのは先頭が SpringBoard のときだけです。先頭がほかのアプリなら、対象が一覧になくても送ります。`SFSafariViewController` と `ASWebAuthenticationSession` の画面は別プロセスの `com.apple.SafariViewService` が描きますが、一覧にはそれを表示しているアプリだけが出ます。その要素は `--bundle-id com.apple.SafariViewService` でしか見えない（アプリの要素ツリーにも、`--bundle-id` なしにも出ない）ので、それを止めないためです。
+- iPad のウィンドウ表示では、画面にあるアプリがすべて一覧に並びます（順序はフォーカスと一致しないことがありました）。そのため先頭でなくても、一覧にあれば送ります。対象のウィンドウが別のアプリに全面を覆われると一覧から外れますが、先頭はそのアプリなので止めず、以前と同じく送ります（タッチは手前のアプリに当たります）。
+- 止めないもの: アプリ内のアラート、共有シート、写真の選択、キーボード、通知のバナー、音量 HUD（一覧はアプリだけ）。`SFSafariViewController`（全画面・`.pageSheet`）と `ASWebAuthenticationSession` の画面で、`--bundle-id com.apple.SafariViewService` を指定した Close・Reload などのタップ（一覧はアプリだけで、対象は一覧にない）。止めるもの: 位置情報・通知の許可ダイアログ、コントロールセンター、通知センター、`ASWebAuthenticationSession` の「“…” Wants to Use “…” to Sign In」の確認ダイアログ（いずれも一覧は SpringBoard だけ）。バナーはアプリに重なっても一覧に出ないので、バナーの下の要素へのタップは、これまでどおりバナーに当たります（「[既知の制約](limitations.md)」）。
 - 速さ: 一覧の読み取りは 1 回あたりシミュレータで 3–4 ms、実機で 7–9 ms です。止めないとき、要素指定のタップ（iPhone 17 Pro シミュレータの RelayRunnerHost に curl で 40 回）の中央値は、判定なしで 331.0 ms、判定ありで 330.9 ms と、差はばらつきに埋もれました。止めるときは読み直しと alert の探索のぶん、応答まで約 480 ms（シミュレータ）、約 670 ms（実機）かかります。
-- 確かめた環境: iPhone 17 Pro シミュレータ（iOS 27）と iPhone 14 Pro（iOS 26.7.1）で、位置情報の許可ダイアログ・コントロールセンター・通知センターで止まり、上の止めないものとダイアログを閉じた直後で止まらないことを確かめました。iPad は、iPad mini シミュレータ（iOS 26.5）のウィンドウ表示で一覧の中身だけを確かめています。
+- 確かめた環境: iPhone 17 Pro シミュレータ（iOS 27）と iPhone 14 Pro（iOS 26.7.1）で、上の止めるもので止まり（通知センターはシミュレータのみ）、止めないものとダイアログを閉じた直後で止まらないことを確かめました（`.pageSheet` はシミュレータのみ）。iPad は、iPad mini シミュレータ（iOS 26.5）のウィンドウ表示で一覧の中身だけを確かめています。
 
 ### 待機（timeout）
 
