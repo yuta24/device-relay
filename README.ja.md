@@ -87,6 +87,7 @@ Swift の自動整形は `mise run format`、変更せずに検査する場合�
 Python は Ruff を使い、`mise run format:python` でimport順序と書式を整え、`mise run lint:python` で変更せずに静的検査・整形チェックを行います。
 署名なし配布パッケージの生成とスモークテストは、別途 `mise run test:package` で実行します。
 専用シミュレータでRunnerの起動・認証・ping・停止を検証する場合は、別途 `mise run test:runner` を実行します。
+ビルド・XCTestの詳細ログと工程別の所要時間は、セッションごとに `runner-smoke/<session>/` へ保存します。
 `mise run tools:outdated` でツールの更新候補を確認できます。同じ確認を Actions でも週次実行し、バージョンは自動変更しません。
 
 ## クイックスタート

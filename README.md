@@ -87,6 +87,7 @@ Run `mise run format` to format Swift code, or `mise run lint:swift` to check it
 Run `mise run format:python` to sort imports and format Python scripts with Ruff, or `mise run lint:python` to lint and check formatting without making changes.
 Run `mise run test:package` separately to build and smoke-test unsigned release packages.
 Run `mise run test:runner` separately to test Runner startup, authentication, ping, and cleanup on a disposable simulator.
+Per-session diagnostics, including build/XCTest logs and phase timings, are saved under `runner-smoke/<session>/`.
 Use `mise run tools:outdated` to report tool update candidates; the same check runs weekly in Actions. It does not update versions automatically.
 
 ## Quick start

@@ -4,6 +4,7 @@ import contextlib
 import fcntl
 import json
 import os
+import platform
 import shutil
 import signal
 import socket
@@ -15,6 +16,8 @@ import urllib.parse
 import urllib.request
 import uuid
 from pathlib import Path
+
+from runner_diagnostics import RunnerDiagnostics
 
 ROOT = Path(__file__).resolve().parents[1]
 # relay stop allows 180 seconds for the launcher, plus its own setup/cleanup.
@@ -66,8 +69,8 @@ class Cancellation:
             signal.signal(sig, handler)
 
 
-def run(*args, **kwargs):
-    return subprocess.run(args, check=True, text=True, timeout=120, **kwargs)
+def run(*args, timeout=120, **kwargs):
+    return subprocess.run(args, check=True, text=True, timeout=timeout, **kwargs)
 
 
 def simulator_target(runtimes, sdk):
@@ -165,6 +168,37 @@ def cleanup(process, binary, session, environment, diagnostics, udid, directory)
 
 
 def smoke(cancellation):
+    session = "smoke-" + uuid.uuid4().hex
+    diagnostics = RunnerDiagnostics(ROOT / "runner-smoke" / session, session)
+    try:
+        with cancellation.defer():
+            diagnostics.start()
+        cancellation.check()
+        exercise(cancellation, session, diagnostics)
+    finally:
+        with cancellation.defer():
+            error = sys.exception()
+            if error is None and cancellation.requested is not None:
+                error = Cancelled(cancellation.requested)
+            diagnostics.finish(error, cancelled=isinstance(error, Cancelled))
+    cancellation.check()
+
+
+def exercise(cancellation, session, diagnostics):
+    artifacts = diagnostics.directory
+    diagnostics.save_environment(
+        developer_dir=os.environ.get("DEVELOPER_DIR"),
+        host=os.uname().sysname,
+        host_release=os.uname().release,
+        macos_version=platform.mac_ver()[0],
+    )
+    try:
+        xcode = run(
+            "xcodebuild", "-version", capture_output=True, timeout=30
+        ).stdout.strip()
+        diagnostics.save_environment(xcode=xcode)
+    except (OSError, subprocess.SubprocessError) as error:
+        diagnostics.warn(error)
     environment = dict(os.environ)
     for key in ("RELAY_RUNNER", "RELAY_SESSION", "RELAY_HOME"):
         environment.pop(key, None)
@@ -179,20 +213,35 @@ def smoke(cancellation):
     sdk = run(
         "xcrun", "--sdk", "iphonesimulator", "--show-sdk-version", capture_output=True
     ).stdout.strip()
+    diagnostics.save_environment(simulator_sdk=sdk)
     runtimes = json.loads(
         run("xcrun", "simctl", "list", "runtimes", "--json", capture_output=True).stdout
     )["runtimes"]
+    diagnostics.save_environment(
+        runtimes=[
+            {
+                key: item.get(key)
+                for key in ("identifier", "version", "buildversion", "isAvailable")
+            }
+            for item in runtimes
+        ]
+    )
     device, runtime = simulator_target(runtimes, sdk)
-    session = "smoke-" + uuid.uuid4().hex
+    selected = next(item for item in runtimes if item["identifier"] == runtime)
+    diagnostics.save_environment(
+        device_type=device,
+        runtime=runtime,
+        runtime_version=selected.get("version"),
+        runtime_build=selected.get("buildversion"),
+    )
     directory = Path.home() / ".relay/sessions" / session
     info_path = directory / "runner.json"
-    diagnostics = ROOT / "runner-smoke"
-    diagnostics.mkdir(exist_ok=True)
     udid = None
     process = None
     try:
         # Record ownership before a pending signal can raise and enter cleanup.
         with cancellation.defer():
+            diagnostics.mark("simulator_create_started")
             udid = run(
                 "xcrun",
                 "simctl",
@@ -202,9 +251,12 @@ def smoke(cancellation):
                 runtime,
                 capture_output=True,
             ).stdout.strip()
+            diagnostics.save_environment(udid=udid)
+            diagnostics.mark("simulator_created")
         cancellation.check()
-        with (diagnostics / "start.log").open("w") as log:
+        with (artifacts / "start.log").open("w") as log:
             with cancellation.defer():
+                diagnostics.mark("relay_started")
                 process = subprocess.Popen(
                     [
                         str(binary),
@@ -225,12 +277,13 @@ def smoke(cancellation):
                     stderr=subprocess.STDOUT,
                     start_new_session=True,
                 )
+                diagnostics.save_environment(relay_pid=process.pid)
             cancellation.check()
             deadline = time.monotonic() + 600
             while not info_path.exists():
                 if process.poll() is not None:
                     raise RuntimeError(
-                        "relay start exited before ready; see runner-smoke/start.log"
+                        f"relay start exited before ready; see {artifacts / 'start.log'}"
                     )
                 if time.monotonic() >= deadline:
                     raise TimeoutError("runner did not become ready within 600 seconds")
@@ -244,12 +297,15 @@ def smoke(cancellation):
                     if time.monotonic() >= deadline:
                         raise TimeoutError("runner.json was not completed")
                     time.sleep(0.1)
+            if isinstance(info.get("token"), str):
+                diagnostics.secrets.append(info["token"])
             if (
                 info["udid"] != udid
                 or info["pid"] != process.pid
                 or info["session"] != session
             ):
                 raise RuntimeError("runner state does not belong to this smoke test")
+            diagnostics.mark("ready")
             for token in (None, "invalid-smoke-token"):
                 status, body = ping(info["url"], token)
                 if status != 401 or body.get("ok") is not False:
@@ -267,9 +323,11 @@ def smoke(cancellation):
                 env=environment,
                 capture_output=True,
             )
-            with (diagnostics / "stop.log").open("w") as log_stop:
+            diagnostics.mark("stop_started")
+            with (artifacts / "stop.log").open("w") as log_stop:
                 stop(binary, session, environment, log_stop)
             process.wait(timeout=30)
+            diagnostics.mark("stop_completed")
             if info_path.exists() or group_exists(process.pid):
                 raise RuntimeError(
                     "runner state or launch process group remains after stop"
@@ -288,9 +346,11 @@ def smoke(cancellation):
         # Further cancellation signals must not interrupt the owned-resource teardown.
         with cancellation.defer():
             if udid is not None:
+                diagnostics.mark("cleanup_started")
                 cleanup(
-                    process, binary, session, environment, diagnostics, udid, directory
+                    process, binary, session, environment, artifacts, udid, directory
                 )
+                diagnostics.mark("cleanup_completed")
     cancellation.check()
 
 
