@@ -1,6 +1,6 @@
 import Foundation
 
-/// Whether the app an element touch is for is on the screen, judged from the active applications right before
+/// Whether SpringBoard covers the app an element touch is for, judged from the active applications right before
 /// the touch is sent.
 ///
 /// A permission alert, Control Center, and Notification Center are drawn by SpringBoard over the app. While one
@@ -10,6 +10,11 @@ import Foundation
 /// order that need not follow the focus, so the app only has to be listed, not first. What the app draws itself or
 /// shows as a remote view (in-app alerts, the share sheet, the photo picker, the keyboard) keeps it listed alone;
 /// so do notification banners and the volume HUD, which this can't see.
+///
+/// Only SpringBoard in front counts as covering. A view service the app shows, such as `com.apple.SafariViewService`
+/// for `SFSafariViewController` and `ASWebAuthenticationSession`, is never listed: its host app is, and its elements
+/// are only reached by targeting the service, which must not be refused. Another app in front (an iPad app filling
+/// the screen over the target's window) is not refused either, as before this check.
 ///
 /// Like `RunnerWindows.swift`, this file is compiled into both the `relay` CLI and the runner target so the SwiftPM
 /// unit tests cover it; the runner only reads the active applications and SpringBoard's alert.
@@ -22,13 +27,15 @@ enum RunnerCoverage {
   /// on a device.
   static let pollInterval: TimeInterval = 0.05
 
-  /// The application listed in front of `target`, or nil when the touch can go ahead: `target` is listed, it is
-  /// SpringBoard (which draws over every app, so its banners and alerts are touched while another app is in front),
-  /// or the list is unknown (nil: the private API is missing, the same as before this check) or holds nothing
-  /// but the Dock's folder service.
+  /// SpringBoard when it is listed in front of `target`, or nil when the touch can go ahead: `target` is listed, it
+  /// is SpringBoard (which draws over every app, so its banners and alerts are touched while another app is in
+  /// front), another app is in front (the host of a view service the target is, or an iPad app over the target's
+  /// window), or the list is unknown (nil: the private API is missing, the same as before this check) or holds
+  /// nothing but the Dock's folder service.
   static func coveringApplication(target: String, activeBundleIDs: [String]?) -> String? {
     guard target != RunnerWindows.springboardBundleID, let activeBundleIDs, !activeBundleIDs.contains(target),
-          let index = RunnerWindows.foregroundIndex(activeBundleIDs: activeBundleIDs) else { return nil }
+          let index = RunnerWindows.foregroundIndex(activeBundleIDs: activeBundleIDs),
+          activeBundleIDs[index] == RunnerWindows.springboardBundleID else { return nil }
     return activeBundleIDs[index]
   }
 

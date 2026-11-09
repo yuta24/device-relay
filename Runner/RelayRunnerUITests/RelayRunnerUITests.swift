@@ -520,7 +520,7 @@ final class RelayRunnerUITests: XCTestCase {
     ])
   }
 
-  /// Throws 422 (`covered_by_other_app`) without touching when another app is in front of `bundleID`, read
+  /// Throws 422 (`covered_by_other_app`) without touching when SpringBoard is in front of `bundleID`, read
   /// again right before the touch: the app was picked, and its snapshot taken, maybe before an alert came up,
   /// and its frames don't show the alert. A covered app is waited for briefly, as an alert leaves the list
   /// some 230 ms after the touch that dismissed it (`RunnerCoverage`). Without the private API, nothing is checked.

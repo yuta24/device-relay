@@ -38,7 +38,7 @@ enum RunnerErrorCode: String, CaseIterable {
   case displayUnknown = "display_unknown"
   /// 422: on iPad, where the app's window is on the screen can't be told; nothing was sent.
   case windowPositionUnknown = "window_position_unknown"
-  /// 422: another app (SpringBoard's alert, Control Center, …) is in front of the app an element touch is for;
+  /// 422: SpringBoard (a system alert, Control Center, …) is in front of the app an element touch is for;
   /// nothing was sent.
   case coveredByOtherApp = "covered_by_other_app"
   /// 422 or 500: a synthesized touch failed or did not complete in time.

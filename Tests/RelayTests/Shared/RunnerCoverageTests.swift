@@ -16,9 +16,18 @@ struct RunnerCoverageTests {
     // iPad windows: every visible app is listed with SpringBoard, not always in the order of the focus.
     #expect(RunnerCoverage.coveringApplication(target: app, activeBundleIDs: [dockFolder, "com.apple.mobilesafari", app, springboard]) == nil)
     #expect(RunnerCoverage.coveringApplication(target: app, activeBundleIDs: [app, springboard]) == nil)
-    // Another app in front, e.g. an app filling the screen over the target's window: the first one after the Dock's folder.
-    #expect(RunnerCoverage.coveringApplication(target: app, activeBundleIDs: [dockFolder, "com.apple.mobilesafari", springboard])
-      == "com.apple.mobilesafari")
+    // SpringBoard in front after the Dock's folder.
+    #expect(RunnerCoverage.coveringApplication(target: app, activeBundleIDs: [dockFolder, springboard]) == springboard)
+  }
+
+  /// Only SpringBoard covers: an app in front of the target is the host of a view service, or an iPad app.
+  @Test func letsTouchesThroughWhenAnotherAppIsInFront() {
+    // SFSafariViewController and ASWebAuthenticationSession: the host app is listed, the service that draws them isn't.
+    #expect(RunnerCoverage.coveringApplication(target: "com.apple.SafariViewService", activeBundleIDs: [app]) == nil)
+    // An iPad app filling the screen over the target's window.
+    #expect(RunnerCoverage.coveringApplication(target: app, activeBundleIDs: [dockFolder, "com.apple.mobilesafari", springboard]) == nil)
+    // The sign-in prompt of ASWebAuthenticationSession is SpringBoard's, and covers the service too.
+    #expect(RunnerCoverage.coveringApplication(target: "com.apple.SafariViewService", activeBundleIDs: [springboard]) == springboard)
   }
 
   @Test func doesNotJudgeWhatItCannot() {
