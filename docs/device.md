@@ -66,7 +66,7 @@ relay config unset teamID         # 忘れて、次回はキーチェーンか�
 
 Runner のバンドル ID は、ホストアプリが `<接頭辞>.RelayRunnerHost`、テストランナーが `<接頭辞>.RelayRunnerHost.UITests` です。
 
-明示的な App ID は最初に登録したチームのものになり、ほかのチームでは登録できません。接頭辞は既定で Team ごとに変わります。
+明示的な App ID は最初に登録したチームのものになり、ほかのチームでは登録できません。そのため、接頭辞は既定で Team ごとに変わります。
 
 `relay start` は次の順に接頭辞を決め、xcodebuild に `RELAY_BUNDLE_ID_PREFIX=<接頭辞>` を渡します。
 
