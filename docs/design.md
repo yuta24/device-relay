@@ -45,7 +45,7 @@ skills/device-relay/               コーディングエージェント向けの
 ~/.relay/build/                    DerivedData (Runner プロジェクトごと)、テスト実行のログと xcresult (TestData/port-<port>)、使用の記録 (relay-build-dir.json)。古い結果と、元の Runner がないか 30 日使っていないディレクトリは relay start が消す
 ~/.relay/logs/                     ビルドとランナーのログ、relay start --background の出力 (start-<時刻>-<port>.log、セッションは start-<時刻>-<名前>-<port>.log。古いものは relay start が消す)
 ~/.relay/runner.json               起動中のランナーの URL・トークン・端末名と、relay start の PID・起動時刻、ビルドディレクトリの名前 (0600)
-~/.relay/sessions/<名前>/          セッションの runner.json と session.lock (docs/setup.md の「複数のセッションを並列に動かす」)
+~/.relay/sessions/<名前>/          セッションの runner.json と session.lock (docs/sessions.md の「複数のセッションを並列に動かす」)
 ~/.relay/locks/                    relay start が持つロック (ポート、端末、ビルド) と、ロックを持つ起動が使うビルドディレクトリ (start-<port>.build.json)
 ~/.relay/config.json               relay config の設定 (teamID)
 ```

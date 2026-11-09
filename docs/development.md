@@ -317,6 +317,26 @@ curl -s -H "$AUTH" "$R/source" | jq -r '.tree | .. | objects | select(.identifie
 
 iOS 27 では UIScene のライフサイクルを採用していないアプリが起動時に落ちるので、ホストアプリは `UIWindowSceneDelegate` を使います。また起動画面の設定（`UILaunchScreen`）がないと実機で 320×480 の互換モードになるので、Info.plist に生成させています。
 
+## セッションの実装の背景
+
+起動時のファイルの配置と保存期間を決めた理由、古い形式の生成物を説明します。運用の手順は「[起動とセッション](sessions.md)」にあります。
+
+### テスト実行の出力先
+
+テスト実行の出力先をポートごとに分けると、並列起動時の xcresult の衝突を防げます。同じ `-derivedDataPath` を共有すると、同じ秒に始まるテストの xcresult 名が重なり、`Logs/Test/LogStoreManifest.plist` も同時に書き換えられるためです。
+
+### ビルドの使用記録と保存期間
+
+ビルドの使用記録 `relay-build-dir.json` は `DerivedData-*` の外に置くため、Xcode も Runner のソースのハッシュも読みません。
+
+未使用のビルドを削除するまでの 30 日は、休みや別作業から戻る余裕があり、誤って消しても再ビルドで戻せる長さとして決めています。
+
+### 古い形式の生成物
+
+以前の relay の生成物も、現在の掃除で扱います。テスト結果は `DerivedData-*/Logs/Test` に書かれていました。使用記録のないビルドディレクトリも以前の relay が作ったものです。
+
+以前の relay の `relay start` やその runner.json では、使用中のビルドディレクトリを特定できない場合があります。現在の保護規則と削除の条件は「[ビルドディレクトリ](sessions.md#ビルドディレクトリ)」を参照してください。
+
 ## 文書の書き方
 
 README と `docs/` を書くときの決まりです。`skills/` は配布物なので、この決まりでは書き直しません（下の「skills との関係」）。
@@ -326,7 +346,7 @@ README と `docs/` を書くときの決まりです。`skills/` は配布物な
 | 読み手 | 文書 |
 | --- | --- |
 | 初めて使う人 | README、setup.md |
-| 使っている人 | cli.md、http-api.md、elements.md、screen.md |
+| 使っている人 | sessions.md、cli.md、http-api.md、elements.md、screen.md |
 | 困っている人 | limitations.md |
 | 作る人 | development.md、design.md、private-api.md |
 | 以前の版から更新する人 | CHANGELOG.md |
@@ -361,7 +381,7 @@ README と `docs/` を書くときの決まりです。`skills/` は配布物な
 
 - `skills/device-relay/` は `relay skill` で配布する、エージェント向けの英語の文書です。CI もコードと同じに扱います（「[文書だけを変更するPRのCI](#文書だけを変更するprのci)」）。
 - docs と内容が重なるのは意図したものです。docs を直しても、skills の説明は変えません。
-- skills の中には、docs の場所をファイル名と節名で書いた所があります（例: `"バックグラウンドで動かす" in docs/setup.md`）。docs の節を移したり見出しを変えたりしたら、その書き方だけを直します（`grep -rn "docs/" skills`）。
+- skills の中には、docs の場所をファイル名と節名で書いた所があります（例: `"バックグラウンドで動かす" in docs/sessions.md`）。docs の節を移したり見出しを変えたりしたら、その書き方だけを直します（`grep -rn "docs/" skills`）。
 - skills の説明を変えるときは別の PR にし、`SKILL.md` が 8,192 バイト以下であることを確かめます（「[エージェントスキル](cli.md#エージェントスキル)」）。
 
 ## リリースの手順

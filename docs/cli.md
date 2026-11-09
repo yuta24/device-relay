@@ -7,7 +7,7 @@
 `relay` には、エンドポイントを 1 つずつ呼ぶサブコマンドがあります。ランナーは `relay start --background`（または別のターミナルの `relay start`）で起動しておき、使い終わったら `relay stop` で止めます。トークンを自分で扱わずに、人もスクリプトもエージェントも同じ形で操作できます。`relay <command> --help` で各コマンドの使い方を表示します。
 
 ```sh
-relay start --background                       # ready: <URL> が出たら戻る（「[バックグラウンドで動かす](setup.md#バックグラウンドで動かすrelay-start---background--status--stop)」）
+relay start --background                       # ready: <URL> が出たら戻る（「[バックグラウンドで動かす](sessions.md#バックグラウンドで動かすrelay-start---background--status--stop)」）
 relay status                                   # 生きていれば終了コード 0、いなければ 3
 relay health                                   # curl -s -H "$AUTH" $R/health
 relay launch host                              # RelayRunnerHost（host はそのバンドル ID の別名）
@@ -50,14 +50,13 @@ relay record stop                              # 録画を止め、MP4 の絶対
 | `type` | `POST /type` | `<text>` か `--stdin`、`--key <name>`（複数可、順に送る）、`--bundle-id` |
 | `key` / `button` / `orientation` | `POST /key` / `/button` / `/orientation` | 名前（`key` は `--bundle-id` も可。`orientation` は `landscape` を `landscapeLeft` として送る） |
 | `launch` / `terminate` | `POST /launch` / `/terminate` | `<bundle-id>`（`host` も可） |
-| `shutdown` | `POST /shutdown`。一覧には載せません。普段は `relay stop` を使います（下の「`shutdown` と `stop`」） | – |
-| `status` | `GET /ping` と runner.json（ランナーの版も表示） | `--json`、`--all`（全セッションの一覧）。終了コードは「[バックグラウンドで動かす](setup.md#バックグラウンドで動かすrelay-start---background--status--stop)」 |
+| `shutdown` | `POST /shutdown`。一覧には載せません。普段は `relay stop` を使います（「[shutdown と stop](sessions.md#shutdown-と-stop)」） | – |
+| `status` | `GET /ping` と runner.json（ランナーの版も表示） | `--json`、`--all`（全セッションの一覧）。終了コードは「[バックグラウンドで動かす](sessions.md#バックグラウンドで動かすrelay-start---background--status--stop)」 |
 | `stop` | `relay start` への SIGTERM（なければ `POST /shutdown`） | – |
 | `run`（実験的） | 手順ごとに上のエンドポイント | `<file>` か `-` か `--step <手順>`（複数可）、`--runner`、`--session`、`--quiet`。「シナリオの実行（relay run、実験的）」 |
 | `record start` / `stop` / `status` | –（シミュレータはホストの `simctl io recordVideo`、実機は Mac のキャプチャデバイス） | `-o <file>`、`--force`、`--max-duration <s>`（start）、`--json`（status）、`--port <n>`（stop・status）、`--runner`、`--session`。「録画（relay record）」 |
 
-- **`shutdown` と `stop`**: 普段は `relay stop` を使います。`relay shutdown` はランナーに `POST /shutdown` を送るだけで、`{"ok":true}` を返してすぐ終わります。ランナーが終わったのを見た `relay start` が、その後で runner.json を削除し、boot したシミュレータを shutdown し、終了します（シミュレータで数秒かかり、いつ終わったかは `shutdown` からは分かりません）。`relay stop` は `relay start` に SIGTERM を送ってその終了まで待ち、`stopped` を出します。`relay start` がもう動いていないときに `shutdown` を使うと runner.json が残りますが、`relay stop` は片付けます。このため `relay --help` の一覧と SKILL.md には `shutdown` を載せていません（コマンドと `relay shutdown --help` は残してあります）。
-- **`ping`・`health`・`status` の使い分け**: `ping` は「生きているか、操作中（`busy`）か」の即答で、ほかのコマンドの実行中でも返り、端末には触れません。`health` は操作の前に要る情報（画面サイズ（pt）・向き・タッチの経路・前面アプリ）を返しますが、ほかのコマンドの実行中は `409`（終了コード 5）になります。`status` は runner.json と `relay start`（pid・端末・起動時刻・ランナーの版）も見る確認で、`relay start --background` の後や、機械向けには `--json` で使います。
+- 起動・停止と生存確認は「[起動とセッション](sessions.md#バックグラウンドで動かすrelay-start---background--status--stop)」を参照してください。
 - バンドル ID の代わりに `host` と書くと、ランナーのホストアプリ RelayRunnerHost のバンドル ID になります（`launch`・`terminate` と、`--bundle-id` を取るコマンド）。バンドル ID は利用者ごとに違う（「[バンドル ID の接頭辞](setup.md#バンドル-id-の接頭辞)」）ので、relay は `relay start` がビルドしたアプリの ID を runner.json の `hostBundleID` に書き、そこから置き換えます。`relay status` の `host app` にも出ます。古い relay の `relay start` が書いた runner.json にはないので、`host` は終了コード 1（`runner_info_invalid`）になります（ランナーを起動し直します）。
 - セレクタは `--id`（= `identifier`）・`--label`・`--type`・`--value` を 1 つ以上と、任意の `--index <n>` です（「[要素セレクタ](elements.md#要素セレクタ)」と同じ完全一致・AND）。`--type` の名前、キー名、ボタン名、向きの名前、数値の範囲は送る前に確認し、間違っていれば終了コード 2 で何も送りません。
 - `relay find` は一致がなくても終了コード 0（`"count":0`）です。`--require` を付けると、一致する要素がないときに終了コード 6 で終わり、応答（`count`・`elements`）に `"ok":false,"code":"element_not_found","error":"no element matched"` を足した JSON を stdout に出します（`--index` が範囲外のときも同じ）。`relay find <セレクタ> --timeout 5 --require` は「現れるまで待ち、現れなければ失敗する」確認になり、スクリプトは JSON を読まずに終了コードだけで判断できます。判定はホスト側で行い、ランナーへのリクエストは変わりません。
@@ -81,7 +80,7 @@ relay record stop                              # 録画を止め、MP4 の絶対
 | `0` | 成功（2xx） |
 | `1` | ローカルの失敗: runner.json が読めない、スクリーンショットを保存できない、端末が使用中・ビルドの失敗・シミュレータがない・ファイルがない、`relay start --background` で「すでに動いている」「ポートを握られている」、`relay doctor` が問題を見つけた、など |
 | `2` | 書き方の誤り: 不明なオプション、値の不足・不正、両立しないオプション、不正なセッション名、`RELAY_RUNNER` と `RELAY_SESSION` の両方の設定、`relay run` の不正な手順（何も実行しない）など |
-| `3` | ランナーに届かない（runner.json がない、接続できない・タイムアウト、接続が OS に拒否された）。`relay status` で確認し、動いていなければ `relay start --background` で起動してください。`the OS refused the connection (Operation not permitted)` と出たら、ランナーではなく relay の側がエージェントなどの sandbox の中にいて localhost に接続できません（「[エージェントの sandbox から使う](setup.md#エージェントの-sandbox-から使う)」）。起動し直しても直りません |
+| `3` | ランナーに届かない（runner.json がない、接続できない・タイムアウト、接続が OS に拒否された）。`relay status` で確認し、動いていなければ `relay start --background` で起動してください。`the OS refused the connection (Operation not permitted)` と出たら、ランナーではなく relay の側がエージェントなどの sandbox の中にいて localhost に接続できません（「[エージェントの sandbox から使う](sessions.md#エージェントの-sandbox-から使う)」）。起動し直しても直りません |
 | `4` | `401`。runner.json のトークンが動いているランナーのものではない（古いファイル、別のランナー） |
 | `5` | `409`（busy）。再試行してよい |
 | `6` | `422`。XCUI で失敗（フォーカスがない、要素が見つからない・1 つに決まらないなど）。`relay launch` でアプリが入っていないとき（`app_not_installed`。relay 自身の判定で、ランナーには送りません） |
@@ -114,25 +113,7 @@ relay record stop                              # 録画を止め、MP4 の絶対
 | `remote_view_position_unknown` | 要素が別のプロセスが描くビュー（共有シート）の中にあり、frame が画面の座標でない。`relay screenshot` で位置を確かめ、`relay tap <x> <y>` で座標を指定する |
 | `not_found` | ランナーが relay より古いかもしれない（`relay start --rebuild` でビルドし直す） |
 
-### 接続先（runner.json）の探し方
-
-URL とトークンは `runner.json` から読みます。トークンはコマンドライン引数では受け取りません（`ps` やシェルの履歴に残るため）。次の順に探し、最初に見つかったものを使います。
-
-1. `--runner <path>` か `--session <名前>`（両方は指定できません）
-2. 環境変数 `RELAY_RUNNER`（runner.json のパス）か `RELAY_SESSION`（セッション名）。両方が設定されていると、どちらを指すのか決められないので書き方の誤り（終了コード 2）です
-3. `~/.relay/runner.json`（セッションなしの `relay start` が書くファイル）
-
-オプションは環境変数より優先するので、`RELAY_SESSION` が設定された環境でも `--runner` で別のファイルを指定できます。セッションの runner.json は `~/.relay/sessions/<名前>/runner.json` です。
-
-1 と 2 で指定したファイルやセッションがなければ、3 や他のセッションに進まずに終了コード 3 で終わります（意図しない別の端末を操作しないため）。不正なセッション名は終了コード 2 です。`relay status`・`relay stop`・`relay record`・`relay run`・`relay bench` も同じ順に探します（`relay bench` は `--url` と `--token` を省いた分を、見つけたファイルから読みます）。
-
-**カレントディレクトリや親の `.relay/runner.json` は読みません。** 以前の版は 3 番目に探していましたが、今の `relay start` はそこへ書かないので、見つかるのは古いファイルか手で置いたものだけで、別のランナーのトークンによる 401 の原因になっていました。そうしたファイルを使うなら `--runner <path>` で指定します。3 のファイルがなく、カレントディレクトリか親（近い順）に `.relay/runner.json` があるときだけ、探さずにエラーの文へ `.relay/runner.json in <ディレクトリ> is no longer read; pass --runner <path> to use it` を足します（案内のためだけに親をたどります。ファイルは開きません）。
-
-3 で見つけたファイルを使うとき、ほかにセッションが動いていれば（`~/.relay/sessions/*/runner.json` があるか、`session.lock` が握られていれば）、`relay: warning: no session selected; using <パス>, while sessions <名前> are running; pass --session or set RELAY_SESSION` を stderr に出します。エージェントのコマンドがセッションの指定を失って、別のランナーを操作している恐れがあるためです。失敗にはせず、終了コードも変えません。ランナーには問い合わせません。
-
-使い方は「[複数のセッションを並列に動かす](setup.md#複数のセッションを並列に動かすrelay-start---session)」を参照してください。
-
-`relay start` は、どのディレクトリで実行しても、セッションがなければ `~/.relay/runner.json`（パーミッション 0600）だけに書き出します。カレントディレクトリ（対象アプリのリポジトリなど）には `.relay/` を作りません。停止時には、まだ自分のトークンが書かれている場合だけ削除します（`relay stop` が片付けるときも同じです）。複数の `relay start` を同時に動かすこと（`--port` を分けて）はできますが、`~/.relay/runner.json` は最後に起動したものになり、前のランナーには `relay health` などのコマンドが届かなくなります（前のランナーのトークンはファイルに残りません）。同時に動かすならセッションを使ってください。
+接続先の選択は「[接続先（runner.json）の探し方](sessions.md#接続先runnerjsonの探し方)」を参照してください。
 
 ### シナリオの実行（relay run、実験的）
 
@@ -170,7 +151,7 @@ screenshot --output about.png --scale 1
 - **使えない手順**: `start` `stop` `status` `install` `doctor` `devices` `skill` `bench` `config` `run` など、ランナーへの操作でないものと、`shutdown`（以降の手順が実行できないため。後片付けは `relay stop`）。手順の中の `--runner`（接続先は `relay run` に 1 回だけ指定）、`--help`、`type --stdin`（標準入力はシナリオのもの）も使えません。`screenshot` は `--output <file>` が必須です（stdout はほかの手順の出力に使うので、`-o -` も不可）。
 - **形式の版**: 最初の手順より前に `# relay-run: 1` と書くと、そのシナリオが形式 1 で書かれたことを示せます（任意。書かなければ今の形式として読みます）。形式が変わったとき、古いシナリオが黙って違う意味で動かないようにするためのものです。`1` 以外の値、値のないもの、最初の手順より後にあるものは、その行のエラーとして何も実行しません。コメント行の形なので、この行を知らない relay では読み飛ばされます。保存して使い回すシナリオには書いておくことをおすすめします。
 - **事前検証**: 実行の前に全手順を確かめ、1 つでも不正なら何も実行せずに、不正な行ごとに `relay: line <N>: <理由>` を stderr に出し、続けて `relay: see relay run --help` を出して終了コード 2 で終わります（`--step` では何番目かを行番号とします）。`--check` を付けると、この検証だけを行って終わります。runner.json を読まず何も実行しないので、ランナーが動いていなくても使えます。問題がなければ stderr に `relay: 7 steps checked; nothing was run` を出して終了コード 0（`--quiet` なら何も出しません）。エージェントが書いたシナリオを流す前の確認に使えます。
-- **実行**: runner.json は最初に 1 回だけ探して読み（「接続先（runner.json）の探し方」と同じ順。`--runner` は `relay run` に付けます）、手順は同じプロセスの中で順に送ります。手順ごとに `relay` を起動し直さないので、そのぶん速くなります。
+- **実行**: runner.json は最初に 1 回だけ探して読み（「[接続先（runner.json）の探し方](sessions.md#接続先runnerjsonの探し方)」と同じ順。`--runner` は `relay run` に付けます）、手順は同じプロセスの中で順に送ります。手順ごとに `relay` を起動し直さないので、そのぶん速くなります。
 - **出力**: 各手順の stdout（`find` の JSON、`screenshot` の保存先など）は、単独で実行したときと同じものが stdout にそのまま順に出ます。失敗した手順の JSON（`{"ok":false,"code":…}`）も同じ規則で stdout に出るので、stdout の最後の JSON が失敗の内容です。stderr には手順ごとに `relay: [3/7] tap --id com.apple.settings.general --timeout 5 --bundle-id com.apple.Preferences ... ok (448 ms)` を、最後に `relay: 7 of 7 steps succeeded in 7672 ms` を出します（失敗したときは `relay: 3 of 7 steps succeeded in … ms; exit status 6`）。`--quiet`（`-q`）でこの 2 種類を消せます。進行行と失敗行では、`type` の文字列を `***` に伏せます（`relay: [4/9] type *** --key return ... ok`）。シナリオでは `--stdin` が使えず、パスワードを書くならシナリオに書くしかないためです。ファイル自体は利用者が管理してください。
 - **失敗**: 最初に失敗した手順で止めます。その手順の通常のエラーの JSON は stdout に、`relay:` のヒントは stderr に出て、stderr にはそれに続いて `relay: step 4/7 (line 5) failed: find --label About --type button --timeout 5 --require --bundle-id com.apple.Preferences` を出し、その手順の終了コード（3・4・5・6・7・8、スクリーンショットを保存できなければ 1）で終わります。すべて成功すれば 0 です。失敗しても続ける `--continue-on-error` はありません。
 - **待ちは `find --timeout` / `--timeout` で。** 画面が変わる操作の後は、次の画面の要素を `find <セレクタ> --timeout <秒>` で待つか、`tap` / `press` の `--timeout` で要素が現れるのを待たせます。要素が現れた時点で次に進むので、固定の `sleep` より速く、遅い環境でも崩れにくくなります。`sleep` は、要素で表せない待ち（アニメーションの終わりなど）のための最後の手段です。
@@ -222,7 +203,7 @@ relay record status [--json]          # 録画中か、保存先、経過時間
 relay record stop --port 8101         # runner.json によらず、そのポートのランナーの録画を止める
 ```
 
-- **端末**: runner.json（「接続先（runner.json）の探し方」と同じ順。`--runner` も可）の UDID を `simctl list devices` と照らし、シミュレータでなければ `devicectl list devices` の実機（`relay devices` の KIND が `device`）と照らします。どちらにもなければ終了コード `1` です（何も起動しません）。シミュレータが boot していないときも `1` です（simctl は shutdown 中のシミュレータでも開始を報告し、空のファイルを作るため、先に確かめます）。runner.json がない・ランナーが応答しないときは、ランナー操作のコマンドと同じく `3`（`401` なら `4`）です。
+- **端末**: runner.json（「[接続先（runner.json）の探し方](sessions.md#接続先runnerjsonの探し方)」と同じ順。`--runner` も可）の UDID を `simctl list devices` と照らし、シミュレータでなければ `devicectl list devices` の実機（`relay devices` の KIND が `device`）と照らします。どちらにもなければ終了コード `1` です（何も起動しません）。シミュレータが boot していないときも `1` です（simctl は shutdown 中のシミュレータでも開始を報告し、空のファイルを作るため、先に確かめます）。runner.json がない・ランナーが応答しないときは、ランナー操作のコマンドと同じく `3`（`401` なら `4`）です。
 - **実機の確認**: 実機は、`devicectl` で接続中であり、接続方式が USB（`wired`）であることを確かめます。Wi-Fi だけ（`localNetwork`）なら `… is connected over the network only (localNetwork); recording a device needs a USB cable …`、接続されていなければ `… is not connected …` で `1` です。続けてカメラの許可を確かめ、未決定なら macOS のダイアログで求め、拒否・制限されていれば設定の場所を示して `1` です（「実機を録画する前に」）。
 - **開始**: 録画するプロセスを `relay start --background` と同じく新しいセッションとして切り離して起動します（stdin は `/dev/null`、出力は `~/.relay/logs/record-<時刻>-<port>.log`）。ターミナルを閉じても、そこで Ctrl-C を押しても録画は続きます。録画が実際に始まったら、保存先の絶対パスを stdout に 1 行出して `0` で戻ります。開始を待っている間の Ctrl-C は録画を止めて `1` です。
   - シミュレータは simctl を起動し、simctl が `Recording started` を出したら開始とみなします。15 秒以内に出ない、または simctl が先に終了したときは、simctl の出力（ログの末尾）を添えて `1` で終わり、何も残しません。

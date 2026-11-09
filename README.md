@@ -107,7 +107,7 @@ relay stop                 # stop the runner (and shut down a simulator relay bo
 - To use a simulator that is already booted, `relay start --background --simulator` works too. It chooses among simulators even when a device is connected.
 - `relay start` without `--udid` / `--device` / `--simulator` prefers a connected physical device. A device needs signing and UI Automation set up, so follow the steps in "[実機](docs/setup.md#実機)" first.
 
-From agents, CI, and scripts, the basic flow is `relay start --background`, then your operations, then `relay stop` ("[バックグラウンドで動かす](docs/setup.md#バックグラウンドで動かすrelay-start---background--status--stop)"). When you are at the machine and watching, `relay start` in the foreground (stop with Ctrl-C) is fine too.
+From agents, CI, and scripts, the basic flow is `relay start --background`, then your operations, then `relay stop` ("[バックグラウンドで動かす](docs/sessions.md#バックグラウンドで動かすrelay-start---background--status--stop)"). When you are at the machine and watching, `relay start` in the foreground (stop with Ctrl-C) is fine too.
 
 ## First steps
 
@@ -159,7 +159,7 @@ A physical device needs the following before `relay start`. For details, see [�
 | `relay skill install` | Install the skill for coding agents, into the target app's repository for example |
 | `relay config` | Show or change settings (Team ID, bundle ID prefix) |
 
-To run several agents in parallel, pass `RELAY_SESSION` as an environment variable when launching each agent, and give each one its own device. The shells of the commands the agent runs inherit the value, so state files and ports are kept per session and sessions don't interfere with each other ([docs/setup.md](docs/setup.md#複数のセッションを並列に動かすrelay-start---session)).
+To run several agents in parallel, pass `RELAY_SESSION` as an environment variable when launching each agent, and give each one its own device. The shells of the commands the agent runs inherit the value, so state files and ports are kept per session and sessions don't interfere with each other ([docs/sessions.md](docs/sessions.md#複数のセッションを並列に動かすrelay-start---session)).
 
 ```sh
 RELAY_SESSION=agent-1 claude   # every relay this agent runs uses agent-1
@@ -181,8 +181,9 @@ Detailed documentation in docs/ is currently in Japanese.
 
 | Document | Contents |
 | --- | --- |
-| [docs/setup.md](docs/setup.md) | Installing and updating, how the Runner is found (`relay install`), choosing a device, Team ID, checking the environment (`relay doctor`), simulators, starting in the background, physical devices |
-| [docs/cli.md](docs/cli.md) | CLI subcommands and exit codes, how the runner is found (runner.json, sessions), running scenarios (`relay run`, experimental), recording (`relay record`, for simulators and devices connected with USB), the agent skill |
+| [docs/setup.md](docs/setup.md) | Installing and updating, how the Runner is found (`relay install`), choosing a device, Team ID, checking the environment (`relay doctor`), simulators, physical devices |
+| [docs/sessions.md](docs/sessions.md) | Starting and stopping, checking liveness, finding the runner (runner.json), parallel sessions, agent sandboxes, cleaning up logs and test results |
+| [docs/cli.md](docs/cli.md) | CLI subcommands and exit codes, running scenarios (`relay run`, experimental), recording (`relay record`, for simulators and devices connected with USB), the agent skill |
 | [docs/http-api.md](docs/http-api.md) | HTTP API endpoints and status codes, authentication, concurrent requests and liveness checks (`/ping`), the foreground app, text input and special keys |
 | [docs/elements.md](docs/elements.md) | The element tree (`/source`, compact, interactive), element selectors, waiting (timeout) |
 | [docs/screen.md](docs/screen.md) | The coordinate system and screen orientation, shrinking screenshots |
