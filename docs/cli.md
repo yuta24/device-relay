@@ -127,6 +127,7 @@ relay record stop                              # 録画を止め、MP4 の絶対
 | `element_not_found` | `relay find --type …` / `relay source` で画面を確かめるか、`--timeout <秒>` で待つ |
 | `element_ambiguous` | `--type`・`--label`・`--id` を足すか、候補から `--index <n>` で選ぶ |
 | `touch_mode_unavailable` | `--mode` を外すか、エラーが示す経路で送り直す |
+| `covered_by_other_app` | システムのダイアログやコントロールセンターなどがアプリを覆っている。`relay screenshot` か `relay find --type alert --bundle-id com.apple.springboard` で確かめ、閉じてから送り直す |
 | `not_found` | ランナーが relay より古いかもしれない（`relay start --rebuild` でビルドし直す） |
 
 ### 接続先（runner.json）の探し方

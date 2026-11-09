@@ -35,7 +35,8 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 /// secure field), `relay.text` (the current text of `relay.input`), `relay.passwordLength` (only the
 /// number of characters in `relay.password`, never the text), `relay.submitted` (the text when Return
 /// was pressed, with a count), and `relay.events` (the latest edits and hardware key presses, newest
-/// first; edits to the password field show only their length).
+/// first; edits to the password field show only their length). `relay.overlay` opens
+/// `OverlayViewController`, the screen for checking alerts and sheets drawn by other processes.
 final class InputViewController: UIViewController, UITextFieldDelegate {
   private let input = KeyRecordingTextField()
   private let secondInput = KeyRecordingTextField()
@@ -63,8 +64,13 @@ final class InputViewController: UIViewController, UITextFieldDelegate {
     input.addTarget(self, action: #selector(textChanged), for: .editingChanged)
     passwordInput.addTarget(self, action: #selector(passwordChanged), for: .editingChanged)
 
+    let overlayButton = UIButton(configuration: .bordered())
+    overlayButton.configuration?.title = "Overlay checks"
+    overlayButton.accessibilityIdentifier = "relay.overlay"
+    overlayButton.addTarget(self, action: #selector(openOverlay), for: .touchUpInside)
+
     let stack = UIStackView(arrangedSubviews: [
-      input, secondInput, passwordInput, textLabel, passwordLengthLabel, submittedLabel, eventsLabel
+      input, secondInput, passwordInput, textLabel, passwordLengthLabel, submittedLabel, eventsLabel, overlayButton
     ])
     stack.axis = .vertical
     stack.spacing = 12
@@ -96,6 +102,10 @@ final class InputViewController: UIViewController, UITextFieldDelegate {
     label.accessibilityIdentifier = identifier
     label.text = text
     label.font = .monospacedSystemFont(ofSize: 15, weight: .regular)
+  }
+
+  @objc private func openOverlay() {
+    present(OverlayViewController(), animated: false)
   }
 
   @objc private func textChanged() {

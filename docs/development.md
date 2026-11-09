@@ -291,6 +291,21 @@ xcodebuild の出力に `RELAY_RUNNER_READY port=8100 addresses=en0=…,utun3=�
 | `relay.passwordLength` | `relay.password` の文字数だけ（`password: 5 chars`）。文字列そのものは表示しません |
 | `relay.submitted` | Return で確定したときの文字列と回数（`submitted #2: …`） |
 | `relay.events` | 直近の編集（insert / delete / return）とハードウェアキーの押下（`press Tab` など）。新しい順。パスワード欄の編集は文字数だけ（`insert 3 chars`） |
+| `relay.overlay` | 別プロセスの画面（許可のダイアログ、共有シート、写真の選択、通知のバナー）を試す画面を開く。下の表 |
+
+`relay.overlay` で開く画面（`OverlayViewController`）は、アプリの上に別のプロセスが描く画面での relay の振る舞いを確かめるためのものです。
+
+| accessibilityIdentifier | 内容 |
+| --- | --- |
+| `relay.overlay.close` | 入力欄の画面に戻る |
+| `relay.askLocation` / `relay.askNotifications` | 押した 2 秒後に位置情報 / 通知の許可を求める（ダイアログが出る前に relay のコマンドを送れる） |
+| `relay.notifyLater` | 3 秒後にローカル通知を出す。アプリが前面でもバナーを出す（通知の許可が必要） |
+| `relay.share` / `relay.photos` / `relay.inAppAlert` | 共有シート（`UIActivityViewController`）/ 写真の選択（`PHPickerViewController`）/ アプリ内のアラート（`UIAlertController`、比較用） |
+| `relay.shiftRows` | `relay.behind*` の行を半行ぶん下げる（もう一度押すと戻す）。行の中心をダイアログのボタンに合わせるため |
+| `relay.overlay.status` | 許可の状態と直近の出来事 |
+| `relay.behind1` … `relay.behind8` | ダイアログが出る画面の中ほどから下を埋める横いっぱいのボタン。押された回数を label に出す（`behind3: 2`）。value は空で、`relay.askLocation` / `relay.askNotifications` の 3 秒後（ダイアログの 1 秒後）に `late` になる |
+
+許可を求めた直後に `relay tap --id relay.behind3 --value late --timeout 5` を送ると、ランナーはダイアログが出る前に対象アプリを決め、ダイアログが出た後で要素を見つけてタップします。シミュレータでは `xcrun simctl privacy <UDID> reset location <ホストのバンドル ID>` で位置情報の許可を戻せます。実機では「Allow Once」を選べば、アプリを終了したときに未決定に戻ります。
 
 ```sh
 HOST=$(jq -r .hostBundleID ~/.relay/runner.json)   # 例: dev.devicerelay.local.RelayRunnerHost
