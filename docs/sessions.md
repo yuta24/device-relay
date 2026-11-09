@@ -141,7 +141,7 @@ runner.json には `relay start` の PID と秒単位の起動時刻を記録し
 
 `relay start` がもう動いていない場合、`shutdown` では runner.json が残りますが、`relay stop` なら片付きます。ヘルプ一覧の変更については [CHANGELOG 0.3.0](../CHANGELOG.md#cli-の破壊的な変更020-から) を参照してください。
 
-確かめた環境: シミュレータでは、shutdown 後の後片付けに数秒かかります。
+シミュレータでは、shutdown の後の後片付けに数秒かかります。
 
 ### ping・health・status の使い分け
 
