@@ -89,42 +89,7 @@ iPhone 17      22222222-2222-2222-2222-222222222222  simulator  iOS 27.0    shut
 
 ## Team ID（実機の署名）
 
-実機では、署名に使う Team ID を次の順に決めます。シミュレータでは不要です。
-
-1. `--team-id <TEAM_ID>`
-2. `~/.relay/config.json` の `teamID`
-3. キーチェーンの Apple Development 証明書（`security find-identity -v -p codesigning` の有効な ID と、その証明書のサブジェクトの OU）。証明書の名前の括弧内の ID は個人の ID で、Team ID ではありません。チームが 1 つならそれを使い、複数ならエラーで候補を示します
-
-1 か 3 で決めた Team ID は、ランナーが起動できた（`ready:` が出た）ところで `~/.relay/config.json` に保存し、次回からはそれを使います。ビルドや起動に失敗した Team ID は保存しないので、打ち間違えた `--team-id` が残ることはありません。変えるときは `--team-id` を付けて起動するか（保存し直します）、`relay config` を使います。
-
-```sh
-relay config                      # 設定の一覧
-relay config get teamID           # 未設定なら終了コード 1（標準エラーに relay: teamID is not set）
-relay config set teamID <TEAM_ID>
-relay config unset teamID         # 忘れて、次回はキーチェーンから検出し直す
-```
-
-## バンドル ID の接頭辞
-
-Runner のアプリのバンドル ID は `<接頭辞>.RelayRunnerHost`（ホストアプリ）と `<接頭辞>.RelayRunnerHost.UITests`（テストランナー）です。明示的な App ID は最初に登録したチームのものになり、ほかのチームでは登録できないので、接頭辞は既定で Team ごとに変わります。`relay start` は次の順に決めて、xcodebuild に `RELAY_BUNDLE_ID_PREFIX=<接頭辞>` を渡します。
-
-1. `~/.relay/config.json` の `bundleIDPrefix`（`relay config set bundleIDPrefix <接頭辞>`）
-2. 既定値: Team ID があれば `dev.devicerelay.<Team ID の小文字>`（例: `dev.devicerelay.abcde12345`）。Team ID は App ID の重複を避けつつ同じ人では変わらないので、そのまま実機で自動署名できます
-3. Team がない（シミュレータ）とき: `dev.devicerelay.local`。シミュレータは署名も App ID の登録もしないので、衝突しても困りません
-
-```sh
-relay config set bundleIDPrefix com.example.devicerelay   # 逆ドメイン形式（英数字とハイフンを . で 2 つ以上）。不正ならその場でエラー
-relay config get bundleIDPrefix
-relay config unset bundleIDPrefix                          # 既定値に戻す
-```
-
-起動時に `relay: runner host app: dev.devicerelay.abcde12345.RelayRunnerHost (prefix from the Team ID)` のように表示し、`relay doctor` も使われる接頭辞と出どころ（config / Team ID から作った既定値 / Team がまだ分からない）を表示します。config の値が不正なときだけ ✗ です。
-
-ホストアプリを relay のコマンドで指すときは、バンドル ID の代わりに `host` と書きます（`relay launch host`、`relay tap --id relay.input --bundle-id host`）。relay は `relay start` がビルドしたアプリの ID を runner.json の `hostBundleID` に書いて置き換えます（`relay status` の `host app` にも出ます）。HTTP API を直接呼ぶときは `jq -r .hostBundleID ~/.relay/runner.json` で読みます。
-
-接頭辞が前回のビルド（使い回す DerivedData の記録 `relay-runner-build.json`。「ランナーの版」）と違えば、ソースの変化より先にそれを調べて、`relay start` は `bundle ID prefix changed from X to Y; rebuilding, and the device gets new apps with the new IDs (the old ones stay)` と出して作り直します（`--rebuild` は要りません）。
-
-0.2.0 以前の relay から更新するときは、実機で最初に `relay start` する前に「[変更履歴](../CHANGELOG.md#runner-のバンドル-id-の接頭辞移行の注意)」を読んでください。バンドル ID が変わり、新しい App ID が登録されます。
+実機の署名チームの指定と保存は「[Team ID（実機の署名）](device.md#team-id実機の署名)」を参照してください。
 
 ## 環境の確認（relay doctor）
 
@@ -137,7 +102,7 @@ relay config unset bundleIDPrefix                          # 既定値に戻す
 - 実機: OS のバージョン（17 以上）、接続状態、ペアリング、デベロッパモード（`devicectl list devices`）、DDI のマウント状態（`ddiServicesAvailable`）、ロック状態（`devicectl device info lockState` の `passcodeRequired`）。UI オートメーションの有効状態は Mac から読めないので、常に ! で確認を促します
 - シミュレータ: ランタイムが入っているか、起動状態
 - 署名: 証明書と Team ID（実機なら見つからなければ ✗、シミュレータなら !）
-- バンドル ID: `relay start` が使う接頭辞と出どころ（`bundleIDPrefix` の設定、Team ID から作った既定値、Team が分からない、シミュレータの既定値）。表示だけで、config の値が不正なときだけ ✗（「[バンドル ID の接頭辞](#バンドル-id-の接頭辞)」）
+- バンドル ID: `relay start` が使う接頭辞と出どころ（`bundleIDPrefix` の設定、Team ID から作った既定値、Team が分からない、シミュレータの既定値）。表示だけで、config の値が不正なときだけ ✗（「[バンドル ID の接頭辞](device.md#バンドル-id-の接頭辞)」）
 - sandbox: 127.0.0.1 への接続と、`~/.relay`（あれば）へのファイルの作成を試します。OS に拒否された（`Operation not permitted`）ら、エージェントなどの sandbox の中で動いているようだとして ✗ にします（「[エージェントの sandbox から使う](sessions.md#エージェントの-sandbox-から使う)」）
 - エージェントスキル: カレントディレクトリの git のルートの `.claude/skills/device-relay` と `~/.claude/skills/device-relay` の状態（`relay skill status` と同じ判定。relay や取り出し元とバージョン・コミットが違う、relay が入れたものでない、のどれかなら !。入っていなくても問題にはしません）
 
@@ -202,7 +167,7 @@ ready の後も、`relay start` は 3 秒ごとに `/ping` を送ってランナ
 | `--project <path>` | Runner プロジェクトの場所（「Runner の用意」）。`$RELAY_HOME` より優先します |
 | `--port 8100` | 端末側の待ち受けポート。xcodebuild には `TEST_RUNNER_RELAY_RUNNER_PORT` として渡され、ランナーからは `RELAY_RUNNER_PORT` として見えます。セッションでは省略すると空きポートを選びます |
 | `--session <名前>` | セッション名（環境変数 `RELAY_SESSION` でも可）。ほかのランナーと状態ファイルとポートを分けます（「[複数のセッションを並列に動かす](sessions.md#複数のセッションを並列に動かすrelay-start---session)」） |
-| `--team-id <TEAM_ID>` | 実機向けの署名チーム（「Team ID」。省略時は自動検出）。`-allowProvisioningUpdates RELAY_DEVELOPMENT_TEAM=<TEAM_ID>` を付けてビルドし、ランナーが起動できたら `~/.relay/config.json` に保存します |
+| `--team-id <TEAM_ID>` | 実機向けの署名チーム（「[Team ID](device.md#team-id実機の署名)」。省略時は自動検出）。`-allowProvisioningUpdates RELAY_DEVELOPMENT_TEAM=<TEAM_ID>` を付けてビルドし、ランナーが起動できたら `~/.relay/config.json` に保存します |
 | `--rebuild` | `~/.relay/build/…/DerivedData-*` に既存の `.xctestrun` があっても再ビルドします（最後のビルドが今の Xcode の SDK と違うとき、Runner のソースやバンドル ID の接頭辞が変わったとき、記録のない古いビルドのときは、付けなくても再ビルドします。「ランナーの版」） |
 | `--verbose` | xcodebuild の出力をそのまま表示します |
 | `--allow-wifi` | 実機で、CoreDevice トンネルに加えて Wi-Fi などのアドレスも探索します。トークンが同じネットワークに平文で流れるので、既定では無効です |
@@ -219,35 +184,10 @@ ready の後も、`relay start` は 3 秒ごとに `/ping` を送ってランナ
 
 ## 実機
 
-1. 端末で デベロッパモード を有効にします（設定 > プライバシーとセキュリティ > デベロッパモード。有効にすると再起動します）。
-2. USB で接続して Mac とペアリングし（端末で「このコンピュータを信頼」）、`relay devices` に `connected` で表示されることを確認します。
-3. Xcode の Window > Devices and Simulators で端末を選び、接続済み（準備完了）の状態にします。初回はここで開発用ディスクイメージ（DDI）が端末に適用されるので、完了するまで待ちます。
-4. 端末の 設定 > デベロッパ >「UI オートメーションを有効にする」をオンにします。オフのままだと、ランナーが `Failed to initialize for UI testing`（`Timed out while enabling automation mode.`）で起動に失敗します（Mac からは状態を読めないので、`relay doctor` は確認を促すだけです）。オンでも、automation mode の有効化のときに端末がパスコードの入力を求めることがあります。起動中は端末を手元に置き、パスコード入力画面が出たら入力してください（「[既知の制約](limitations.md)」の「automation mode の有効化でパスコードを求められる」）。
-5. `relay doctor` で ✗ がないことを確認します（ペアリング、デベロッパモード、DDI、ロック、署名の Team ID）。
-6. ランナーをビルドして起動します。接続中の実機が 1 台だけなら `--udid` も `--team-id` も要りません（Team ID はキーチェーンから検出し、起動できたら保存します）。意図した端末を確実に使うには `--device "<端末名>"` か `--udid` で指定します。
+実機で使うための手順は「[実機](device.md)」を参照してください。
 
-   ```sh
-   relay start
-   # relay: using <端末名> (iPhone 14 Pro, iOS 26.7.1, device, connected) <DEVICE_UDID> (selected automatically; the only connected device)
-   # relay: signing team: <TEAM_ID> (from keychain)
-   # relay: runner host app: dev.devicerelay.<team id>.RelayRunnerHost (prefix from the Team ID)
-   # ...
-   # relay: saved the team to ~/.relay/config.json; relay config unset teamID forgets it   ← ランナーが起動できたとき
-   # ready: http://<アドレス>:8100/
-   ```
-
-7. 無料の Personal Team などで署名した場合、初回の起動時に「信頼されていないデベロッパ」と表示されることがあります。端末の 設定 > 一般 > VPNとデバイス管理 で開発元の証明書を信頼してから、もう一度 `relay start` を実行してください。
-8. 初回は「ローカルネットワーク上のデバイスの検索および接続」の許可ダイアログが出ることがあります。許可しないと Wi-Fi 経由（`--allow-wifi`）では届きません。
-
-`relay start` は、次の順に `/health` を投げて最初に応答したアドレスを `ready:` として表示します。
-
-1. CoreDevice トンネルアドレス（`xcrun devicectl device info details` の `tunnelIPAddress`。USB 接続だけで使える IPv6 の ULA）
-2. `<udid>.coredevice.local`
-3. `--allow-wifi` を付けたときだけ: ランナーが `RELAY_RUNNER_READY` で報告したインターフェースのアドレス（Wi-Fi など。`169.254.*` は除外）
-
-既定ではトンネルが見つかるまで 1 と 2 だけを試し、Wi-Fi のアドレスには何も送りません。
-
-| 経路 | 長所 | 短所 |
-| --- | --- | --- |
-| CoreDevice トンネル | USB だけで動く。同じ LAN にいる必要がない | Xcode/CoreDevice のトンネルが張られている間しか使えない |
-| Wi-Fi IP（`--allow-wifi`） | ケーブル不要 | 同じ LAN が必要。ローカルネットワーク許可が必要。トークンと画面が LAN 上を平文で流れる。ネットワークによっては AP 間の通信が遮断される |
+- [準備](device.md#準備): 端末の設定、ペアリング、初回の起動
+- [Team ID（実機の署名）](device.md#team-id実機の署名): 署名チームの指定と保存
+- [バンドル ID の接頭辞](device.md#バンドル-id-の接頭辞): アプリの ID と `host` の指定
+- [接続の経路](device.md#接続の経路): CoreDevice トンネルと Wi-Fi
+- [録画の準備](device.md#録画の準備): USB 接続と macOS のカメラの許可

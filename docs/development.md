@@ -267,7 +267,7 @@ TEST_RUNNER_RELAY_RUNNER_PORT=8100 xcodebuild test-without-building \
   -derivedDataPath /tmp/relay-DerivedData-sim
 ```
 
-Runner のバンドル ID は `$(RELAY_BUNDLE_ID_PREFIX).RelayRunnerHost`（と `.UITests`）です。接頭辞の既定値はプロジェクトに `dev.devicerelay.$(DEVELOPMENT_TEAM:default=local:lower)` として置いてあるので、Team なし（シミュレータ）では `dev.devicerelay.local`、Xcode で Team を選ぶか `RELAY_DEVELOPMENT_TEAM=<TEAM_ID>` を渡せば `dev.devicerelay.<Team ID の小文字>` になります。別の接頭辞にするときは `RELAY_BUNDLE_ID_PREFIX=com.example.devicerelay` を xcodebuild に渡します（`relay start` は「[バンドル ID の接頭辞](setup.md#バンドル-id-の接頭辞)」のとおりに決めて、毎回渡します）。実機向けに手動でビルドする例:
+Runner のバンドル ID は `$(RELAY_BUNDLE_ID_PREFIX).RelayRunnerHost`（と `.UITests`）です。接頭辞の既定値はプロジェクトに `dev.devicerelay.$(DEVELOPMENT_TEAM:default=local:lower)` として置いてあるので、Team なし（シミュレータ）では `dev.devicerelay.local`、Xcode で Team を選ぶか `RELAY_DEVELOPMENT_TEAM=<TEAM_ID>` を渡せば `dev.devicerelay.<Team ID の小文字>` になります。別の接頭辞にするときは `RELAY_BUNDLE_ID_PREFIX=com.example.devicerelay` を xcodebuild に渡します（`relay start` は「[バンドル ID の接頭辞](device.md#バンドル-id-の接頭辞)」のとおりに決めて、毎回渡します）。実機向けに手動でビルドする例:
 
 ```sh
 xcodebuild build-for-testing -project Runner/RelayRunner.xcodeproj -scheme RelayRunner \
@@ -337,6 +337,12 @@ iOS 27 では UIScene のライフサイクルを採用していないアプリ�
 
 以前の relay の `relay start` やその runner.json では、使用中のビルドディレクトリを特定できない場合があります。現在の保護規則と削除の条件は「[ビルドディレクトリ](sessions.md#ビルドディレクトリ)」を参照してください。
 
+## 実機のバンドル ID の判定
+
+`relay start` は、使い回す DerivedData の記録 `relay-runner-build.json` にある前回の接頭辞と比較します。
+ソースの変化より先に接頭辞の変化を調べます。ビルドの記録は「[ランナーの版](setup.md#ランナーの版ソースのハッシュ)」を参照してください。
+利用者向けの動きは「[接頭辞を変えたとき](device.md#接頭辞を変えたとき)」にあります。
+
 ## 文書の書き方
 
 README と `docs/` を書くときの決まりです。`skills/` は配布物なので、この決まりでは書き直しません（下の「skills との関係」）。
@@ -345,7 +351,7 @@ README と `docs/` を書くときの決まりです。`skills/` は配布物な
 
 | 読み手 | 文書 |
 | --- | --- |
-| 初めて使う人 | README、setup.md |
+| 初めて使う人 | README、setup.md、device.md |
 | 使っている人 | sessions.md、cli.md、http-api.md、elements.md、screen.md |
 | 困っている人 | limitations.md |
 | 作る人 | development.md、design.md、private-api.md |
