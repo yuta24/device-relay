@@ -18,6 +18,7 @@ import uuid
 from pathlib import Path
 
 from runner_diagnostics import RunnerDiagnostics
+from runner_startup import RUNNER_READY_TIMEOUT, STARTUP_LIMITS, StartupWatchdog
 
 ROOT = Path(__file__).resolve().parents[1]
 # relay stop allows 180 seconds for the launcher, plus its own setup/cleanup.
@@ -191,6 +192,7 @@ def exercise(cancellation, session, diagnostics):
         host=os.uname().sysname,
         host_release=os.uname().release,
         macos_version=platform.mac_ver()[0],
+        startup_limits_seconds=STARTUP_LIMITS,
     )
     try:
         xcode = run(
@@ -269,7 +271,7 @@ def exercise(cancellation, session, diagnostics):
                         "--project",
                         str(ROOT),
                         "--ready-timeout",
-                        "240",
+                        str(RUNNER_READY_TIMEOUT),
                     ],
                     cwd=ROOT,
                     env=environment,
@@ -279,23 +281,21 @@ def exercise(cancellation, session, diagnostics):
                 )
                 diagnostics.save_environment(relay_pid=process.pid)
             cancellation.check()
-            deadline = time.monotonic() + 600
+            startup = StartupWatchdog(artifacts / "start.log", diagnostics.warn)
             while not info_path.exists():
                 if process.poll() is not None:
                     raise RuntimeError(
                         f"relay start exited before ready; see {artifacts / 'start.log'}"
                     )
-                if time.monotonic() >= deadline:
-                    raise TimeoutError("runner did not become ready within 600 seconds")
+                startup.check()
                 time.sleep(0.25)
             # runner.json is created before the write finishes, so wait for a complete JSON document.
             while True:
+                startup.check()
                 try:
                     info = json.loads(info_path.read_text())
                     break
                 except json.JSONDecodeError:
-                    if time.monotonic() >= deadline:
-                        raise TimeoutError("runner.json was not completed")
                     time.sleep(0.1)
             if isinstance(info.get("token"), str):
                 diagnostics.secrets.append(info["token"])
