@@ -201,13 +201,13 @@ ready の後も、`relay start` は 3 秒ごとに `/ping` を送ってランナ
 | `--os <version>` | OS のバージョン（`27`、`27.0`、`26.5` など）で候補を絞ります（「端末の選択」） |
 | `--project <path>` | Runner プロジェクトの場所（「Runner の用意」）。`$RELAY_HOME` より優先します |
 | `--port 8100` | 端末側の待ち受けポート。xcodebuild には `TEST_RUNNER_RELAY_RUNNER_PORT` として渡され、ランナーからは `RELAY_RUNNER_PORT` として見えます。セッションでは省略すると空きポートを選びます |
-| `--session <名前>` | セッション名（環境変数 `RELAY_SESSION` でも可）。ほかのランナーと状態ファイルとポートを分けます（「複数のセッションを並列に動かす」） |
+| `--session <名前>` | セッション名（環境変数 `RELAY_SESSION` でも可）。ほかのランナーと状態ファイルとポートを分けます（「[複数のセッションを並列に動かす](sessions.md#複数のセッションを並列に動かすrelay-start---session)」） |
 | `--team-id <TEAM_ID>` | 実機向けの署名チーム（「Team ID」。省略時は自動検出）。`-allowProvisioningUpdates RELAY_DEVELOPMENT_TEAM=<TEAM_ID>` を付けてビルドし、ランナーが起動できたら `~/.relay/config.json` に保存します |
 | `--rebuild` | `~/.relay/build/…/DerivedData-*` に既存の `.xctestrun` があっても再ビルドします（最後のビルドが今の Xcode の SDK と違うとき、Runner のソースやバンドル ID の接頭辞が変わったとき、記録のない古いビルドのときは、付けなくても再ビルドします。「ランナーの版」） |
 | `--verbose` | xcodebuild の出力をそのまま表示します |
 | `--allow-wifi` | 実機で、CoreDevice トンネルに加えて Wi-Fi などのアドレスも探索します。トークンが同じネットワークに平文で流れるので、既定では無効です |
 | `--ready-timeout 180` | `/health` が応答するまで待つ秒数。xcodebuild の出力に `Failed to initialize for UI testing` やテストの失敗が出た場合は、待たずにエラー内容と対処のヒントを表示して非ゼロで終了します |
-| `--background` | 端末から切り離して起動し、ready になったら終了します（「バックグラウンドで動かす」） |
+| `--background` | 端末から切り離して起動し、ready になったら終了します（「[バックグラウンドで動かす](sessions.md#バックグラウンドで動かすrelay-start---background--status--stop)」） |
 
 ## 起動とセッション
 
