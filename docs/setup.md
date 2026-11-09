@@ -516,7 +516,7 @@ ready の判定、つまり起動直後の探索には、XCUI が動くことを
 
 | オプション | 説明 |
 | --- | --- |
-| `--udid <UDID>` / `--device <名前>` | 使う端末を指定します。 |
+| `--udid <UDID>` / `--device <名前>` | 使う端末を指定します。同時には指定できず、省略すると自動で選びます。 |
 | `--simulator` | 実機が接続されていても、シミュレータだけから選びます。 |
 | `--os <version>` | `27`、`27.0`、`26.5` などの OS バージョンで候補を絞ります。 |
 | `--project <path>` | `$RELAY_HOME` より優先して Runner プロジェクトの場所を指定します。 |
@@ -525,12 +525,11 @@ ready の判定、つまり起動直後の探索には、XCUI が動くことを
 | `--team-id <TEAM_ID>` | 実機向けの署名チームを指定します。 |
 | `--rebuild` | `~/.relay/build/…/DerivedData-*` に既存の `.xctestrun` があっても再ビルドします。 |
 | `--verbose` | xcodebuild の出力をそのまま表示します。 |
-| `--allow-wifi` | 実機で CoreDevice トンネルに加えて Wi-Fi などのアドレスも探索します。 |
+| `--allow-wifi` | 実機で CoreDevice トンネルに加えて Wi-Fi などのアドレスも探索します。トークンが同じネットワークに平文で流れるので、既定では無効です。 |
 | `--ready-timeout 180` | `/health` が応答するまで待つ秒数を指定します。 |
 | `--background` | 端末から切り離して起動し、ready になったら終了します。 |
 
-`--udid <UDID>` と `--device <名前>` は同時に指定できません。省略すると自動で選びます。
-`--simulator`、`--os <version>` と合わせて「[端末の選択（relay devices）](#端末の選択relay-devices)」を参照してください。
+端末の指定は、`--simulator`、`--os <version>` と合わせて「[端末の選択（relay devices）](#端末の選択relay-devices)」を参照してください。
 
 `--project <path>` の指定先は「[Runner の用意（relay install）](#runner-の用意relay-install)」にあります。
 
@@ -544,8 +543,6 @@ ready の判定、つまり起動直後の探索には、XCUI が動くことを
 
 `--team-id <TEAM_ID>` を省略すると署名チームを自動検出します（「[Team ID](device.md#team-id実機の署名)」）。
 `-allowProvisioningUpdates RELAY_DEVELOPMENT_TEAM=<TEAM_ID>` を付けてビルドし、ランナーが起動できたら `~/.relay/config.json` に保存します。
-
-`--allow-wifi` は、トークンが同じネットワークに平文で流れるので、既定では無効です。
 
 xcodebuild の出力に `Failed to initialize for UI testing` やテストの失敗が出た場合は、`--ready-timeout 180` の時間を待ちません。
 エラー内容と対処のヒントを表示して、非ゼロで終了します。
