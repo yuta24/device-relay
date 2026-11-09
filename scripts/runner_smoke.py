@@ -133,12 +133,12 @@ def stop(binary, session, environment, log, *, check=True):
     )
 
 
-def cleanup(process, binary, session, environment, diagnostics, udid, directory):
+def cleanup(process, binary, session, environment, artifacts, udid, directory):
     try:
         if process is not None:
             try:
                 if process.poll() is None:
-                    with (diagnostics / "cleanup.log").open("w") as log:
+                    with (artifacts / "cleanup.log").open("w") as log:
                         stop(binary, session, environment, log, check=False)
             finally:
                 # Reap a stopped launcher before probing its group. On macOS a
