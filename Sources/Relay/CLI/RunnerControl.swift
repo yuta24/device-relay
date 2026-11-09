@@ -245,6 +245,9 @@ enum RunnerControl {
     case .coveredByOtherApp:
       return "something covers the app (a system alert, Control Center, …): check with relay screenshot or "
         + "relay find --type alert --bundle-id com.apple.springboard, close it, then send it again"
+    case .remoteViewPositionUnknown:
+      return "the element is in a view another process draws (the share sheet) and its frame is not on the screen: "
+        + "find it in relay screenshot and tap it by coordinates (relay tap <x> <y>)"
     case .notFound:
       return "no such endpoint; the runner may be older than this relay (relay start --rebuild builds it again)"
     default:

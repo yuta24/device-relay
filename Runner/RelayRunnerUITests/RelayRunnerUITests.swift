@@ -28,6 +28,9 @@ final class RelayRunnerUITests: XCTestCase {
   private var commandDisplay: DisplayLookup?
   /// Where the app's window is, from the command's latest element tree on iPad; nil when nothing was looked up.
   private var commandWindow: RunnerWindowLookup?
+  /// Why elements of the command's latest element tree inside the share sheet could not be placed on the screen
+  /// (`RunnerRemoteViews`); empty when they all were.
+  private var commandRemoteViews: [String] = []
 
   private lazy var springboard = XCUIApplication(bundleIdentifier: Self.springboardBundleID)
 
@@ -127,10 +130,12 @@ final class RelayRunnerUITests: XCTestCase {
     capturedIssues = []
     commandDisplay = nil
     commandWindow = nil
+    commandRemoteViews = []
     defer {
       capturedIssues = nil
       commandDisplay = nil
       commandWindow = nil
+      commandRemoteViews = []
     }
 
     var response: RunnerHTTPResponse
@@ -363,6 +368,7 @@ final class RelayRunnerUITests: XCTestCase {
     }
     let root = try elementTree(application, bundleID: bundleID, maxDepth: maxDepth)
     let warning = RunnerWindows.compactWarning(lookup: commandWindow)
+      + RunnerRemoteViews.compactWarning(unknown: commandRemoteViews)
     guard let filter else {
       if format == "compact" {
         return Self.text(warning + RunnerElementTree.compactText(root))
@@ -378,10 +384,12 @@ final class RelayRunnerUITests: XCTestCase {
     return annotated(RunnerElementTree.filteredJSON(elements, filter: filter, bundleID: bundleID))
   }
 
-  /// `body` with what it should say about the app's window (`RunnerWindows.annotate`).
+  /// `body` with what it should say about the app's window (`RunnerWindows.annotate`) and the share sheet
+  /// (`RunnerRemoteViews.annotate`).
   private func annotated(_ body: [String: Any]) -> RunnerHTTPResponse {
     var body = body
     RunnerWindows.annotate(&body, lookup: commandWindow)
+    RunnerRemoteViews.annotate(&body, unknown: commandRemoteViews)
     return .json(body)
   }
 
@@ -396,7 +404,10 @@ final class RelayRunnerUITests: XCTestCase {
     } catch {
       throw RunnerError.actionFailed("failed to snapshot \(bundleID): \(error.localizedDescription)")
     }
-    let root = Self.elementNode(snapshot, depth: 0, maxDepth: maxDepth)
+    // The share sheet's elements are placed in the app's space first, so that an iPad window or another display
+    // converts them with the rest.
+    let (root, unknownRemoteViews) = RunnerRemoteViews.placed(Self.elementNode(snapshot, depth: 0, maxDepth: maxDepth))
+    commandRemoteViews = unknownRemoteViews
     let displays = self.displays()
     guard displays.count > 1 else { return onScreen(root, bundleID: bundleID) }
     // The windows' display IDs say where the app is, so a command that snapshots needs no second snapshot

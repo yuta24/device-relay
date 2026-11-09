@@ -20,7 +20,8 @@ struct RunnerWindowPlacement: Equatable {
   }
 
   /// `root` (an app's snapshot, whose children are its windows) in screen coordinates. Each element also gets
-  /// the visible part of the window as its `clip`: a frame scrolled out of the window can't be touched.
+  /// the visible part of the window as its `clip`: a frame scrolled out of the window can't be touched. A clip it
+  /// already has (the share sheet's, `RunnerRemoteViews`) is converted and kept inside that part.
   ///
   /// The system keyboard of a resizable app isn't part of the window. It has a window of its own that spans the
   /// screen, in the native portrait space, whatever the shape of the app's window (`isScreenWindow`).
@@ -29,7 +30,7 @@ struct RunnerWindowPlacement: Equatable {
     func inWindow(_ node: RunnerElementNode) -> RunnerElementNode {
       var node = node
       node.frame = onScreen(node.frame)
-      node.clip = clip
+      node.clip = node.clip.map { onScreen($0).intersection(clip) } ?? clip
       node.children = node.children.map(inWindow)
       return node
     }

@@ -132,6 +132,7 @@ curl -s -H "$AUTH" -X POST $R/shutdown
 | `no_keyboard_focus` | 422 | `/type`・`/key` でキーボードのフォーカスがある要素がない | 入力欄をタップしてから送り直す |
 | `display_unknown` | 422 | 表示が複数ある端末で、前面アプリの表示を判定できない（どの表示も暗いなど）。何も送っていない | 画面の状態を利用者に確かめる |
 | `window_position_unknown` | 422 | iPad で、アプリのウィンドウが画面のどこにあるかわからない（同じアプリのウィンドウが複数あるなど）。何も送っていない | ウィンドウを 1 つにするか、スクリーンショットから座標で指定する |
+| `remote_view_position_unknown` | 422 | 要素を指定した `/tap`・`/press` で、選んだ要素が共有シート（別のプロセスが描くビュー）の中にあり、画面上の位置が決まらない（`reason: positionUnknown`）。何も送っていない（「[共有シートの中の要素](elements.md#共有シートの中の要素)」） | スクリーンショットで位置を確かめ、座標で指定する |
 | `covered_by_other_app` | 422 | 要素を指定した `/tap`・`/press` で、対象アプリが前面のアプリの一覧になく、先頭が SpringBoard（システムの許可ダイアログ、コントロールセンターなどに覆われている）。何も送っていない。`bundleId`・`foreground`・`alert`（SpringBoard の alert の label か `null`）が付く（「[別のアプリに覆われているとき](elements.md#別のアプリに覆われているとき)」） | スクリーンショットか `/find`（`bundleId: com.apple.springboard`、`type: alert`）で確かめ、ダイアログなどを閉じてから送り直す |
 | `touch_failed` | 422 / 500 | 合成したタッチが失敗した、時間内に終わらなかった、合成を始められなかった（500） | 1 回だけ再試行する。続くならランナーのログを見る |
 | `xcui_failed` | 422 | XCUI が失敗を報告した（XCTest の issue、要素ツリーの取得の失敗など）。`error` に XCUI の文 | `error` を読み、前面アプリと画面を観察し直す |

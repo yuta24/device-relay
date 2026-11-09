@@ -117,6 +117,10 @@ struct RunnerElementSelector: Equatable {
       return .failure(RunnerElementLookupFailure(reason: .ambiguous, count: matches.count, candidates: matches))
     }
 
+    // Its frame says nothing about the screen, so neither its size nor where it is can be checked.
+    guard match.node.positionUnknown == nil else {
+      return .failure(RunnerElementLookupFailure(reason: .positionUnknown, count: matches.count, candidates: [match]))
+    }
     let frame = match.node.frame
     guard frame.width > 0, frame.height > 0, frame.origin.x.isFinite, frame.origin.y.isFinite else {
       return .failure(RunnerElementLookupFailure(reason: .emptyFrame, count: matches.count, candidates: [match]))
@@ -186,6 +190,9 @@ struct RunnerElementLookupFailure: Error {
     case emptyFrame
     case offscreen
     case disabled
+    /// The element is inside a view another process draws (the share sheet), and where it is on the screen
+    /// can't be told (`RunnerRemoteViews`). Nothing was sent.
+    case positionUnknown
   }
 
   /// How many candidates the error lists.
@@ -209,6 +216,8 @@ struct RunnerElementLookupFailure: Error {
     case .emptyFrame: return "the element has an empty frame"
     case .offscreen: return "the element is outside the screen"
     case .disabled: return "the element is disabled"
+    case .positionUnknown:
+      return RunnerRemoteViews.touchError(candidates.first?.node.positionUnknown ?? "cannot tell where the element is on the screen")
     }
   }
 
@@ -218,6 +227,7 @@ struct RunnerElementLookupFailure: Error {
     case .notFound, .indexOutOfRange: return .elementNotFound
     case .ambiguous: return .elementAmbiguous
     case .emptyFrame, .offscreen, .disabled: return .elementNotHittable
+    case .positionUnknown: return .remoteViewPositionUnknown
     }
   }
 
