@@ -54,7 +54,7 @@ relay stop                                   # when done, if you started it
 - Wait with `relay find <selector> --timeout <s>` (≤ 10 s, repeat for longer) or `tap --timeout`, never `sleep`, except to let a swipe's scroll stop ([scrolling](references/scrolling.md)).
 - After the screen changes, observe again: don't reuse selectors, indexes, or coordinates.
 - One command at a time; overlapping ones get busy (5).
-- Permission dialogs: wait with `relay find --type alert --bundle-id com.apple.springboard --timeout 5`, tap the exact `label` from `find`/`source`; don't target the app behind with `--bundle-id` ([system-alerts](references/system-alerts.md)).
+- Permission dialogs: wait with `relay find --type alert --bundle-id com.apple.springboard --timeout 5`, tap the exact `label` from `find`/`source` ([system-alerts](references/system-alerts.md)).
 - Right after `relay launch`, add `--bundle-id <id>` to `find` / `tap` / `type` / `source`, except for permission dialogs.
 
 ## Exit codes
@@ -67,6 +67,7 @@ relay stop                                   # when done, if you started it
   - `element_ambiguous`: add `--type` or `--index` (waiting won't help)
   - `element_not_hittable`: `offscreen` → scroll; `disabled` → do the prior step; `emptyFrame` → observe again
   - `no_keyboard_focus`: tap the text field, resend
+  - `covered_by_other_app`: an alert etc. covers the app: `relay screenshot`, close it, resend
   - `app_not_installed`: check the bundle ID (case-sensitive) or install the app
   - `point_offscreen` (7): re-read `screen` in `relay health`
   - others: [failures](references/failures.md), [list of codes](references/failures.md#list-of-codes)
