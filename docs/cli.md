@@ -128,6 +128,7 @@ relay record stop                              # 録画を止め、MP4 の絶対
 | `element_ambiguous` | `--type`・`--label`・`--id` を足すか、候補から `--index <n>` で選ぶ |
 | `touch_mode_unavailable` | `--mode` を外すか、エラーが示す経路で送り直す |
 | `covered_by_other_app` | システムのダイアログやコントロールセンターなどがアプリを覆っている。`relay screenshot` か `relay find --type alert --bundle-id com.apple.springboard` で確かめ、閉じてから送り直す |
+| `remote_view_position_unknown` | 要素が別のプロセスが描くビュー（共有シート）の中にあり、frame が画面の座標でない。`relay screenshot` で位置を確かめ、`relay tap <x> <y>` で座標を指定する |
 | `not_found` | ランナーが relay より古いかもしれない（`relay start --rebuild` でビルドし直す） |
 
 ### 接続先（runner.json）の探し方

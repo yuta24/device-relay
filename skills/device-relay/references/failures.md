@@ -8,7 +8,7 @@
 | 3 | Can't reach the runner (no runner.json, can't connect, `no response within <seconds>s`) | For `no response within`, the runner is still working: wait for `busy` in `relay ping` to become `false` (`launch` / `terminate` wait up to 150 seconds, a long `type` 0.1 seconds per character, so give your own command a longer timeout). After a `launch` timeout, busy can last several more minutes, so if you started the runner yourself, `relay stop` and restarting is faster. Otherwise, `relay status`. No runner.json: `relay start --background …`. runner.json exists but doesn't answer (`relay start` was killed, for example): `relay stop` to clean up, then start. `the OS refused the connection`: relay is inside a sandbox ([Using relay from inside a sandbox](sandbox.md)), so neither stop nor start anything |
 | 4 | Token rejected (401). runner.json is stale or belongs to another runner | Check the URL, device, and PID with `relay status`, and `--runner` / `--session` / `$RELAY_RUNNER` / `$RELAY_SESSION` / `~/.relay/runner.json`. If you started it yourself, `relay stop` and restart. Otherwise, ask the user without stopping it |
 | 5 | Busy (409). Another command is running | Wait about a second, or retry once `relay ping` shows `"busy":false` |
-| 6 | Action failed (422): element not found, not unique, disabled, or offscreen; SpringBoard covers the target (`covered_by_other_app`); no keyboard focus; the app for `relay launch` isn't installed | Branch on `code` in the JSON on stdout ([List of codes](#list-of-codes) below). For element failures, read `reason` and `candidates`, observe again, and fix the selector |
+| 6 | Action failed (422): element not found, not unique, disabled, or offscreen; SpringBoard covers the target (`covered_by_other_app`); an element in the share sheet can't be placed (`remote_view_position_unknown`); no keyboard focus; the app for `relay launch` isn't installed | Branch on `code` in the JSON on stdout ([List of codes](#list-of-codes) below). For element failures, read `reason` and `candidates`, observe again, and fix the selector |
 | 7 | Request rejected (400 and other 4xx) | `point_offscreen`: the coordinates are off the screen (read `screen` in `relay health` again; rotating swaps width and height). `touch_mode_unavailable`: drop `--mode` and send it again. `invalid_request` and others: read the error text and fix it |
 | 8 | Runner error (5xx and the like) | Retry once. If it persists, check `relay status` and the logs |
 
@@ -24,7 +24,7 @@ JSON goes to stdout (to stderr only for `relay screenshot -o -`).
 {"candidates":[…],"code":"element_ambiguous","count":2,"error":"2 elements match the selector; add conditions or an index","ok":false,"reason":"ambiguous"}
 ```
 
-The `code`s of element failures are `element_not_found` (`notFound`, `indexOutOfRange`), `element_ambiguous` (`ambiguous`), and `element_not_hittable` (`emptyFrame`, `offscreen`, `disabled`), with `reason` giving the detail.
+The `code`s of element failures are `element_not_found` (`notFound`, `indexOutOfRange`), `element_ambiguous` (`ambiguous`), `element_not_hittable` (`emptyFrame`, `offscreen`, `disabled`), and `remote_view_position_unknown` (`positionUnknown`), with `reason` giving the detail.
 
 | `reason` | Meaning | What to do |
 | --- | --- | --- |
@@ -34,6 +34,7 @@ The `code`s of element failures are `element_not_found` (`notFound`, `indexOutOf
 | `emptyFrame` | The element's width or height is 0 | It isn't displayed. Observe the screen again |
 | `offscreen` | The element is off the screen | Scroll with `relay swipe`, then look again |
 | `disabled` | The element is `enabled: false` | A prerequisite input or step is missing. Check the screen |
+| `positionUnknown` | The element is inside the share sheet, and where it is on the screen can't be told; nothing was sent | Find it in `relay screenshot` and tap by coordinates |
 
 If `relay type` / `relay key` report `no_keyboard_focus` (`no element has keyboard focus in <bundleId>`), tap the text field and send it again (the check takes 2–3 seconds).
 
@@ -54,6 +55,7 @@ Failure JSON is `{"ok":false,"code":"…","error":"…"}`. `code` is a string th
 | `no_keyboard_focus` | 6 | Tap the text field and send it again |
 | `display_unknown` | 6 | The screen is dark. Check with the user |
 | `window_position_unknown` | 6 | The iPad window's position is unknown. Reduce to one window, or use coordinates from a screenshot |
+| `remote_view_position_unknown` | 6 | An element tap/press selected an element inside the share sheet whose frame can't be put on the screen; nothing was sent. Find it in `relay screenshot` and use `relay tap <x> <y>` |
 | `covered_by_other_app` | 6 | An element tap/press found SpringBoard in front of the target app (a system alert, Control Center, …); nothing was sent. `foreground` and `alert` (the alert's question, or null) tell what covers it. Check with `relay screenshot` or `relay find --type alert --bundle-id com.apple.springboard`, close it, and send it again ([system-alerts](system-alerts.md)) |
 | `touch_failed` | 6 / 8 | Retry once. If it persists, `relay status` and the logs |
 | `xcui_failed` | 6 | Read the error text (XCUI's message) and observe the foreground app and the screen again |

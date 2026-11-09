@@ -156,6 +156,7 @@ iPad のウィンドウでは、応答（`/tap`・`/press`・`/find`・`/source`
 | `emptyFrame` | `element_not_hittable` | 選んだ要素の frame の幅か高さが 0 | 選んだ要素 |
 | `offscreen` | `element_not_hittable` | 選んだ要素の frame が画面（iPad のウィンドウでは、見えているウィンドウ）と重ならない | 選んだ要素 |
 | `disabled` | `element_not_hittable` | 選んだ要素が `enabled: false` | 選んだ要素 |
+| `positionUnknown` | `remote_view_position_unknown` | 選んだ要素が共有シートの中にあり、画面上の位置が決まらない（「[共有シートの中の要素](#共有シートの中の要素)」）。何も送っていない | 選んだ要素 |
 
 ```json
 {"candidates":[{"enabled":true,"frame":{"height":52,"width":370,"x":16,"y":380.333},
@@ -178,6 +179,26 @@ iPad のウィンドウでは、応答（`/tap`・`/press`・`/find`・`/source`
 ```
 
 `/find` は一致がなくても `200`（`count: 0`）です。`elements[].index` はそのまま `/tap` の `index` に使えます。`/find` に `index` を付けると、その 1 件だけ（範囲外なら空）を返します（`count` は一致した総数のままです）。
+
+### 共有シートの中の要素
+
+共有シート（`UIActivityViewController`）の中身は別のプロセスが描くビューです。アプリのスナップショットでは、入れ物の `ShareSheet.RemoteContainerView` と、その中で同じ frame を繰り返す数段のビューは画面の座標で返りますが、その下の中身は (0, 0) から始まる入れ物からの相対座標で返ります。以前は、iPhone 17 Pro シミュレータで y ≈ 745 に描かれた「Copy」のセルが y = 230 と返り、要素指定のタップは `ok: true` のままシートの外側に当たってシートが閉じるか、何も起きませんでした。
+
+- **変換**: 中身が「(0, 0) から入れ物と同じ大きさ」の形なら、入れ物の原点を足して画面の座標にします（縦向きのシートが (9, 501) にあれば、「Copy」のセルは (20, 230) から (29, 731) になります）。対象は `/find`・`/source`（`format=text` を除く）の frame と、要素指定の `/tap`・`/press` の `frame`・`point` です。応答に足すフィールドはありません。iPad のウィンドウ表示や表示が複数ある端末では、この変換の後にウィンドウ・表示の変換をします。
+- **タップ位置**: frame と入れ物（シート）の重なりの中心です。横にスクロールしてシートの外に出たセルは、シートの中に見えている部分を押し、見えていなければ `offscreen`（`element_not_hittable`）です。シートの外を押してシートを閉じてしまわないためです。
+- **変換しないもの**: 入れ物が (0, 0) にあるとき（「More」で開く一覧のように画面全体を覆うとき）は、frame がそのまま画面の座標なので変えません。iPad のポップオーバー・シートでは、中身が大きさ 0 の要素 1 つだけで、中の要素はツリーに出ません（セレクタは `notFound`）。
+- **位置が決まらないとき**: 中身が上の形でない（大きさが違う、別の位置から始まる）ときは、どれだけずらせばよいかわからないので変換しません。そのときシートの中の要素への要素指定の `/tap`・`/press` は、何も送らずに `422`、`remote_view_position_unknown`（`reason: positionUnknown`）です（`timeout` の間は待ちます）。`/find`・`/source` は成功のままで、frame は返ったままの値、`warning` が付き、`format=compact` は先頭に `warning …` の行が付きます。スクリーンショットで位置を確かめて座標で押してください。シートの後ろのアプリの要素はこれまでどおりです。
+
+```json
+{"candidates":[{"enabled":true,"frame":{"height":134.333,"width":82,"x":19.667,"y":229.667},
+  "identifier":"actionGroupCell","index":0,"label":"Copy","type":"cell","value":null}],
+ "code":"remote_view_position_unknown","count":1,
+ "error":"cannot tell where the elements inside ShareSheet.RemoteContainerView (9,501,384,364) are on the screen: its content (0,0,384,200) is not the container's size at (0, 0); nothing was sent. Touch by coordinates from a screenshot instead",
+ "ok":false,"reason":"positionUnknown"}
+```
+
+- **ほかの別プロセスの画面**: 写真の選択（`PHPickerViewController`）は画面の座標で返るので変換しません（iPhone の全画面のシートと、iPad のシートで確かめました。iPad では読み込みの後に中身がツリーに出なくなります）。`SFSafariViewController` と `ASWebAuthenticationSession` の画面は `com.apple.SafariViewService` として扱います（「[別のアプリに覆われているとき](#別のアプリに覆われているとき)」）。
+- **確かめた環境**: iPhone 17 Pro シミュレータ（iOS 27.0）の縦・横と「More」の一覧、iPhone 14 Pro（iOS 26.7.1）の縦・横で、変換した frame がスクリーンショットの位置と合い、要素指定の「Copy」でコピーされること（`completionWithItemsHandler` が `CopyToPasteboard`・`completed: true`）を確かめました。実機では共有先を押していません。どの環境でもシートは内容に合わせた高さのカードで、上にスワイプしても広がらなかったので、広げた形は確かめていません。iPad Pro 11 インチ シミュレータ（iOS 27.0）では、全画面・ウィンドウ表示のどちらでも中身がツリーに出ませんでした。位置が決まらないときの `422` は、実際の画面では起きる形が見つからず、ユニットテストだけで確かめています。
 
 ### 別のアプリに覆われているとき
 
