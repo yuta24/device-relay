@@ -47,7 +47,7 @@ CI／Release Workflow の変更時に実行し、文書だけの変更では省�
 
 ### 文書だけを変更するPRのCI
 
-PRの差分が `README.md`・`README.ja.md`・`docs/` だけの場合は、CLI・Runnerのビルドとテスト、
+PRの差分が `README.md`・`README.ja.md`・`CHANGELOG.md`・`docs/` だけの場合は、CLI・Runnerのビルドとテスト、
 配布パッケージのスモークテストを省略します。必須チェック名を維持するため、CLI・Runnerの各matrixジョブは
 Linux上で省略理由を表示して成功し、macOSランナーやmiseのセットアップは使用しません。
 パッケージジョブは条件によりスキップします。`main` へのpushでは従来どおりすべて実行します。
@@ -329,10 +329,11 @@ README と `docs/` を書くときの決まりです。`skills/` は配布物な
 | 使っている人 | cli.md、http-api.md、elements.md、screen.md |
 | 困っている人 | limitations.md |
 | 作る人 | development.md、design.md、private-api.md |
+| 以前の版から更新する人 | CHANGELOG.md |
 
 - 1 つの事実は 1 か所に書きます。ほかの文書では 1 文の要約と、その節へのリンクにとどめます。
 - 制約は、その機能を説明する節に書きます。limitations.md は、症状から各節を引く索引にします。
-- 実装の理由と以前の版での動きは、作る人向けの文書に書きます。使う人向けの文書には「何ができるか・何が起きるか・どうするか」を書きます。
+- 実装の理由と以前の版での動きは、作る人向けの文書に書きます。更新するときに利用者が直す必要がある変更（破壊的な変更、移行の注意）は CHANGELOG.md に書きます。使う人向けの文書には「何ができるか・何が起きるか・どうするか」を書きます。
 
 ### 節の書き方
 

@@ -7,7 +7,7 @@ classify() {
 	while IFS= read -r -d '' path || [ -n "$path" ]; do
 		seen=true
 		case "$path" in
-		README.md | README.ja.md | docs/*) ;;
+		README.md | README.ja.md | CHANGELOG.md | docs/*) ;;
 		*) code=true ;;
 		esac
 		case "$path" in

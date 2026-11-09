@@ -189,6 +189,7 @@ Detailed documentation in docs/ is currently in Japanese.
 | [docs/design.md](docs/design.md) | Architecture and file layout, touch synthesis paths, measured latency |
 | [docs/limitations.md](docs/limitations.md) | Known limitations |
 | [docs/private-api.md](docs/private-api.md) | The private Apple APIs the runner uses, and what happens when they are unavailable |
+| [CHANGELOG.md](CHANGELOG.md) | Changes to act on when upgrading from an earlier version (breaking changes, migration notes; in Japanese) |
 | [docs/development.md](docs/development.md) | For developers: running from the repository, launching the runner by hand, the host app used for verification, how to write the docs, cutting a release |
 | [skills/device-relay/](skills/device-relay/) | The skill for coding agents (`SKILL.md`, and `references/` with one file per topic indexed by `reference.md`, in English) |
 
