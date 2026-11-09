@@ -4,7 +4,10 @@
 
 ## インストールと更新
 
-`relay` 本体（CLI）はビルド済みのものを GitHub Release の tarball（`device-relay-v<version>-macos-<arm64|x86_64>.tar.gz`）で配布します。端末で動かす Runner（XCUITest の Xcode プロジェクト）はソースのまま tarball に入っていて、`relay start` が手元の Mac の Xcode でビルドします。
+`relay` 本体（CLI）は、ビルド済みの tarball を GitHub Release で配布します。
+ファイル名は `device-relay-v<version>-macos-<arm64|x86_64>.tar.gz` です。
+
+端末で動かす Runner は、XCUITest の Xcode プロジェクトです。ソースのまま tarball に入っていて、`relay start` が手元の Mac の Xcode でビルドします。
 
 ```
 device-relay-v<version>/
@@ -18,49 +21,203 @@ device-relay-v<version>/
 | 入れ方 | インストール | 更新 |
 | --- | --- | --- |
 | mise | `mise use -g github:yuta24/device-relay` | `mise upgrade github:yuta24/device-relay` |
-| 手動 | tarball を展開し、`bin/relay` へのリンクを PATH に置く（[README](../README.ja.md#手動でインストールする)） | 新しい tarball を展開し、リンクを張り直す（`ln -sfn`） |
-| ソース | `git clone` して `make install` | `git pull` して `make install` |
+| 手動 | tarball を展開し、`bin/relay` へのリンクを PATH に置きます（[README](../README.ja.md#手動でインストールする)）。 | 新しい tarball を展開し、リンクを張り直します（`ln -sfn`）。 |
+| ソース | `git clone` して `make install` します。 | `git pull` して `make install` します。 |
 
-- どの入れ方でも、`relay` は自分の実行ファイルの場所から Runner を見つけるので、`relay install` は要りません。
-- 更新の後の最初の `relay start` は Runner をビルドし直します。DerivedData は Runner の場所ごとに分かれるので（`~/.relay/build/<ディレクトリ名>-<パスのハッシュ>`）、古いバージョンの分は別のディレクトリに残ります。元の Runner がなくなったものと 30 日使っていないものは `relay start` が消します（「[ログとテスト結果の掃除](sessions.md#ログとテスト結果の掃除)」）。
-- 以前 `relay install` したコピー（`~/.relay/runner`）は、更新の後は使われません。`relay skill install` の取り出し元にもなりません（「[エージェントスキル](cli.md#エージェントスキル)」）。要らなければ `relay uninstall` で削除できます。
+どの入れ方でも、`relay` は自分の実行ファイルの場所から Runner を見つけるので、`relay install` は要りません。
+
+### 更新後の Runner とビルド
+
+更新後の最初の `relay start` は、Runner をビルドし直します。
+DerivedData は Runner の場所ごとに分かれるので、古いバージョンの分は別のディレクトリに残ります。
+保存先は `~/.relay/build/<ディレクトリ名>-<パスのハッシュ>` です。
+
+元の Runner がなくなったものと、30 日使っていないものは `relay start` が消します。
+詳しくは「[ログとテスト結果の掃除](sessions.md#ログとテスト結果の掃除)」を参照してください。
+
+以前 `relay install` したコピーの `~/.relay/runner` は、更新後は使われません。
+`relay skill install` の取り出し元にもなりません（「[エージェントスキル](cli.md#エージェントスキル)」）。
+要らなければ `relay uninstall` で削除できます。
 
 ## Runner の用意（relay install）
 
-`relay install` が要るのは、`relay` のバイナリだけを別の場所にコピーして、そこから Runner が見つからないときです。展開したディレクトリ（またはチェックアウト）で 1 回実行します。Runner プロジェクトを `~/.relay/runner/` にコピーし、relay のバージョンと、元がチェックアウトならそのコミットを `~/.relay/runner/install.json` に記録します。
+`relay install` は、Runner プロジェクトを `~/.relay/runner/` にコピーします。
+必要なのは、`relay` のバイナリだけを別の場所にコピーして、そこから Runner が見つからないときです。
+展開したディレクトリ、またはチェックアウトで 1 回実行します。
 
-- コピー元は `--project <path>` > `$RELAY_HOME` > カレントディレクトリとその親 > `relay` の実行ファイルの場所（シンボリックリンクを解決）とその親、の順に探した、展開したリリースか device-relay のチェックアウトです（どちらも同じ配置です）。
-- コピーするのは `Runner/` と、プロジェクトが参照している CLI 側の共有ソース（`Sources/Relay/Shared/RunnerAuth.swift` など、`project.pbxproj` の `../Sources/...` の参照）、それにエージェントスキル（`skills/device-relay`。「[エージェントスキル](cli.md#エージェントスキル)」を参照）です。リポジトリと同じ配置（`~/.relay/runner/Runner/RelayRunner.xcodeproj`、`~/.relay/runner/skills/device-relay`）にします。
-- 再実行すると上書き更新します。一時ディレクトリにコピーしてから入れ替えるので、途中で失敗しても前の Runner は残ります。入れ替えたときは、古いソースのビルド成果物（`~/.relay/build/installed`）を削除します。
-- `relay install --build` は、コピーの後にシミュレータ用の `build-for-testing`（`generic/platform=iOS Simulator`）を行い、初回の `relay start` でビルドを省きます（下の「ランナーの版」の記録も書くので、ソースが同じなら `relay start` はそのビルドを使い回します）。ビルドログは `relay start` と同じく `~/.relay/logs/` の `build-<時刻>.log`（ポートはないので付けません）に保存し、失敗したときはそのパスを示します（コピーした Runner は残ります）。`--verbose` を付けると xcodebuild の出力をそのまま表示します。
-- `relay uninstall`（= `relay install --remove`）は `~/.relay/runner` とそのビルド成果物を削除します。`config.json`、`runner.json`、ログは残します。
-- `relay start` は、`~/.relay/runner` を使うときに記録したバージョンが `relay` のバージョンと違えば「relay install を再実行して」と知らせます。止めはしません。`relay doctor` も同じ確認をし、チェックアウトの中などで別の Runner を使っているときも、コピーが古ければ（元のチェックアウトのコミットが記録と違う場合を含む）知らせます。ただし実行ファイルのそばの Runner を使っているときは、コピーは使われないので、古くても問題にしません（`not used: relay executable wins`）。コピーがなくても問題にしません。
+relay のバージョンと、元がチェックアウトならそのコミットを `~/.relay/runner/install.json` に記録します。
 
-`relay start` が使う Runner プロジェクトは、次の順に探します。
+### コピー元とコピーするファイル
 
-1. `--project <path>`（チェックアウトのルート、`Runner/`、`.xcodeproj` のどれでも可）
-2. `$RELAY_HOME`（同上）
-3. カレントディレクトリとその親にある device-relay のチェックアウト（開発時用）
-4. `relay` の実行ファイルの場所（シンボリックリンクを解決したもの）とその親にある Runner（mise や手動で展開したリリース、`make install` のチェックアウト）
-5. `~/.relay/runner`（`relay install` したもの）
+`relay install` は、展開したリリースか device-relay のチェックアウトを次の順に探します。どちらも同じ配置です。
 
-対象アプリのリポジトリなどから実行すると、4 の実行ファイルのそばの Runner を使います。relay を更新すれば Runner も一緒に新しくなり、前に `relay install` したコピーが使われ続けることはありません。5 を使うのは、バイナリだけを別の場所にコピーした場合です。device-relay のリポジトリ内で実行すると 3 のチェックアウトを使うので、編集中（未コミットを含む）の Runner がそのままビルドされます。`make install` したリンクでは、チェックアウトの外から実行しても 4 でそのチェックアウトの Runner を使います。
+| 優先順 | コピー元を探す場所 |
+| --- | --- |
+| 1 | `--project <path>` です。 |
+| 2 | `$RELAY_HOME` です。 |
+| 3 | カレントディレクトリとその親です。 |
+| 4 | `relay` の実行ファイルの場所とその親です（シンボリックリンクを解決します）。 |
 
-1 と 2 で指定した場所にプロジェクトがなければ、ほかを探さずにエラーにします。どこにも見つからなければ、バイナリだけをコピーした場合は展開したディレクトリ（またはチェックアウト）で `relay install` を 1 回実行することなど、設定方法を示して終了します。DerivedData は Runner プロジェクトごとに `~/.relay/build/installed`（インストールしたもの）か `~/.relay/build/<ディレクトリ名>-<パスのハッシュ>` に分けるので、別のソースでビルドした `.xctestrun` を使い回すことはありません。Xcode では分けないので、`DEVELOPER_DIR` で Xcode を切り替えてビルドすると、SDK のバージョン入りの名前（`RelayRunner_iphonesimulator27.2-….xctestrun` など）の `.xctestrun` が並びますが、指すビルド成果物（`Debug-iphonesimulator` など）は共有で、最後のビルドのものです。そのため relay は、ビルドした直後はそのビルドが書いた（更新日時が新しい）ものを、使い回すときは最後のビルドのもの（更新日時が最も新しいもの）を使い、その名前の SDK のバージョンが今の Xcode の SDK（`xcrun --sdk iphonesimulator|iphoneos --show-sdk-version`）と違えば `… is not for this Xcode's … SDK …; rebuilding` と出して再ビルドします（SDK のバージョンが取れないときや、名前から読めないときは、そのまま使い回します）。Xcode を切り替えるたびにビルドし直すことになりますが、同じ Xcode のままなら今までどおりビルドせずに使い回します。SDK が同じでも、Runner のソースがビルドの後に変わっていれば作り直します（下の「ランナーの版」）。ランナーを起動する `xcodebuild test-without-building` には、ポートごとの `~/.relay/build/…/TestData/port-<port>` を `-derivedDataPath` として渡すので、テストのログと xcresult はそこの `Logs/Test` に入り、`~/Library/Developer/Xcode/DerivedData` には何も作りません（以前の relay は `DerivedData-*/Logs/Test` に書いていました）。古いものは `relay start` が消します（「[ログとテスト結果の掃除](sessions.md#ログとテスト結果の掃除)」）。
+コピーするファイルと配置は次のとおりです。リポジトリと同じ配置にします。
+
+| コピーするもの | 内容・配置 |
+| --- | --- |
+| `Runner/` | プロジェクトは `~/.relay/runner/Runner/RelayRunner.xcodeproj` に置きます。 |
+| CLI 側の共有ソース | `Sources/Relay/Shared/RunnerAuth.swift` など、`project.pbxproj` の `../Sources/...` の参照先です。 |
+| エージェントスキル | `skills/device-relay` を `~/.relay/runner/skills/device-relay` に置きます。 |
+
+スキルについては「[エージェントスキル](cli.md#エージェントスキル)」を参照してください。
+
+### コピーの更新と削除
+
+`relay install` を再実行すると、コピーを上書き更新します。
+一時ディレクトリにコピーしてから入れ替えるので、途中で失敗しても前の Runner は残ります。
+入れ替えたときは、古いソースのビルド成果物 `~/.relay/build/installed` を削除します。
+
+`relay uninstall` は `relay install --remove` と同じで、`~/.relay/runner` とそのビルド成果物を削除します。
+`config.json`、`runner.json`、ログは残します。
+
+### コピー時にビルドする
+
+`relay install --build` は、コピー後にシミュレータ用の `build-for-testing` を行います。
+ビルド先は `generic/platform=iOS Simulator` です。
+
+「[ランナーの版（ソースのハッシュ）](#ランナーの版ソースのハッシュ)」の記録も書くので、ソースが同じなら初回の `relay start` はそのビルドを使い回し、ビルドを省きます。
+
+ビルドログは `relay start` と同じく `~/.relay/logs/` に保存します。
+名前は `build-<時刻>.log` です。ポートはないので、名前に付けません。
+失敗したときはログのパスを示し、コピーした Runner は残します。
+`--verbose` を付けると xcodebuild の出力をそのまま表示します。
+
+### コピーの古さの確認
+
+`relay start` は、`~/.relay/runner` に記録したバージョンが `relay` と違えば、「relay install を再実行して」と知らせます。
+そのコピーを使う場合に確認し、古くても止めません。
+
+`relay doctor` も同じ確認をします。チェックアウトの中などで別の Runner を使っているときも、コピーが古ければ知らせます。
+元のチェックアウトのコミットが記録と違う場合も含みます。
+
+ただし、実行ファイルのそばの Runner を使うときはコピーを使わないので、古くても問題にしません。
+このときは `not used: relay executable wins` と表示します。コピーがなくても問題にしません。
+
+### 起動に使う Runner の探し方
+
+`relay start` は、次の順に Runner プロジェクトを探します。
+
+| 優先順 | 探す場所 |
+| --- | --- |
+| 1 | `--project <path>` で指定した場所です。 |
+| 2 | `$RELAY_HOME` で指定した場所です。 |
+| 3 | カレントディレクトリとその親にある device-relay のチェックアウトです。 |
+| 4 | `relay` の実行ファイルの場所とその親にある Runner です（シンボリックリンクを解決します）。 |
+| 5 | `relay install` した `~/.relay/runner` です。 |
+
+`--project <path>` と `$RELAY_HOME` には、チェックアウトのルート、`Runner/`、`.xcodeproj` のどれでも指定できます。
+どちらも、指定した場所にプロジェクトがなければ、ほかを探さずにエラーにします。
+
+対象アプリのリポジトリなどから実行すると、4 の実行ファイルのそばの Runner を使います。
+mise や手動で展開したリリース、`make install` のチェックアウトが対象です。
+relay を更新すれば Runner も一緒に新しくなり、以前のコピーが使われ続けることはありません。
+5 を使うのは、バイナリだけを別の場所にコピーした場合です。
+
+開発時に device-relay のリポジトリ内で実行すると、3 のチェックアウトを使います。
+そのため、編集中の Runner が未コミットの変更も含めてビルドされます。
+`make install` したリンクでは、チェックアウトの外から実行しても 4 でそのチェックアウトの Runner を使います。
+
+どこにもプロジェクトが見つからなければ、設定方法を示して終了します。
+バイナリだけをコピーした場合は、展開したディレクトリかチェックアウトで `relay install` を 1 回実行することなどを案内します。
+
+### ビルドの保存先と Xcode の切り替え
+
+DerivedData は Runner プロジェクトごとに分けるので、別のソースでビルドした `.xctestrun` を使い回すことはありません。
+
+| Runner | DerivedData の保存先 |
+| --- | --- |
+| `relay install` したもの | `~/.relay/build/installed` です。 |
+| それ以外 | `~/.relay/build/<ディレクトリ名>-<パスのハッシュ>` です。 |
+
+Xcode ごとには分けません。`DEVELOPER_DIR` で Xcode を切り替えてビルドすると、SDK のバージョン入りの `.xctestrun` が並びます。
+名前の例は `RelayRunner_iphonesimulator27.2-….xctestrun` です。
+
+これらが指すビルド成果物は `Debug-iphonesimulator` などを共有し、最後のビルドのものになります。
+
+そのため relay は、ビルド直後にはそのビルドが書いた更新日時の新しい `.xctestrun` を選びます。
+使い回すときは、最後のビルドのもの、つまり更新日時が最も新しいものを使います。
+
+名前の SDK バージョンが今の Xcode の SDK と違えば、`… is not for this Xcode's … SDK …; rebuilding` と出して再ビルドします。
+SDK は `xcrun --sdk iphonesimulator|iphoneos --show-sdk-version` で確認します。
+
+SDK のバージョンが取れないときや、名前から読めないときは、そのまま使い回します。
+
+Xcode を切り替えるたびにビルドし直しますが、同じ Xcode のままならビルドせずに使い回します。
+SDK が同じでも、Runner のソースがビルド後に変わっていれば作り直します。
+詳しくは「[ランナーの版（ソースのハッシュ）](#ランナーの版ソースのハッシュ)」を参照してください。
+
+### テストのログと結果の保存先
+
+ランナーのテストログと xcresult は、ポートごとの `~/.relay/build/…/TestData/port-<port>` の `Logs/Test` に入ります。
+ランナーを起動する `xcodebuild test-without-building` に、この場所を `-derivedDataPath` として渡します。
+
+`~/Library/Developer/Xcode/DerivedData` には何も作りません。
+
+古い形式の保存先は「[古い形式の生成物](development.md#古い形式の生成物)」にあります。
+古いものは `relay start` が消します（「[ログとテスト結果の掃除](sessions.md#ログとテスト結果の掃除)」）。
 
 ### ランナーの版（ソースのハッシュ）
 
-`git pull` や `relay install` の後に、古いソースでビルドしたランナーが黙って使われないよう、relay はランナーのソースのハッシュでビルドを見分けます。
+relay はソースのハッシュでビルドを見分け、`git pull` や `relay install` 後に古いソースのランナーが黙って使われるのを防ぎます。
+`relay start` のたびに計算し、数 ms で済みます。
+対象ファイルと計算方法は「[ソースのハッシュの計算](development.md#ソースのハッシュの計算)」を参照してください。
 
-- **対象**: `Runner/` 以下のすべてのファイル（プロジェクト、スキーム、ランナーのソース、`Info.plist` など）と、プロジェクトが `../Sources/Relay/Shared/*.swift` として参照する CLI との共有ファイル（`relay install` がコピーするものと同じ）です。Xcode の利用者ごとの状態（`xcuserdata`）と隠しファイル（`.DS_Store` など）は含めません。ファイルのパスと内容を、パスの順に SHA-256 にかけます（列挙の順には依りません）。`relay install` したコピーは元のチェックアウトと同じファイルなので、同じハッシュになります。計算は `relay start` のたびに行い、数 ms です。
-- **記録**: ビルドに成功すると、`.xctestrun` の横（`DerivedData-*/Build/Products/relay-runner-build.json`）にハッシュと relay のバージョン、バンドル ID の接頭辞を記録します（`relay install --build` も同じ）。ビルドの前には消すので、失敗したビルドは記録を持ちません。
-- **使い回しの判断**: 最後のビルドが今の Xcode の SDK のものでも、記録がない（古い relay のビルド、失敗したビルド）、バンドル ID の接頭辞が違う（記録に接頭辞がない場合も）、ハッシュが今のソースと違う、relay のバージョンが違う、のどれかなら、この順に調べて最初の理由を `runner sources changed since the last build (<前> -> <今>); rebuilding` などと出し、 `--rebuild` なしでも再ビルドします。ハッシュだけが変わった再ビルドは、Xcode の差分ビルドなので変わったファイルの分だけで済みます。
-- **ランナーが名乗る版**: ビルドのときに `RELAY_RUNNER_VERSION=<relay のバージョン>` と `RELAY_RUNNER_SOURCE_HASH=<ハッシュ>` をビルド設定として渡し、UI テストバンドルの Info.plist（`Runner/RelayRunnerUITests/Info.plist`。自動生成の Info.plist に足されます）に埋め込みます。ランナーは自分のバンドルから読み、`/ping` と `/health` の `runner`（`{"version":"0.6.0","sourceHash":"<64 桁>"}`）で返します。起動時の環境変数ではないので、ビルドしたものを表します。Xcode から直接ビルドしたランナーでは値が `null` です。
-- **照合**: `relay start` は ready の時点で `/health` の `runner` を確かめ、一致すれば `relay: runner 0.6.0 (sources <12 桁>)` と出します。違う、または名乗らない場合は `warning:` を出しますが、止めはしません（ソースは relay が今ビルドまたは確認したものなので、ずれているのは名乗る値だけです）。runner.json には期待する版（`runner`）を保存し、`relay status` は `/ping` の `runner` と並べて表示します。ランナー操作のコマンドはソースのハッシュを計算しません。版を名乗らない古いランナーにも、これまでどおり接続できます（`relay status` の `runner:` は `not reported`）。
+ビルドが成功すると、`.xctestrun` の横の `DerivedData-*/Build/Products/relay-runner-build.json` に記録します。
+`relay install --build` も同じ記録を書きます。
+
+| 記録する値 | 内容 |
+| --- | --- |
+| ハッシュ | ビルドした Runner のソースから求めた値です。 |
+| relay のバージョン | ビルドに使った relay です。 |
+| バンドル ID の接頭辞 | ビルドに使った接頭辞です。 |
+
+記録はビルド前に消すので、失敗したビルドは記録を持ちません。
+
+#### ビルドを使い回す条件
+
+最後のビルドが今の Xcode の SDK のものでも、次の順に調べて該当すれば再ビルドします。`--rebuild` は要りません。
+
+| 確認順 | 再ビルドする条件 |
+| --- | --- |
+| 1 | 記録がありません（古い relay のビルドや失敗したビルド）。 |
+| 2 | バンドル ID の接頭辞が違うか、記録に接頭辞がありません。 |
+| 3 | ハッシュが今のソースと違います。 |
+| 4 | relay のバージョンが違います。 |
+
+最初に該当した理由を、`runner sources changed since the last build (<前> -> <今>); rebuilding` などと表示します。
+ハッシュだけが変わった再ビルドは Xcode の差分ビルドなので、変わったファイルの分だけで済みます。
+
+#### ランナーが返す版と照合
+
+ランナーは、ビルドした版を `/ping` と `/health` の `runner` で返します。
+形は `{"version":"0.6.0","sourceHash":"<64 桁>"}` です。Xcode から直接ビルドしたランナーでは値が `null` です。
+埋め込み方は「[ランナーの版の埋め込み](development.md#ランナーの版の埋め込み)」にあります。
+
+`relay start` は ready の時点で `/health` の `runner` を確かめます。
+一致すれば `relay: runner 0.6.0 (sources <12 桁>)` と表示します。
+違う場合や、版を名乗らない場合は `warning:` を出しますが、止めません。
+ソースは relay が今ビルドまたは確認したものなので、ずれているのは名乗る値だけです。
+
+runner.json には期待する版を `runner` に保存します。
+`relay status` は、期待する版と `/ping` の `runner` を並べて表示します。
+ランナー操作のコマンドは、ソースのハッシュを計算しません。
+
+版を名乗らない古いランナーにも接続できます。このとき `relay status` の `runner:` は `not reported` です。
 
 ## 端末の選択（relay devices）
 
-`relay devices` は、`xcrun devicectl list devices` の実機と `xcrun simctl list devices` の iOS シミュレータを一覧表示します（名前、UDID、種類、OS、状態）。`--json` で JSON の配列を出します。`--os <version>` を付けると、その OS のものだけを表示します（下の `--os` と同じ一致の仕方）。
+`relay devices` は、実機と iOS シミュレータの名前、UDID、種類、OS、状態を一覧表示します。
+実機は `xcrun devicectl list devices`、シミュレータは `xcrun simctl list devices` で取得します。
+
+`--json` で JSON の配列を出します。
+`--os <version>` を付けると、その OS のものだけを表示します。一致の仕方は「[OS で候補を絞る](#os-で候補を絞る)」と同じです。
 
 ```
 NAME           UDID                                  KIND       OS          STATE
@@ -69,23 +226,93 @@ iPhone 17 Pro  11111111-1111-1111-1111-111111111111  simulator  iOS 27.0    boot
 iPhone 17      22222222-2222-2222-2222-222222222222  simulator  iOS 27.0    shutdown
 ```
 
-`relay start` と `relay doctor` は、端末を次のように決めます。どれを使うかは必ず `relay: using …` として、OS と選んだ理由つきで表示します。
+### 起動・確認する端末の決め方
 
-1. `--udid <UDID>`
-2. `--device <名前>`: 名前の完全一致（大文字小文字は無視）。同じ名前が複数ある（ランタイム違いのシミュレータなど）ときは、次の順に決めます
-   1. そのうち接続中・起動中のものが 1 つだけならそれ
-   2. 候補（起動中のものがあればその中、なければすべて）がすべてシミュレータなら、最も新しい iOS のもの（`26.10` は `26.5` より新しい、のように数値で比べます）。`relay: using iPhone 17 Pro (iPhone 17 Pro, iOS 27.0, simulator, shutdown) <SIM_UDID> (--device; the newest iOS of 3 simulators named "iPhone 17 Pro")` のように表示します
-   3. 実機とシミュレータが同じ名前の場合、同じ名前の実機が複数ある場合、最も新しい iOS のシミュレータが複数ある場合は、候補つきでエラーにします（実機は OS で推測しません。`--simulator` か `--udid` で選びます）
-3. どちらもなければ、接続中の実機が 1 台だけならそれ、実機がなく起動中のシミュレータが 1 台だけならそれ。複数・0 台なら候補一覧つきでエラーにします
+`relay start` と `relay doctor` は、次の順に端末を決めます。
+選んだ端末は必ず `relay: using …` として、OS と選んだ理由つきで表示します。
 
-実機の一覧には `devicectl list devices` を使いますが、`--simulator` を付けたときと、`--udid` が `simctl` の一覧にあるシミュレータのときは、実機を選ぶことはないので devicectl を呼びません（CoreDevice が応答しないときの待ちや `Timed out waiting for CoreDeviceService` などの警告も出ません）。このとき `relay doctor` の `devices` の行は `0 booted simulator(s), … iOS simulator(s) (devices not listed: --udid is a simulator)` のように実機の数を出さず、候補が見つからないときのエラーにも実機は並びません。`--device <名前>` だけでは、同じ名前の実機があるかを確かめるために devicectl を呼びます（シミュレータだけから選ぶなら `--simulator` を付けます）。
+| 優先順 | 指定・条件 | 選ぶ端末 |
+| --- | --- | --- |
+| 1 | `--udid <UDID>` | 指定した UDID の端末です。 |
+| 2 | `--device <名前>` | 大文字小文字を無視して名前が完全一致する端末です。 |
+| 3 | どちらも指定しない | 接続中の実機が 1 台だけなら、それを使います。 |
+| 3 | どちらも指定せず、実機がない | 起動中のシミュレータが 1 台だけなら、それを使います。 |
 
-次の 2 つで、上の選択の前に候補を絞れます。`--udid` / `--device` とも、自動選択とも組み合わせられます。
+自動選択で候補が複数、または 0 台なら、候補一覧つきでエラーにします。
 
-- `--simulator`: シミュレータだけから選びます。実機が接続されていても、`--device` で同じ名前の実機があっても、シミュレータを選びます。`--device` なしでは、起動中のシミュレータが 1 台ならそれ、複数ならエラー（候補つき）です。0 台のときもエラーにし、新しい iOS のものから順に候補を示して、`--device <名前>` で選ぶよう案内します。どのシミュレータ（iPhone か iPad か、画面の大きさ）を使うかはスクリーンショットや座標に関わるので、勝手に選んで boot はしません
-- `--os <version>`: OS のバージョンが前方一致するもの（区切りの `.` ごとに比べます）だけから選びます。`--os 27` は iOS 27.0 や 27.1、`--os 26.5` は 26.5 や 26.5.1 に一致し、26.6 や 26.50 には一致しません（足りない桁は 0 とみなすので、`--os 27.0` は iOS 27 にも一致します）。「以上」の比較にしないのは、`--os 26.5` で 27.0 が選ばれると意図と違うためです
+`--device <名前>` で同じ名前が複数ある場合は、ランタイム違いのシミュレータなどを次の順に選びます。
 
-停止中のシミュレータを `--udid` / `--device` で指定した場合は、`relay start` が `simctl boot` して起動を待ちます。relay が boot したシミュレータは、`relay start` の終了時（Ctrl-C を含む）に shutdown します。boot やビルドの途中（ランナーの起動前）に Ctrl-C（または SIGTERM）した場合も、実行中の simctl や xcodebuild を止めてから shutdown します。もともと起動していたシミュレータはそのままにします。
+| 確認順 | 条件 | 結果 |
+| --- | --- | --- |
+| 1 | 接続中・起動中のものが 1 つだけある | その端末を使います。 |
+| 2 | 候補がすべてシミュレータ | 最も新しい iOS のものを使います。 |
+| 3 | 実機とシミュレータが混在、同名の実機が複数、または最新 iOS のシミュレータが複数 | 候補つきでエラーにします。 |
+
+2 の候補は、起動中のものがあればその中、なければすべてです。
+iOS のバージョンは数値で比べるので、`26.10` は `26.5` より新しいと判定します。
+実機は OS で推測しません。エラーの場合は `--simulator` か `--udid` で選びます。
+
+同名のシミュレータから最新の iOS を選ぶと、次のように表示します。
+
+```text
+relay: using iPhone 17 Pro (iPhone 17 Pro, iOS 27.0, simulator, shutdown) <SIM_UDID> (--device; the newest iOS of 3 simulators named "iPhone 17 Pro")
+```
+
+### シミュレータだけから選ぶ
+
+`--simulator` を付けると、端末の選択前に候補をシミュレータだけに絞ります。
+実機が接続されていても、`--device` で同じ名前の実機があっても、シミュレータを選びます。
+`--udid` / `--device` とも、自動選択とも組み合わせられます。
+
+`--device` なしで選ぶ場合の結果は、次のとおりです。
+
+| 起動中のシミュレータ | 結果 |
+| --- | --- |
+| 1 台 | そのシミュレータを使います。 |
+| 複数 | 候補つきでエラーにします。 |
+| 0 台 | 新しい iOS のものから順に候補を示し、`--device <名前>` で選ぶようエラーで案内します。 |
+
+どのシミュレータを使うかは、iPhone か iPad か、画面の大きさによってスクリーンショットや座標に関わります。
+そのため、勝手に選んで boot はしません。
+
+### OS で候補を絞る
+
+`--os <version>` は、端末の選択前に OS が前方一致するものだけに絞ります。
+区切りの `.` ごとに比べ、足りない桁は 0 とみなします。
+`--udid` / `--device` とも、自動選択とも組み合わせられます。
+
+| 指定 | 一致する OS | 一致しない OS |
+| --- | --- | --- |
+| `--os 27` | iOS 27.0、27.1 です。 | — |
+| `--os 26.5` | iOS 26.5、26.5.1 です。 | iOS 26.6、26.50 です。 |
+| `--os 27.0` | iOS 27 です。 | — |
+
+`--os 26.5` で 27.0 が選ばれると意図と違うため、「以上」の比較にはしません。
+
+### 実機の一覧を取得しない場合
+
+`--simulator` を付けたときと、`--udid` が `simctl` の一覧にあるシミュレータのときは、devicectl を呼びません。
+実機を選ぶことがないため、`devicectl list devices` による実機の一覧は不要です。
+
+CoreDevice が応答しないときの待ちや、`Timed out waiting for CoreDeviceService` などの警告も出ません。
+
+このとき `relay doctor` の `devices` の行には、実機の数を出しません。
+候補が見つからないときのエラーにも実機は並びません。表示例は次のとおりです。
+
+```text
+0 booted simulator(s), … iOS simulator(s) (devices not listed: --udid is a simulator)
+```
+
+`--device <名前>` だけでは、同じ名前の実機があるかを確かめるために devicectl を呼びます。
+シミュレータだけから選ぶなら `--simulator` を付けます。
+
+### シミュレータの自動起動と終了
+
+停止中のシミュレータを `--udid` / `--device` で指定すると、`relay start` が `simctl boot` して起動を待ちます。
+relay が boot したシミュレータは、`relay start` の終了時に shutdown します。Ctrl-C で終了した場合も同じです。
+
+boot やビルドの途中で、ランナーの起動前に Ctrl-C または SIGTERM を送った場合も shutdown します。
+実行中の simctl や xcodebuild を止めてから行います。もともと起動していたシミュレータは、そのままにします。
 
 ## Team ID（実機の署名）
 
@@ -93,22 +320,94 @@ iPhone 17      22222222-2222-2222-2222-222222222222  simulator  iOS 27.0    shut
 
 ## 環境の確認（relay doctor）
 
-`relay doctor [--udid <UDID> | --device <名前>] [--simulator] [--os <version>] [--project <path>] [--json]` は、ビルドや起動をせずに次を確認し、各項目を ✓（問題なし）/ ✗（このままでは動かない）/ !（注意）で表示します。✗ と ! には直し方を 1 行添えます。✗ があれば終了コード 1（ローカルの失敗）、なければ 0 です。
+`relay doctor` は、ビルドや起動をせずに環境と端末を確認します。
 
-- relay のバージョン、Xcode（`xcodebuild -version` と `xcode-select -p`）、xcrun、devicectl
-- Runner プロジェクトの解決結果と、`relay install` の状態（記録したバージョン・コミット・コピー元、ずれていれば !）
-- 端末一覧と、同じオプションの `relay start` が使う端末（`--udid` / `--device` がなければ自動選択の結果）。自動選択で実機になる場合は、シミュレータで試すなら `--simulator` か `--device <シミュレータ名>` を付けるよう ! で知らせます
-- 使用中の端末: ほかの `relay start`（セッション）が使っている端末が候補にあるときは、`in use` の行に端末と使っている相手（`session a, relay start pid 123`）を出します。自動選択はそれらを外します（`relay start` と同じ）。`--udid` / `--device` で指定した端末が使用中なら target を ✗ にし、止め方（`relay stop --session <名前>` など）か別の端末を指定するよう案内します（その端末の残りの確認は続けます）。使用中がなければこの行は出ません。`relay doctor` はセッションを持たないので、空いている起動中のシミュレータが複数あっても 1 台には決めません（`relay start --session` なら選びます）。使用中でない候補が 1 台もなければ、target は ! です
-- 実機: OS のバージョン（17 以上）、接続状態、ペアリング、デベロッパモード（`devicectl list devices`）、DDI のマウント状態（`ddiServicesAvailable`）、ロック状態（`devicectl device info lockState` の `passcodeRequired`）。UI オートメーションの有効状態は Mac から読めないので、常に ! で確認を促します
-- シミュレータ: ランタイムが入っているか、起動状態
-- 署名: 証明書と Team ID（実機なら見つからなければ ✗、シミュレータなら !）
-- バンドル ID: `relay start` が使う接頭辞と出どころ（`bundleIDPrefix` の設定、Team ID から作った既定値、Team が分からない、シミュレータの既定値）。表示だけで、config の値が不正なときだけ ✗（「[バンドル ID の接頭辞](device.md#バンドル-id-の接頭辞)」）
-- sandbox: 127.0.0.1 への接続と、`~/.relay`（あれば）へのファイルの作成を試します。OS に拒否された（`Operation not permitted`）ら、エージェントなどの sandbox の中で動いているようだとして ✗ にします（「[エージェントの sandbox から使う](sessions.md#エージェントの-sandbox-から使う)」）
-- エージェントスキル: カレントディレクトリの git のルートの `.claude/skills/device-relay` と `~/.claude/skills/device-relay` の状態（`relay skill status` と同じ判定。relay や取り出し元とバージョン・コミットが違う、relay が入れたものでない、のどれかなら !。入っていなくても問題にはしません）
+```sh
+relay doctor [--udid <UDID> | --device <名前>] [--simulator] [--os <version>] [--project <path>] [--json]
+```
+
+| 表示 | 意味 | 終了コードへの影響 |
+| --- | --- | --- |
+| ✓ | 問題なしです。 | ✗ がなければ `0` です。 |
+| ✗ | このままでは動きません。 | `1` で終了します（ローカルの失敗）。 |
+| ! | 注意が必要です。 | ✗ がなければ `0` です。 |
+
+✗ と ! には、直し方を 1 行添えます。
+
+### ホストと Runner の確認
+
+`relay doctor` は、relay、Xcode、Runner、エージェントスキルを確認します。
+
+| 項目 | 確認する内容 |
+| --- | --- |
+| ホスト | relay のバージョン、Xcode、xcrun、devicectl です。 |
+| Xcode | `xcodebuild -version` と `xcode-select -p` の結果です。 |
+| Runner | プロジェクトの解決結果と、`relay install` の状態です。 |
+| コピーの記録 | バージョン・コミット・コピー元がずれていれば ! です。 |
+
+エージェントスキルは、カレントディレクトリの git のルートの `.claude/skills/device-relay` と `~/.claude/skills/device-relay` を確認します。
+判定は `relay skill status` と同じです。
+
+relay や取り出し元とバージョン・コミットが違う場合、または relay が入れたものでない場合は ! です。
+入っていなくても問題にはしません。
+
+### 端末の選択と使用状況
+
+`relay doctor` は、端末一覧と、同じオプションの `relay start` が使う端末を確認します。
+`--udid` / `--device` がなければ自動選択の結果です。
+
+自動選択で実機になる場合は、シミュレータで試すなら `--simulator` か `--device <シミュレータ名>` を付けるよう、! で知らせます。
+
+ほかの `relay start` やセッションが使っている端末が候補にあれば、`in use` の行を出します。
+端末と使っている相手を `session a, relay start pid 123` のように表示し、使用中がなければこの行は出ません。
+
+自動選択では、`relay start` と同じく使用中の端末を外します。
+`--udid` / `--device` で指定した端末が使用中なら、target を ✗ にします。
+`relay stop --session <名前>` などの止め方か、別の端末を指定するよう案内し、その端末の残りの確認は続けます。
+
+`relay doctor` はセッションを持たないので、空いている起動中のシミュレータが複数あっても 1 台には決めません。
+`relay start --session` なら選びます。使用中でない候補が 1 台もなければ、target は ! です。
+
+### 端末・署名・バンドル ID の確認
+
+`relay doctor` は、選んだ端末の状態と署名を確認します。
+
+| 端末・項目 | 確認する内容 |
+| --- | --- |
+| 実機の OS | 17 以上かを確認します。 |
+| 実機の接続 | 接続状態とペアリングを確認します。 |
+| 実機のデベロッパモード | `devicectl list devices` で確認します。 |
+| 実機の DDI | `ddiServicesAvailable` でマウント状態を確認します。 |
+| 実機のロック | `devicectl device info lockState` の `passcodeRequired` で確認します。 |
+| シミュレータ | ランタイムが入っているかと、起動状態を確認します。 |
+| 署名 | 証明書と Team ID を確認します。 |
+
+UI オートメーションの有効状態は Mac から読めないので、常に ! で確認を促します。
+署名の証明書と Team ID が見つからなければ、実機では ✗、シミュレータでは ! です。
+
+バンドル ID は、`relay start` が使う接頭辞と出どころを表示します。
+
+| 出どころ | 内容 |
+| --- | --- |
+| config | `bundleIDPrefix` の設定です。 |
+| Team ID | Team ID から作った既定値です。 |
+| Team が分からない | Team が分からない状態を表示します。 |
+| シミュレータ | シミュレータの既定値です。 |
+
+表示だけで、config の値が不正なときだけ ✗ です。
+詳しくは「[バンドル ID の接頭辞](device.md#バンドル-id-の接頭辞)」を参照してください。
+
+### sandbox の確認
+
+`relay doctor` は、127.0.0.1 への接続と、`~/.relay` があればその中へのファイルの作成を試します。
+OS に `Operation not permitted` で拒否されたら、エージェントなどの sandbox の中で動いているようだとして ✗ にします。
+
+設定は「[エージェントの sandbox から使う](sessions.md#エージェントの-sandbox-から使う)」を参照してください。
 
 ### relay doctor --json
 
-`--json` を付けると、人向けの行（✓ / ✗ / !）を出さず、1 つの JSON オブジェクトを 1 行で stdout に出します（キーは辞書順）。終了コードは同じです（✗ があれば `1`、なければ `0`）。
+`--json` を付けると、1 つの JSON オブジェクトを 1 行で stdout に出します。
+キーは辞書順で、人向けの ✓ / ✗ / ! の行は出しません。終了コードは同じで、✗ があれば `1`、なければ `0` です。
 
 ```json
 {"checks":[{"detail":"0.6.0","fix":null,"name":"relay","section":"Host","status":"ok"},{"detail":"no booted iOS simulator (--simulator); pass --device <name> to boot one","fix":"relay devices lists the simulators; …","name":"target","section":"Devices","status":"warning"}],"ok":true,"problems":0,"warnings":1}
@@ -116,20 +415,40 @@ iPhone 17      22222222-2222-2222-2222-222222222222  simulator  iOS 27.0    shut
 
 | キー | 内容 |
 | --- | --- |
-| `ok` | ✗（`problem`）が 1 つもなければ `true`。終了コード 0 と同じ |
-| `problems` / `warnings` | `status` が `problem` / `warning` の項目の数 |
-| `checks` | 項目の配列（人向けの表示と同じ順）。端末の一覧表は含みません（`relay devices --json`） |
-| `checks[].section` | 見出し（`Host`、`Devices`、`Target: <端末名>`、`Signing`） |
-| `checks[].name` | 項目名（`Xcode`、`signing`、`target` など） |
-| `checks[].status` | `"ok"`（✓）、`"warning"`（!）、`"problem"`（✗）の 3 つだけ |
-| `checks[].detail` | 内容（人向けの行と同じ文） |
-| `checks[].fix` | `warning` と `problem` では直し方（1 行）、`ok` では `null`。`warning` で直し方のない項目も `null` |
+| `ok` | ✗ にあたる `problem` が 1 つもなければ `true` です。 |
+| `problems` / `warnings` | `status` が `problem` / `warning` の項目の数です。 |
+| `checks` | 人向けの表示と同じ順の項目の配列です。 |
+| `checks[].section` | `Host`、`Devices`、`Target: <端末名>`、`Signing` の見出しです。 |
+| `checks[].name` | `Xcode`、`signing`、`target` などの項目名です。 |
+| `checks[].status` | `"ok"`、`"warning"`、`"problem"` の 3 つだけです。 |
+| `checks[].detail` | 人向けの行と同じ内容の文です。 |
+| `checks[].fix` | 直し方の 1 行か、`null` です。 |
 
+`ok` が `true` であることは、終了コード 0 と同じです。
+`checks` には端末の一覧表を含みません。一覧には `relay devices --json` を使います。
+
+| `checks[].status` | 人向けの表示 | `checks[].fix` |
+| --- | --- | --- |
+| `"ok"` | ✓ です。 | `null` です。 |
+| `"warning"` | ! です。 | 直し方がなければ `null` です。 |
+| `"problem"` | ✗ です。 | 直し方を示します。 |
+
+`warning` と `problem` の直し方は 1 行です。
 これらのキーと `status` の 3 つの値は変えません。`name` と `detail` の文言は人向けで、変わることがあります。
 
-`relay start` も、ビルドの前に同じ端末のチェックを行い、✗（接続されていない、ペアリングされていない、デベロッパモードが無効、iOS 17 未満、シミュレータのランタイムがない）があればビルドせずに終了します。! の項目（ロック中、DDI 未マウント）は表示だけして続けます。
+### relay start のビルド前の確認
+
+`relay start` も、ビルド前に同じ端末のチェックを行います。
+
+| 判定 | 条件 | 動作 |
+| --- | --- | --- |
+| ✗ | 未接続、未ペアリング、デベロッパモードが無効、iOS 17 未満、シミュレータのランタイムがない場合です。 | ビルドせずに終了します。 |
+| ! | ロック中、DDI 未マウントの場合です。 | 表示だけして続けます。 |
 
 ## シミュレータ
+
+`relay start --device "iPhone 17 Pro"` は、指定したシミュレータでランナーを起動します。
+停止中なら boot し、relay の終了時に shutdown します。シミュレータのランナーは 127.0.0.1 だけで待ち受けます。
 
 ```sh
 relay start --device "iPhone 17 Pro"   # 停止中なら boot し、終了時に shutdown
@@ -145,7 +464,13 @@ relay start --device "iPhone 17 Pro"   # 停止中なら boot し、終了時に
 # token: ~/.relay/runner.json
 ```
 
-ready になると、URL とアクセストークンが `~/.relay/runner.json`（パーミッション 0600）に書き出されます。別のターミナルから（`relay health` などのサブコマンドは「[CLI から操作する](cli.md#cli-から操作する)」を参照）:
+初回、ソースが変わったとき、`--rebuild` 指定時にビルドします。
+ランナーが名乗る版は「[ランナーの版（ソースのハッシュ）](#ランナーの版ソースのハッシュ)」を参照してください。
+
+### ready 後に接続する
+
+ready になると、URL とアクセストークンを `~/.relay/runner.json` に書き出します。
+パーミッションは 0600 です。別のターミナルから接続できます。
 
 ```sh
 TOKEN=$(jq -r .token ~/.relay/runner.json)
@@ -153,26 +478,79 @@ curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8100/health
 relay bench --count 5 --tap 200,120   # URL もトークンも runner.json から読む（他のコマンドと同じ探し方。--url と --token で上書きできる）
 ```
 
-Ctrl-C を押す（または別のターミナルで `relay stop` を実行する）と `relay` が `/shutdown` を送り、`runner.json` を削除します。ランナーがテストメソッドから抜けて `** TEST EXECUTE SUCCEEDED **` で終了し、`relay` も終了します（10 秒以内に終わらなければ xcodebuild を terminate します）。ランナーが ready になる前に Ctrl-C を押した場合は、`/shutdown` を送る先がないので xcodebuild をすぐに terminate します。ランナーの起動前（シミュレータの boot やビルドの途中）なら、そのビルドの xcodebuild を止め、relay が boot したシミュレータを shutdown して、`relay: stopped before launching the runner` と表示して終了コード 1 で終わります。
+`relay bench` は、ほかのコマンドと同じ探し方で runner.json から URL とトークンを読みます。
+`--url` と `--token` で上書きできます。
+`relay health` などのサブコマンドは「[CLI から操作する](cli.md#cli-から操作する)」を参照してください。
 
-ready の後も、`relay start` は 3 秒ごとに `/ping` を送ってランナーの生存を確認します（`200` だけが生存扱い）。`/ping` はコマンドの実行中でも busy ゲートを通らずに即答するので、生存確認が利用者のリクエストと重なって `409` を起こすことはありません。ready の判定（起動直後の探索）には、XCUI が動くことを確かめるため `/health` を使います。3 回続けて応答がなければ（`200` 以外が 3 回続けば）、ランナーが落ちたとみなしてエラーを表示し、xcodebuild を止めて `runner.json` を削除し、終了コード 1 で終わります。`/ping` のない古いソース（`/ping` より前に `relay install` したコピーなど。`relay start` はそのコピーが古いことも知らせます）から作ったランナーでは、`/ping` が `404` になるので警告を出し、以後は `/health` で確認します（このときは `409` も生存扱いで、利用者のリクエストが `409` になることがあります）。`runner.json` を書き出せなかった場合も、ランナーを止めてから終了コード 1 で終わります。
+### ランナーを停止する
 
-オプション:
+Ctrl-C を押すか、別のターミナルで `relay stop` を実行すると、`relay` が `/shutdown` を送り、`runner.json` を削除します。
+ランナーはテストメソッドから抜けて `** TEST EXECUTE SUCCEEDED **` で終了し、`relay` も終了します。
+
+| 停止した時点・条件 | 動作 |
+| --- | --- |
+| ランナーが 10 秒以内に終了しない | xcodebuild を terminate します。 |
+| ready 前に Ctrl-C を押す | `/shutdown` を送る先がないので、xcodebuild をすぐに terminate します。 |
+| ランナー起動前の boot やビルド中 | そのビルドの xcodebuild を止め、relay が boot したシミュレータを shutdown します。 |
+
+ランナー起動前に停止すると、`relay: stopped before launching the runner` と表示して終了コード 1 で終わります。
+
+### ready 後の生存確認と失敗
+
+`relay start` は、ready 後も 3 秒ごとに `/ping` を送り、ランナーの生存を確認します。
+`200` だけを生存扱いにします。
+
+`/ping` はコマンドの実行中でも busy ゲートを通らずに即答します。
+そのため、生存確認が利用者のリクエストと重なって `409` を起こすことはありません。
+ready の判定、つまり起動直後の探索には、XCUI が動くことを確かめるため `/health` を使います。
+
+`200` 以外が 3 回続けば、応答がないものとしてランナーが落ちたとみなします。
+エラーを表示し、xcodebuild を止めて `runner.json` を削除し、終了コード 1 で終わります。
+`runner.json` を書き出せなかった場合も、ランナーを止めてから終了コード 1 で終わります。
+
+古いソースで `/ping` に対応しないランナーの扱いは「[古いランナーの生存確認](development.md#古いランナーの生存確認)」を参照してください。
+
+### 起動オプション
+
+`relay start` のオプションで、端末、Runner、ポート、起動時の動作を指定できます。
 
 | オプション | 説明 |
 | --- | --- |
-| `--udid <UDID>` / `--device <名前>` | 使う端末（「端末の選択」）。省略すると自動で選びます。同時には指定できません |
-| `--simulator` | シミュレータだけから選びます（「端末の選択」）。実機が接続されていてもシミュレータを使えます |
-| `--os <version>` | OS のバージョン（`27`、`27.0`、`26.5` など）で候補を絞ります（「端末の選択」） |
-| `--project <path>` | Runner プロジェクトの場所（「Runner の用意」）。`$RELAY_HOME` より優先します |
-| `--port 8100` | 端末側の待ち受けポート。xcodebuild には `TEST_RUNNER_RELAY_RUNNER_PORT` として渡され、ランナーからは `RELAY_RUNNER_PORT` として見えます。セッションでは省略すると空きポートを選びます |
-| `--session <名前>` | セッション名（環境変数 `RELAY_SESSION` でも可）。ほかのランナーと状態ファイルとポートを分けます（「[複数のセッションを並列に動かす](sessions.md#複数のセッションを並列に動かすrelay-start---session)」） |
-| `--team-id <TEAM_ID>` | 実機向けの署名チーム（「[Team ID](device.md#team-id実機の署名)」。省略時は自動検出）。`-allowProvisioningUpdates RELAY_DEVELOPMENT_TEAM=<TEAM_ID>` を付けてビルドし、ランナーが起動できたら `~/.relay/config.json` に保存します |
-| `--rebuild` | `~/.relay/build/…/DerivedData-*` に既存の `.xctestrun` があっても再ビルドします（最後のビルドが今の Xcode の SDK と違うとき、Runner のソースやバンドル ID の接頭辞が変わったとき、記録のない古いビルドのときは、付けなくても再ビルドします。「ランナーの版」） |
-| `--verbose` | xcodebuild の出力をそのまま表示します |
-| `--allow-wifi` | 実機で、CoreDevice トンネルに加えて Wi-Fi などのアドレスも探索します。トークンが同じネットワークに平文で流れるので、既定では無効です |
-| `--ready-timeout 180` | `/health` が応答するまで待つ秒数。xcodebuild の出力に `Failed to initialize for UI testing` やテストの失敗が出た場合は、待たずにエラー内容と対処のヒントを表示して非ゼロで終了します |
-| `--background` | 端末から切り離して起動し、ready になったら終了します（「[バックグラウンドで動かす](sessions.md#バックグラウンドで動かすrelay-start---background--status--stop)」） |
+| `--udid <UDID>` / `--device <名前>` | 使う端末を指定します。 |
+| `--simulator` | 実機が接続されていても、シミュレータだけから選びます。 |
+| `--os <version>` | `27`、`27.0`、`26.5` などの OS バージョンで候補を絞ります。 |
+| `--project <path>` | `$RELAY_HOME` より優先して Runner プロジェクトの場所を指定します。 |
+| `--port 8100` | 端末側の待ち受けポートを指定します。 |
+| `--session <名前>` | 状態ファイルとポートをほかのランナーと分けます。 |
+| `--team-id <TEAM_ID>` | 実機向けの署名チームを指定します。 |
+| `--rebuild` | `~/.relay/build/…/DerivedData-*` に既存の `.xctestrun` があっても再ビルドします。 |
+| `--verbose` | xcodebuild の出力をそのまま表示します。 |
+| `--allow-wifi` | 実機で CoreDevice トンネルに加えて Wi-Fi などのアドレスも探索します。 |
+| `--ready-timeout 180` | `/health` が応答するまで待つ秒数を指定します。 |
+| `--background` | 端末から切り離して起動し、ready になったら終了します。 |
+
+`--udid <UDID>` と `--device <名前>` は同時に指定できません。省略すると自動で選びます。
+`--simulator`、`--os <version>` と合わせて「[端末の選択（relay devices）](#端末の選択relay-devices)」を参照してください。
+
+`--project <path>` の指定先は「[Runner の用意（relay install）](#runner-の用意relay-install)」にあります。
+
+`--rebuild` がなくても、最後のビルドが今の Xcode の SDK と違う場合、Runner のソースやバンドル ID の接頭辞が変わった場合、記録のない古いビルドの場合は再ビルドします。
+詳しくは「[ランナーの版（ソースのハッシュ）](#ランナーの版ソースのハッシュ)」を参照してください。
+
+ポートは xcodebuild に `TEST_RUNNER_RELAY_RUNNER_PORT` として渡され、ランナーからは `RELAY_RUNNER_PORT` として見えます。
+セッションでは、ポートを省略すると空きポートを選びます。セッション名は環境変数 `RELAY_SESSION` でも指定できます。
+
+詳しくは「[複数のセッションを並列に動かす](sessions.md#複数のセッションを並列に動かすrelay-start---session)」を参照してください。
+
+`--team-id <TEAM_ID>` を省略すると署名チームを自動検出します（「[Team ID](device.md#team-id実機の署名)」）。
+`-allowProvisioningUpdates RELAY_DEVELOPMENT_TEAM=<TEAM_ID>` を付けてビルドし、ランナーが起動できたら `~/.relay/config.json` に保存します。
+
+`--allow-wifi` は、トークンが同じネットワークに平文で流れるので、既定では無効です。
+
+xcodebuild の出力に `Failed to initialize for UI testing` やテストの失敗が出た場合は、`--ready-timeout 180` の時間を待ちません。
+エラー内容と対処のヒントを表示して、非ゼロで終了します。
+
+`--background` の使い方は「[バックグラウンドで動かす](sessions.md#バックグラウンドで動かすrelay-start---background--status--stop)」にあります。
 
 ## 起動とセッション
 
