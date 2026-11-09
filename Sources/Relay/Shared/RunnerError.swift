@@ -38,6 +38,9 @@ enum RunnerErrorCode: String, CaseIterable {
   case displayUnknown = "display_unknown"
   /// 422: on iPad, where the app's window is on the screen can't be told; nothing was sent.
   case windowPositionUnknown = "window_position_unknown"
+  /// 422: an element touch selected an element inside a view another process draws (the share sheet) whose
+  /// frames can't be placed on the screen; nothing was sent.
+  case remoteViewPositionUnknown = "remote_view_position_unknown"
   /// 422: SpringBoard (a system alert, Control Center, …) is in front of the app an element touch is for;
   /// nothing was sent.
   case coveredByOtherApp = "covered_by_other_app"

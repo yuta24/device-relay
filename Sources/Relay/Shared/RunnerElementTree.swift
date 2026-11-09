@@ -24,6 +24,9 @@ struct RunnerElementNode: Sendable {
   /// The part of the screen where this element can be touched, when that is less than the whole screen:
   /// the visible part of an iPad window. Not in the JSON.
   var clip: CGRect?
+  /// Why the frame can't be placed on the screen, for an element inside a view another process draws whose
+  /// content isn't laid out as expected (`RunnerRemoteViews`); a touch at it is refused. Not in the JSON.
+  var positionUnknown: String?
 
   /// The part of the frame that can be touched in `screen`, null when there is none.
   func visibleFrame(in screen: CGRect) -> CGRect {

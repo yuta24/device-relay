@@ -204,6 +204,7 @@ enum RunnerDisplays {
   private static func converted(_ node: RunnerElementNode, orientation: RunnerInterfaceOrientation, portraitSize: CGSize) -> RunnerElementNode {
     var node = node
     node.frame = interfaceRect(fromPortrait: node.frame, orientation: orientation, portraitSize: portraitSize)
+    node.clip = node.clip.map { interfaceRect(fromPortrait: $0, orientation: orientation, portraitSize: portraitSize) }
     node.children = node.children.map { converted($0, orientation: orientation, portraitSize: portraitSize) }
     return node
   }

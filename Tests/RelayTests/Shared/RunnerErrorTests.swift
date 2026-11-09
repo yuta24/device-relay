@@ -21,6 +21,7 @@ struct RunnerErrorCodeTests {
       .noKeyboardFocus: "no_keyboard_focus",
       .displayUnknown: "display_unknown",
       .windowPositionUnknown: "window_position_unknown",
+      .remoteViewPositionUnknown: "remote_view_position_unknown",
       .coveredByOtherApp: "covered_by_other_app",
       .touchFailed: "touch_failed",
       .xcuiFailed: "xcui_failed",
@@ -53,7 +54,9 @@ struct RunnerErrorCodeTests {
       (.windowPositionUnknown("cannot tell where the window of com.example is"), 422, .windowPositionUnknown),
       (.coveredByOtherApp(RunnerCoverage.Covered(target: "com.example", foreground: "com.apple.springboard", alert: nil)),
        422, .coveredByOtherApp),
-      (.elementNotResolved(lookup), 422, .elementAmbiguous)
+      (.elementNotResolved(lookup), 422, .elementAmbiguous),
+      (.elementNotResolved(RunnerElementLookupFailure(reason: .positionUnknown, count: 1, candidates: [])), 422,
+       .remoteViewPositionUnknown)
     ]
     for (error, status, code) in cases {
       #expect(error.status == status, "\(error)")
