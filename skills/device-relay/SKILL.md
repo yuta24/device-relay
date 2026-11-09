@@ -54,7 +54,8 @@ relay stop                                   # when done, if you started it
 - Wait with `relay find <selector> --timeout <s>` (≤ 10 s, repeat for longer) or `tap --timeout`, never `sleep`, except to let a swipe's scroll stop ([scrolling](references/scrolling.md)).
 - After the screen changes, observe again: don't reuse selectors, indexes, or coordinates.
 - One command at a time; overlapping ones get busy (5).
-- Right after `relay launch`, add `--bundle-id <id>` to `find` / `tap` / `type` / `source`.
+- Permission dialogs: wait with `relay find --type alert --bundle-id com.apple.springboard --timeout 5`, tap the exact `label` from `find`/`source`; don't target the app behind with `--bundle-id` ([system-alerts](references/system-alerts.md)).
+- Right after `relay launch`, add `--bundle-id <id>` to `find` / `tap` / `type` / `source`, except for permission dialogs.
 
 ## Exit codes
 

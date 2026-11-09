@@ -123,6 +123,7 @@ searchField label="Search" placeholder="Search" frame=28,808,346,28
 
 - 条件（`identifier`・`label`・`type`・`value`）は AND で組み合わせ、少なくとも 1 つ必要です。空文字列・文字列以外・未知のキー（`id` など）は `400` です。打ち間違いで条件が黙って消え、意図より広く一致するのを防ぐためです。
 - 部分一致・正規表現は入れていません。完全一致なら同じセレクタが常に同じ要素を指し、一致の理由が説明しやすいためです。部分一致は複数一致が増え、`index` の意味が画面の内容で変わりやすくなります。曖昧な名前で探したいときは、`/find` を `type` などで絞って一覧から選び、その `identifier` や `index` を使ってください。
+- ラベルは `/find`・`/source` の値をそのままコピーしてください。システムの許可ダイアログの `Don’t Allow` はアポストロフィが `’`（U+2019）で、ASCII の `'` を使った `relay tap --label "Don't Allow"` は一致しません。
 - 解決には `/source` と同じ `snapshot()` を使い、frame は表示の向きのポイント（`/tap` と同じ座標系）なので、横向きでもそのまま使えます。タップ位置は「frame と画面の重なる部分」の中心です（画面端で一部が切れたセルも、見えている部分の中心を押します）。iPad のウィンドウでは、frame を画面の座標に変換したうえで、見えているウィンドウとの重なりの中心を押します。タッチは座標指定と同じ経路（`private`、だめなら `xcui`。`mode` も同じ）で送ります。
 - `x`・`y` と `element` を両方指定すると `400` です。
 
@@ -182,6 +183,7 @@ iPad のウィンドウでは、応答（`/tap`・`/press`・`/find`・`/source`
 
 - `timeout` を付けると、`/tap`・`/press` は要素が触れる状態（`notFound`・`indexOutOfRange`・`emptyFrame`・`offscreen`・`disabled` 以外）になるまで、`/find` は 1 件以上一致するまで待ちます。期限を過ぎると最後の結果を返します（`/tap` は `422`、`/find` は `count: 0`）。`ambiguous` は待っても解消しにくいので、待たずにすぐ `422` を返します。
 - 待っている間もスナップショットの失敗（アプリがまだ起動していないなど）は再試行します。
+- `bundleId` を省略したときの対象アプリは、リクエストの最初に前面アプリから 1 回だけ決まり、待っている間は判定し直しません。アプリが前面のときに `relay find --type alert --timeout 5` を送っても、待機中に出たシステムの許可ダイアログは見つかりません。これから出るダイアログは `relay find --type alert --bundle-id com.apple.springboard --timeout 5` で待ちます（「[システムの許可ダイアログ](#システムの許可ダイアログ)」）。
 - 上限は 10 秒です。待っている間はコマンドが busy ゲートを持ち続けるので、ほかのリクエスト（`/health` を含む）は `409` になります（`/ping` は `busy: true` を返します）。長く待つ必要がある場合は、短い `timeout` で繰り返してください。
 - `timeout` は「次のスナップショットを取るかどうか」の期限で、1 回のスナップショット自体は中断できません（「[既知の制約](limitations.md)」を参照）。
 
@@ -192,3 +194,17 @@ iPad のウィンドウでは、応答（`/tap`・`/press`・`/find`・`/source`
 - RelayRunnerHost: `relay.input` / `relay.input2` を identifier 指定・`{"type":"textField","index":1}` でタップすると、`/source` の `hasKeyboardFocus` がその欄に移りました（`private`・`xcui`、`/press` も同じ）。
 - 横向き（landscapeLeft / landscapeRight）でも、identifier 指定のタップでフォーカスが移りました（`point` は 874×402 の座標で `{"x":437,"y":87}` など）。
 - 設定: `{"label":"General","type":"button"}` → `{"label":"About","type":"button"}` と順にタップして「情報」画面に移りました。
+
+### システムの許可ダイアログ
+
+iPhone 17 Pro シミュレータ（iOS 27.2、relay 0.6.0）のマップで、位置情報・通知の許可ダイアログを確かめました。表示中の `relay foreground` は `com.apple.springboard`（`source: private`）を返します。`--bundle-id` なしの `relay find --type alert` で見つかり、`label` に質問文（例: `Allow “Maps” to use your location?`）が入ります。`relay source --format compact --filter interactive` はダイアログのボタンだけを返します。
+
+```sh
+relay find --type alert --bundle-id com.apple.springboard --timeout 5
+relay source --format compact --filter interactive
+relay tap --label "Allow While Using App"
+```
+
+最初のコマンドはこれから出るダイアログを待つ場合にも使えます。一致したことと質問文を確かめ、`source` で得たラベルからボタンを選びます。上のタップは約 0.5 秒で成功し、前面アプリは元のアプリに戻りました。
+
+ダイアログが出ている間は、後ろのアプリを `--bundle-id com.apple.Maps` などで指定しないでください。`source --filter interactive` に後ろのアプリのボタンが出て、それをタップしても `ok: true`・終了コード 0 のまま何も起きず、ダイアログが残りました（「[既知の制約](limitations.md)」）。

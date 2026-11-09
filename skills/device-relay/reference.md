@@ -10,6 +10,7 @@ Each file in `references/` stands alone; read only the one you need.
 - [sandbox](references/sandbox.md): `Operation not permitted`
 - [commands](references/commands.md): runner commands' options, timeouts
 - [element-tree](references/element-tree.md): `source` formats, `--filter interactive`, selectors
+- [system-alerts](references/system-alerts.md): permission dialogs, SpringBoard targeting, exact labels
 - [failures](references/failures.md): all exit codes, `code`s, `reason`s
 - [coordinates](references/coordinates.md): orientation, iPad windows, iPhone Duo
 - [scrolling](references/scrolling.md): to an element off the screen
