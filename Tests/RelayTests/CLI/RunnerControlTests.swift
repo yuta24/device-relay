@@ -75,10 +75,33 @@ struct RunnerControlHintTests {
     #expect(RunnerControl.hint(for: .badRequest, errorCode: .notFound, infoURL: infoURL)?.contains("relay start --rebuild") == true)
     let covered = RunnerControl.hint(for: .actionFailed, errorCode: .coveredByOtherApp, infoURL: infoURL)
     #expect(covered?.contains("relay find --type alert --bundle-id com.apple.springboard") == true)
+    let remote = RunnerControl.hint(for: .actionFailed, errorCode: .remoteViewPositionUnknown, infoURL: infoURL)
+    #expect(remote?.contains("relay screenshot") == true && remote?.contains("relay tap <x> <y>") == true)
     // Codes whose message already says what to do get no hint.
     for code in [RunnerErrorCode.pointOffscreen, .invalidRequest, .elementNotHittable, .displayUnknown, .xcuiFailed, .touchFailed] {
       #expect(RunnerControl.hint(for: .actionFailed, errorCode: code, infoURL: infoURL) == nil, "\(code)")
     }
+  }
+
+  /// A touch refused inside the share sheet: the runner's 422 exits 6 with the coordinates hint.
+  @Test func aTouchRefusedInsideTheShareSheetExits6WithAHint() throws {
+    let message = "cannot tell where the elements inside ShareSheet.RemoteContainerView (9,501,384,364) are on the screen"
+    var copy = RunnerElementNode(type: "cell", identifier: "actionGroupCell", label: "Copy", value: nil, placeholder: nil,
+                                 frame: CGRect(x: 20, y: 230, width: 82, height: 134), enabled: true, selected: false,
+                                 hasFocus: false, hasKeyboardFocus: nil, children: [])
+    copy.positionUnknown = message
+    let failure = RunnerElementLookupFailure(reason: .positionUnknown, count: 1,
+                                             candidates: [RunnerElementMatch(index: 0, node: copy)])
+    let error = RunnerError.elementNotResolved(failure)
+    let body = try JSONSerialization.data(withJSONObject: error.json)
+    let exit = RunnerExitCode(status: error.status)
+    #expect(exit == .actionFailed && exit.rawValue == 6)
+    let code = try #require(RunnerErrorCode.parse(body: body))
+    #expect(code == .remoteViewPositionUnknown)
+    #expect(RunnerControl.hint(for: exit, errorCode: code, infoURL: infoURL)?.contains("relay tap <x> <y>") == true)
+    let object = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+    #expect(object["reason"] as? String == "positionUnknown")
+    #expect((object["error"] as? String)?.hasPrefix(message + "; nothing was sent") == true)
   }
 
   /// The hints for 401 and 409 come from the status, with or without a code.
