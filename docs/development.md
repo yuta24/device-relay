@@ -25,7 +25,7 @@ Swift・Python の整形検査、Python・Workflow・Shell の静的検査、カ
 | --- | --- |
 | `mise run build` | CLI のビルド |
 | `mise run test:swift` | Swift テストとカバレッジ計測（ビルドも含む） |
-| `mise run test:python` | カバレッジ集計・ツール更新確認・Runnerスモークの Python テスト |
+| `mise run test:python` | CI差分分類・カバレッジ集計・ツール更新確認・Runnerスモークの Python テスト |
 | `mise run coverage` | Swift テストを実行してからカバレッジ下限を検証 |
 | `mise run lint:workflow` | 全 Workflow を actionlint で検査（埋め込み Shell の ShellCheck も含む） |
 | `mise run lint:shell` | `scripts/*.sh` を ShellCheck で検査 |
@@ -44,6 +44,20 @@ Swift・Python の整形検査、Python・Workflow・Shell の静的検査、カ
 PR では `Sources/`・`Runner/`・`skills/`・`scripts/`・`Package.swift`・`Makefile`・mise 設定とロック・
 CI／Release Workflow の変更時に実行し、文書だけの変更では省略します。`main` への push では毎回実行します。
 同じビルドディレクトリを使うため、ローカルで `check` と `test:package` を同時実行しないでください。
+
+### 文書だけを変更するPRのCI
+
+PRの差分が `README.md`・`README.ja.md`・`docs/` だけの場合は、CLI・Runnerのビルドとテスト、
+配布パッケージのスモークテストを省略します。必須チェック名を維持するため、CLI・Runnerの各matrixジョブは
+Linux上で省略理由を表示して成功し、macOSランナーやmiseのセットアップは使用しません。
+パッケージジョブは条件によりスキップします。`main` へのpushでは従来どおりすべて実行します。
+
+判定には `scripts/ci-changes.sh` を使い、merge baseからheadまでのPR全体の変更を確認します。
+コード変更を含むPRへ文書だけのコミットを追加しても、コードの検査は省略しません。
+`skills/` は配布機能に関わるため、Markdownでも文書専用とは扱いません。
+上記以外の未知のパスもCLI・Runnerの検査対象とし、パッケージ検査は既存の入力範囲で判定します。
+改名は移動前・移動後の両方を調べ、ファイル名の区切りにはNULを使います。
+差分が空の場合や判定が失敗した場合は、ビルド・テストを省略しません。
 
 ### Swift の整形
 

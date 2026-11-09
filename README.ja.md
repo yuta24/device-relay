@@ -81,6 +81,7 @@ mise run check
 ```
 
 `check` は CI と同じタスクで Swift・Python の整形検査、Python・Workflow・Shell の静的検査、Swift・Python のテストとカバレッジ下限チェックを実行します。
+`README.md`・`README.ja.md`・`docs/` だけを変更するPRでは軽量チェックのみを残し、ビルド・テストを省略します。`main` へのpushではすべて実行します。
 `mise.lock` に Apple Silicon・Intel Mac 向けのツール取得先とチェックサムを記録しています。
 個別タスク（`build`・`test:swift`・`test:python`・`coverage`・`lint:python`・`lint:workflow`・`lint:shell`）は[開発者向けドキュメント](docs/development.md)を参照してください。
 Swift の自動整形は `mise run format`、変更せずに検査する場合は `mise run lint:swift` を実行します。
