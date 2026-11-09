@@ -125,9 +125,7 @@ relay: image 471x1024 px, screen 402x874 pt, 1.172 px/pt (tap in points: px / 1.
 
 接頭辞は「[バンドル ID の接頭辞](device.md#バンドル-id-の接頭辞)」を参照してください。
 
-`hostBundleID` がない runner.json では、`host` は終了コード 1（`runner_info_invalid`）になります。ランナーを起動し直してください。
-
-古い relay が書いた runner.json の背景は「[古い runner.json](development.md#古い-runnerjson)」にあります。
+古い relay の `relay start` が書いた runner.json には `hostBundleID` がないので、`host` は終了コード 1（`runner_info_invalid`）になります。ランナーを起動し直してください。
 
 `relay launch` と `relay run` の `launch` は、送る前にアプリが端末に入っているかを `simctl` / `devicectl` で確かめます。
 入っていなければランナーに送らず、すぐに終了コード 6 で終わります。ランナーは busy になりません。

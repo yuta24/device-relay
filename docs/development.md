@@ -383,16 +383,6 @@ Xcode の利用者ごとの状態 `xcuserdata` と、`.DS_Store` などの隠し
 
 このときは `409` も生存扱いにします。そのため、利用者のリクエストが `409` になることがあります。
 
-## CLI の実装の背景
-
-以前の relay が書いた runner.json に、`host` の解決に必要な記録がない場合を説明します。
-現在の操作方法は「[CLI から操作する](cli.md#cli-から操作する)」を参照してください。
-
-### 古い runner.json
-
-古い relay の `relay start` が書いた runner.json には `hostBundleID` がありません。
-`host` の現在の扱いと対処は「[アプリの指定と起動](cli.md#アプリの指定と起動)」を参照してください。
-
 ## 録画の実装の背景
 
 `relay record` は、Mac 側で録画プロセスを動かします。
