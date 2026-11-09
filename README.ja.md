@@ -107,7 +107,7 @@ relay stop                 # ランナーを止める（relay が boot したシ
 - すでに起動しているシミュレータを使うなら `relay start --background --simulator` でも構いません。実機が接続されていても、シミュレータの中から選びます。
 - `--udid` / `--device` / `--simulator` を付けずに `relay start` すると、接続中の実機があればそれを優先します。実機は署名や UI オートメーションの準備が要るので、「[実機](docs/setup.md#実機)」の手順を済ませてから使ってください。
 
-エージェントや CI、スクリプトからは、`relay start --background` → 操作 → `relay stop` が基本の流れです（「[バックグラウンドで動かす](docs/setup.md#バックグラウンドで動かすrelay-start---background--status--stop)」）。人が手元で見ながら使うときは、`relay start`（フォアグラウンド。Ctrl-C で停止）でもかまいません。
+エージェントや CI、スクリプトからは、`relay start --background` → 操作 → `relay stop` が基本の流れです（「[バックグラウンドで動かす](docs/sessions.md#バックグラウンドで動かすrelay-start---background--status--stop)」）。人が手元で見ながら使うときは、`relay start`（フォアグラウンド。Ctrl-C で停止）でもかまいません。
 
 ## 最初の操作
 
@@ -159,7 +159,7 @@ relay screenshot --scale 1                            # 1 px = 1 pt に縮小し
 | `relay skill install` | コーディングエージェント向けのスキルを対象アプリのリポジトリなどに入れる |
 | `relay config` | 設定（Team ID、バンドル ID の接頭辞）を表示・変更する |
 
-複数のエージェントを並列に動かすときは、エージェントを起動するときに `RELAY_SESSION` を環境変数で渡し、端末を分けます。エージェントが実行するコマンドのシェルはこの値を引き継ぐので、状態ファイルとポートはセッションごとに分かれ、ほかのセッションと干渉しません（[docs/setup.md](docs/setup.md#複数のセッションを並列に動かすrelay-start---session)）。
+複数のエージェントを並列に動かすときは、エージェントを起動するときに `RELAY_SESSION` を環境変数で渡し、端末を分けます。エージェントが実行するコマンドのシェルはこの値を引き継ぐので、状態ファイルとポートはセッションごとに分かれ、ほかのセッションと干渉しません（[docs/sessions.md](docs/sessions.md#複数のセッションを並列に動かすrelay-start---session)）。
 
 ```sh
 RELAY_SESSION=agent-1 claude   # このエージェントの relay はすべて agent-1 を使う
@@ -179,8 +179,9 @@ RELAY_SESSION=agent-2 codex    # 別のターミナルで、別のセッショ�
 
 | 文書 | 内容 |
 | --- | --- |
-| [docs/setup.md](docs/setup.md) | インストールと更新、Runner の探し方（`relay install`）、端末の選択、Team ID、環境の確認（`relay doctor`）、シミュレータ、バックグラウンドでの起動、実機 |
-| [docs/cli.md](docs/cli.md) | CLI のサブコマンドと終了コード、接続先（runner.json、セッション）の探し方、シナリオの実行（`relay run`、実験的）、録画（`relay record`。シミュレータと USB 接続の実機）、エージェントスキル |
+| [docs/setup.md](docs/setup.md) | インストールと更新、Runner の探し方（`relay install`）、端末の選択、Team ID、環境の確認（`relay doctor`）、シミュレータ、実機 |
+| [docs/sessions.md](docs/sessions.md) | 起動と停止、生存確認、接続先（runner.json）の探し方、並列セッション、エージェントの sandbox、ログとテスト結果の掃除 |
+| [docs/cli.md](docs/cli.md) | CLI のサブコマンドと終了コード、シナリオの実行（`relay run`、実験的）、録画（`relay record`。シミュレータと USB 接続の実機）、エージェントスキル |
 | [docs/http-api.md](docs/http-api.md) | HTTP API のエンドポイントとステータスコード、認証、同時リクエストと生存確認（`/ping`）、前面アプリ、文字入力と特殊キー |
 | [docs/elements.md](docs/elements.md) | 要素ツリー（`/source`、compact、interactive）、要素セレクタ、待機（timeout） |
 | [docs/screen.md](docs/screen.md) | 座標系と画面の向き、スクリーンショットの縮小 |

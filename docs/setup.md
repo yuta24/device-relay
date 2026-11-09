@@ -22,7 +22,7 @@ device-relay-v<version>/
 | ソース | `git clone` して `make install` | `git pull` して `make install` |
 
 - どの入れ方でも、`relay` は自分の実行ファイルの場所から Runner を見つけるので、`relay install` は要りません。
-- 更新の後の最初の `relay start` は Runner をビルドし直します。DerivedData は Runner の場所ごとに分かれるので（`~/.relay/build/<ディレクトリ名>-<パスのハッシュ>`）、古いバージョンの分は別のディレクトリに残ります。元の Runner がなくなったものと 30 日使っていないものは `relay start` が消します（「[ログとテスト結果の掃除](#ログとテスト結果の掃除)」）。
+- 更新の後の最初の `relay start` は Runner をビルドし直します。DerivedData は Runner の場所ごとに分かれるので（`~/.relay/build/<ディレクトリ名>-<パスのハッシュ>`）、古いバージョンの分は別のディレクトリに残ります。元の Runner がなくなったものと 30 日使っていないものは `relay start` が消します（「[ログとテスト結果の掃除](sessions.md#ログとテスト結果の掃除)」）。
 - 以前 `relay install` したコピー（`~/.relay/runner`）は、更新の後は使われません。`relay skill install` の取り出し元にもなりません（「[エージェントスキル](cli.md#エージェントスキル)」）。要らなければ `relay uninstall` で削除できます。
 
 ## Runner の用意（relay install）
@@ -46,7 +46,7 @@ device-relay-v<version>/
 
 対象アプリのリポジトリなどから実行すると、4 の実行ファイルのそばの Runner を使います。relay を更新すれば Runner も一緒に新しくなり、前に `relay install` したコピーが使われ続けることはありません。5 を使うのは、バイナリだけを別の場所にコピーした場合です。device-relay のリポジトリ内で実行すると 3 のチェックアウトを使うので、編集中（未コミットを含む）の Runner がそのままビルドされます。`make install` したリンクでは、チェックアウトの外から実行しても 4 でそのチェックアウトの Runner を使います。
 
-1 と 2 で指定した場所にプロジェクトがなければ、ほかを探さずにエラーにします。どこにも見つからなければ、バイナリだけをコピーした場合は展開したディレクトリ（またはチェックアウト）で `relay install` を 1 回実行することなど、設定方法を示して終了します。DerivedData は Runner プロジェクトごとに `~/.relay/build/installed`（インストールしたもの）か `~/.relay/build/<ディレクトリ名>-<パスのハッシュ>` に分けるので、別のソースでビルドした `.xctestrun` を使い回すことはありません。Xcode では分けないので、`DEVELOPER_DIR` で Xcode を切り替えてビルドすると、SDK のバージョン入りの名前（`RelayRunner_iphonesimulator27.2-….xctestrun` など）の `.xctestrun` が並びますが、指すビルド成果物（`Debug-iphonesimulator` など）は共有で、最後のビルドのものです。そのため relay は、ビルドした直後はそのビルドが書いた（更新日時が新しい）ものを、使い回すときは最後のビルドのもの（更新日時が最も新しいもの）を使い、その名前の SDK のバージョンが今の Xcode の SDK（`xcrun --sdk iphonesimulator|iphoneos --show-sdk-version`）と違えば `… is not for this Xcode's … SDK …; rebuilding` と出して再ビルドします（SDK のバージョンが取れないときや、名前から読めないときは、そのまま使い回します）。Xcode を切り替えるたびにビルドし直すことになりますが、同じ Xcode のままなら今までどおりビルドせずに使い回します。SDK が同じでも、Runner のソースがビルドの後に変わっていれば作り直します（下の「ランナーの版」）。ランナーを起動する `xcodebuild test-without-building` には、ポートごとの `~/.relay/build/…/TestData/port-<port>` を `-derivedDataPath` として渡すので、テストのログと xcresult はそこの `Logs/Test` に入り、`~/Library/Developer/Xcode/DerivedData` には何も作りません（以前の relay は `DerivedData-*/Logs/Test` に書いていました）。古いものは `relay start` が消します（「[ログとテスト結果の掃除](#ログとテスト結果の掃除)」）。
+1 と 2 で指定した場所にプロジェクトがなければ、ほかを探さずにエラーにします。どこにも見つからなければ、バイナリだけをコピーした場合は展開したディレクトリ（またはチェックアウト）で `relay install` を 1 回実行することなど、設定方法を示して終了します。DerivedData は Runner プロジェクトごとに `~/.relay/build/installed`（インストールしたもの）か `~/.relay/build/<ディレクトリ名>-<パスのハッシュ>` に分けるので、別のソースでビルドした `.xctestrun` を使い回すことはありません。Xcode では分けないので、`DEVELOPER_DIR` で Xcode を切り替えてビルドすると、SDK のバージョン入りの名前（`RelayRunner_iphonesimulator27.2-….xctestrun` など）の `.xctestrun` が並びますが、指すビルド成果物（`Debug-iphonesimulator` など）は共有で、最後のビルドのものです。そのため relay は、ビルドした直後はそのビルドが書いた（更新日時が新しい）ものを、使い回すときは最後のビルドのもの（更新日時が最も新しいもの）を使い、その名前の SDK のバージョンが今の Xcode の SDK（`xcrun --sdk iphonesimulator|iphoneos --show-sdk-version`）と違えば `… is not for this Xcode's … SDK …; rebuilding` と出して再ビルドします（SDK のバージョンが取れないときや、名前から読めないときは、そのまま使い回します）。Xcode を切り替えるたびにビルドし直すことになりますが、同じ Xcode のままなら今までどおりビルドせずに使い回します。SDK が同じでも、Runner のソースがビルドの後に変わっていれば作り直します（下の「ランナーの版」）。ランナーを起動する `xcodebuild test-without-building` には、ポートごとの `~/.relay/build/…/TestData/port-<port>` を `-derivedDataPath` として渡すので、テストのログと xcresult はそこの `Logs/Test` に入り、`~/Library/Developer/Xcode/DerivedData` には何も作りません（以前の relay は `DerivedData-*/Logs/Test` に書いていました）。古いものは `relay start` が消します（「[ログとテスト結果の掃除](sessions.md#ログとテスト結果の掃除)」）。
 
 ### ランナーの版（ソースのハッシュ）
 
@@ -138,7 +138,7 @@ relay config unset bundleIDPrefix                          # 既定値に戻す
 - シミュレータ: ランタイムが入っているか、起動状態
 - 署名: 証明書と Team ID（実機なら見つからなければ ✗、シミュレータなら !）
 - バンドル ID: `relay start` が使う接頭辞と出どころ（`bundleIDPrefix` の設定、Team ID から作った既定値、Team が分からない、シミュレータの既定値）。表示だけで、config の値が不正なときだけ ✗（「[バンドル ID の接頭辞](#バンドル-id-の接頭辞)」）
-- sandbox: 127.0.0.1 への接続と、`~/.relay`（あれば）へのファイルの作成を試します。OS に拒否された（`Operation not permitted`）ら、エージェントなどの sandbox の中で動いているようだとして ✗ にします（「[エージェントの sandbox から使う](#エージェントの-sandbox-から使う)」）
+- sandbox: 127.0.0.1 への接続と、`~/.relay`（あれば）へのファイルの作成を試します。OS に拒否された（`Operation not permitted`）ら、エージェントなどの sandbox の中で動いているようだとして ✗ にします（「[エージェントの sandbox から使う](sessions.md#エージェントの-sandbox-から使う)」）
 - エージェントスキル: カレントディレクトリの git のルートの `.claude/skills/device-relay` と `~/.claude/skills/device-relay` の状態（`relay skill status` と同じ判定。relay や取り出し元とバージョン・コミットが違う、relay が入れたものでない、のどれかなら !。入っていなくても問題にはしません）
 
 ### relay doctor --json
@@ -209,160 +209,13 @@ ready の後も、`relay start` は 3 秒ごとに `/ping` を送ってランナ
 | `--ready-timeout 180` | `/health` が応答するまで待つ秒数。xcodebuild の出力に `Failed to initialize for UI testing` やテストの失敗が出た場合は、待たずにエラー内容と対処のヒントを表示して非ゼロで終了します |
 | `--background` | 端末から切り離して起動し、ready になったら終了します（「バックグラウンドで動かす」） |
 
-## バックグラウンドで動かす（relay start --background / status / stop）
+## 起動とセッション
 
-`relay start` はフォアグラウンドで動き続けてターミナルを占有します。エージェントや CI、スクリプトからは `--background` を付けて起動し、終わったら `relay stop` で止めます。
-
-```sh
-relay start --background --device "iPhone 17 Pro"
-# relay: started relay start in the background (pid 12345, log: ~/.relay/logs/start-<時刻>-8100.log)
-# relay: using iPhone 17 Pro (...) <SIM_UDID> (--device; the newest iOS of ...)
-# relay: building runner (log: ...)            ← 進行状況（ログの relay: の行）は標準エラーに出ます
-# relay: launching runner on <SIM_UDID> (log: ...)
-# ready: http://127.0.0.1:8100/                ← ここから標準出力
-# device: iPhone 17 Pro (<SIM_UDID>)
-# pid: 12345
-# log: ~/.relay/logs/start-<時刻>-8100.log
-# token: ~/.relay/runner.json
-relay status          # URL・端末・PID・起動時刻・/ping の結果
-relay tap --id relay.input
-relay stop            # stopped
-```
-
-- `relay start --background [start の他のオプション]` は、同じオプションの `relay start`（`--background` なし）を新しいセッションとして起動します（端末を閉じても止まりません）。その stdin は `/dev/null`、stdout と stderr は `~/.relay/logs/start-<時刻>-<port>.log` です。ログは親（実行したコマンド）が新しく作ってから子に渡すので、同じ秒に別のポートで起動しても、同じポートですぐに起動し直しても、ほかの `relay start` のログと混ざりません（同じ名前があれば `-2`、`-3` … を付けます。`build-`・`runner-` のログも同じ名前の付け方です）。親はそのログを読み、`ready:` が出たら上のように URL・端末・PID・ログのパスを表示して終了コード 0 で終わります。
-- ready にならなかった場合は、子の `relay start` を止め（SIGTERM。ビルド中なら xcodebuild を止め、relay が boot したシミュレータは shutdown します。この停止処理が180 秒以内に終わらなければ子と、子が起動したプロセスを強制終了します）、ログの末尾と原因を表示して終了します。終了コードは、子が ready の前に終了した場合（ビルドの失敗、端末が見つからない、`Failed to initialize for UI testing` など）は `1`、時間切れは `3`（ランナーに届かない）です。時間切れは、ランナーの起動（ビルドの完了）から `--ready-timeout` + 15 秒、起動まで（シミュレータの boot とビルド）は 30 分です。待っている間に Ctrl-C を押した場合も子を止めて `1` で終わります。
-- 同じポートで動かせる `relay start` は 1 つだけです。`relay start`（フォアグラウンドのものと、`--background` が起動したもの）は、端末を選ぶ前から終了するまで（ランナーが動いている間も）`~/.relay/locks/start-<port>.lock` をロック（`flock`）します。そのポートでほかの `relay start` が起動中か実行中なら、boot もビルドもせずにエラー（終了コード `1`）にします。`--background` はロックを取ってから下の runner.json の確認を行い、起動した `relay start` にロックを引き継ぐので、ほぼ同時に 2 つ起動しても進むのは片方だけです。ロックはプロセスが終われば（強制終了でも）外れるので、ロックファイルが残っていても次の起動を妨げません。
-- 起動の前に `~/.relay/runner.json` を確認します。その URL のポートが新しく使うポート（`--port`、既定は `8100`）と違えば、衝突しないのでそのまま起動し、runner.json は後から起動したランナーで上書きされます（フォアグラウンドで複数起動するときと同じです）。ポートが同じ（または URL からポートが取れない）ときは、その URL へ `/ping` を送り、何かが HTTP で応答したら、新しいランナーはそのポートで待ち受けられないので起動せずにエラー（終了コード `1`）にします。`200` なら、ランナーが動いているので `relay stop` で止めるか、そのまま使うか、`--port` で別のポートに起動するように案内します。`401` なら、runner.json に書かれたものとは別のランナー（別のトークン）がその URL で動いている可能性があり、`404` などそれ以外の応答なら別の何かがそのポートで待ち受けています。どちらの場合も、それを止める（`relay stop`、またはそのランナーを起動した `relay start`）か、`--port` で別のポートを使うように案内します。ポートが同じでも、応答がない（接続できない・タイムアウトした）ときと、runner.json がないときは起動に進みます。
-- `relay status [--json]` は、runner.json（「[接続先（runner.json）の探し方](cli.md#接続先runnerjsonの探し方)」と同じ順に探します。`--runner <path>` も可）の URL・端末名と UDID・`relay start` の PID とそれがまだ動いているか・起動時刻・`/ping` の結果（`busy` を含む）・ランナーが名乗る版（`runner: 0.6.0 (sources <12 桁>)`。runner.json の期待値と違えばその旨、名乗らない古いランナーなら `not reported`、応答がなければ runner.json の期待値）を表示します。`--json` では 1 つの JSON オブジェクト（`alive`、`url`、`udid`、`name`、`pid`、`processRunning`、`startedAt`、`hostBundleID`（ホストアプリのバンドル ID。runner.json になければ `null`）、`session`（セッション名。セッションなしなら `null`）、`ping`、`runner`（`/ping` が返した版。なければ `null`）、`expectedRunner`（runner.json の期待値。古い runner.json なら `null`）、`runnerInfo`）を出します。ランナーが `/ping` に応答すれば `0`、runner.json がないか応答しなければ `3`、トークンが拒否されたら（`401`）`4` です。
-- `relay stop` は、runner.json の `relay start` に SIGTERM を送り、終了を待ちます。フォアグラウンドの Ctrl-C と同じ経路で、ランナーの `/shutdown`、relay が boot したシミュレータの shutdown、runner.json の削除を行います。`stopped` と表示して `0` で終わります（180 秒以内に終わらなければ `1`）。`relay start` がもう動いていない場合（強制終了された場合など）は、runner.json の URL とトークンで `POST /shutdown` を送り、runner.json を削除します。何も動いていなければ `not running` と表示して `0` です。フォアグラウンドの `relay start` も同じように止められます。そのランナーの録画（`relay record`。docs/cli.md の「[録画](cli.md#録画relay-record)」）が残っていれば、ランナーを止める前に書き出し、保存先を stderr に出します。
-- runner.json には `relay start` の PID と起動時刻（秒単位）を記録します。`relay stop` は、その PID のプロセスの起動時刻が一致し、実行ファイルが `relay` で最初の引数が `start` の場合だけシグナルを送ります。`relay start` の終了後にその PID が別のプロセスに再利用されても、そのプロセスには何も送りません。
-
-## 複数のセッションを並列に動かす（relay start --session）
-
-複数のエージェントがそれぞれ別の端末を操作するときは、名前付きのセッションを使います。エージェントを起動するときに環境変数 `RELAY_SESSION` を渡すのが基本です。エージェントが実行するコマンドのシェルはこの値を引き継ぐので、すべてのコマンドがそのセッションのランナーに届き、ほかのセッションと干渉しません。
-
-```sh
-# ターミナル 1
-RELAY_SESSION=agent-1 claude
-
-# ターミナル 2（同時に）
-RELAY_SESSION=agent-2 codex
-```
-
-エージェントの中では、`--session` を付けなくても次のように動きます。
-
-```sh
-relay start --background --device "iPhone 17 Pro"   # agent-2 なら別の端末を指定する
-relay tap --id relay.input
-relay stop
-```
-
-環境変数を渡さずに起動したエージェントは、relay の各コマンドに毎回 `--session <名前>` を付けます。
-
-```sh
-relay start --background --session agent-1 --device "iPhone 17 Pro"
-relay tap --session agent-1 --id relay.input
-relay stop --session agent-1
-
-relay status --all   # 全セッションの一覧
-relay stop --all     # 全部止める（ほかのエージェントのものも）
-```
-
-`export RELAY_SESSION=...` は、同じシェルでコマンドを続けて実行するときだけ効きます。Claude Code の Bash ツールや Codex のようにコマンドごとに新しいシェルになる環境では次のコマンドに残らず、そのコマンドはセッションなしになります。セッションなしのコマンドは、`~/.relay/runner.json` がなければ終了コード 3 で終わり、あれば別の誰かのランナーを操作してしまいます。後者を見逃さないよう、探索で runner.json を使ったときにセッションが動いていれば、次の警告を stderr に出します（下記）。
-
-```
-relay: warning: no session selected; using /Users/you/.relay/runner.json, while sessions agent-1, agent-2 are running; pass --session or set RELAY_SESSION
-```
-
-名前は英数字で始まる、英数字と `.`・`_`・`-` の 64 文字までです（パスの一部になるため）。大文字と小文字を区別しないボリューム（APFS の既定）では `A` と `a` は同じセッションになります。`--session <名前>` は `RELAY_SESSION` より優先し、`relay start`・ランナー操作のコマンド・`relay status`・`relay stop`・`relay record`・`relay run`・`relay bench` で使えます。セッションなしの使い方は今までどおりで、`~/.relay/runner.json` とセッションは互いに読み書きしません。
-
-- **状態ファイル**: `~/.relay/sessions/<名前>/runner.json`（0600）に書き、`~/.relay/runner.json` には書きません。探す順は「[接続先（runner.json）の探し方](cli.md#接続先runnerjsonの探し方)」のとおりで、セッションを指定したときは、そのファイルがなければ終了コード 3 で終わり、ほかのファイルへは進みません。`relay start` は `~/.relay/sessions/<名前>/session.lock` を終了まで `flock` するので、同じセッションを 2 つは起動できません。`relay start` が強制終了されてランナーだけが応答し続けている場合も、`relay stop --session <名前>` を案内するエラーにします。
-- **ポート**: `--port` を省くと、`8101`〜`8199` を順に見て、`~/.relay/locks/start-<port>.lock` を取れて、かつ Mac の `127.0.0.1` で bind できる最初のポートを使います。既定の `8100` はセッションなしの `relay start` のために空けておきます。ロックを取ってから調べて、ランナーが待ち受けるまで保持するので、同時に起動しても同じポートにはなりません。選んだポートは runner.json に入るので、利用者が知る必要はありません（`relay status` や `ready:` の行に出ます）。`--port` を指定すればそれを使います。
-- **端末の排他**: 1 台の端末で動かせるランナーは 1 つです（2 つ目の XCTest がテストのセッションを奪います）。これはセッションなしの `relay start` にも適用されます。`relay start` は端末を選んだ直後、boot とビルドの前に `~/.relay/locks/device-<UDID>.lock` を終了まで `flock` します。使用中の端末を `--udid` や `--device` で指定すると、使っているセッションと PID、止め方を示すエラー（終了コード `1`）になります。指定した端末が使用中のときに別の端末へ移ることはありません。
-- **端末の自動選択**: `--udid` も `--device` もないときは、ほかの `relay start` が使用中の端末を候補から外して、「接続中の実機が 1 台ならそれ、なければ起動中のシミュレータが 1 台ならそれ」で選びます。空いている候補が複数あれば、これまでどおり候補つきのエラーです。空きがなければ、使用中の端末とその持ち主も示します。ただしセッション付き（`--session` か `$RELAY_SESSION`）の `relay start` は、空いている起動中のシミュレータが複数あっても、エラーにせず iOS の新しい順 → 名前（大文字小文字を無視）→ UDID の先頭の 1 台を選びます（`the first of 3 free booted simulators (newest iOS, then name), for session <名前>`）。複数のセッションを同時に起動しても、先に取られた側が下の選び直しで残りの 1 台を取ります。接続中の実機が複数あるときと、セッションなしのときは、これまでどおり候補つきのエラーです。選んだ端末のロックを取る直前にほかの `relay start` に取られたとき（ほぼ同時に起動したとき）は、`relay: <端末> was just taken by <持ち主>; selecting again` と出して、その端末を使用中に加えて選び直します（候補の数までで、空きがなければ上のエラーです）。
-- **ビルド**: ビルド成果物（`~/.relay/build/…/DerivedData-*`）は共有のままで、同じソースのビルドを使い回します。同時に起動しても同じ DerivedData へのビルドは 1 つだけで、後のものは `relay: waiting for another relay start's build …` と出して待ち、終わったらそのビルドを使い回します（待っている間に同じソースのビルドが終われば `--rebuild` も満たされたものとします）。ビルドしない起動どうしは並列に進みます。`~/.relay/locks/build-<ハッシュ>.lock` を、ビルド中は排他で、成果物からランナーを起動して ready になるまでは共有で持つので、起動の途中で成果物が書き換えられることもありません。待っている間も Ctrl-C と `relay stop` で止められます。`relay install --build` も同じロックを取ります。
-- **テスト実行の出力**: xcodebuild の `test-without-building` が書くログと xcresult は、ポートごとの `~/.relay/build/…/TestData/port-<port>/` に分けます。同じ `-derivedDataPath` を共有すると、同じ秒に始まったテストの xcresult の名前が同じになり、`Logs/Test/LogStoreManifest.plist` も同時に書き換えられるためです。ポートごとに新しい 3 個の xcresult を残します（「[ログとテスト結果の掃除](#ログとテスト結果の掃除)」）。
-- **ログ**: `~/.relay/logs` の `start-`・`build-`・`runner-`・`record-` のログは `<種類>-<時刻>-<セッション>-<port>.log` という名前になります。更新から 7 日を過ぎたものは消しますが、種類ごとに新しい 20 件は残します（「[ログとテスト結果の掃除](#ログとテスト結果の掃除)」）。既定の出力先のスクリーンショットと録画の名前にもセッション名が入ります。
-- **セッションなしのコマンドへの警告**: セッションも `--runner` も `RELAY_RUNNER` もないコマンド（ランナー操作、`relay run`、`relay status`、`relay stop`、`relay record`、`relay bench`）が `~/.relay/runner.json` を使うとき、`~/.relay/sessions/*/runner.json` があるか `session.lock` が握られているセッションがあれば、警告を stderr に出します。失敗にはせず、終了コードも変えません。セッションなしのランナーを意図して使っているなら無視でき、警告を消すには `--runner` で指定します。調べるのはファイルとロックだけでランナーには問い合わせないので、コマンドは遅くなりません。その代わり、強制終了で残った runner.json も「動いている」と数えます（`relay stop --session <名前>` で片付きます）。
-- **録画**: 録画の状態はこれまでどおりポートごとです（ポートはランナーごとに違います）。セッションを指定した `relay record stop` / `status` は、そのセッションの runner.json がなければ終了コード 3 で、ほかのセッションの録画には進みません。止まったランナーの録画は `--port <n>` で指定できます。
-
-一覧（`relay status --all`）は、`~/.relay/runner.json` のランナー（SESSION は `(default)`）と全セッションを 1 行ずつ表示します。終わったセッション（runner.json がなく、ロックも持たれていないもの）は出ません。終了コードは状態によらず `0` です。
-
-```
-SESSION  STATE      DEVICE                        URL                     PID
-agent-1  running    iPhone 17 Pro (<SIM_UDID_1>)  http://127.0.0.1:8101/  12345
-agent-2  starting   -                             -                       12346
-agent-3  no answer  iPhone 17 (<SIM_UDID_2>)      http://127.0.0.1:8103/  12347 (exited)
-```
-
-STATE は `starting`（boot かビルドの途中で、まだ runner.json がない）、`running`、`busy`（コマンドの実行中）、`no answer`（応答がない。`relay stop --session <名前>` で片付く）、`rejected`（そのポートで別のランナーが応答している）、`unknown`（sandbox などで接続が拒否された）です。`--json` は 1 つの配列で、各要素は `session`（`~/.relay/runner.json` なら `null`）、`state`、`alive`、`url`、`udid`、`name`、`pid`、`processRunning`、`runnerInfo` です。トークンは含みません。
-
-`relay stop --all` は一覧の全部を順に止め、`<セッション>: stopped` を 1 行ずつ出します。ほかのエージェントのランナーも止めるので、エージェントは通常、自分のセッションだけを止めます。`relay stop --session <名前>` は、boot やビルドの途中でまだ runner.json がないセッションも止めます。
-
-## ログとテスト結果の掃除
-
-ログとテストの結果とビルドは使うたびに増えるので、`relay start` が始めに（ポートのロックを取った後、端末を選ぶ前に）古いものを消します。`relay start --background` では起動した側の `relay start` が消します。`relay record start` も `record-` のログを同じように消します（ランナーを動かしたまま何度も録画できるためです。ビルドは消しません）。消すコマンドはなく、普段は意識する必要がありません。
-
-| 対象 | 残すもの |
-| --- | --- |
-| `~/.relay/logs/` の `start-`・`build-`・`runner-`・`record-` のログ | 更新から 7 日以内のものすべてと、種類ごとに新しい 20 件（日数によらず） |
-| `~/.relay/build/*/TestData/port-<port>/Logs/Test/*.xcresult` | ポートごとに新しい 3 個と、更新から 1 時間以内のもの |
-| `~/.relay/build/*/DerivedData-*/Logs/Test/*.xcresult`（以前の relay が書いたもの） | ディレクトリごとに新しい 3 個と、更新から 1 時間以内のもの |
-| `~/.relay/build/<ディレクトリ名>-<パスのハッシュ>`（ディレクトリごと） | 元の Runner プロジェクトがあり、最後に使ってから 30 日以内のもの（下の「ビルドディレクトリ」） |
-
-### ビルドディレクトリ
-
-`relay start` と `relay install --build` は、ビルドディレクトリを作るか使い回すたびに、その直下の `relay-build-dir.json`（`{"root": "<Runner の正規のパス>", "lastUsed": "<ISO 8601 の日時>"}`）を書き直します。`DerivedData-*` の外にあるので、Xcode も Runner のソースのハッシュも読みません。次のどちらかなら、ディレクトリごと消します。消されたものが要るときは、次の `relay start` がビルドし直します。
-
-- **元の Runner がなくなった**: 記録の `root` に `Runner/RelayRunner.xcodeproj` がありません（古いバージョンのディレクトリの削除、`mise prune`、消した worktree など）。外付けボリュームを外しているときも同じ扱いです。
-- **30 日使っていない**: `root` がまだあっても、`lastUsed` から 30 日を過ぎています（`mise` が残している古いバージョンなど）。休みや別の作業の後に戻るには十分で、誤って消してもビルドし直すだけなので、この長さにしています。
-
-記録のないディレクトリ（以前の relay が作ったもの）は、Xcode が書いた `DerivedData-*/info.plist` の `WorkspacePath`（`<root>/Runner/RelayRunner.xcodeproj`）から `root` を読み、元の Runner がなくなっていれば消します。最後に使った日は分からないので、30 日の判定はしません。一度使えば記録が付きます。
-
-次のものは消しません。
-
-- `~/.relay/build/installed`（`relay install` と `relay uninstall` が管理します）と、いま起動している `relay start` のディレクトリ。
-- **使用中のディレクトリ**: 動いている `relay start` はポートのロックを取った直後に自分のディレクトリを `~/.relay/locks/start-<port>.build.json` に書き、runner.json にも `buildDirectory` として書きます。ビルドや起動の途中のものは、ビルドのロック（`~/.relay/locks/build-<ハッシュ>.lock`）でも分かります。
-- **どれを使っているか分からない起動があるとき**: 以前の relay の `relay start` やその runner.json（`relay stop` すれば解消します）、ロックを取った直後の `relay start` がいるときは、どれもそのものかもしれないので、その回はどのビルドディレクトリも消しません。
-- **出どころが確かでないもの**: `root` から求めたディレクトリ名（`info.plist` の場合は `<root の最後の要素>-<12 桁の 16 進数>`）が実際の名前と違うもの、記録も `info.plist` もないもの、シンボリックリンク、`.` で始まる名前のもの。
-
-消すときは、まず `~/.relay/build/.removing-<ランダムな名前>` へ名前を変えてから削除するので、同時に起動した `relay start` が作りかけのディレクトリを見ることはありません。途中で止まって残った `.removing-*` は次の `relay start` が消します。消す量によっては、その回の `relay start` が数秒長くかかります。
-
-### 共通の規則
-
-- **使用中のものは消しません**: ほかの `relay start` がロック（`~/.relay/locks/start-<port>.lock`）を持つポートと、runner.json（セッションのものを含む）が指すポートは使用中とみなします。そのポートの xcresult には触れず、ログは種類ごとに最新の 1 件を残します。何日も静かなランナーのログや、書き込み中でも更新日時が変わらない実行中の xcresult は、この判定で残ります。録画中のログも `~/.relay/recording-<port>.json` が指すので残します。同時に起動した `relay start` が同じものを消しても問題ありません。
-- **ほかのものは消しません**: 上の名前の形でないファイル（利用者のファイルなど）、`LogStoreManifest.plist`（消した xcresult の記載は、次に実行するときに xcodebuild 自身が外します）、残すビルドディレクトリの中のビルド成果物、ロックファイル、`~/.relay/sessions/<名前>/`、`relay screenshot` や `relay record` が書いた出力ファイルです。
-- **失敗しても止めません**: 消せないものがあれば `relay: cannot remove …` を 1 行出して続けます。何かを消せたときは何も表示しません。
-- **調べたいログを残すには**: 原因の調査に使うログや xcresult は `~/.relay` の外へコピーしてください。すぐ消したいときは、ランナーが動いていなければ `~/.relay/logs` の中身を削除してかまいません。
+起動・停止、接続先の選択、並列セッション、ログとテスト結果の掃除は「[起動とセッション](sessions.md)」を参照してください。
 
 ## エージェントの sandbox から使う
 
-Claude Code などのコーディングエージェントは、シェルコマンドを OS の sandbox（macOS では Seatbelt）の中で動かすことがあります。relay はそのままでは sandbox の中では動きません。
-
-- **`relay start` は sandbox の中では動きません。** `~/.relay`（ロック、ログ、ビルド）への書き込み、xcodebuild、testmanagerd の unix socket、CoreSimulator の XPC、疑似端末などを使うので、sandbox の書き込み先や socket を少し広げただけでは足りません。sandbox の外で起動してください。
-- **ランナー操作のコマンド（`relay status`・`relay tap` など）も、既定の sandbox ではランナーに届きません。** ランナーは `127.0.0.1:<port>`（シミュレータ）で待ち受けていますが、Claude Code の macOS の sandbox は localhost への直接の接続を拒否します。このとき relay は、接続が OS に拒否された（`Operation not permitted`）ことと sandbox の可能性を示します（終了コードは届かないときと同じ `3`）。ランナーが止まっているわけではないので、`relay stop` や `relay start` をし直さないでください。`relay stop` はこの場合、runner.json を消さずに終了コード `3` で終わります。また、sandbox の外で動いている `relay start` を sandbox の中から `relay stop` しようとすると、シグナルを送れずに `cannot signal relay start (pid …): Operation not permitted; relay may be running inside a sandbox …` で終了コード `1` になります。その場合は `relay stop` を sandbox の外で実行してください。
-- `relay doctor` は、127.0.0.1 への接続と `~/.relay` への書き込みを試し、OS に拒否されたら（`Operation not permitted`）✗ にします。sandbox かどうかを直接知る方法はないので「sandbox の中で動いているようだ」という扱いです（同じように拒否するネットワークフィルタも区別できません）。
-
-いちばん簡単なのは、**relay を sandbox の外で動かす**ことです。Claude Code では `sandbox.excludedCommands` に relay を書きます（ユーザー設定 `~/.claude/settings.json`、またはプロジェクトの `.claude/settings.json` / `.claude/settings.local.json`）。
-
-```json
-{
-  "sandbox": {
-    "excludedCommands": ["relay *"]
-  }
-}
-```
-
-- パターンは `Bash(...)` の許可ルールと同じ書き方で、`relay *` は relay のコマンドすべてに一致します。除外したコマンドも、通常の許可の確認（permission）は通ります。
-- 除外は 1 回の Bash 呼び出しの中のコマンドすべてが一致したときだけ効きます。`cd app && relay tap …`、`relay screenshot > out.png` のようなリダイレクト、`$(…)`、`for`・`if` などを含むと sandbox の中で動きます。relay は 1 回に 1 コマンドで呼んでください（スクリーンショットは `-o <file>` で保存先を指定できます）。
-- 管理者が sandbox を必須にしている場合（admin-required）は、リポジトリの `.claude/settings.json` / `.claude/settings.local.json` の `excludedCommands` は無視されます。`~/.claude/settings.json` に書くか、管理者に相談してください。
-- sandbox の中から操作のコマンドだけを通したい場合は、`sandbox.network.allowLocalBinding: true`（macOS で localhost の任意のポートへの接続と待ち受けを許す）でランナーに届くようになります。ただし localhost で動くほかのサービスすべてにも届くようになり、sandbox の中のコマンドが localhost 以外のアドレスで待ち受ければ、ほかのマシンからの接続も受けうるようになります。また、管理者が sandbox を必須にしているときは、リポジトリの設定の `allowLocalBinding: true` も無視されます（`~/.claude/settings.json` に書けば効きます）。`relay start` は相変わらず sandbox の外で起動する必要があるので、通常は `excludedCommands` を勧めます。`sandbox.network.allowUnixSockets`（macOS で接続してよい unix socket のパス）や `sandbox.network.allowMachLookup`（XPC のサービス名）、`sandbox.filesystem.allowWrite`（書き込み先）を広げて `relay start` を sandbox の中で動かすことは、試しておらず勧めません。
-- エージェントが sandbox で失敗したコマンドを sandbox の外でやり直すこと（Claude Code の `dangerouslyDisableSandbox`。許可の確認が出ます）もできますが、`sandbox.allowUnsandboxedCommands: false` ではできません。
-- 実機ではランナーのアドレスは CoreDevice トンネル（IPv6）などになり、localhost ではないので、sandbox のプロキシを通らない直接の接続が拒否されます。やはり relay を sandbox の外で動かします。
-
-ほかのエージェントやツールでも事情は同じです。シェルコマンドを sandbox で動かすものでは、relay（少なくとも `relay start`）を sandbox の外で動かす設定を使い、操作のコマンドには localhost への接続を許してください。Linux 系の sandbox のようにコマンドごとに別の loopback を持つ仕組みでは、localhost はホストのランナーに届かず、接続は拒否ではなく `connection refused` になるので、relay の判定でも sandbox とはわかりません。
-
-Claude Code の設定の根拠: [Sandboxing](https://code.claude.com/docs/en/sandboxing)、[Settings reference の `sandbox`](https://code.claude.com/docs/en/settings-reference#sandbox)。
+エージェントから relay を使う設定は「[エージェントの sandbox から使う](sessions.md#エージェントの-sandbox-から使う)」を参照してください。
 
 ## 実機
 

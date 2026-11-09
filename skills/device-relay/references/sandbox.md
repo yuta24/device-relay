@@ -23,4 +23,4 @@ The recommendation is to run relay outside the sandbox. Ask the user to add the 
 - If an administrator requires the sandbox, `excludedCommands` in the repository's settings is ignored (it works in `~/.claude/settings.json`).
 - To let only the operating commands through from inside the sandbox, use `"network": {"allowLocalBinding": true}` (macOS; every localhost port becomes reachable, and commands listening on other than localhost may also accept connections from other machines; if an administrator requires the sandbox, `true` in the repository's settings is ignored, but it works in `~/.claude/settings.json`). `relay start` still has to be started outside, so normally use `excludedCommands`.
 - A physical device's runner is at a CoreDevice tunnel address rather than localhost, so it also has to run outside the sandbox.
-- The same goes for other agents: use a setting that runs relay outside the sandbox. See "エージェントの sandbox から使う" in docs/setup.md of device-relay.
+- The same goes for other agents: use a setting that runs relay outside the sandbox. See "エージェントの sandbox から使う" in docs/sessions.md of device-relay.
