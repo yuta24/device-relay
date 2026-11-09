@@ -36,6 +36,37 @@ class StartupWatchdogTests(unittest.TestCase):
         with self.assertRaisesRegex(TimeoutError, "runner boot phase"):
             self.watchdog.check()
 
+    def test_phase_completed_before_deadline_is_accepted_at_next_poll(self):
+        for previous, following, marker in (
+            ("boot", "build", "relay: session owned\n"),
+            ("build", "ready", "relay: launching runner on DEVICE\n"),
+        ):
+            with self.subTest(transition=f"{previous} to {following}"):
+                self.now = 0
+                self.watchdog = StartupWatchdog(
+                    self.log, self.warn, clock=lambda: self.now
+                )
+                if previous == "build":
+                    self.progress(100, "relay: session owned\n")
+                deadline = self.watchdog.deadline
+                # The marker arrives before the deadline; the next 250ms poll
+                # runs just after it. The completed phase must not time out.
+                self.now = deadline - 0.1
+                self.log.write_text(marker)
+                self.now = deadline + 0.1
+                self.watchdog.check()
+                self.assertEqual(self.watchdog.phase, following)
+                self.now = self.watchdog.deadline
+                with self.assertRaisesRegex(TimeoutError, f"runner {following} phase"):
+                    self.watchdog.check()
+
+    def test_new_phase_marker_cannot_bypass_the_aggregate_deadline(self):
+        self.progress(100, "relay: session owned\n")
+        self.log.write_text("relay: launching runner on DEVICE\n")
+        self.now = sum(STARTUP_LIMITS.values())
+        with self.assertRaisesRegex(TimeoutError, "runner startup did not complete"):
+            self.watchdog.check()
+
     def test_repeated_build_messages_do_not_extend_the_build_deadline(self):
         self.progress(100, "relay: session owned\n")
         self.progress(

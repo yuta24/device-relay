@@ -40,10 +40,6 @@ class StartupWatchdog:
             self.warn(error)
             self.tracking = False
             return
-        if now >= self.deadline:
-            raise TimeoutError(
-                f"runner {self.phase} phase did not complete within {STARTUP_LIMITS[self.phase]} seconds"
-            )
         lines = text.splitlines()
         observed = (
             "ready"
@@ -55,3 +51,7 @@ class StartupWatchdog:
         if self.phases.index(observed) > self.phases.index(self.phase):
             self.phase = observed
             self.deadline = now + STARTUP_LIMITS[observed]
+        if now >= self.deadline:
+            raise TimeoutError(
+                f"runner {self.phase} phase did not complete within {STARTUP_LIMITS[self.phase]} seconds"
+            )
