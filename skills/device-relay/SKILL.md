@@ -54,8 +54,8 @@ relay stop                                   # when done, if you started it
 - Wait with `relay find <selector> --timeout <s>` (≤ 10 s, repeat for longer) or `tap --timeout`, never `sleep`, except to let a swipe's scroll stop ([scrolling](references/scrolling.md)).
 - After the screen changes, observe again: don't reuse selectors, indexes, or coordinates.
 - One command at a time; overlapping ones get busy (5).
-- For system permission dialogs, wait with `relay find --type alert --bundle-id com.apple.springboard --timeout 5`, confirm a match and the question, then use `relay tap --label …` to dismiss it. While the dialog is open, don't target the app behind it with `--bundle-id`. Copy labels exactly from `find` / `source` (`Don’t Allow` uses `’`, U+2019). Read [system-alerts](references/system-alerts.md) for the steps and targeting pitfalls.
-- Right after `relay launch`, add `--bundle-id <id>` to `find` / `tap` / `type` / `source`, except when handling a system permission dialog as above.
+- Permission dialogs: wait with `relay find --type alert --bundle-id com.apple.springboard --timeout 5`, tap the exact `label` from `find`/`source`; don't target the app behind with `--bundle-id` ([system-alerts](references/system-alerts.md)).
+- Right after `relay launch`, add `--bundle-id <id>` to `find` / `tap` / `type` / `source`, except for permission dialogs.
 
 ## Exit codes
 
@@ -85,7 +85,6 @@ Each file in `references/` stands alone; read only the one you need:
 - [sandbox](references/sandbox.md): `Operation not permitted`
 - [commands](references/commands.md): options and timeouts of each command
 - [element-tree](references/element-tree.md): `source` formats, selectors
-- [system-alerts](references/system-alerts.md): permission dialogs, SpringBoard targeting, exact labels
 - [failures](references/failures.md): all exit codes, `code`s, `reason`s
 - [coordinates](references/coordinates.md): orientation, iPad windows, iPhone Duo
 - [scrolling](references/scrolling.md): to an element off the screen
