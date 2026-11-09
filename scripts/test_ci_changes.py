@@ -23,6 +23,7 @@ class CIChangesTests(unittest.TestCase):
                 [
                     "README.md",
                     "README.ja.md",
+                    "CHANGELOG.md",
                     "docs/setup.md",
                     "docs/images/example.png",
                 ]

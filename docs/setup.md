@@ -124,21 +124,7 @@ relay config unset bundleIDPrefix                          # 既定値に戻す
 
 接頭辞が前回のビルド（使い回す DerivedData の記録 `relay-runner-build.json`。「ランナーの版」）と違えば、ソースの変化より先にそれを調べて、`relay start` は `bundle ID prefix changed from X to Y; rebuilding, and the device gets new apps with the new IDs (the old ones stay)` と出して作り直します（`--rebuild` は要りません）。
 
-### 移行の注意（以前の relay を使っていた人）
-
-以前の relay は、バンドル ID を `dev.yuta24.devicerelay.RelayRunnerHost`（と `.UITests`）に固定していました。この版に上げてそのまま実機で `relay start` すると、接頭辞が既定値の `dev.devicerelay.<Team ID の小文字>` に変わるので、
-
-- 自動署名（`-allowProvisioningUpdates`）が新しい App ID をあなたの Apple Developer アカウントに登録し、
-- 端末には新しいバンドル ID の RelayRunner が入ります。古い ID のアプリは端末に残ります（不要ならホーム画面から削除します）。古い App ID も Apple Developer の Identifiers に残ります。
-
-今の App ID のまま使い続けたい（`dev.yuta24.devicerelay` を登録したチームで使っている）場合は、**更新後に最初の `relay start` をする前に** 旧接頭辞を設定します:
-
-```sh
-relay config set bundleIDPrefix dev.yuta24.devicerelay
-relay doctor            # bundle ID の行が prefix dev.yuta24.devicerelay (from bundleIDPrefix in ~/.relay/config.json) になる
-```
-
-ほかのチームでは `dev.yuta24.devicerelay` は登録できないので、この設定は元のチームで使う人だけのものです。`relay install` でコピーした Runner（`~/.relay/runner`）を使っている場合は、`relay install` をやり直してから起動します（古いコピーはバンドル ID が固定のままで、接頭辞を渡しても変わりません。記録には渡した接頭辞が入るので作り直しを繰り返すことはなく、runner.json の `hostBundleID` はビルドしたアプリの Info.plist から読むので、`host` は実際の ID を指します）。
+0.2.0 以前の relay から更新するときは、実機で最初に `relay start` する前に「[変更履歴](../CHANGELOG.md#runner-のバンドル-id-の接頭辞移行の注意)」を読んでください。バンドル ID が変わり、新しい App ID が登録されます。
 
 ## 環境の確認（relay doctor）
 
