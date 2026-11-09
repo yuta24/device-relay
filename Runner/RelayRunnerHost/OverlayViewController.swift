@@ -1,5 +1,7 @@
+import AuthenticationServices
 import CoreLocation
 import PhotosUI
+import SafariServices
 import UIKit
 import UserNotifications
 
@@ -15,6 +17,10 @@ import UserNotifications
 ///   even while this app is in front
 /// - `relay.share` (UIActivityViewController), `relay.photos` (PHPickerViewController),
 ///   `relay.inAppAlert` (UIAlertController, drawn by this app)
+/// - `relay.safari` / `relay.safariSheet`: `SFSafariViewController` on https://example.com, full screen (its
+///   default) or as a page sheet with this screen visible behind it; `relay.webAuth`: an
+///   `ASWebAuthenticationSession` on the same page, ephemeral (no sign-in prompt); `relay.webAuthShared`: the
+///   same with the shared browser session, which first asks to use the site to sign in
 /// - `relay.overlay.status`: permission results and the latest events
 /// - `relay.shiftRows`: moves the `relay.behind*` rows down by half a row, or back, so that a row's
 ///   center can be put on a given alert button
@@ -25,10 +31,13 @@ import UserNotifications
 ///   asked for): `relay tap --id relay.behind3 --value late --timeout 5` sent right after the ask
 ///   picks its app before the alert and finds the element only after it
 final class OverlayViewController: UIViewController, CLLocationManagerDelegate, PHPickerViewControllerDelegate,
-  UNUserNotificationCenterDelegate {
+  UNUserNotificationCenterDelegate, SFSafariViewControllerDelegate, ASWebAuthenticationPresentationContextProviding {
+  private static let webURL = URL(string: "https://example.com")!
+
   private static let rowCount = 8
 
   private let locationManager = CLLocationManager()
+  private var webAuthSession: ASWebAuthenticationSession?
   private let statusLabel = UILabel()
   private var behindButtons: [UIButton] = []
   private let grid = UIStackView()
@@ -55,10 +64,14 @@ final class OverlayViewController: UIViewController, CLLocationManagerDelegate, 
           button("relay.inAppAlert", "In-app alert", #selector(showInAppAlert)),
           button("relay.shiftRows", "Shift rows", #selector(shiftRows))),
       row(button("relay.askLocation", "Location in 2s", #selector(askLocation)),
-          button("relay.askNotifications", "Notify perm in 2s", #selector(askNotifications))),
+          button("relay.askNotifications", "Notify perm in 2s", #selector(askNotifications)),
+          button("relay.webAuthShared", "Web auth shared", #selector(startSharedWebAuth))),
       row(button("relay.share", "Share", #selector(share)),
           button("relay.photos", "Photos", #selector(pickPhotos)),
-          button("relay.notifyLater", "Banner in 3s", #selector(notifyLater)))
+          button("relay.notifyLater", "Banner in 3s", #selector(notifyLater))),
+      row(button("relay.safari", "Safari", #selector(showSafari)),
+          button("relay.safariSheet", "Safari sheet", #selector(showSafariSheet)),
+          button("relay.webAuth", "Web auth", #selector(startWebAuth)))
     ])
     actions.axis = .vertical
     actions.spacing = 6
@@ -204,6 +217,51 @@ final class OverlayViewController: UIViewController, CLLocationManagerDelegate, 
     picker.delegate = self
     present(picker, animated: true)
     record("photos shown")
+  }
+
+  @objc private func showSafari() {
+    presentSafari(style: .fullScreen)
+  }
+
+  @objc private func showSafariSheet() {
+    presentSafari(style: .pageSheet)
+  }
+
+  private func presentSafari(style: UIModalPresentationStyle) {
+    let safari = SFSafariViewController(url: Self.webURL)
+    safari.modalPresentationStyle = style
+    safari.delegate = self
+    present(safari, animated: true)
+    record(style == .pageSheet ? "safari sheet shown" : "safari shown")
+  }
+
+  func safariViewControllerDidFinish(_ controller: SFSafariViewController) {
+    record("safari done")
+  }
+
+  @objc private func startWebAuth() {
+    beginWebAuth(ephemeral: true)
+  }
+
+  @objc private func startSharedWebAuth() {
+    beginWebAuth(ephemeral: false)
+  }
+
+  private func beginWebAuth(ephemeral: Bool) {
+    let session = ASWebAuthenticationSession(url: Self.webURL, callbackURLScheme: "relayrunner") { callbackURL, error in
+      DispatchQueue.main.async {
+        self.record(callbackURL.map { "web auth callback \($0)" } ?? "web auth ended: \(error.map { ($0 as NSError).code } ?? 0)")
+        self.webAuthSession = nil
+      }
+    }
+    session.presentationContextProvider = self
+    session.prefersEphemeralWebBrowserSession = ephemeral
+    webAuthSession = session
+    record(session.start() ? "web auth started" : "web auth failed to start")
+  }
+
+  func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+    view.window ?? ASPresentationAnchor()
   }
 
   @objc private func showInAppAlert() {
