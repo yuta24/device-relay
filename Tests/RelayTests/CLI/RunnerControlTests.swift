@@ -73,6 +73,8 @@ struct RunnerControlHintTests {
     #expect(RunnerControl.hint(for: .actionFailed, errorCode: .touchModeUnavailable, infoURL: infoURL)?.contains("--mode") == true)
     #expect(RunnerControl.hint(for: .badRequest, errorCode: .touchModeUnavailable, infoURL: infoURL)?.contains("--mode") == true)
     #expect(RunnerControl.hint(for: .badRequest, errorCode: .notFound, infoURL: infoURL)?.contains("relay start --rebuild") == true)
+    let covered = RunnerControl.hint(for: .actionFailed, errorCode: .coveredByOtherApp, infoURL: infoURL)
+    #expect(covered?.contains("relay find --type alert --bundle-id com.apple.springboard") == true)
     // Codes whose message already says what to do get no hint.
     for code in [RunnerErrorCode.pointOffscreen, .invalidRequest, .elementNotHittable, .displayUnknown, .xcuiFailed, .touchFailed] {
       #expect(RunnerControl.hint(for: .actionFailed, errorCode: code, infoURL: infoURL) == nil, "\(code)")
