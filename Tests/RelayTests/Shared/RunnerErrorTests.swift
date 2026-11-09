@@ -21,6 +21,7 @@ struct RunnerErrorCodeTests {
       .noKeyboardFocus: "no_keyboard_focus",
       .displayUnknown: "display_unknown",
       .windowPositionUnknown: "window_position_unknown",
+      .coveredByOtherApp: "covered_by_other_app",
       .touchFailed: "touch_failed",
       .xcuiFailed: "xcui_failed",
       .internalError: "internal_error"
@@ -50,6 +51,8 @@ struct RunnerErrorCodeTests {
       (.noKeyboardFocus(bundleID: "com.example"), 422, .noKeyboardFocus),
       (.displayUnknown("cannot tell which display com.example is on"), 422, .displayUnknown),
       (.windowPositionUnknown("cannot tell where the window of com.example is"), 422, .windowPositionUnknown),
+      (.coveredByOtherApp(RunnerCoverage.Covered(target: "com.example", foreground: "com.apple.springboard", alert: nil)),
+       422, .coveredByOtherApp),
       (.elementNotResolved(lookup), 422, .elementAmbiguous)
     ]
     for (error, status, code) in cases {
@@ -116,6 +119,14 @@ struct RunnerErrorCodeTests {
       #expect(json["candidates"] is [Any])
       #expect(json["error"] as? String == failure.message)
     }
+  }
+
+  @Test func addsTheAppsToACoveredAppFailure() {
+    let error = RunnerError.coveredByOtherApp(RunnerCoverage.Covered(target: "com.example", foreground: "com.apple.springboard",
+                                                                     alert: "Allow?"))
+    #expect(error.json["bundleId"] as? String == "com.example")
+    #expect(error.json["foreground"] as? String == "com.apple.springboard")
+    #expect(error.json["alert"] as? String == "Allow?")
   }
 
   @Test func readsTheCodeOfAnErrorBody() {

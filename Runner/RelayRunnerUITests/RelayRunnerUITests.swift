@@ -509,6 +509,7 @@ final class RelayRunnerUITests: XCTestCase {
         throw RunnerError.elementNotResolved(failure)
       }
     }
+    try requireUncovered(bundleID)
     let x = Double(target.point.x), y = Double(target.point.y)
     return annotated([
       "ok": true,
@@ -517,6 +518,34 @@ final class RelayRunnerUITests: XCTestCase {
       "element": target.match.json,
       "point": RunnerElementTree.json(target.point)
     ])
+  }
+
+  /// Throws 422 (`covered_by_other_app`) without touching when another app is in front of `bundleID`, read
+  /// again right before the touch: the app was picked, and its snapshot taken, maybe before an alert came up,
+  /// and its frames don't show the alert. A covered app is waited for briefly, as an alert leaves the list
+  /// some 230 ms after the touch that dismissed it (`RunnerCoverage`). Without the private API, nothing is checked.
+  private func requireUncovered(_ bundleID: String) throws {
+    let covering = RunnerCoverage.settle(
+      target: bundleID,
+      wait: { seconds in
+        let until = Date(timeIntervalSinceNow: seconds)
+        while Date() < until {
+          _ = RunLoop.current.run(mode: .default, before: until)
+        }
+      },
+      activeBundleIDs: { self.activeApplications()?.map(\.bundleIdentifier) }
+    )
+    guard let covering else { return }
+    throw RunnerError.coveredByOtherApp(RunnerCoverage.Covered(target: bundleID, foreground: covering,
+                                                               alert: springboardAlertLabel()))
+  }
+
+  /// The label of the alert SpringBoard shows, or nil. It snapshots SpringBoard, so it is only looked up for a
+  /// touch already refused.
+  private func springboardAlertLabel() -> String? {
+    let (root, failed) = ignoringIssues { try? elementTree(springboard, bundleID: Self.springboardBundleID) }
+    guard !failed, let root else { return nil }
+    return RunnerCoverage.alertLabel(in: root)
   }
 
   /// Throws 400 when a point of `/tap`, `/press`, or `/swipe` is outside the screen in the displayed

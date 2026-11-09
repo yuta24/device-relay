@@ -38,6 +38,9 @@ enum RunnerErrorCode: String, CaseIterable {
   case displayUnknown = "display_unknown"
   /// 422: on iPad, where the app's window is on the screen can't be told; nothing was sent.
   case windowPositionUnknown = "window_position_unknown"
+  /// 422: another app (SpringBoard's alert, Control Center, …) is in front of the app an element touch is for;
+  /// nothing was sent.
+  case coveredByOtherApp = "covered_by_other_app"
   /// 422 or 500: a synthesized touch failed or did not complete in time.
   case touchFailed = "touch_failed"
   /// 422: XCUI reported a failure (a recorded test issue, a snapshot that failed).
@@ -84,6 +87,8 @@ enum RunnerError: Error, CustomStringConvertible {
   case displayUnknown(String)
   /// Where the app's window is can't be told, so an element's frame says nothing about the screen (422).
   case windowPositionUnknown(String)
+  /// Another app is in front of the app an element touch is for (422); nothing was sent.
+  case coveredByOtherApp(RunnerCoverage.Covered)
   /// A selector that didn't lead to one touchable element; answered with the failure's JSON.
   case elementNotResolved(RunnerElementLookupFailure)
 
@@ -99,6 +104,7 @@ enum RunnerError: Error, CustomStringConvertible {
          .windowPositionUnknown(let message):
       return message
     case .noKeyboardFocus(let bundleID): return RunnerTyping.missingKeyboardFocusMessage(bundleID: bundleID)
+    case .coveredByOtherApp(let covered): return covered.message
     case .elementNotResolved(let failure): return failure.message
     }
   }
@@ -110,7 +116,7 @@ enum RunnerError: Error, CustomStringConvertible {
     case .methodNotAllowed: return 405
     case .internalError, .touchSynthesisError: return 500
     case .touchFailed, .actionFailed, .touchUnreachable, .noKeyboardFocus, .displayUnknown, .windowPositionUnknown,
-         .elementNotResolved: return 422
+         .coveredByOtherApp, .elementNotResolved: return 422
     }
   }
 
@@ -127,15 +133,18 @@ enum RunnerError: Error, CustomStringConvertible {
     case .noKeyboardFocus: return .noKeyboardFocus
     case .displayUnknown: return .displayUnknown
     case .windowPositionUnknown: return .windowPositionUnknown
+    case .coveredByOtherApp: return .coveredByOtherApp
     case .elementNotResolved(let failure): return failure.code
     }
   }
 
-  /// The response body: `code` and `error`, plus `reason`, `count`, and `candidates` for an element lookup.
+  /// The response body: `code` and `error`, plus `reason`, `count`, and `candidates` for an element lookup, and
+  /// `bundleId`, `foreground`, and `alert` for a covered app.
   var json: [String: Any] {
-    if case .elementNotResolved(let failure) = self {
-      return failure.json
+    switch self {
+    case .elementNotResolved(let failure): return failure.json
+    case .coveredByOtherApp(let covered): return covered.json
+    default: return code.body(description)
     }
-    return code.body(description)
   }
 }
