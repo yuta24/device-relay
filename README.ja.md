@@ -105,7 +105,7 @@ relay stop                 # ランナーを止める（relay が boot したシ
 
 - 同じ名前のシミュレータが iOS のランタイムごとにあっても、`--device` は最も新しい iOS のものを選び、`relay: using …` に OS つきで表示します。古い iOS で試すときは `--os 26.5` のように絞ります（「[端末の選択](docs/setup.md#端末の選択relay-devices)」）。
 - すでに起動しているシミュレータを使うなら `relay start --background --simulator` でも構いません。実機が接続されていても、シミュレータの中から選びます。
-- `--udid` / `--device` / `--simulator` を付けずに `relay start` すると、接続中の実機があればそれを優先します。実機は署名や UI オートメーションの準備が要るので、「[実機](docs/setup.md#実機)」の手順を済ませてから使ってください。
+- `--udid` / `--device` / `--simulator` を付けずに `relay start` すると、接続中の実機があればそれを優先します。実機は署名や UI オートメーションの準備が要るので、「[実機](docs/device.md#実機)」の手順を済ませてから使ってください。
 
 エージェントや CI、スクリプトからは、`relay start --background` → 操作 → `relay stop` が基本の流れです（「[バックグラウンドで動かす](docs/sessions.md#バックグラウンドで動かすrelay-start---background--status--stop)」）。人が手元で見ながら使うときは、`relay start`（フォアグラウンド。Ctrl-C で停止）でもかまいません。
 
@@ -128,7 +128,7 @@ relay screenshot --scale 1                            # 1 px = 1 pt に縮小し
 
 ## 実機の準備（要点）
 
-実機では、`relay start` の前に次の準備が要ります。手順の詳細は [docs/setup.md の「実機」](docs/setup.md#実機) と「[Team ID（実機の署名）](docs/setup.md#team-id実機の署名)」を参照してください。
+実機では、`relay start` の前に次の準備が要ります。手順の詳細は [docs/device.md の「実機」](docs/device.md#実機) と「[Team ID（実機の署名）](docs/device.md#team-id実機の署名)」を参照してください。
 
 1. 端末で「デベロッパモード」を有効にし、USB で接続して Mac とペアリングする（`relay devices` で `connected` と表示される）
 2. Xcode の Devices and Simulators で端末を準備完了にする（初回は開発用ディスクイメージが適用される）
@@ -179,9 +179,10 @@ RELAY_SESSION=agent-2 codex    # 別のターミナルで、別のセッショ�
 
 | 文書 | 内容 |
 | --- | --- |
-| [docs/setup.md](docs/setup.md) | インストールと更新、Runner の探し方（`relay install`）、端末の選択、Team ID、環境の確認（`relay doctor`）、シミュレータ、実機 |
+| [docs/setup.md](docs/setup.md) | インストールと更新、Runner の探し方（`relay install`）、端末の選択、環境の確認（`relay doctor`）、シミュレータ |
+| [docs/device.md](docs/device.md) | 実機の準備、Team ID、バンドル ID の接頭辞、接続の経路、録画の準備 |
 | [docs/sessions.md](docs/sessions.md) | 起動と停止、生存確認、接続先（runner.json）の探し方、並列セッション、エージェントの sandbox、ログとテスト結果の掃除 |
-| [docs/cli.md](docs/cli.md) | CLI のサブコマンドと終了コード、シナリオの実行（`relay run`、実験的）、録画（`relay record`。シミュレータと USB 接続の実機）、エージェントスキル |
+| [docs/cli.md](docs/cli.md) | CLI のサブコマンドと終了コード、シナリオの実行（`relay run`、実験的）、録画の使い方（`relay record`）、エージェントスキル |
 | [docs/http-api.md](docs/http-api.md) | HTTP API のエンドポイントとステータスコード、認証、同時リクエストと生存確認（`/ping`）、前面アプリ、文字入力と特殊キー |
 | [docs/elements.md](docs/elements.md) | 要素ツリー（`/source`、compact、interactive）、要素セレクタ、待機（timeout） |
 | [docs/screen.md](docs/screen.md) | 座標系と画面の向き、スクリーンショットの縮小 |

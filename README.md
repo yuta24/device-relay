@@ -105,7 +105,7 @@ relay stop                 # stop the runner (and shut down a simulator relay bo
 
 - When several iOS runtimes have a simulator with the same name, `--device` picks the one with the newest iOS and shows it, with its OS, in `relay: using …`. To try an older iOS, narrow it down with something like `--os 26.5` ("[端末の選択](docs/setup.md#端末の選択relay-devices)").
 - To use a simulator that is already booted, `relay start --background --simulator` works too. It chooses among simulators even when a device is connected.
-- `relay start` without `--udid` / `--device` / `--simulator` prefers a connected physical device. A device needs signing and UI Automation set up, so follow the steps in "[実機](docs/setup.md#実機)" first.
+- `relay start` without `--udid` / `--device` / `--simulator` prefers a connected physical device. A device needs signing and UI Automation set up, so follow the steps in "[実機](docs/device.md#実機)" first.
 
 From agents, CI, and scripts, the basic flow is `relay start --background`, then your operations, then `relay stop` ("[バックグラウンドで動かす](docs/sessions.md#バックグラウンドで動かすrelay-start---background--status--stop)"). When you are at the machine and watching, `relay start` in the foreground (stop with Ctrl-C) is fine too.
 
@@ -128,7 +128,7 @@ relay screenshot --scale 1                            # save a screenshot shrunk
 
 ## Preparing a physical device (summary)
 
-A physical device needs the following before `relay start`. For details, see [実機 in docs/setup.md](docs/setup.md#実機) and "[Team ID（実機の署名）](docs/setup.md#team-id実機の署名)".
+A physical device needs the following before `relay start`. For details, see [実機 in docs/device.md](docs/device.md#実機) and "[Team ID（実機の署名）](docs/device.md#team-id実機の署名)".
 
 1. Turn on Developer Mode on the device, connect it with USB, and pair it with the Mac (`relay devices` shows it as `connected`)
 2. Get the device ready in Xcode's Devices and Simulators window (the developer disk image is applied the first time)
@@ -181,9 +181,10 @@ Detailed documentation in docs/ is currently in Japanese.
 
 | Document | Contents |
 | --- | --- |
-| [docs/setup.md](docs/setup.md) | Installing and updating, how the Runner is found (`relay install`), choosing a device, Team ID, checking the environment (`relay doctor`), simulators, physical devices |
+| [docs/setup.md](docs/setup.md) | Installing and updating, how the Runner is found (`relay install`), choosing a device, checking the environment (`relay doctor`), simulators |
+| [docs/device.md](docs/device.md) | Preparing physical devices, Team ID, bundle ID prefixes, connection paths, preparing to record |
 | [docs/sessions.md](docs/sessions.md) | Starting and stopping, checking liveness, finding the runner (runner.json), parallel sessions, agent sandboxes, cleaning up logs and test results |
-| [docs/cli.md](docs/cli.md) | CLI subcommands and exit codes, running scenarios (`relay run`, experimental), recording (`relay record`, for simulators and devices connected with USB), the agent skill |
+| [docs/cli.md](docs/cli.md) | CLI subcommands and exit codes, running scenarios (`relay run`, experimental), recording commands (`relay record`), the agent skill |
 | [docs/http-api.md](docs/http-api.md) | HTTP API endpoints and status codes, authentication, concurrent requests and liveness checks (`/ping`), the foreground app, text input and special keys |
 | [docs/elements.md](docs/elements.md) | The element tree (`/source`, compact, interactive), element selectors, waiting (timeout) |
 | [docs/screen.md](docs/screen.md) | The coordinate system and screen orientation, shrinking screenshots |

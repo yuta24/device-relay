@@ -36,7 +36,7 @@ With `--background`, it waits up to 30 minutes until the runner is launched (boo
 - **`status`, `ping`, or `health`**: `relay status` also reads runner.json and the `relay start` process (PID, device, version) and is the check after starting (`--json` for machines). `relay ping` answers at once whether the runner is alive and `busy`, even during an operation. `relay health` gives what you need before operating (screen size and so on) and returns 409 (exit code 5) during an operation.
 - **Remember your own runner**: note the `pid:` that `relay start --background` prints, and before `relay stop` check that `pid` in `relay status` is the same.
 
-For preparing a physical device (Developer Mode, pairing, UI Automation, Team ID), see "実機" and "Team ID（実機の署名）" in docs/setup.md of device-relay.
+For preparing a physical device (Developer Mode, pairing, UI Automation, Team ID), see "実機" and "Team ID（実機の署名）" in docs/device.md of device-relay.
 
 ## relay doctor and relay skill
 

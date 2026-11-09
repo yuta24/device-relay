@@ -57,7 +57,7 @@ relay record stop                              # 録画を止め、MP4 の絶対
 | `record start` / `stop` / `status` | –（シミュレータはホストの `simctl io recordVideo`、実機は Mac のキャプチャデバイス） | `-o <file>`、`--force`、`--max-duration <s>`（start）、`--json`（status）、`--port <n>`（stop・status）、`--runner`、`--session`。「録画（relay record）」 |
 
 - 起動・停止と生存確認は「[起動とセッション](sessions.md#バックグラウンドで動かすrelay-start---background--status--stop)」を参照してください。
-- バンドル ID の代わりに `host` と書くと、ランナーのホストアプリ RelayRunnerHost のバンドル ID になります（`launch`・`terminate` と、`--bundle-id` を取るコマンド）。バンドル ID は利用者ごとに違う（「[バンドル ID の接頭辞](setup.md#バンドル-id-の接頭辞)」）ので、relay は `relay start` がビルドしたアプリの ID を runner.json の `hostBundleID` に書き、そこから置き換えます。`relay status` の `host app` にも出ます。古い relay の `relay start` が書いた runner.json にはないので、`host` は終了コード 1（`runner_info_invalid`）になります（ランナーを起動し直します）。
+- バンドル ID の代わりに `host` と書くと、ランナーのホストアプリ RelayRunnerHost のバンドル ID になります（`launch`・`terminate` と、`--bundle-id` を取るコマンド）。バンドル ID は利用者ごとに違う（「[バンドル ID の接頭辞](device.md#バンドル-id-の接頭辞)」）ので、relay は `relay start` がビルドしたアプリの ID を runner.json の `hostBundleID` に書き、そこから置き換えます。`relay status` の `host app` にも出ます。古い relay の `relay start` が書いた runner.json にはないので、`host` は終了コード 1（`runner_info_invalid`）になります（ランナーを起動し直します）。
 - セレクタは `--id`（= `identifier`）・`--label`・`--type`・`--value` を 1 つ以上と、任意の `--index <n>` です（「[要素セレクタ](elements.md#要素セレクタ)」と同じ完全一致・AND）。`--type` の名前、キー名、ボタン名、向きの名前、数値の範囲は送る前に確認し、間違っていれば終了コード 2 で何も送りません。
 - `relay find` は一致がなくても終了コード 0（`"count":0`）です。`--require` を付けると、一致する要素がないときに終了コード 6 で終わり、応答（`count`・`elements`）に `"ok":false,"code":"element_not_found","error":"no element matched"` を足した JSON を stdout に出します（`--index` が範囲外のときも同じ）。`relay find <セレクタ> --timeout 5 --require` は「現れるまで待ち、現れなければ失敗する」確認になり、スクリプトは JSON を読まずに終了コードだけで判断できます。判定はホスト側で行い、ランナーへのリクエストは変わりません。
 - `-` で始まる文字列を入力するときは `relay type -- --text` のように `--` を挟みます。
@@ -184,12 +184,7 @@ screenshot --output about.png --scale 1
 - **シミュレータ**: `xcrun simctl io <UDID> recordVideo --codec h264 --force <file>` で録ります。
 - **実機（USB 接続のみ）**: QuickTime Player と同じ仕組みで録ります。CoreMediaIO で画面のキャプチャを許可すると（`kCMIOHardwarePropertyAllowScreenCaptureDevices`）、USB で接続した端末の画面が Mac のキャプチャデバイスとして現れるので、その映像を AVFoundation で H.264 に書き出します（音声は録りません。シミュレータと同じです）。`simctl` も `devicectl` も実機の録画を持たないためです。Wi-Fi だけで接続している端末は録れません。
 
-### 実機を録画する前に（初回だけ）
-
-1. 端末を **USB ケーブルで** Mac に接続し、ロックを解除しておきます（「このコンピュータを信頼しますか」と出たら「信頼」）。`relay devices` で `connected` になっていれば十分です。
-2. **macOS のカメラの許可**が要ります。端末の画面はカメラと同じキャプチャデバイスとして扱われるため、relay を動かしているアプリ（ターミナル、IDE など。relay 自身ではありません）にカメラへのアクセスを許可します。最初の `relay record start` で macOS が許可を求めるダイアログを出すので、「許可」を押します（`record start` は答えを最大 120 秒待ちます）。誤って拒否したときは、**システム設定 > プライバシーとセキュリティ > カメラ** でそのアプリをオンにし、アプリを再起動します。
-   - 許可はアプリごとです。別のターミナルや IDE から使うときは、そのアプリにも許可が要ります。切り離して動く録画のプロセス（`relay record supervise`）は、起動したアプリの許可をそのまま使います。
-   - ダイアログを出せない環境（SSH でログインしたセッション、launchd のジョブなど）では許可を得られず、録画を始められないことがあります。先に手元のターミナルから一度 `record start` して許可しておいてください。
+実機の初回準備は「[録画の準備](device.md#録画の準備)」を参照してください。
 
 ```sh
 relay record start                    # 保存先の絶対パスを出して戻る（既定は $TMPDIR/relay/relay-recording-<時刻>.mp4）
@@ -204,7 +199,7 @@ relay record stop --port 8101         # runner.json によらず、そのポー�
 ```
 
 - **端末**: runner.json（「[接続先（runner.json）の探し方](sessions.md#接続先runnerjsonの探し方)」と同じ順。`--runner` も可）の UDID を `simctl list devices` と照らし、シミュレータでなければ `devicectl list devices` の実機（`relay devices` の KIND が `device`）と照らします。どちらにもなければ終了コード `1` です（何も起動しません）。シミュレータが boot していないときも `1` です（simctl は shutdown 中のシミュレータでも開始を報告し、空のファイルを作るため、先に確かめます）。runner.json がない・ランナーが応答しないときは、ランナー操作のコマンドと同じく `3`（`401` なら `4`）です。
-- **実機の確認**: 実機は、`devicectl` で接続中であり、接続方式が USB（`wired`）であることを確かめます。Wi-Fi だけ（`localNetwork`）なら `… is connected over the network only (localNetwork); recording a device needs a USB cable …`、接続されていなければ `… is not connected …` で `1` です。続けてカメラの許可を確かめ、未決定なら macOS のダイアログで求め、拒否・制限されていれば設定の場所を示して `1` です（「実機を録画する前に」）。
+- **実機の確認**: 実機は、`devicectl` で接続中であり、接続方式が USB（`wired`）であることを確かめます。Wi-Fi だけ（`localNetwork`）なら `… is connected over the network only (localNetwork); recording a device needs a USB cable …`、接続されていなければ `… is not connected …` で `1` です。続けてカメラの許可を確かめ、未決定なら macOS のダイアログで求め、拒否・制限されていれば設定の場所を示して `1` です（「[録画の準備](device.md#録画の準備)」）。
 - **開始**: 録画するプロセスを `relay start --background` と同じく新しいセッションとして切り離して起動します（stdin は `/dev/null`、出力は `~/.relay/logs/record-<時刻>-<port>.log`）。ターミナルを閉じても、そこで Ctrl-C を押しても録画は続きます。録画が実際に始まったら、保存先の絶対パスを stdout に 1 行出して `0` で戻ります。開始を待っている間の Ctrl-C は録画を止めて `1` です。
   - シミュレータは simctl を起動し、simctl が `Recording started` を出したら開始とみなします。15 秒以内に出ない、または simctl が先に終了したときは、simctl の出力（ログの末尾）を添えて `1` で終わり、何も残しません。
   - 実機は切り離したプロセス（`relay record supervise`）自身が録画します。端末の画面がキャプチャデバイスとして現れるのを最大 10 秒待ち（新しいプロセスでは 0.3〜4.5 秒ほど）、**最初のフレームを書き込んだ時点**で開始とみなします（`record start` はふつう 1.5〜4 秒で戻ります）。キャプチャデバイスは端末の名前（`devicectl` の名前と同じ）を持ちますが UDID は持たないので、名前で対応付けます。完全に一致するものを優先し、なければ大文字小文字・アクセント記号・アポストロフィや引用符の種類（`’` と `'` など）を無視して比べ直します。画面が 1 つも現れなかったときは、新しいプロセスでもう一度だけ試します（`relay: the screen of … did not show up; trying once more in a new process`）。別の録画（QuickTime Player を含む）がキャプチャを止めてから 2.5 秒ほどの間に探し始めたプロセスは、その後いくら待っても画面が見えず、新しいプロセスなら見えるためです。このときの `record start` は 20 秒ほどかかります。それでも現れなければ、見えている画面の名前と、USB で接続する・ロックを解除する・「信頼」する、という対処を示して `1` です（本当に繋がっていない端末では、ここまで 20 秒ほどかかります）。同じ名前の端末が複数つながっている（比べ直して複数が一致したときも含む）と区別できないので `1` です（どちらかの名前を変えるか、外してください）。それぞれのプロセスで 25 秒以内に最初のフレームが来なければ `1` です。

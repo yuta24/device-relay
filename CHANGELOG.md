@@ -41,9 +41,11 @@
 
 ### Runner のバンドル ID の接頭辞（移行の注意）
 
+0.2.0 以前から更新するときは、実機で最初に `relay start` する前に以下の変更を確認してください。
+
 以前の relay は、バンドル ID を `dev.yuta24.devicerelay.RelayRunnerHost`（と `.UITests`）に固定していました。
 
-この版に上げてそのまま実機で `relay start` すると、接頭辞が既定値の `dev.devicerelay.<Team ID の小文字>` に変わります（「[バンドル ID の接頭辞](docs/setup.md#バンドル-id-の接頭辞)」）。
+この版に上げてそのまま実機で `relay start` すると、接頭辞が既定値の `dev.devicerelay.<Team ID の小文字>` に変わります（「[バンドル ID の接頭辞](docs/device.md#バンドル-id-の接頭辞)」）。
 
 - 自動署名（`-allowProvisioningUpdates`）が新しい App ID をあなたの Apple Developer アカウントに登録します。
 - 端末には新しいバンドル ID の RelayRunner が入ります。古い ID のアプリは端末に残ります（不要ならホーム画面から削除します）。
