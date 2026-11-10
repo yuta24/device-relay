@@ -33,7 +33,7 @@
 
 - **API**: `XCPointerEventPath`（`-initForTouchAtPoint:offset:`、`-moveToPoint:atOffset:`、`-liftUpAtOffset:`）、`XCSynthesizedEventRecord`（`-initWithName:interfaceOrientation:`、`-addPointerEventPath:`）、`-[XCUIDevice eventSynthesizer]` が返すオブジェクトの `-synthesizeEvent:completion:`（completion は `^(BOOL, NSError *)`）。実装は `RelayTouchSynthesizer.m` です。
 - **機能**: `/tap`・`/press`・`/swipe` の `private` 経路（既定）と、実機などの `/button home` のスワイプ。
-- **公開 API では足りない理由**: `XCUICoordinate` のジェスチャーは、前後で対象アプリがアイドルになるのを待つので、タップ 1 回に 1–2 秒かかります（「[既知の制約](limitations.md)」）。
+- **公開 API では足りない理由**: `XCUICoordinate` のジェスチャーは、前後で対象アプリがアイドルになるのを待つので、タップ 1 回に 1–2 秒かかります（「[タッチ合成の経路](design.md#タッチ合成の経路)」）。
 - **同じ方式のツール**: WebDriverAgent。
 
 使えないときの挙動:
@@ -112,9 +112,15 @@
 ### アプリの状態の待ち時間
 
 - **API**: 関数 `_XCTSetApplicationStateTimeout`（`dlsym` で探します。実装は `RelayRunnerUITests.swift`）と、スキームがランナーに渡す起動引数 `-XCUIApplicationStateTimeout 120`。
-- **機能**: automation mode の有効化を 120 秒まで待ち、有効になったら `/launch`・`/terminate` の待ち時間を 60 秒に戻します（「[既知の制約](limitations.md)」の automation mode の項）。
+- **機能**: パスコードを入力する時間を取るため、スキームのテストアクションで automation mode の有効化を 120 秒まで待つ引数を渡し、有効になったら `/launch`・`/terminate` の待ち時間を 60 秒に戻します（「[UI オートメーションとパスコード](device.md#ui-オートメーションとパスコード)」）。
 - **公開 API では足りない理由**: 公開ヘッダに、この待ち時間を設定する API はありません。
 - **使えないとき**: 関数がなければ 120 秒のままで、`/launch`・`/terminate` が最大 120 秒待ちます。エラーにはならず、応答では見分けられません。`relay launch` / `terminate` はどちらの場合も 30 + 120 秒まで応答を待ちます。起動引数が読まれなくなったことは検出しません。その場合は XCTest の既定の待ち時間になるはずで、パスコードの入力が間に合わないと起動が `Timed out while enabling automation mode.` で失敗します。
+
+XCTest は、テストを始める前に端末の testmanagerd が automation mode を有効にするのを `XCUIApplicationStateTimeout`（既定 60 秒）だけ待ちます。
+有効化後に待ち時間を戻すので、`/launch`・`/terminate` の通常の待ち時間は変わりません。
+
+スキームは Runner のソースのハッシュに含まれるので、この引数のない古いビルドは `relay start` が自動で作り直します。
+対象ファイルは「[ソースのハッシュの計算](development.md#ソースのハッシュの計算)」、再ビルドの条件は「[ランナーの版](setup.md#ランナーの版ソースのハッシュ)」を参照してください。
 
 ## 非公開 API ではないもの
 
