@@ -182,18 +182,18 @@ Detailed documentation in docs/ is currently in Japanese.
 
 | Reader | Document | Contents |
 | --- | --- | --- |
-| New users | [docs/setup.md](docs/setup.md) | Installing and updating, how the Runner is found (`relay install`), choosing a device, checking the environment (`relay doctor`), simulators |
+| New users | [docs/setup.md](docs/setup.md) | Installing and updating, preparing the Runner (`relay install`), choosing a device, checking the environment (`relay doctor`), simulators |
 | New users | [docs/device.md](docs/device.md) | Preparing physical devices, UI Automation and the passcode, Team ID, bundle ID prefixes, connection paths, the home and volume buttons, preparing to record |
-| Regular users | [docs/sessions.md](docs/sessions.md) | Starting and stopping, checking liveness, after a forced kill, finding the runner (runner.json), parallel sessions, external command timeouts, agent sandboxes, cleaning up logs and test results |
+| Regular users | [docs/sessions.md](docs/sessions.md) | Starting and stopping, checking liveness, after a forced kill, finding the runner (runner.json), parallel sessions, when an external command does not answer, agent sandboxes, cleaning up logs and test results |
 | Regular users | [docs/cli.md](docs/cli.md) | CLI subcommands, output and exit codes, choosing and launching apps, running scenarios (`relay run`, experimental), recording (`relay record`), the agent skill |
 | Regular users | [docs/http-api.md](docs/http-api.md) | HTTP API endpoints and status codes, the `/health` response, authentication, concurrent requests and liveness checks (`/ping`), the foreground app, text input and special keys |
-| Regular users | [docs/elements.md](docs/elements.md) | The element tree (`/source`, compact, interactive), element selectors, share sheets, when another app covers the target, waiting (timeout), system permission dialogs |
+| Regular users | [docs/elements.md](docs/elements.md) | The element tree (`/source`, compact, interactive), element selectors, elements in share sheets, when another app covers the target, waiting (timeout), system permission dialogs |
 | Regular users | [docs/screen.md](docs/screen.md) | The coordinate system and screen orientation, shrinking screenshots, iPad windowing, devices with more than one display (iPhone Duo) |
 | Troubleshooting | [docs/limitations.md](docs/limitations.md) | An index of known limitations (a table from symptom to the section to read), and the limitations that belong to no single feature |
 | Upgrading | [CHANGELOG.md](CHANGELOG.md) | Changes to act on when upgrading from an earlier version (breaking changes, migration notes; in Japanese) |
 | Contributors | [docs/design.md](docs/design.md) | Architecture and file layout, touch synthesis paths, measured latency |
 | Contributors | [docs/private-api.md](docs/private-api.md) | The private Apple APIs the runner uses, and what happens when they are unavailable |
-| Contributors | [docs/development.md](docs/development.md) | Running from the repository, launching the runner by hand, the host app used for verification, implementation background, how to write the docs, cutting a release |
+| Contributors | [docs/development.md](docs/development.md) | Developing in the repository, launching the runner by hand, the host app used for verification, implementation background, how to write the docs, cutting a release |
 | Agents | [skills/device-relay/](skills/device-relay/) | The skill for coding agents (`SKILL.md`, and `references/` with one file per topic indexed by `reference.md`, in English) |
 
 ## License

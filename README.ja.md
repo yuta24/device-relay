@@ -180,18 +180,18 @@ RELAY_SESSION=agent-2 codex    # 別のターミナルで、別のセッショ�
 
 | 読み手 | 文書 | 内容 |
 | --- | --- | --- |
-| 初めて使う人 | [docs/setup.md](docs/setup.md) | インストールと更新、Runner の探し方（`relay install`）、端末の選択、環境の確認（`relay doctor`）、シミュレータ |
+| 初めて使う人 | [docs/setup.md](docs/setup.md) | インストールと更新、Runner の用意（`relay install`）、端末の選択、環境の確認（`relay doctor`）、シミュレータ |
 | 初めて使う人 | [docs/device.md](docs/device.md) | 実機の準備、UI オートメーションとパスコード、Team ID、バンドル ID の接頭辞、接続の経路、ホームと音量ボタン、録画の準備 |
-| 使っている人 | [docs/sessions.md](docs/sessions.md) | 起動と停止、生存確認、強制終了したとき、接続先（runner.json）の探し方、並列セッション、外部コマンドの時間切れ、エージェントの sandbox、ログとテスト結果の掃除 |
+| 使っている人 | [docs/sessions.md](docs/sessions.md) | 起動と停止、生存確認、強制終了したとき、接続先（runner.json）の探し方、並列セッション、外部コマンドが応答しないとき、エージェントの sandbox、ログとテスト結果の掃除 |
 | 使っている人 | [docs/cli.md](docs/cli.md) | CLI のサブコマンド、出力と終了コード、アプリの指定と起動、シナリオの実行（`relay run`、実験的）、録画（`relay record`）、エージェントスキル |
 | 使っている人 | [docs/http-api.md](docs/http-api.md) | HTTP API のエンドポイントとステータスコード、`/health` の応答、認証、同時リクエストと生存確認（`/ping`）、前面アプリ、文字入力と特殊キー |
-| 使っている人 | [docs/elements.md](docs/elements.md) | 要素ツリー（`/source`、compact、interactive）、要素セレクタ、共有シート、別のアプリに覆われているとき、待機（timeout）、システムの許可ダイアログ |
+| 使っている人 | [docs/elements.md](docs/elements.md) | 要素ツリー（`/source`、compact、interactive）、要素セレクタ、共有シートの中の要素、別のアプリに覆われているとき、待機（timeout）、システムの許可ダイアログ |
 | 使っている人 | [docs/screen.md](docs/screen.md) | 座標系と画面の向き、スクリーンショットの縮小、iPad のウィンドウ表示、表示が複数ある端末（iPhone Duo） |
 | 困っている人 | [docs/limitations.md](docs/limitations.md) | 既知の制約の索引（症状から読む節を引く表）と、どの機能にも属さない制約 |
 | 以前の版から更新する人 | [CHANGELOG.md](CHANGELOG.md) | 以前の版から更新するときに直す必要がある変更（破壊的な変更、移行の注意） |
 | 作る人 | [docs/design.md](docs/design.md) | アーキテクチャとファイル配置、タッチ合成の経路、計測したレイテンシ |
 | 作る人 | [docs/private-api.md](docs/private-api.md) | ランナーが使う Apple の非公開 API の一覧と、使えないときの挙動 |
-| 作る人 | [docs/development.md](docs/development.md) | リポジトリ内での実行、ランナーの手動起動、検証用のホストアプリ、実装の背景、文書の書き方、リリースの手順 |
+| 作る人 | [docs/development.md](docs/development.md) | リポジトリ内での開発、ランナーの手動起動、検証用のホストアプリ、実装の背景、文書の書き方、リリースの手順 |
 | エージェント | [skills/device-relay/](skills/device-relay/) | コーディングエージェント向けのスキル（`SKILL.md` と、話題ごとのファイルを置く `references/` とその索引 `reference.md`） |
 
 ## ライセンス
