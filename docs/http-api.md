@@ -21,13 +21,23 @@
 | `POST /key` | `{"key":"return","bundleId":"…"}`（bundleId は省略可） | 特殊キー（`return` / `delete` / `space`）を 1 つ送ります。それ以外のキー名は 400。詳しくは「文字入力と特殊キー」 |
 | `POST /button` | `{"name":"home"}`（`volumeUp` / `volumeDown` は実機のみ） | ハードウェアボタン。`home` は実機では画面下端からのスワイプで代用します（「[既知の制約](limitations.md)」を参照） |
 | `POST /orientation` | `{"orientation":"portrait\|portraitUpsideDown\|landscapeLeft\|landscapeRight"}` | 端末の向き（`UIDeviceOrientation`）を設定 |
-| `POST /launch` | `{"bundleId":"com.apple.Preferences"}` | アプリの起動・前面化（`activate()`）。前面になるまで XCTest のアプリの状態の待ち時間（60 秒、戻せないランナーでは 120 秒）まで待ってから応答します。入っていないアプリでは、XCTest があきらめるまで約 300 秒 busy になり、`422` を返します（「[既知の制約](limitations.md)」）。`relay launch` は送る前に確かめますが、直接呼ぶ場合はこの確認がありません |
+| `POST /launch` | `{"bundleId":"com.apple.Preferences"}` | アプリの起動・前面化（`activate()`）で、入っていないアプリの扱いは「[アプリの指定と起動](cli.md#アプリの指定と起動)」を参照してください。 |
 | `POST /terminate` | `{"bundleId":"com.apple.Preferences"}` | アプリの終了。終了するまで `/launch` と同じだけ待ちます |
 | `POST /shutdown` | – | ランナーを停止（テストメソッドから抜ける） |
 
 **画面の外の座標**: `/tap`・`/press` の `x`・`y` と `/swipe` の `from`・`to` は、前面アプリの表示の向きでの画面（`/health` の `screen`）の中、つまり `0 ≤ x < screen.width` かつ `0 ≤ y < screen.height` でなければなりません（小数も可。`x = screen.width` は画面の外です）。外なら何も送らずに `400` と `{"ok":false,"code":"point_offscreen","error":"invalid field: x, y: (500, 100) is outside the screen, which is 402x874 points in portrait (0 <= x < 402, 0 <= y < 874; relay health shows the screen)"}` のように返します（`/swipe` では `from:` / `to:`）。以前は画面の外のタッチも `200` を返し、何も起きませんでした。`422`（XCUI で操作に失敗）ではなく `400` にしたのは、操作を試す前に値の範囲で判定でき、ほかの範囲外の値と同じ扱い（CLI では終了コード `7`）にするためです。画面は向きを変えると縦横が入れ替わるので、`relay orientation` の後は `/health` を読み直します。要素を指定したタップ（`element`）は、要素の frame の画面内の部分の中心に当たるので、この判定はありません（画面の外の要素は `422` の `offscreen`）。画面の大きさを SpringBoard から取れず `UIScreen` の値で代用している間（実機では 320×480 の互換モードの値になります）は、正しい座標を拒否しないよう判定を省きます。
 
 `/tap` `/press` `/swipe` は `"mode": "private" | "xcui" | "auto"` を受け付けます（`auto` は省略と同じで、使えれば `private`。`relay` の `--mode` は `private` と `xcui` だけで、省略すると `auto` と同じになります）。応答の `mode` に実際に使った経路が入り、`/health` の `touchSynthesis` で端末側の既定経路がわかります。詳しくは「[タッチ合成の経路](design.md#タッチ合成の経路)」を参照してください。
+
+`/launch` は、アプリが前面になるまで XCTest のアプリの状態の待ち時間（60 秒、戻せないランナーでは 120 秒）まで待ってから応答します。
+
+**`/health` の画面サイズと速さ**
+
+`/health` は、SpringBoard の frame から縦向きの画面サイズを、スクリーンショットのピクセル数から scale を求めます。xctrunner には起動画面の設定がなく、実機のランナー内の `UIScreen` が 320×480 の互換モードになるためです。
+
+画面サイズと scale は初回だけ計測してキャッシュします。向きはリクエストのたびに読み直し、幅と高さに反映します（「[座標系と画面の向き](screen.md#座標系と画面の向き)」）。
+
+前面アプリの取得のぶん遅くなります。計測値は「[計測したレイテンシ](design.md#計測したレイテンシ)」を参照してください。
 
 `/health` の例（横向きの Safari が前面のとき）:
 
@@ -192,13 +202,14 @@ curl -s -H "$AUTH" -X POST $R/shutdown
 | relay を通さずに起動（`simctl launch` / `devicectl device process launch`） | `com.apple.mobilesafari`、`com.apple.Preferences`、RelayRunnerHost | `com.apple.calculator`、RelayRunnerHost |
 | タッチで切り替え（ステータスバーの「◀ Calculator」をタップ） | – | `com.apple.calculator` |
 
-`/health` は前面アプリの取得のぶん遅くなりました（実機の p50 で約 3 ms → 約 16 ms）。
+`/health` は前面アプリの取得のぶん遅くなります（「[画面サイズと速さ](#エンドポイント)」）。
 
 要素を指定した `/tap`・`/press` は、タッチを送る直前にも一覧を読み直し、対象アプリが一覧になく先頭が SpringBoard なら何も送らずに `422`（`covered_by_other_app`）を返します（「[別のアプリに覆われているとき](elements.md#別のアプリに覆われているとき)」）。システムの許可ダイアログ・コントロールセンター・通知センターの表示中は、一覧が SpringBoard だけになります（シミュレータ iOS 27、実機 iOS 26.7.1）。
 
 ## 文字入力と特殊キー
 
 - `/type {"text":"..."}` は前面アプリ（または `bundleId`）で、キーボードのフォーカスがある要素に `XCUIElement.typeText` で入力します。入力欄をタップしてフォーカスを当ててから送ってください。
+- `fallback`（非公開 API が使えない場合）では手で切り替えたアプリを判別できないので、`/type`・`/key` の `bundleId` を明示してください（「[前面アプリ](#前面アプリ)」）。
 - 特殊キーは `POST /key {"key":"return"}`、または `/type` の `keys` 配列（`{"text":"abc","keys":["delete","return"]}`。`text` の後に順に送ります）で送ります。キー名は大文字小文字を区別せず、別名 `enter`（= return）、`backspace`（= delete）も使えます。
 - 対応するキーは `return`・`delete`・`space` だけです。`tab` と `escape` は iPhone のソフトウェアキーボードにキーがなく、tab は `\t` の文字として入力され、escape は何も起きなかったため、外しました。対応していないキー名は、`/key` でも `keys` でも `400 {"ok":false,"code":"invalid_request","error":"invalid field: key: unsupported key 'tab' (expected return, delete, space)"}` を返し、何も入力しません。
 - キーは `XCUIKeyboardKey` の文字（return は `\r`、delete は U+007F、space は ` `）として `typeText` で送ります。`typeKey(_:modifierFlags:)`（ハードウェアキーのイベント）も試しましたが、iPhone ではシミュレータ・実機とも space と tab しか届かず、return・delete・escape は何も起きませんでした。

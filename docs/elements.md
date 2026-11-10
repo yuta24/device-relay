@@ -126,6 +126,9 @@ searchField label="Search" placeholder="Search" frame=28,808,346,28
 - ラベルは `/find`・`/source` の値をそのままコピーしてください。システムの許可ダイアログの `Don’t Allow` はアポストロフィが `’`（U+2019）で、ASCII の `'` を使った `relay tap --label "Don't Allow"` は一致しません。
 - 解決には `/source` と同じ `snapshot()` を使い、frame は表示の向きのポイント（`/tap` と同じ座標系）なので、横向きでもそのまま使えます。タップ位置は「frame と画面の重なる部分」の中心です（画面端で一部が切れたセルも、見えている部分の中心を押します）。iPad のウィンドウでは、frame を画面の座標に変換したうえで、見えているウィンドウとの重なりの中心を押します。タッチは座標指定と同じ経路（`private`、だめなら `xcui`。`mode` も同じ）で送ります。
 - `x`・`y` と `element` を両方指定すると `400` です。
+- キーボードやシートに隠れた要素も、frame が画面内なら `offscreen` にならず、隠している側がタップされます。`isHittable` は見ていません。
+- 隠れた要素を外す `/source?filter=interactive` の近似判定は「[操作できる要素だけに絞る](#操作できる要素だけに絞るfilterinteractive)」を参照してください。
+- `/launch` の直後は、前面アプリの取得が切り替え前のアプリを返すことがあります。確実に対象を決めたい場合は `bundleId` を指定してください。
 
 応答（`/tap`）には、実際に使った要素とタップ座標が入ります:
 
@@ -185,8 +188,10 @@ iPad のウィンドウでは、応答（`/tap`・`/press`・`/find`・`/source`
 共有シート（`UIActivityViewController`）の中身は別のプロセスが描くビューです。アプリのスナップショットでは、入れ物の `ShareSheet.RemoteContainerView` と、その中で同じ frame を繰り返す数段のビューは画面の座標で返りますが、その下の中身は (0, 0) から始まる入れ物からの相対座標で返ります。以前は、iPhone 17 Pro シミュレータで y ≈ 745 に描かれた「Copy」のセルが y = 230 と返り、要素指定のタップは `ok: true` のままシートの外側に当たってシートが閉じるか、何も起きませんでした。
 
 - **変換**: 中身が「(0, 0) から入れ物と同じ大きさ」の形なら、入れ物の原点を足して画面の座標にします（縦向きのシートが (9, 501) にあれば、「Copy」のセルは (20, 230) から (29, 731) になります）。対象は `/find`・`/source`（`format=text` を除く）の frame と、要素指定の `/tap`・`/press` の `frame`・`point` です。応答に足すフィールドはありません。iPad のウィンドウ表示や表示が複数ある端末では、この変換の後にウィンドウ・表示の変換をします。
+- 入れ物は識別子 `ShareSheet.RemoteContainerView` で見分けます。識別子が変わると変換も位置の判定もされず、相対座標のままタッチが外れます。
 - **タップ位置**: frame と入れ物（シート）の重なりの中心です。横にスクロールしてシートの外に出たセルは、シートの中に見えている部分を押し、見えていなければ `offscreen`（`element_not_hittable`）です。シートの外を押してシートを閉じてしまわないためです。
-- **変換しないもの**: 入れ物が (0, 0) にあるとき（「More」で開く一覧のように画面全体を覆うとき）は、frame がそのまま画面の座標なので変えません。iPad のポップオーバー・シートでは、中身が大きさ 0 の要素 1 つだけで、中の要素はツリーに出ません（セレクタは `notFound`）。
+- **変換しないもの**: 入れ物が (0, 0) にあるとき（「More」で開く一覧のように画面全体を覆うとき）は、frame がそのまま画面の座標なので変えません。
+- iPad のポップオーバー・シートでは、中身が大きさ 0 の要素 1 つだけで、中の要素はツリーに出ません（セレクタは `notFound`）。座標で押してください。
 - **位置が決まらないとき**: 中身が上の形でない（大きさが違う、別の位置から始まる）ときは、どれだけずらせばよいかわからないので変換しません。そのときシートの中の要素への要素指定の `/tap`・`/press` は、何も送らずに `422`、`remote_view_position_unknown`（`reason: positionUnknown`）です（`timeout` の間は待ちます）。`/find`・`/source` は成功のままで、frame は返ったままの値、`warning` が付き、`format=compact` は先頭に `warning …` の行が付きます。スクリーンショットで位置を確かめて座標で押してください。シートの後ろのアプリの要素はこれまでどおりです。
 
 ```json
@@ -198,7 +203,13 @@ iPad のウィンドウでは、応答（`/tap`・`/press`・`/find`・`/source`
 ```
 
 - **ほかの別プロセスの画面**: 写真の選択（`PHPickerViewController`）は画面の座標で返るので変換しません（iPhone の全画面のシートと、iPad のシートで確かめました。iPad では読み込みの後に中身がツリーに出なくなります）。`SFSafariViewController` と `ASWebAuthenticationSession` の画面は `com.apple.SafariViewService` として扱います（「[別のアプリに覆われているとき](#別のアプリに覆われているとき)」）。
-- **確かめた環境**: iPhone 17 Pro シミュレータ（iOS 27.0）の縦・横と「More」の一覧、iPhone 14 Pro（iOS 26.7.1）の縦・横で、変換した frame がスクリーンショットの位置と合い、要素指定の「Copy」でコピーされること（`completionWithItemsHandler` が `CopyToPasteboard`・`completed: true`）を確かめました。実機では共有先を押していません。どの環境でもシートは内容に合わせた高さのカードで、上にスワイプしても広がらなかったので、広げた形は確かめていません。iPad Pro 11 インチ シミュレータ（iOS 27.0）では、全画面・ウィンドウ表示のどちらでも中身がツリーに出ませんでした。位置が決まらないときの `422` は、実際の画面では起きる形が見つからず、ユニットテストだけで確かめています。
+iPhone の縦・横で、変換した frame がスクリーンショットの位置と合い、要素指定の「Copy」でコピーされること（`completionWithItemsHandler` が `CopyToPasteboard`・`completed: true`）を確かめました。シミュレータでは「More」の一覧も確かめました。実機では共有先を押していません。
+
+どの環境でもシートは内容に合わせた高さのカードで、上にスワイプしても広がらなかったので、広げた形は確かめていません。iPad では、全画面・ウィンドウ表示のどちらでも中身がツリーに出ませんでした。
+
+位置が決まらないときの `422` は、実際の画面では起きる形が見つからず、ユニットテストだけで確かめています。
+
+確かめた環境: iPhone 17 Pro シミュレータ（iOS 27.0）、iPhone 14 Pro（iOS 26.7.1）、iPad Pro 11 インチ シミュレータ（iOS 27.0）。
 
 ### 別のアプリに覆われているとき
 
@@ -213,12 +224,21 @@ iPad のウィンドウでは、応答（`/tap`・`/press`・`/find`・`/source`
 
 - `bundleId` はタッチの対象アプリ、`foreground` は一覧の先頭（Dock のフォルダのサービスを除く。今は常に `com.apple.springboard`）、`alert` は SpringBoard の要素ツリーで最初に見つかった `alert` の label です。alert がなければ（コントロールセンター、通知センターなど）`null` です。alert は SpringBoard をスナップショットするので、止めたときにだけ探します。
 - 一覧に対象がないときは、0.4 秒の間、0.05 秒ごとに読み直し、対象が一覧に戻ればそのまま送ります。ダイアログを閉じるタップの後、約 230 ms は SpringBoard だけが並ぶためで、閉じた直後のタップは止まりません。
-- 判定しないもの: 対象が `com.apple.springboard` のとき（通知のバナーや音量 HUD は、アプリが前面のまま SpringBoard を指定して操作するため）、非公開 API が使えない（`source: fallback`）とき、座標を指定したタッチと `/swipe`（対象アプリがありません）。
+- 判定しないもの: 対象が `com.apple.springboard` のとき（通知のバナーや音量 HUD は、アプリが前面のまま SpringBoard を指定して操作するため）、非公開 API が使えない（`source: fallback`）とき、座標を指定したタッチと `/swipe`（CLI の `swipe`。対象アプリがありません）。
 - 止めるのは先頭が SpringBoard のときだけです。先頭がほかのアプリなら、対象が一覧になくても送ります。`SFSafariViewController` と `ASWebAuthenticationSession` の画面は別プロセスの `com.apple.SafariViewService` が描きますが、一覧にはそれを表示しているアプリだけが出ます。その要素は `--bundle-id com.apple.SafariViewService` でしか見えない（アプリの要素ツリーにも、`--bundle-id` なしにも出ない）ので、それを止めないためです。
 - iPad のウィンドウ表示では、画面にあるアプリがすべて一覧に並びます（順序はフォーカスと一致しないことがありました）。そのため先頭でなくても、一覧にあれば送ります。対象のウィンドウが別のアプリに全面を覆われると一覧から外れますが、先頭はそのアプリなので止めず、以前と同じく送ります（タッチは手前のアプリに当たります）。
-- 止めないもの: アプリ内のアラート、共有シート、写真の選択、キーボード、通知のバナー、音量 HUD（一覧はアプリだけ）。`SFSafariViewController`（全画面・`.pageSheet`）と `ASWebAuthenticationSession` の画面で、`--bundle-id com.apple.SafariViewService` を指定した Close・Reload などのタップ（一覧はアプリだけで、対象は一覧にない）。止めるもの: 位置情報・通知の許可ダイアログ、コントロールセンター、通知センター、`ASWebAuthenticationSession` の「“…” Wants to Use “…” to Sign In」の確認ダイアログ（いずれも一覧は SpringBoard だけ）。バナーはアプリに重なっても一覧に出ないので、バナーの下の要素へのタップは、これまでどおりバナーに当たります（「[既知の制約](limitations.md)」）。
+- 止めないもの: アプリ内のアラート、共有シート、写真の選択、キーボード、通知のバナー、音量 HUD（一覧はアプリだけ）。
+- 止めないもの: `SFSafariViewController`（全画面・`.pageSheet`）と `ASWebAuthenticationSession` の画面で、`--bundle-id com.apple.SafariViewService` を指定した Close・Reload などのタップ（一覧はアプリだけで、対象は一覧にない）。
+- 止めるもの: 位置情報・通知の許可ダイアログ、コントロールセンター、通知センター、`ASWebAuthenticationSession` の「“…” Wants to Use “…” to Sign In」の確認ダイアログ（いずれも一覧は SpringBoard だけ）。
+- バナーはアプリに重なっても一覧に出ないので、バナーの下の要素へのタップは、`ok: true` のままバナーに当たります。
+- 前面アプリの一覧が変わらない重なりは、要素指定のタッチでも検出しません。
+- ダイアログのボタンは、要素ツリーに出た直後にタップしても、`ok: true` のまま無視されることがあります。システムとアプリ内の両方で、シミュレータでは 0.2 秒後まで、実機では 0.2 秒未満に起きました。
+- 写真の選択や共有シートの「More」の一覧も、出た直後に `--timeout` で待って押した Cancel・Done が無視されました。少し待ってから押すと効きました。
 - 速さ: 一覧の読み取りは 1 回あたりシミュレータで 3–4 ms、実機で 7–9 ms です。止めないとき、要素指定のタップ（iPhone 17 Pro シミュレータの RelayRunnerHost に curl で 40 回）の中央値は、判定なしで 331.0 ms、判定ありで 330.9 ms と、差はばらつきに埋もれました。止めるときは読み直しと alert の探索のぶん、応答まで約 480 ms（シミュレータ）、約 670 ms（実機）かかります。
-- 確かめた環境: iPhone 17 Pro シミュレータ（iOS 27）と iPhone 14 Pro（iOS 26.7.1）で、上の止めるもので止まり（通知センターはシミュレータのみ）、止めないものとダイアログを閉じた直後で止まらないことを確かめました（`.pageSheet` はシミュレータのみ）。iPad は、iPad mini シミュレータ（iOS 26.5）のウィンドウ表示で一覧の中身だけを確かめています。
+
+iPhone で、上の止めるもので止まり、止めないものとダイアログを閉じた直後で止まらないことを確かめました。通知センターと `.pageSheet` はシミュレータのみです。iPad のウィンドウ表示では一覧の中身だけを確かめています。
+
+確かめた環境: iPhone 17 Pro シミュレータ（iOS 27）、iPhone 14 Pro（iOS 26.7.1）、iPad mini シミュレータ（iOS 26.5）。
 
 ### 待機（timeout）
 
@@ -226,7 +246,9 @@ iPad のウィンドウでは、応答（`/tap`・`/press`・`/find`・`/source`
 - 待っている間もスナップショットの失敗（アプリがまだ起動していないなど）は再試行します。
 - `bundleId` を省略したときの対象アプリは、リクエストの最初に前面アプリから 1 回だけ決まり、待っている間は判定し直しません。アプリが前面のときに `relay find --type alert --timeout 5` を送っても、待機中に出たシステムの許可ダイアログは見つかりません。これから出るダイアログは `relay find --type alert --bundle-id com.apple.springboard --timeout 5` で待ちます（「[システムの許可ダイアログ](#システムの許可ダイアログ)」）。`/tap`・`/press` も、待っている間にダイアログが出ると、ダイアログの後ろの要素を見つけてしまいます。ただし送る直前の確認（「[別のアプリに覆われているとき](#別のアプリに覆われているとき)」）で、何も送らずに `422` になります。
 - 上限は 10 秒です。待っている間はコマンドが busy ゲートを持ち続けるので、ほかのリクエスト（`/health` を含む）は `409` になります（`/ping` は `busy: true` を返します）。長く待つ必要がある場合は、短い `timeout` で繰り返してください。
-- `timeout` は「次のスナップショットを取るかどうか」の期限で、1 回のスナップショット自体は中断できません（「[既知の制約](limitations.md)」を参照）。
+- `timeout` は「次のスナップショットを取るかどうか」の期限で、1 回のスナップショット自体は中断できません。
+- 別プロセスのシート（設定の Apple Account のサインイン画面など）の表示中は、スナップショットが `Timed out while evaluating UI query` で失敗するまで約 3 分戻らないことがありました。`/source` も同じです。
+- その間は busy ゲートを持ったままなので、ほかのリクエストは `409` になります。
 
 シミュレータで、RelayRunnerHost を終了した状態から `{"element":{"identifier":"relay.input2"},"bundleId":"…RelayRunnerHost","timeout":5}` を送り、1.5 秒後に `simctl launch` で起動すると、約 3.8 秒で 200 が返って `relay.input2` にフォーカスが移りました。待機中の `/ping` は `{"busy":true,"busyForMs":719}`、`/health` は `409` でした。
 
@@ -238,7 +260,13 @@ iPad のウィンドウでは、応答（`/tap`・`/press`・`/find`・`/source`
 
 ### システムの許可ダイアログ
 
-iPhone 17 Pro シミュレータ（iOS 27.2、relay 0.6.0）のマップで、位置情報・通知の許可ダイアログを確かめました。表示中の `relay foreground` は `com.apple.springboard`（`source: private`）を返します。`--bundle-id` なしの `relay find --type alert` で見つかり、`label` に質問文（例: `Allow “Maps” to use your location?`）が入ります。`relay source --format compact --filter interactive` はダイアログのボタンだけを返します。
+マップの位置情報・通知の許可ダイアログの表示中は、前面アプリが SpringBoard になります。以下は relay 0.6.0 での確認結果です。
+
+表示中の `relay foreground` は `com.apple.springboard`（`source: private`）を返します。
+
+`--bundle-id` なしの `relay find --type alert` で見つかり、`label` に質問文（例: `Allow “Maps” to use your location?`）が入ります。
+
+`relay source --format compact --filter interactive` はダイアログのボタンだけを返します。
 
 ```sh
 relay find --type alert --bundle-id com.apple.springboard --timeout 5
@@ -248,4 +276,10 @@ relay tap --label "Allow While Using App"
 
 最初のコマンドはこれから出るダイアログを待つ場合にも使えます。一致したことと質問文を確かめ、`source` で得たラベルからボタンを選びます。上のタップは約 0.5 秒で成功し、前面アプリは元のアプリに戻りました。
 
-ダイアログが出ている間は、後ろのアプリを `--bundle-id com.apple.Maps` などで指定しないでください。`find`・`source --filter interactive` には後ろのアプリの要素が出ます。それを `tap` すると、以前は `ok: true`・終了コード 0 のまま何も起きないか、同じ位置にあるダイアログのボタンが押されていました。今は何も送らずに `422`（`covered_by_other_app`、終了コード 6）で、応答の `alert` にダイアログの質問文が入ります（「[別のアプリに覆われているとき](#別のアプリに覆われているとき)」）。
+ダイアログが出ている間は、後ろのアプリを `--bundle-id com.apple.Maps` などで指定しないでください。`find`・`source --filter interactive` には後ろのアプリの要素が出ます。
+
+それを `tap` すると、以前は `ok: true`・終了コード 0 のまま何も起きないか、同じ位置にあるダイアログのボタンが押されていました。
+
+今は `tap`・`press` とも、何も送らずに `422`（`covered_by_other_app`、終了コード 6）で、応答の `alert` にダイアログの質問文が入ります（「[別のアプリに覆われているとき](#別のアプリに覆われているとき)」）。
+
+確かめた環境: iPhone 17 Pro シミュレータ（iOS 27.2）。

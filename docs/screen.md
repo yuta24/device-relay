@@ -8,6 +8,7 @@
 - 画面の外の座標（`0 ≤ x < screen.width`、`0 ≤ y < screen.height` の外）への `/tap`・`/press`・`/swipe` は、何も送らずに `400` になります（「[画面の外の座標](http-api.md#エンドポイント)」）。縦向きの (500, 100) は iPhone 17 Pro では画面の外ですが、横向き（874×402）では中です。
 - `/health` の `screen.width` / `screen.height` はこの向きでの値です。`orientation` は表示の向きを `/orientation` と同じ名前（`portrait` / `portraitUpsideDown` / `landscapeLeft` / `landscapeRight`）で返します。`/orientation landscapeLeft` の後は `"orientation":"landscapeLeft"` になります（UIKit の interface orientation としては `landscapeRight` にあたります。デバイスとインターフェースで左右の名前が逆になるためです）。
 - 表示の向きは、端末の向き（`XCUIDevice.orientation`）と一致するとは限りません。横向きの iPhone でもホーム画面は縦のままですし、iPhone のアプリは `portraitUpsideDown` に回転しません。そのため、端末の向きではなく、リクエストのたびに前面アプリの向きを読み直します。`/orientation` を使わずに端末を手で回した場合や、アプリを切り替えた場合にも追従します。
+- `/orientation portraitUpsideDown` の後も、`/health` の `orientation` が直前の向きのままになることがあります。iPhone のアプリの多くは上下逆さに回転しないためです。表示が逆さになった場合の座標変換は実装していますが、検証していません。
 - 向きの取得には非公開 API を使います（約 1 ms）。使えない場合は、スクリーンショットの向きで代用します（約 90 ms。「[表示の向き](private-api.md#表示の向き)」）。
 - `/screenshot` の画素も表示の向きにそろえます。横向きなら幅 > 高さになり、`width = screen.width × scale`、`height = screen.height × scale` です。ただし iPhone 14 Pro 実機では、XCUI のスクリーンショット自体が 1178×2556 px で、393 pt × 3 = 1179 より短辺が 1 px 足りません（向きの正規化を入れる前から同じです）。XCUI のスクリーンショットは画素が常に縦向きで、回転は向きのメタデータとしてだけ付いているので、縦向き以外では描き直します。そのぶん時間が増えます（p50 で、シミュレータは png +50 ms・jpeg +7 ms、実機は png +30 ms・jpeg はほぼ変わらず）。
 - 共有シートの中の要素は、スナップショットではシートからの相対座標で返るので、要素の frame はシートの位置を足して画面の座標にそろえます（「[共有シートの中の要素](elements.md#共有シートの中の要素)」）。
@@ -62,6 +63,14 @@ iPadOS 26 以上の「ウィンドウ表示のアプリ」や Stage Manager、Sl
 - **タップ位置**: frame と「画面の中に見えているウィンドウ」の重なりの中心です。ウィンドウの外にスクロールした要素や、画面の外にあるウィンドウ（Stage Manager の脇のサムネイルなど）の要素は `offscreen`（`element_not_hittable`）になります。
 - **キーボード**: リサイズできるアプリのキーボードはウィンドウの外にはみ出して画面いっぱいに出るので、別の window として扱い、ウィンドウの原点や倍率は掛けません。横向きでは frame が縦向きの座標で返るので変換します（全画面のアプリでも同じです）。`UIRequiresFullScreen` のアプリのキーボードはウィンドウの中に縮小して出ます。
 
+ほかのウィンドウに隠れた要素の frame は、見えているものと同じように返り、タップは手前のウィンドウに当たります。`card` の順序で手前はわかりますが、重なりの判定はしていません。
+
+`UIRequiresFullScreen` のアプリをリサイズすると、シーンが縦のまま SpringBoard 側が横になり、大きさの形が合わず `422` になることがありました。このときはシミュレータの画面の一部が黒くなりました。
+
+上下逆さ（`portraitUpsideDown`）では、キーボードのキーの frame が縦向きの座標のままで、アプリの window と見分けられないので変換しません。キーを要素で指定すると外れるため、文字入力は `/type` を使ってください。
+
+外部ディスプレイの Stage Manager は確かめていません。
+
 位置が決まらないときは、黙って外れないようにします。
 
 | 状況 | 要素指定の `/tap`・`/press` | `/find`・`/source` |
@@ -72,7 +81,8 @@ iPadOS 26 以上の「ウィンドウ表示のアプリ」や Stage Manager、Sl
 座標を直接指定するタッチは、この判定を通らず、そのまま送ります。
 
 - **対象の端末とモード**: 補正は `UIDevice.model` が iPad の端末だけで働きます。iPhone は判定の 1 行だけです。「全画面のアプリ」モードでは、アクティブなアプリに SpringBoard が入らないので、アプリが画面いっぱいなら SpringBoard を調べません。「ウィンドウ表示」のモードでは、大きさが画面と同じでも縮小表示のことがあるので毎回調べます。
-- **確かめた環境**: Xcode 27.2、iPad mini (A17 Pro) シミュレータ、iOS 26.5。実機と、報告のあった iOS 26.4 では確かめていません。RelayRunnerHost（`UIRequiresFullScreen`）と、ビルド設定だけ変えてリサイズできるようにした同じアプリで、次のとおり確かめました。どれも `private`・`xcui` の両方です。
+
+実機と、報告のあった iOS 26.4 では確かめていません。RelayRunnerHost（`UIRequiresFullScreen`）と、ビルド設定だけ変えてリサイズできるようにした同じアプリで、次のとおり確かめました。どれも `private`・`xcui` の両方です。
 
 | 状況 | 修正前 | 修正後 |
 | --- | --- | --- |
@@ -90,20 +100,41 @@ iPadOS 26 以上の「ウィンドウ表示のアプリ」や Stage Manager、Sl
 | iPad、全画面のアプリのモード | 80 → 86 ms | 404 → 404 ms | 2.5 → 2.5 ms |
 | iPhone 17 Pro（iOS 26.2） | 49 → 45 ms | 353 → 350 ms | 3.1 → 2.7 ms |
 
+確かめた環境: Xcode 27.2、iPad mini (A17 Pro) シミュレータ（iOS 26.5）。
+
 ## 表示が複数ある端末（iPhone Duo）
 
 iPhone Duo には表示が 2 つあります。外側（cover。`XCUIScreen.main`）と内側（inner）で、点くのは使っている方だけです。ランナーは、前面アプリが載っている表示（以下「アプリの表示」）に合わせて動きます。そのための非公開 API は「[非公開 API の一覧](private-api.md)」にまとめています。
 
-- **要件**: Xcode 27.1 以上と、iOS 27.1 以上の iPhone Duo（シミュレータ）。Xcode 27.2 と iOS 27.2 の iPhone Duo シミュレータで確かめました。Xcode 27.2 が既定の Xcode でなければ、`DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer relay start --device "iPhone Duo"` のように、Xcode 27.2 の Developer ディレクトリを `DEVELOPER_DIR` で指定します（パスは Xcode を置いた場所に合わせます）。実機の Duo は確かめていません。
+実機の Duo は確かめていません。
+
+- **要件**: Xcode 27.1 以上と、iOS 27.1 以上の iPhone Duo（シミュレータ）。
+- Xcode 27.2 が既定でなければ、`DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer relay start --device "iPhone Duo"` のように、Xcode 27.2 の Developer ディレクトリを `DEVELOPER_DIR` で指定します（パスは Xcode を置いた場所に合わせます）。
 - **表示**: `/health` の `displays` に一覧（ID、縦向きのポイント、scale、`main`）を、`display` にアプリの表示の ID を返します。iPhone Duo のシミュレータでは、外側が ID 1（466×678 pt、main）、内側が ID 3（669×951 pt）です。ID は `xcrun devicectl device info displays --device <udid>` の `displayId` と同じです。内側はふつう横向きで使うので、内側にいるときの `screen` は 951×669、`orientation` は `landscapeRight` になります。表示が 1 つの端末でも、`displays` は 1 件、`display` はその ID です。一覧は端末に組み込まれた表示だけで、ワイヤレス（AirPlay）の表示は含めません（iPhone 14 Pro 実機の `XCUIScreen.screens` には `wireless, airplay` の表示も並んでいました。非公開の `-[XCUIScreen traits]` で見分けます）。
 - **合わせるもの**: `/health` の `screen`、`/screenshot`（アプリの表示を撮ります。以前は内側を開いていても外側を撮り、真っ黒な画像が返りました）、画面の外の座標の判定、タッチ（`/tap`・`/press`・`/swipe`、要素指定を含む）、`/button home`、要素の frame（`/source`・`/find`・要素指定のタップ）。
 - **判定**: アプリの window のスナップショットが持つ表示の ID（非公開の `-[XCElementSnapshot displayID]`）で決めます。SpringBoard は両方の表示に window を持つので、SpringBoard が前面のとき（ホーム画面）は、点いている表示で決めます（暗い表示のスクリーンショットは真っ黒です）。どちらでも決まらない場合（両方とも暗いなど）は、タッチとスクリーンショットを何も送らずに `422`（`cannot tell which display … is on`）にし、`/health` は `display` を `null`、`screen` を外側の大きさにします。ランナー自身のシーンの画面（`UIWindowScene.screen`）は、折りたたみを変えても追従しなかったので使いません。
 - **タッチ**: `private` 経路は、合成イベントに表示の ID を付け（非公開の `-[XCSynthesizedEventRecord initWithName:displayID:interfaceOrientation:]`）、座標をその表示の縦向きのポイントに変換して送ります。外側にも ID を付けます。ID を付けないイベントは、内側には届かず、いったん開いてから閉じた後は外側にも届きませんでした。`xcui` 経路は、外側では従来どおり SpringBoard を基準にし、内側では前面アプリの最初の window を基準に、その原点からの差で送ります（SpringBoard やアプリの要素を基準にした座標は、成功を返して何も起きませんでした。内側では、アプリが回転して (282, 0) から始まる window になることがあります）。内側で SpringBoard が前面のときと、回転しないアプリ（縦向きの window のまま回転して表示されるもの）が前面のときは、`xcui` の座標タッチを何も送らずに `422` にします（`use mode private`）。
-- **要素の frame**: SpringBoard のツリーからは、ほかの表示の window を除きます。回転するアプリ（設定など）の frame は表示の向きで返りますが、SpringBoard と回転しないアプリは、縦向きの window とその表示の縦向きの座標で返るので、表示の向きに変換します。どの要素の frame も `/tap` と `/screenshot` と同じ座標になります。`/source?format=text`（XCUI の `debugDescription`）は変換しません。
+- 表示を指定できない Xcode では、`private` 経路を使わずに `xcui` に落ちます（`mode: private` の指定は 400）。
+- 内側の回転しないアプリは、window が縦向きかどうかで判定します。その状態でのタッチは確かめていません。
+- 内側で RelayRunnerHost が回転表示になったときは、window が横向きの形で (282, 0) から始まっていて、この判定には当たりませんでした。window の原点からの差で送った `xcui` の座標タップ・要素タップが入力欄に届きました。
+- **要素の frame**: SpringBoard のツリーからは、ほかの表示の window を除きます。回転するアプリ（設定など）の frame は表示の向きで返りますが、SpringBoard と回転しないアプリは、縦向きの window とその表示の縦向きの座標で返るので、表示の向きに変換します。
+- どの要素の frame も `/tap` と `/screenshot` と同じ座標になります。
+- `/source?format=text`（XCUI の `debugDescription`）は表示の向きへの変換も、ほかの表示の window の除外もしません。
 - **ホーム**: iPhone Duo のシミュレータでは、`XCUIDevice.press(.home)` がどちらの表示でも成功を返して何も起きないので、実機と同じくホームインジケーターのスワイプで代用します。
 - **表示を指定するオプションはありません**: 点くのは 1 つだけで、暗い表示への操作やスクリーンショットには意味がないためです。アプリの表示は、`/health` の `display` とスクリーンショットの `X-Relay-Display` で確かめられます。
 - **折りたたみの切り替え**: relay からはできません。Xcode の DeviceHub（`Xcode.app/Contents/Applications/DeviceHub.app`）で端末を選び、姿勢のコントロールで切り替えます。姿勢は Closed・Book・Open の 3 つです。切り替えた後は `/health` を読み直します。Closed から Open への切り替えでは、シミュレータが起動し直してランナーが止まることがありました（2 回）。そのときは `relay status` が失敗するので `relay start` し直します。ランナーが動き続けた切り替えでも、表示の一覧（大きさは姿勢で変わりません）と向き（リクエストごとに読み直します）は古くなりませんでした。`devicectl device info displays` の `active` は、シミュレータが起動し直した直後に古い値のままのことがあるので、点いている表示はスクリーンショットで確かめます。
-- **姿勢と向き**: Closed・Book・Open のそれぞれで、`/orientation` を portrait・landscapeLeft・landscapeRight・portraitUpsideDown にして、ホーム画面・設定アプリ・RelayRunnerHost で確かめました（Xcode 27.2、iOS 27.2 のシミュレータ）。どの姿勢でも点く表示は 1 つで、両方が同時に点くことはありませんでした。`/orientation` は端末の向き（`XCUIDevice.orientation`）を変えますが、画面は回転しません。外側は portrait、内側は landscapeRight のままで、横向きに対応した RelayRunnerHost も回転しませんでした。`/health` の `orientation` と `screen` は、実際の表示の向きを返します。
+- **姿勢と向き**: Closed・Book・Open のそれぞれで、`/orientation` を portrait・landscapeLeft・landscapeRight・portraitUpsideDown にして、ホーム画面・設定アプリ・RelayRunnerHost で確かめました。
+- どの姿勢でも点く表示は 1 つで、両方が同時に点くことはありませんでした。
+- `/orientation` は端末の向き（`XCUIDevice.orientation`）を変えますが、画面は回転しません。外側は portrait、内側は landscapeRight のままで、横向きに対応した RelayRunnerHost も回転しませんでした。`/health` の `orientation` と `screen` は、実際の表示の向きを返します。
+
+Xcode 27.2 の `xcrun devicectl device orientation set` / `rotate` も、Duo では成功を返すのに `get` が portrait のままで、画面は回転しませんでした。iPhone 17 Pro シミュレータでは回転します。
+
+折りたたみを何度か切り替えた後、ホーム画面の一部のアイコンで、SpringBoard の frame が画面上の位置と合わないことがありました。要素指定のタップは成功を返して何も起きなかったので、スクリーンショットで位置を確かめてください。
+
+| 表示 | アイコン | 画面上の位置 | SpringBoard の frame の位置 |
+| --- | --- | --- | --- |
+| 外側 | Watch | (145, 85) | (52, 331) |
+| 内側 | Settings | (763, 385) | (516, 287) |
 
 | 姿勢 | 点く表示 | `/health`（4 つの向きとも） | スクリーンショット | タップ（private / xcui の座標・要素） | 画面外 | ホーム |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -112,3 +143,5 @@ iPhone Duo には表示が 2 つあります。外側（cover。`XCUIScreen.main
 | Book | 内側（ID 3） | Open と同じ | 内側の画像 | Open と同じ。設定アプリは配置が変わる（Accessibility の行の中心が (160, 332) から (227, 314) に）が、frame どおりに届いた | 400 | 効いた |
 
 - **速さ**: 表示が 1 つの端末では、表示の一覧を最初に 1 回読むだけで、速さは変わりません（iPhone 17 Pro シミュレータの p50 で `/health` 8 → 9 ms、`/screenshot` 76 → 70 ms、`/tap` 295 → 290 ms）。iPhone Duo では、コマンドごとにアプリの表示を調べるぶん遅くなります（`relay health` で、設定アプリが前面なら約 0.15 秒、ホーム画面では約 0.4–0.5 秒）。要素を指定するコマンドは、要素を探すスナップショットで表示もわかるので、余分な調べはありません。
+
+確かめた環境: Xcode 27.2、iPhone Duo シミュレータ（iOS 27.2）。
