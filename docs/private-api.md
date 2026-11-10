@@ -6,7 +6,7 @@
 
 - **予告なく変わります**: 非公開 API は、Xcode や iOS の更新で消えたり変わったりすることがあります。ランナーは Xcode や iOS の版では分岐せず、実行時にクラス・セレクタ・シンボルがあるかだけを確かめます。引数や戻り値の型だけが変わった場合は検出できず、そのときの挙動は決まっていません（Objective-C の例外も捕捉しません）。
 - **対象アプリには何も入りません**: 非公開 API を使うのは、XCTest の UI テストバンドルとして端末上で動くランナー（`Runner/RelayRunnerUITests`）だけです。Mac 側の `relay` CLI は使いません。`Runner/` のコードやバンドルを対象アプリのターゲットに埋め込まないでください。App Store に提出するアプリに含めるものではありません。
-- **動作を確認した版**: Xcode 27 と iOS 26.7.1 の実機、iOS 27.0 のシミュレータです。表示が複数ある端末の項目は、Xcode 27.2 と iOS 27.2 のシミュレータで確認しました。文字入力の合成は、Xcode 27.2 と iOS 27.2 のシミュレータだけで確認しました。ほかの版は確認していません。下の API は、Xcode 27.2 の XCTest と XCUIAutomation の公開ヘッダに宣言がないことを確かめています（実体は `XCUIAutomation.framework` と `XCTAutomationSupport.framework` にあります）。
+- **動作を確認した版**: Xcode 27 と iOS 26.7.1 の実機、iOS 27.0 のシミュレータです。表示が複数ある端末の項目は、Xcode 27.2 と iOS 27.2 のシミュレータで確認しました。文字入力の合成は、Xcode 27.2 と iOS 27.2 のシミュレータ、iOS 26.7.1 の実機で確認しました。ほかの版は確認していません。下の API は、Xcode 27.2 の XCTest と XCUIAutomation の公開ヘッダに宣言がないことを確かめています（実体は `XCUIAutomation.framework` と `XCTAutomationSupport.framework` にあります）。
 - **更新の後の確かめ方**: `/health` の `touchSynthesis` が `private`、`foreground.source` が `private` なら、タッチ合成と前面アプリの経路は使えています。文字入力の合成は、`/health` の `typeSynthesis` が `private` であることで確かめます。iPad のウィンドウの位置は、全画面でないウィンドウで `relay find --type window` の `window` が付くことで確かめます。要素のキーボードのフォーカスは、`/source` の `hasKeyboardFocus` が `null` でないことで確かめます。共有シートの入れ物は、iPhone で共有シートを開いて `relay find --label Copy --type cell` の frame がシートの中（縦向きなら画面の下のほう）にあることで確かめます。
 - **無効にして試す**: ランナーの環境変数 `RELAY_DISABLE_PRIVATE_TOUCH=1`（タッチ合成）、`RELAY_DISABLE_PRIVATE_TYPING=1`（文字入力の合成）、`RELAY_DISABLE_PRIVATE_FOREGROUND=1`（前面アプリ）で、代わりの経路を試せます。xcodebuild と `relay start` には `TEST_RUNNER_` を前に付けて渡します（`TEST_RUNNER_RELAY_DISABLE_PRIVATE_TOUCH=1` など）。ほかの項目に無効にするスイッチはありません。
 

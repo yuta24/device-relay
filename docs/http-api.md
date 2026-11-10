@@ -237,4 +237,8 @@ RelayRunnerHost の入力欄（`relay.input`）で確認した結果（シミュ
 `private` の `/type`（10 文字）は、ネイティブの入力欄で約 0.39–0.42 秒でした。`xcui`（`typeText`）では約 0.42–0.62 秒でした。
 メインのランループが眠らない画面では、`private` は同じく約 0.40 秒で、`xcui` は約 141–181 秒 busy になりました（「[文字入力の経路](design.md#文字入力の経路)」）。
 
-確かめた環境（`private`）: iPhone 17 シミュレータ、iOS 27.2、Xcode 27.2。ネイティブの入力欄、WKWebView と Safari のページの入力欄で、文字・`--stdin`・`return`・`delete`・`space` を確かめました。
+実機の `private` では、10 文字の `/type` が約 0.51 秒、300 文字が約 5.34 秒、`/key return` が約 0.36 秒でした。同じ実機の `xcui` では、10 文字が約 0.79–0.94 秒でした。
+
+確かめた環境（`private`）: iPhone 17 シミュレータ（iOS 27.2、Xcode 27.2）と iPhone 14 Pro（iOS 26.7.1）。
+シミュレータでは、ネイティブの入力欄、WKWebView と Safari のページの入力欄で、文字・`--stdin`・`return`・`delete`・`space` を確かめました。
+実機では、設定アプリの検索欄と Safari のページの入力欄で、同じものと日本語を確かめました。
