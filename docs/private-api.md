@@ -17,6 +17,7 @@
 | [タッチ合成](#タッチ合成) | `xcui` に切り替え（`mode: private` は `400`） | `/health` の `touchSynthesis`、応答の `mode` |
 | [表示を指定した合成タッチ](#表示を指定した合成タッチ) | 表示が複数ある端末だけ `xcui` に切り替え（`mode: private` は `400`） | 同上 |
 | [文字入力の合成](#文字入力の合成) | `typeText` で入力（アイドル待ちが前後に入る） | `/health` の `typeSynthesis` |
+| [要素のタッチ位置の確認](#要素のタッチ位置の確認) | 確認を省き、従来どおり送る | なし |
 | [前面アプリ](#前面アプリ) | 最後に `/launch` したアプリか SpringBoard | `source: fallback`、`pid: null` |
 | [キーボードのフォーカス](#キーボードのフォーカス) | 値なし | `hasKeyboardFocus: null` |
 | [表示の向き](#表示の向き) | スクリーンショットの向きで代用（遅くなる） | なし |
@@ -74,6 +75,19 @@
 
 時間内の「時間」は「[文字入力と特殊キー](http-api.md#文字入力と特殊キー)」を参照してください。
 `typing_failed` のとき、同じ入力を `typeText` で送り直すことはしません。表示が複数ある端末で合成した入力は、確かめていません。
+
+### 要素のタッチ位置の確認
+
+要素指定の `/tap`・`/press` は、押す点のアクセシビリティ要素を取得して、選んだ要素・その祖先・子孫と一致することを確認します。
+
+- **API**: `-[XCUIDevice accessibilityInterface]` が返すオブジェクトの `-hitTestElement:withPoint:error:`、スナップショットの `-accessibilityElement` と `-children`。実装は `RelayActiveApplication.m` です。セレクタの存在を実行時に確認します。
+- **公開 API では足りない理由**: `frame` の中心が別の要素に重なることがあります。`isHittable` は、こちらで選んだ点に何があるかを返しません。
+- **使えないとき**: API が欠ける、nil・エラーが返る、返された要素がスナップショットにない場合は、確認を省き、従来どおり送ります。座標指定のタッチには使いません。
+- **結果の整合性**: `com.apple.SafariViewService` の Close・Cancel では、点を含まない Address 要素が返ることがありました。返された要素の frame が点を含まない場合も、確認できないものとして送ります。
+- **同じ方式のツール**: [WebDriverAgent の iOS 用インターフェース宣言](https://github.com/appium/WebDriverAgent/blob/master/PrivateHeaders/XCTest/XCAXClient_iOS.h)にも同じメソッドがあります。
+- **一覧での利用**: `filter=interactive` では、後のコントロールの枠と重なる候補だけを同じ方法で確認します。別の要素に当たると確認できた候補だけを外します。確認できない候補は残します。
+
+確かめた環境: Xcode 27.2、iPhone 17 Pro シミュレータ（iOS 27.0）、iPhone 14 Pro 実機（iOS 26.7.1）。iPad での hit test は確かめていません。
 
 ### 前面アプリ
 

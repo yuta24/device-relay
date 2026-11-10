@@ -1,4 +1,5 @@
 #import <Foundation/Foundation.h>
+#import <CoreGraphics/CoreGraphics.h>
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -24,6 +25,10 @@ NS_ASSUME_NONNULL_BEGIN
 /// The active applications in the order the accessibility client reports them, or nil with `error`
 /// set when the private path is unavailable or no application could be resolved to a bundle ID.
 + (nullable NSArray<RelayActiveApplicationInfo *> *)activeApplicationsWithError:(NSError **)error;
+
+/// Path in the supplied snapshot of the accessibility element at a screen point. Nil when the
+/// private API is absent, fails, or returns an element outside the snapshot. Never sends input.
++ (nullable NSArray<NSNumber *> *)hitPathAtPoint:(CGPoint)point snapshot:(id)snapshot;
 
 @end
 

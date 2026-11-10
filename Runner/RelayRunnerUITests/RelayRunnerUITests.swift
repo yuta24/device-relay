@@ -31,6 +31,7 @@ final class RelayRunnerUITests: XCTestCase {
   /// Why elements of the command's latest element tree inside the share sheet could not be placed on the screen
   /// (`RunnerRemoteViews`); empty when they all were.
   private var commandRemoteViews: [String] = []
+  private var commandSnapshot: XCUIElementSnapshot?
 
   private lazy var springboard = XCUIApplication(bundleIdentifier: Self.springboardBundleID)
 
@@ -131,11 +132,13 @@ final class RelayRunnerUITests: XCTestCase {
     commandDisplay = nil
     commandWindow = nil
     commandRemoteViews = []
+    commandSnapshot = nil
     defer {
       capturedIssues = nil
       commandDisplay = nil
       commandWindow = nil
       commandRemoteViews = []
+      commandSnapshot = nil
     }
 
     var response: RunnerHTTPResponse
@@ -450,7 +453,11 @@ final class RelayRunnerUITests: XCTestCase {
     }
     // Filtering runs here, next to the snapshot, so only the short list is serialized and sent.
     let screen = CGRect(origin: .zero, size: self.screen(in: interfaceOrientation()).size)
-    let elements = RunnerElementTree.interactiveElements(in: root, screen: screen)
+    let elements = RunnerElementTree.interactiveElements(in: root, screen: screen) { path, point in
+      guard let hitPath = self.hitPath(at: point),
+            RunnerElementTree.hitNode(at: point, path: hitPath, in: root) != nil else { return nil }
+      return RunnerElementTree.isRelatedHit(hitPath, to: path)
+    }
     if format == "compact" {
       return Self.text(warning + RunnerElementTree.compactText(elements))
     }
@@ -477,6 +484,7 @@ final class RelayRunnerUITests: XCTestCase {
     } catch {
       throw RunnerError.actionFailed("failed to snapshot \(bundleID): \(error.localizedDescription)")
     }
+    commandSnapshot = snapshot
     // The share sheet's elements are placed in the app's space first, so that an iPad window or another display
     // converts them with the rest.
     let (root, unknownRemoteViews) = RunnerRemoteViews.placed(Self.elementNode(snapshot, depth: 0, maxDepth: maxDepth))
@@ -585,7 +593,12 @@ final class RelayRunnerUITests: XCTestCase {
         throw RunnerError.windowPositionUnknown(RunnerWindows.touchError(message))
       }
       let screen = CGRect(origin: .zero, size: self.screen(in: self.interfaceOrientation()).size)
-      switch selector.resolve(in: root, screen: screen) {
+      var resolved = selector.resolve(in: root, screen: screen)
+      if case .success(let target) = resolved {
+        try self.requireUncovered(bundleID)
+        resolved = target.verified(hitPath: self.hitPath(at: target.point), in: root)
+      }
+      switch resolved {
       case .success(let target):
         return target
       case .failure(let failure):
@@ -593,7 +606,6 @@ final class RelayRunnerUITests: XCTestCase {
         throw RunnerError.elementNotResolved(failure)
       }
     }
-    try requireUncovered(bundleID)
     let x = Double(target.point.x), y = Double(target.point.y)
     return annotated([
       "ok": true,
@@ -602,6 +614,14 @@ final class RelayRunnerUITests: XCTestCase {
       "element": target.match.json,
       "point": RunnerElementTree.json(target.point)
     ])
+  }
+
+  private func hitPath(at point: CGPoint) -> [Int]? {
+    guard let snapshot = commandSnapshot else { return nil }
+    let (path, failed) = ignoringIssues {
+      RelayActiveApplication.hitPath(at: point, snapshot: snapshot)?.map { $0.intValue }
+    }
+    return failed ? nil : path
   }
 
   /// Throws 422 (`covered_by_other_app`) without touching when SpringBoard is in front of `bundleID`, read
@@ -713,7 +733,7 @@ final class RelayRunnerUITests: XCTestCase {
 
   /// Snapshot frames of the foreground app are already in its interface orientation. They are the same
   /// space as `/tap`, except in an iPad window, which `onScreen(_:bundleID:)` converts afterwards.
-  private static func elementNode(_ snapshot: XCUIElementSnapshot, depth: Int, maxDepth: Int) -> RunnerElementNode {
+  private static func elementNode(_ snapshot: XCUIElementSnapshot, depth: Int, maxDepth: Int, path: [Int] = []) -> RunnerElementNode {
     let children = snapshot.children
     let expand = depth < maxDepth
     return RunnerElementNode(
@@ -727,8 +747,11 @@ final class RelayRunnerUITests: XCTestCase {
       selected: snapshot.isSelected,
       hasFocus: snapshot.hasFocus,
       hasKeyboardFocus: hasKeyboardFocus(snapshot),
-      children: expand ? children.map { elementNode($0, depth: depth + 1, maxDepth: maxDepth) } : [],
-      truncated: !expand && !children.isEmpty
+      children: expand ? children.enumerated().map { index, child in
+        elementNode(child, depth: depth + 1, maxDepth: maxDepth, path: path + [index])
+      } : [],
+      truncated: !expand && !children.isEmpty,
+      snapshotPath: path
     )
   }
 

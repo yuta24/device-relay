@@ -21,7 +21,7 @@ What `--filter interactive` keeps and leaves out:
 
 - Kept: buttons, cells, links, home screen icons, tabs, switches, sliders, steppers, pickers, text fields (`textField`, `secureTextField`, `searchField`, `textView`), and the like, that have an identifier, label, or placeholder (text fields are kept even with none). For an unnamed cell, the labeled text inside it is kept instead (tapping the text hits the cell)
 - Left out: disabled (`enabled: false`), off the screen, the keyboard and its keys, elements whose tap point is covered by the keyboard or a control in front (a search bar at the bottom, for example), heading and body text, images, containers (`table` and the like)
-- The check for being covered is approximate. Elements under a sheet that isn't a control are kept, so confirm with a screenshot that they are visible.
+- Filtering checks a center overlapped by a later control with accessibility hit testing, dropping the candidate only when another element in the snapshot receives the hit. Unknown results keep it. It remains approximate for other overlays; element touches verify separately.
 - Selectors search the whole tree. With a `staticText` of the same label, `--label` alone becomes `ambiguous`, so also add the line's `type`, or use `--id`.
 
 ## Element selectors
@@ -31,4 +31,4 @@ What `--filter interactive` keeps and leaves out:
 - `--type` names are the same as `type` in `relay source` (`button`, `staticText`, `textField`, `secureTextField`, `searchField`, `cell`, `switch`, `image`, `navigationBar`, `scrollView`, `table`, `collectionView`, `alert`, and so on). An unknown name is a usage error, exit code 2.
 - When a name is ambiguous, get a list with `relay find --type <type>` and use its `identifier` or `index`.
 - The tap point is the center of the element's frame (the part overlapping the screen).
-- For an element covered by the keyboard or a sheet, if its frame is on the screen, the tap hits whatever is covering it. Before tapping, confirm with a screenshot that it is visible, and if it is covered, close the keyboard (in some apps `relay key return` closes it) or scroll.
+- Element taps and presses verify that the center hits the selected element, its ancestors, or its descendants. Only a confirmed hit on an unrelated element in the snapshot refuses the touch: exit 6, `element_point_covered`. Check a screenshot, reveal the target, or use coordinates confirmed in the screenshot ([failures](failures.md)). Missing hit-test APIs, nil/error results, or receivers absent from the snapshot preserve the existing touch. Coordinate touches are unchanged.
