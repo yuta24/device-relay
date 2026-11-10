@@ -490,8 +490,8 @@ Xcode を更新するときは [Apple のリリース情報](https://developer.a
 
 ```sh
 git checkout main && git pull
-git tag v0.6.0
-git push origin v0.6.0
+git tag v0.7.0
+git push origin v0.7.0
 ```
 
 3. GitHub の Actions でそのタグの実行を開き、「Review deployments」から `release` environment を承認します。承認するまでジョブは始まりません。
@@ -559,11 +559,11 @@ Release は作られていないので、利用者への影響はありません
 - **修正が要るとき**: 修正を main にマージしてから、タグを削除して付け直します。`RelayVersion.current` はそのままです。
 
   ```sh
-  git push origin :refs/tags/v0.6.0
-  git tag -d v0.6.0
+  git push origin :refs/tags/v0.7.0
+  git tag -d v0.7.0
   git checkout main && git pull
-  git tag v0.6.0
-  git push origin v0.6.0
+  git tag v0.7.0
+  git push origin v0.7.0
   ```
 
 ### tarball の名前と配置を変えるとき

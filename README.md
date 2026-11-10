@@ -42,7 +42,7 @@ To update: `mise upgrade github:yuta24/device-relay`.
 ### Manual install
 
 ```sh
-VERSION=0.6.0      # the latest version on https://github.com/yuta24/device-relay/releases
+VERSION=0.7.0      # the latest version on https://github.com/yuta24/device-relay/releases
 ARCH=$(uname -m)   # arm64 or x86_64
 NAME=device-relay-v$VERSION-macos-$ARCH
 BASE=https://github.com/yuta24/device-relay/releases/download/v$VERSION
