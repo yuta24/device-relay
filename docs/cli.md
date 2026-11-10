@@ -200,9 +200,13 @@ relay: image 471x1024 px, screen 402x874 pt, 1.172 px/pt (tap in points: px / 1.
 
 アプリの起動・終了を XCTest が待つ時間は 120 秒です。ランナーは 60 秒に戻しますが、戻せないランナーでは 120 秒のままです（「[アプリの状態の待ち時間](private-api.md#アプリの状態の待ち時間)」）。
 `type` の 0.1 秒は、シミュレータで測った約 15 ms/文字の数倍です。
+ランナーは、この足す時間に 10 秒を加えても入力が終わらなければ、`typing_failed`（終了コード `6`）を返して busy を解きます。
+`relay` の待ちはその 20 秒後までなので、ランナーが先に答えます（「[文字入力と特殊キー](http-api.md#文字入力と特殊キー)」）。
+ただし入力を合成できないランナー（`relay health` の `typeSynthesis` が `xcui`）では、アプリのアイドル待ちで終了コード `3` になることがあります。
 
 時間内に応答がなければ、`no response within <秒>s` で終了コード `3` になります。
 ただしランナーは操作を続けていて、終わるまで busy（`409`）なので、`relay ping` の `busy` が `false` になってから続けてください。
+`type` と `key` の時間切れでは、入った文字を `relay find` で確かめるよう案内します。
 
 `launch` の時間切れの後は、数分待つことがあります。入っていないアプリでは、ランナーが応答するまで全体で約 300 秒でした。
 XCTest の待ちは中断できませんが、busy の間も `relay stop` は効きます。
@@ -288,6 +292,7 @@ code を返さない古いランナーでは、`401`・`409` のヒントだけ�
 | `code` | `relay:` のヒント |
 | --- | --- |
 | `no_keyboard_focus` | 入力欄を先にタップしてから送り直す |
+| `typing_failed` | 入った文字を `relay find` の `value` で確かめ、必要なら消してから送り直す |
 | `element_not_found` | `relay find --type …` / `relay source` で画面を確かめるか、`--timeout <秒>` で待つ |
 | `element_ambiguous` | `--type`・`--label`・`--id` を足すか、候補から `--index <n>` で選ぶ |
 | `touch_mode_unavailable` | `--mode` を外すか、エラーが示す経路で送り直す |

@@ -6,9 +6,9 @@
 
 - **予告なく変わります**: 非公開 API は、Xcode や iOS の更新で消えたり変わったりすることがあります。ランナーは Xcode や iOS の版では分岐せず、実行時にクラス・セレクタ・シンボルがあるかだけを確かめます。引数や戻り値の型だけが変わった場合は検出できず、そのときの挙動は決まっていません（Objective-C の例外も捕捉しません）。
 - **対象アプリには何も入りません**: 非公開 API を使うのは、XCTest の UI テストバンドルとして端末上で動くランナー（`Runner/RelayRunnerUITests`）だけです。Mac 側の `relay` CLI は使いません。`Runner/` のコードやバンドルを対象アプリのターゲットに埋め込まないでください。App Store に提出するアプリに含めるものではありません。
-- **動作を確認した版**: Xcode 27 と iOS 26.7.1 の実機、iOS 27.0 のシミュレータです。表示が複数ある端末の項目は、Xcode 27.2 と iOS 27.2 のシミュレータで確認しました。ほかの版は確認していません。下の API は、Xcode 27.2 の XCTest と XCUIAutomation の公開ヘッダに宣言がないことを確かめています（実体は `XCUIAutomation.framework` と `XCTAutomationSupport.framework` にあります）。
-- **更新の後の確かめ方**: `/health` の `touchSynthesis` が `private`、`foreground.source` が `private` なら、タッチ合成と前面アプリの経路は使えています。iPad のウィンドウの位置は、全画面でないウィンドウで `relay find --type window` の `window` が付くことで確かめます。要素のキーボードのフォーカスは、`/source` の `hasKeyboardFocus` が `null` でないことで確かめます。共有シートの入れ物は、iPhone で共有シートを開いて `relay find --label Copy --type cell` の frame がシートの中（縦向きなら画面の下のほう）にあることで確かめます。
-- **無効にして試す**: ランナーの環境変数 `RELAY_DISABLE_PRIVATE_TOUCH=1`（タッチ合成）と `RELAY_DISABLE_PRIVATE_FOREGROUND=1`（前面アプリ）で、代わりの経路を試せます。xcodebuild と `relay start` には `TEST_RUNNER_` を前に付けて渡します（`TEST_RUNNER_RELAY_DISABLE_PRIVATE_TOUCH=1` など）。ほかの項目に無効にするスイッチはありません。
+- **動作を確認した版**: Xcode 27 と iOS 26.7.1 の実機、iOS 27.0 のシミュレータです。表示が複数ある端末の項目は、Xcode 27.2 と iOS 27.2 のシミュレータで確認しました。文字入力の合成は、Xcode 27.2 と iOS 27.2 のシミュレータ、iOS 26.7.1 の実機で確認しました。ほかの版は確認していません。下の API は、Xcode 27.2 の XCTest と XCUIAutomation の公開ヘッダに宣言がないことを確かめています（実体は `XCUIAutomation.framework` と `XCTAutomationSupport.framework` にあります）。
+- **更新の後の確かめ方**: `/health` の `touchSynthesis` が `private`、`foreground.source` が `private` なら、タッチ合成と前面アプリの経路は使えています。文字入力の合成は、`/health` の `typeSynthesis` が `private` であることで確かめます。iPad のウィンドウの位置は、全画面でないウィンドウで `relay find --type window` の `window` が付くことで確かめます。要素のキーボードのフォーカスは、`/source` の `hasKeyboardFocus` が `null` でないことで確かめます。共有シートの入れ物は、iPhone で共有シートを開いて `relay find --label Copy --type cell` の frame がシートの中（縦向きなら画面の下のほう）にあることで確かめます。
+- **無効にして試す**: ランナーの環境変数 `RELAY_DISABLE_PRIVATE_TOUCH=1`（タッチ合成）、`RELAY_DISABLE_PRIVATE_TYPING=1`（文字入力の合成）、`RELAY_DISABLE_PRIVATE_FOREGROUND=1`（前面アプリ）で、代わりの経路を試せます。xcodebuild と `relay start` には `TEST_RUNNER_` を前に付けて渡します（`TEST_RUNNER_RELAY_DISABLE_PRIVATE_TOUCH=1` など）。ほかの項目に無効にするスイッチはありません。
 
 ## 一覧
 
@@ -16,6 +16,7 @@
 | --- | --- | --- |
 | [タッチ合成](#タッチ合成) | `xcui` に切り替え（`mode: private` は `400`） | `/health` の `touchSynthesis`、応答の `mode` |
 | [表示を指定した合成タッチ](#表示を指定した合成タッチ) | 表示が複数ある端末だけ `xcui` に切り替え（`mode: private` は `400`） | 同上 |
+| [文字入力の合成](#文字入力の合成) | `typeText` で入力（アイドル待ちが前後に入る） | `/health` の `typeSynthesis` |
 | [前面アプリ](#前面アプリ) | 最後に `/launch` したアプリか SpringBoard | `source: fallback`、`pid: null` |
 | [キーボードのフォーカス](#キーボードのフォーカス) | 値なし | `hasKeyboardFocus: null` |
 | [表示の向き](#表示の向き) | スクリーンショットの向きで代用（遅くなる） | なし |
@@ -54,6 +55,26 @@
 - **公開 API では足りない理由**: 表示の ID を付けないイベントは内側の表示に届かず、いったん開いてから閉じた後は外側にも届きませんでした（「[表示が複数ある端末](screen.md#表示が複数ある端末iphone-duo)」）。
 - **使えないとき**: 表示が複数ある端末では、`mode` の省略か `auto` で `xcui` になり、`/health` の `touchSynthesis` も `xcui` になります。`mode: private` は何も送らずに `400`、`touch_mode_unavailable` です。`xcui` が届かない場面（内側で SpringBoard か回転しないアプリが前面）は、何も送らずに `422`、`touch_mode_unavailable` です。
 
+### 文字入力の合成
+
+- **API**: `XCPointerEventPath`（`-initForTextInput`、`-typeText:atOffset:typingSpeed:shouldRedact:`）と、タッチ合成と同じ `XCSynthesizedEventRecord`・`-[XCUIDevice eventSynthesizer]`。実装は `RelayTextSynthesizer.m` です。
+- **フォーカスの確認**: 合成した入力はフォーカスを確かめないので、送る前に述語 `hasKeyboardFocus == 1` で要素を探します（`typeText` と同じ問い合わせ）。属性は `-[XCElementSnapshot hasKeyboardFocus]` です。
+- **機能**: 表示が 1 つの端末の `/type`・`/key`。速さは `typeText` の既定と同じ 1 秒 60 文字です。
+- **公開 API では足りない理由**: `typeText` は入力の前後で対象アプリがアイドルになるのを待ちます。アイドルにならないアプリでは、この待ちで `/type` が 3 分ほど busy になりました（「[文字入力の経路](design.md#文字入力の経路)」）。
+- **同じ方式のツール**: WebDriverAgent。
+
+使えないときの挙動:
+
+| 状況 | 挙動 |
+| --- | --- |
+| API か `hasKeyboardFocus` が欠けている、または表示が複数ある端末 | `typeText` で入力します。`/health` の `typeSynthesis` が `xcui` になります |
+| フォーカスの問い合わせで XCUI の失敗が記録された（アプリが動いていないなど） | 何も入力せずに `422`、`xcui_failed` |
+| 合成を始められない | 何も入力せずに `500`、`typing_failed` |
+| 完了の callback がエラーを返した、または時間内に完了しない | `422`、`typing_failed`。入力の一部が入っていて、応答の後も残りが入り続けることがあります |
+
+時間内の「時間」は「[文字入力と特殊キー](http-api.md#文字入力と特殊キー)」を参照してください。
+`typing_failed` のとき、同じ入力を `typeText` で送り直すことはしません。表示が複数ある端末で合成した入力は、確かめていません。
+
 ### 前面アプリ
 
 - **API**: `-[XCUIDevice accessibilityInterface]` の `-activeApplications`（返る要素は `XCAccessibilityElement`。`-processIdentifier` で PID を得ます）、`-[XCUIDevice applicationMonitor]` の `-monitoredApplicationWithProcessIdentifier:`、`-[XCUIApplication bundleID]`。`accessibilityInterface` が返すのは `XCAXClient_iOS` ですが、ランナーが確かめるのはセレクタで、このクラス名は見ません。実装は `RelayActiveApplication.m` です。
@@ -68,7 +89,7 @@
 - **API**: `-[XCElementSnapshot hasKeyboardFocus]`。`XCUIElementSnapshot` のオブジェクトに KVC で問い合わせます。実装は `RelayRunnerUITests.swift` です。
 - **機能**: `/source` の `hasKeyboardFocus` と、compact 形式の `focused`。
 - **公開 API では足りない理由**: 公開 API の `hasFocus` はフォーカスエンジンのフォーカスで、iPhone で入力中の欄でも `false` です。
-- **使えないとき**: `hasKeyboardFocus` が `null` になり、compact 形式に `focused` が出なくなります。エラーにはなりません。`/type`・`/key` の `no_keyboard_focus` は `typeText` の失敗から判定するので、この API には依存しません。
+- **使えないとき**: `hasKeyboardFocus` が `null` になり、compact 形式に `focused` が出なくなります。エラーにはなりません。合成した入力は、フォーカスの確認にこの属性を使います。属性がなければ `typeText` で入力し、`no_keyboard_focus` は `typeText` の失敗から判定します（「[文字入力の合成](#文字入力の合成)」）。
 
 ### 表示の向き
 

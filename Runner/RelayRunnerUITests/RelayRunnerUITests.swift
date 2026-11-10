@@ -247,6 +247,7 @@ final class RelayRunnerUITests: XCTestCase {
       "orientation": Self.name(of: orientation),
       "coordinateSpace": "points",
       "touchSynthesis": (privateTouchIsDefault ? TouchMode.private : .xcui).rawValue,
+      "typeSynthesis": (privateTypingIsDefault ? TouchMode.private : .xcui).rawValue,
       "foreground": foregroundApplication().json,
       "runner": Self.buildVersion
     ]
@@ -320,18 +321,90 @@ final class RelayRunnerUITests: XCTestCase {
 
   /// Types `text`, then each of `keys`, into the focused element of `bundleID`.
   ///
-  /// Keys go through `typeText` as their `XCUIKeyboardKey` characters (return is "\r", delete is
+  /// Keys go after the text as their `XCUIKeyboardKey` characters (return is "\r", delete is
   /// U+007F). `typeKey(_:modifierFlags:)` sends hardware key events instead, but on iPhone (simulator
   /// and device) only space and tab arrived that way; return, delete, and escape were dropped.
+  ///
+  /// The text goes through XCTest's private event synthesizer when it is available (`RelayTextSynthesizer`):
+  /// `typeText` waits for the app to idle before and after typing: for an app that never idles, 60 s each
+  /// way with a pause (a spindump, it seems) in between, while the client gave up long before. On a device with more than one
+  /// display, `typeText` is kept, since synthesized text has not been tried there.
   private func type(text: String, keys: [RunnerKey], bundleID: String) throws {
     let application = XCUIApplication(bundleIdentifier: bundleID)
+    let typed = text + keys.map { Self.keyboardKey($0).rawValue }.joined()
+    if privateTypingIsDefault {
+      try requireKeyboardFocus(application, bundleID: bundleID)
+      try synthesizeText(typed, within: RunnerTyping.wait(text: text, keyCount: keys.count) + RunnerTyping.synthesisGrace)
+      return
+    }
     let issueCount = capturedIssues?.count ?? 0
-    application.typeText(text + keys.map { Self.keyboardKey($0).rawValue }.joined())
+    application.typeText(typed)
     // typeText fails with a long XCUI message that dumps the element tree; say what went wrong instead.
     if let issues = capturedIssues, issues.count > issueCount,
        issues[issueCount...].contains(where: RunnerTyping.isMissingKeyboardFocus) {
       capturedIssues?.removeSubrange(issueCount...)
       throw RunnerError.noKeyboardFocus(bundleID: bundleID)
+    }
+  }
+
+  /// Whether `/type` and `/key` synthesize the text (`/health`'s `typeSynthesis`); see `type(text:keys:bundleID:)`.
+  /// The focus check needs the private `hasKeyboardFocus` attribute: without it every query would match
+  /// nothing, so `typeText`, which checks focus itself, is kept.
+  private var privateTypingIsDefault: Bool {
+    RelayTextSynthesizer.isAvailable && Self.snapshotsHaveKeyboardFocus && displays().count <= 1
+  }
+
+  private static let snapshotsHaveKeyboardFocus =
+    NSClassFromString("XCElementSnapshot")?.instancesRespond(to: hasKeyboardFocusSelector) == true
+
+  /// Throws `noKeyboardFocus` unless an element of `application` has keyboard focus, the check `typeText`
+  /// makes (its query, `hasKeyboardFocus == 1`), done here because synthesized text skips it.
+  ///
+  /// `typeText` waited for the app to idle before checking, which gave a field just tapped time to take focus;
+  /// this looks again for up to `focusWait` instead.
+  private func requireKeyboardFocus(_ application: XCUIApplication, bundleID: String) throws {
+    let query = application.descendants(matching: .any).matching(NSPredicate(format: "hasKeyboardFocus == 1"))
+    let deadline = Date(timeIntervalSinceNow: Self.focusWait)
+    while true {
+      let issueCount = capturedIssues?.count ?? 0
+      let count = query.count
+      switch RunnerTyping.focusCheck(matchCount: count, queryFailed: (capturedIssues?.count ?? 0) > issueCount) {
+      case .focused:
+        return
+      case .queryFailed:
+        // Nothing is typed: the text would go to whatever has focus, another app's field even. The recorded
+        // issue stays, so the answer is xcui_failed with XCUI's message, as with typeText.
+        throw RunnerError.actionFailed("failed to look up keyboard focus in \(bundleID); nothing was typed")
+      case .notFocused:
+        break
+      }
+      guard Date() < deadline else { throw RunnerError.noKeyboardFocus(bundleID: bundleID) }
+      _ = RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.1))
+    }
+  }
+
+  /// How long `requireKeyboardFocus` looks for focus.
+  private static let focusWait: TimeInterval = 1
+
+  /// Types `text` with the private synthesizer and waits for it, up to `seconds`, the same way
+  /// `synthesizeTouch` waits for a touch (spinning the run loop, since the callback may come on the main queue).
+  /// Past `seconds` the runner answers instead of staying busy; XCTest may still be typing the rest.
+  private func synthesizeText(_ text: String, within seconds: TimeInterval) throws {
+    let completion = TouchCompletion()
+    do {
+      try RelayTextSynthesizer.synthesizeText(text, typingSpeed: UInt(RunnerTyping.typingSpeed)) { completion.finish($0) }
+    } catch {
+      throw RunnerError.typingFailed("text synthesis failed: \(error.localizedDescription); nothing was typed", status: 500)
+    }
+    let deadline = Date(timeIntervalSinceNow: seconds)
+    while !completion.isFinished {
+      guard Date() < deadline else {
+        throw RunnerError.typingFailed(RunnerTyping.synthesisTimeoutMessage(seconds: seconds), status: 422)
+      }
+      _ = RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.005))
+    }
+    if let error = completion.error {
+      throw RunnerError.typingFailed("text synthesis failed: \(error.localizedDescription)", status: 422)
     }
   }
 

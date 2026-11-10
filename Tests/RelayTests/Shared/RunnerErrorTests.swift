@@ -24,6 +24,7 @@ struct RunnerErrorCodeTests {
       .remoteViewPositionUnknown: "remote_view_position_unknown",
       .coveredByOtherApp: "covered_by_other_app",
       .touchFailed: "touch_failed",
+      .typingFailed: "typing_failed",
       .xcuiFailed: "xcui_failed",
       .internalError: "internal_error"
     ]
@@ -48,6 +49,8 @@ struct RunnerErrorCodeTests {
       (.internalError("failed to encode JPEG"), 500, .internalError),
       (.touchFailed("touch synthesis did not complete within 10s"), 422, .touchFailed),
       (.touchSynthesisError("touch synthesis failed: no class"), 500, .touchFailed),
+      (.typingFailed("typing did not complete within 11s; some of the text may have been typed", status: 422), 422, .typingFailed),
+      (.typingFailed("text synthesis failed: no class; nothing was typed", status: 500), 500, .typingFailed),
       (.actionFailed("failed to snapshot com.example"), 422, .xcuiFailed),
       (.noKeyboardFocus(bundleID: "com.example"), 422, .noKeyboardFocus),
       (.displayUnknown("cannot tell which display com.example is on"), 422, .displayUnknown),

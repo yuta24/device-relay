@@ -82,6 +82,37 @@ testmanagerd が `Failed to load displays from CADisplay` で画面を取得で�
 
 確かめた環境: iOS 26.7.1、Xcode 27。
 
+### 文字入力の経路
+
+`/type`・`/key` も、タッチと同じ合成器で文字を直接送り、アプリのアイドル待ちをしません（「[文字入力の合成](private-api.md#文字入力の合成)」）。
+以前の `XCUIElement.typeText` は、入力の前後でアプリがアイドルになるのを待ち、アイドルにならないアプリでは長く busy になったためです。
+
+| 経路 | 仕組み | 特徴 |
+| --- | --- | --- |
+| `private`（既定） | `XCPointerEventPath` のテキスト入力を合成します。`typeText` が中で作るものと同じです | 送る前にフォーカスを確かめ、完了 callback を待ってから応答します。待つ時間には上限があります |
+| `xcui` | 公開 API の `typeText` です | 前後でアイドルを待ちます。待ちきれないと 60 秒で諦めて続けます |
+
+`typeText` の待ちは、アプリの中の XCTest が見る 2 つの条件で決まります。
+メインのランループが眠る直前の通知（`XCTMainRunLoopIdleNotifier`）と、UIView のアニメーションの数（`XCTAnimationsIdleNotifier`）です。
+
+修正前のランナーで、メインのランループが眠らない画面に `type abcdefghij` を送ると、次のようになりました。
+
+| 段階 | ランナーのログと時間 |
+| --- | --- |
+| 送る前の待ち | `Wait for <app> to idle` から 60 秒後に `App event loop idle notification not received, will attempt to continue.` |
+| 送るまでの間 | 約 5–43 秒の後に `Synthesize event`。この間は spindump の取得と思われますが、確かめていません |
+| 送った後の待ち | また 60 秒後に同じ通知が出て、さらに約 16 秒後に `200` で応答 |
+
+6 回の `/type` は、ランナーの計測で 140.9–180.9 秒でした。
+この間 `relay ping` は `"busy":true` で、`relay type` は毎回約 32 秒で終了コード `3` でした。文字はすべて入りました。
+修正後の `private` では、同じ画面で 5 回とも約 0.40–0.42 秒でした。
+UIView の繰り返しのアニメーションと、メインキューを埋め続ける処理だけの画面では、待ちは起きませんでした（`type` は約 0.5 秒）。
+ランループのソースが自分を signal し続ける画面で、毎回起きました。
+
+WKWebView の初回の入力で約 121 秒止まった件は、この 60 秒 2 回に当たると考えていますが、その画面での原因は確かめていません。
+
+確かめた環境: iPhone 17 シミュレータ、iOS 27.2、Xcode 27.2。
+
 ## 計測したレイテンシ
 
 iPhone 17 Pro シミュレータ（iOS 27.0、Apple Silicon Mac、`127.0.0.1`）で、Safari を前面にして計測しました。`relay bench --count 10 --tap 196,30 --mode private|xcui` の結果（ms）:

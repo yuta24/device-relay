@@ -214,7 +214,14 @@ enum RunnerControl {
   /// operation, and every other command gets 409 until it ends. XCTest can't be interrupted, and after a
   /// `/launch` it may hold on for minutes more (298 s in all for an app that isn't installed).
   static func timeoutReason(for operation: RunnerOperation, seconds: Int) -> String {
-    guard case .launch = operation else {
+    switch operation {
+    case .launch: break
+    case .type, .key:
+      // Only `typeText`, the fallback when the runner can't synthesize text, waits for the app to idle.
+      return "no response within \(seconds)s; the runner may be waiting for the app to become idle and stays busy until "
+        + "XCTest gives up (up to about 3 minutes). Wait until relay ping shows \"busy\":false, then check the text "
+        + "with relay find"
+    default:
       return "no response within \(seconds)s; check it with relay ping"
     }
     return "no response within \(seconds)s; the runner is still waiting for the app and stays busy until XCTest gives up, "
@@ -236,6 +243,9 @@ enum RunnerControl {
     switch errorCode {
     case .noKeyboardFocus:
       return "tap the text field first (relay tap --id …), then send it again"
+    case .typingFailed:
+      return "some of the text may have been typed: check the field's value with relay find, clear it if needed, "
+        + "then send it again"
     case .elementNotFound:
       return "check the screen with relay find --type … or relay source, or wait for the element with --timeout <s>"
     case .elementAmbiguous:

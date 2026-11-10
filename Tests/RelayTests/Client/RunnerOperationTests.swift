@@ -74,4 +74,14 @@ struct RunnerOperationTests {
     #expect(abs(RunnerOperation.type(text: "e\u{301}日本", keys: [], bundleID: nil).waitTime - 0.4) < 1e-9)
     #expect(RunnerOperation.key("return", bundleID: nil).waitTime == 1)
   }
+
+  /// The runner stops waiting for synthesized text before relay stops waiting for the answer, so a slow
+  /// `type` ends in `typing_failed` instead of a timeout that leaves the runner busy.
+  @Test func runnerGivesUpOnTypingFirst() {
+    for operation in [RunnerOperation.type(text: "abcdefghij", keys: ["return"], bundleID: nil), .key("delete", bundleID: nil),
+                      .type(text: String(repeating: "a", count: 2500), keys: [], bundleID: nil)] {
+      #expect(operation.waitTime + RunnerTyping.synthesisGrace + 10 <= RunnerControl.baseTimeout + operation.waitTime)
+    }
+    #expect(RunnerTyping.synthesisTimeoutMessage(seconds: 11.05) == "typing did not complete within 12s; some of the text may have been typed")
+  }
 }

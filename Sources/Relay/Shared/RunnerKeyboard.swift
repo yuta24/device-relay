@@ -82,4 +82,44 @@ enum RunnerTyping {
   static func missingKeyboardFocusMessage(bundleID: String) -> String {
     "no element has keyboard focus in \(bundleID)"
   }
+
+  enum FocusCheck: Equatable {
+    case focused
+    /// The query recorded an XCUI issue (the app isn't running, say): nothing may be typed, since synthesized
+    /// text goes to whatever has focus.
+    case queryFailed
+    case notFocused
+  }
+
+  /// What one look for keyboard focus found before synthesized text is sent. A failed query wins over a count,
+  /// since the count of a failed query means nothing.
+  static func focusCheck(matchCount: Int, queryFailed: Bool) -> FocusCheck {
+    if queryFailed { return .queryFailed }
+    return matchCount > 0 ? .focused : .notFocused
+  }
+
+  /// Seconds per character that typing may take. It typed about 15 ms per character on a simulator (1,000
+  /// ASCII characters in 17 s, Japanese at the same rate); a device is slower (one `/key` took 0.66 s there
+  /// against 0.26 s on a simulator), so this leaves several times what was seen.
+  static let waitPerCharacter: TimeInterval = 0.1
+  /// Seconds per key (`/key`, `/type` `keys`): a key took 0.26 s on a simulator and 0.66 s on a device.
+  static let waitPerKey: TimeInterval = 1
+
+  /// How long typing `text` and then `keyCount` keys may take. `relay type` waits 30 s more than this for the
+  /// answer; the runner gives synthesized text this plus `synthesisGrace`, so it answers first.
+  /// Counted in Unicode scalars, not characters, since a character made of several scalars can take
+  /// several key events.
+  static func wait(text: String, keyCount: Int) -> TimeInterval {
+    Double(text.unicodeScalars.count) * waitPerCharacter + Double(keyCount) * waitPerKey
+  }
+
+  /// What the runner adds to `wait(text:keyCount:)` before it stops waiting for synthesized text to be typed.
+  static let synthesisGrace: TimeInterval = 10
+
+  static func synthesisTimeoutMessage(seconds: TimeInterval) -> String {
+    "typing did not complete within \(Int(seconds.rounded(.up)))s; some of the text may have been typed"
+  }
+
+  /// Characters per second for synthesized text: `XCUIElement.typeText` uses 60 when none is set.
+  static let typingSpeed = 60
 }

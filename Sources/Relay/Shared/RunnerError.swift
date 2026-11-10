@@ -46,6 +46,8 @@ enum RunnerErrorCode: String, CaseIterable {
   case coveredByOtherApp = "covered_by_other_app"
   /// 422 or 500: a synthesized touch failed or did not complete in time.
   case touchFailed = "touch_failed"
+  /// 422 or 500: synthesized text failed or was not typed in time (some of it may have been typed).
+  case typingFailed = "typing_failed"
   /// 422: XCUI reported a failure (a recorded test issue, a snapshot that failed).
   case xcuiFailed = "xcui_failed"
   /// 500: anything else that went wrong in the runner.
@@ -83,6 +85,8 @@ enum RunnerError: Error, CustomStringConvertible {
   case touchFailed(String)
   /// The synthesizer refused the touch before sending it (500, as before codes).
   case touchSynthesisError(String)
+  /// Synthesized text that failed or timed out (422), or that the synthesizer refused to send (500).
+  case typingFailed(String, status: Int)
   /// An XCUI failure that has no code of its own (422).
   case actionFailed(String)
   case noKeyboardFocus(bundleID: String)
@@ -104,7 +108,7 @@ enum RunnerError: Error, CustomStringConvertible {
     case .methodNotAllowed: return "method not allowed"
     case .internalError(let message), .touchFailed(let message), .touchSynthesisError(let message),
          .actionFailed(let message), .touchUnreachable(let message), .displayUnknown(let message),
-         .windowPositionUnknown(let message):
+         .windowPositionUnknown(let message), .typingFailed(let message, _):
       return message
     case .noKeyboardFocus(let bundleID): return RunnerTyping.missingKeyboardFocusMessage(bundleID: bundleID)
     case .coveredByOtherApp(let covered): return covered.message
@@ -118,6 +122,7 @@ enum RunnerError: Error, CustomStringConvertible {
     case .notFound: return 404
     case .methodNotAllowed: return 405
     case .internalError, .touchSynthesisError: return 500
+    case .typingFailed(_, let status): return status
     case .touchFailed, .actionFailed, .touchUnreachable, .noKeyboardFocus, .displayUnknown, .windowPositionUnknown,
          .coveredByOtherApp, .elementNotResolved: return 422
     }
@@ -132,6 +137,7 @@ enum RunnerError: Error, CustomStringConvertible {
     case .methodNotAllowed: return .methodNotAllowed
     case .internalError: return .internalError
     case .touchFailed, .touchSynthesisError: return .touchFailed
+    case .typingFailed: return .typingFailed
     case .actionFailed: return .xcuiFailed
     case .noKeyboardFocus: return .noKeyboardFocus
     case .displayUnknown: return .displayUnknown
