@@ -36,7 +36,24 @@ UI オートメーションがオフだと、ランナーは `Failed to initiali
 Mac からは設定の状態を読めないため、`relay doctor` は確認を促すだけです。
 
 オンでも、automation mode の有効化時に端末がパスコードの入力を求めることがあります。
-詳しくは「[既知の制約](limitations.md)」の「automation mode の有効化でパスコードを求められる」を参照してください。
+入力されるまで有効化は終わりません。120 秒以内に入力されなければ時間切れになるので、端末でパスコードを入力してから `relay start` し直してください。
+
+有効化に約 53 秒かかった回や、60 秒を超えて `Timed out while enabling automation mode.` で失敗した回がありました。
+いったん許可されるとしばらくは有効なようで、直後に起動し直すと有効化は数 ms で終わります。
+待ち時間の仕組みは「[アプリの状態の待ち時間](private-api.md#アプリの状態の待ち時間)」を参照してください。
+
+`relay install` で入れた Runner（`~/.relay/runner`）はコピーの時点のソースなので、コピーが古ければ `relay start` の案内に従って `relay install` をやり直してください。
+ビルドの作り直しは「[ランナーの版](setup.md#ランナーの版ソースのハッシュ)」を参照してください。
+
+起動に失敗したときの hint は、失敗の種類によって次のように表示します。
+
+| 失敗の種類 | hint |
+| --- | --- |
+| 実機の UI テスト初期化の失敗（`Failed to initialize for UI testing`） | パスコードの入力、UI オートメーションの設定、ロック解除の順に案内します。 |
+| シミュレータでの同じ失敗 | 「1 回だけ起動し直す」と案内します。 |
+| `** TEST FAILED **` などテストの失敗 | hint は出さず、ランナーのログのパスだけを示します。 |
+
+確かめた環境: iOS 26.7.1、Xcode 27。
 
 ## Team ID（実機の署名）
 
@@ -115,6 +132,9 @@ bundle ID prefix changed from X to Y; rebuilding, and the device gets new apps w
 
 ## 接続の経路
 
+実機への接続には CoreDevice トンネルか、`--allow-wifi` による Wi-Fi が必要です。usbmux には対応していません。
+実機のランナーは、すべてのインターフェースで待ち受けます。
+
 `relay start` は次の順に `/health` を送り、最初に応答したアドレスを `ready:` として表示します。
 
 1. CoreDevice トンネルアドレス: `xcrun devicectl device info details` の `tunnelIPAddress`。USB 接続だけで使える IPv6 の ULA です。
@@ -127,6 +147,14 @@ bundle ID prefix changed from X to Y; rebuilding, and the device gets new apps w
 | --- | --- | --- |
 | CoreDevice トンネル | USB だけで動き、同じ LAN にいる必要がありません。 | Xcode/CoreDevice のトンネルが張られている間しか使えません。 |
 | Wi-Fi IP（`--allow-wifi`） | ケーブルが不要です。 | 同じ LAN とローカルネットワーク許可が必要で、トークンと画面は LAN 上を平文で流れ、ネットワークによっては AP 間の通信が遮断されます。 |
+
+## ホームと音量ボタン
+
+実機の `/button home` は、ホームインジケーターのジェスチャー（画面下端から上への素早いスワイプ）でホームに戻ります。
+ホームボタンのない端末が前提で、ホームボタンのある端末では同じジェスチャーでコントロールセンターが開きます。
+代用する理由と経路ごとの時間は「[実機の home](design.md#実機の-home)」を参照してください。
+
+`volumeUp` / `volumeDown` は実機でのみ使えます。シミュレータでは `400` になります。
 
 ## 録画の準備
 
