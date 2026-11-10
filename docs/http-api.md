@@ -31,7 +31,7 @@
 
 `/launch` は、アプリが前面になるまで XCTest のアプリの状態の待ち時間（60 秒、戻せないランナーでは 120 秒）まで待ってから応答します。
 
-**`/health` の画面サイズと速さ**
+### `/health` の応答
 
 `/health` は、SpringBoard の frame から縦向きの画面サイズを、スクリーンショットのピクセル数から scale を求めます。xctrunner には起動画面の設定がなく、実機のランナー内の `UIScreen` が 320×480 の互換モードになるためです。
 
@@ -68,7 +68,7 @@
 
 判定の方法、`xcui` 経路の制約、要件は「[表示が複数ある端末（iPhone Duo）](screen.md#表示が複数ある端末iphone-duo)」を参照してください。
 
-ステータスコード:
+### ステータスコードと curl の例
 
 | コード | 意味 |
 | --- | --- |
@@ -202,7 +202,7 @@ curl -s -H "$AUTH" -X POST $R/shutdown
 | relay を通さずに起動（`simctl launch` / `devicectl device process launch`） | `com.apple.mobilesafari`、`com.apple.Preferences`、RelayRunnerHost | `com.apple.calculator`、RelayRunnerHost |
 | タッチで切り替え（ステータスバーの「◀ Calculator」をタップ） | – | `com.apple.calculator` |
 
-`/health` は前面アプリの取得のぶん遅くなります（「[画面サイズと速さ](#エンドポイント)」）。
+`/health` は前面アプリの取得のぶん遅くなります（「[`/health` の応答](#health-の応答)」）。
 
 要素を指定した `/tap`・`/press` は、タッチを送る直前にも一覧を読み直し、対象アプリが一覧になく先頭が SpringBoard なら何も送らずに `422`（`covered_by_other_app`）を返します（「[別のアプリに覆われているとき](elements.md#別のアプリに覆われているとき)」）。システムの許可ダイアログ・コントロールセンター・通知センターの表示中は、一覧が SpringBoard だけになります（シミュレータ iOS 27、実機 iOS 26.7.1）。
 

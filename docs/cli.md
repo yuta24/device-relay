@@ -159,6 +159,9 @@ relay: image 471x1024 px, screen 402x874 pt, 1.172 px/pt (tap in points: px / 1.
 
 バンドル ID は大文字小文字も区別されます。`com.apple.preferences` では設定は起動せず、`relay launch` は入っていないと判定します。
 
+`terminate` と `--bundle-id` は、入っていないアプリでもすぐ返るため確かめません。
+`terminate` は成功し、`find` などは `xcui_failed` になります。
+
 #### 入っていないアプリを起動したときの待ち時間
 
 入っていないアプリの起動をランナーに送ると、CLI の打ち切り後も busy が続くことがあります（「[応答の待ち時間](#応答の待ち時間)」）。
@@ -169,11 +172,6 @@ relay: image 471x1024 px, screen 402x874 pt, 1.172 px/pt (tap in points: px / 1.
 | 実機 | 150 秒の打ち切りの後、さらに 153 秒以上 busy でした。 |
 
 確かめた環境: シミュレータ（iOS 27.0）、実機（iOS 26.4）。
-
-#### 起動以外のインストール確認
-
-`terminate` と `--bundle-id` は、入っていないアプリでもすぐ返るため確かめません。
-`terminate` は成功し、`find` などは `xcui_failed` になります。
 
 ### オプションの書き方
 
