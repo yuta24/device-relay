@@ -57,6 +57,14 @@ struct RunnerKeyboardTests {
     }
   }
 
+  /// A failed focus query must not count as focus: the text would be typed into whatever has it.
+  @Test func failedFocusQueryTypesNothing() {
+    #expect(RunnerTyping.focusCheck(matchCount: 1, queryFailed: false) == .focused)
+    #expect(RunnerTyping.focusCheck(matchCount: 0, queryFailed: false) == .notFocused)
+    #expect(RunnerTyping.focusCheck(matchCount: 0, queryFailed: true) == .queryFailed)
+    #expect(RunnerTyping.focusCheck(matchCount: 1, queryFailed: true) == .queryFailed)
+  }
+
   @Test func recognizesMissingKeyboardFocus() {
     let issue = "Failed to synthesize event: Neither element nor any descendant has keyboard focus. Event dispatch snapshot: ..."
     #expect(RunnerTyping.isMissingKeyboardFocus(issue))

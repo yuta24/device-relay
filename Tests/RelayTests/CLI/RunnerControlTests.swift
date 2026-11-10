@@ -68,6 +68,7 @@ struct RunnerControlHintTests {
 
   @Test func hintsByCode() {
     #expect(RunnerControl.hint(for: .actionFailed, errorCode: .noKeyboardFocus, infoURL: infoURL)?.contains("tap the text field first") == true)
+    #expect(RunnerControl.hint(for: .actionFailed, errorCode: .typingFailed, infoURL: infoURL)?.contains("relay find") == true)
     #expect(RunnerControl.hint(for: .actionFailed, errorCode: .elementNotFound, infoURL: infoURL)?.contains("--timeout") == true)
     #expect(RunnerControl.hint(for: .actionFailed, errorCode: .elementAmbiguous, infoURL: infoURL)?.contains("--index") == true)
     #expect(RunnerControl.hint(for: .actionFailed, errorCode: .touchModeUnavailable, infoURL: infoURL)?.contains("--mode") == true)

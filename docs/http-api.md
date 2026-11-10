@@ -9,7 +9,7 @@
 | メソッド / パス | ボディ / クエリ | 説明 |
 | --- | --- | --- |
 | `GET /ping` | – | 生存確認。busy ゲートもメインスレッドも通らずに即答します（`{"ok":true,"busy":<bool>,"busyForMs":<ms or null>,"runner":{…}}`）。詳しくは「生存確認（/ping）」と「ランナーの版（runner）」 |
-| `GET /health` | – | 端末情報、表示の向きでの画面サイズ（points / scale）、`orientation`、`touchSynthesis`、`foreground`、表示の一覧 `displays` と前面アプリの表示 `display`（下の「表示が複数ある端末」）、ランナーの版 `runner`（下の「ランナーの版（runner）」） |
+| `GET /health` | – | 端末情報、表示の向きでの画面サイズ（points / scale）、`orientation`、`touchSynthesis`、文字入力の経路 `typeSynthesis`（「文字入力と特殊キー」）、`foreground`、表示の一覧 `displays` と前面アプリの表示 `display`（下の「表示が複数ある端末」）、ランナーの版 `runner`（下の「ランナーの版（runner）」） |
 | `GET /foreground` | – | 前面アプリの `bundleId` と `pid`、取得経路 `source`（`private` / `fallback`）。詳しくは「前面アプリ」 |
 | `GET /screenshot` | `?format=png\|jpeg&quality=0.05–1.0&maxSize=<px>&scale=<px/pt>`（既定は png、jpeg の既定 quality は 0.7。範囲外・数値以外の quality と、png への quality の指定は 400。`maxSize`・`scale` は省略時は縮小なし） | 画面全体のスクリーンショット（表示の向きに正規化済み）。`maxSize`・`scale` で端末側で縮小します。画像と座標の関係を `X-Relay-*` ヘッダーで返します。詳しくは「[スクリーンショットの縮小](screen.md#スクリーンショットの縮小)」 |
 | `GET /source` | `?format=json\|text\|compact&filter=interactive&maxDepth=<n>&bundleId=`（既定は json、bundleId の既定は前面アプリ） | XCUI の要素ツリー。json は要素ごとの属性と frame、text は `debugDescription`、compact は 1 行 1 要素。`filter=interactive` で操作できる要素だけに絞ります。詳しくは「[要素ツリー（/source）](elements.md#要素ツリーsource)」 |
@@ -145,6 +145,7 @@ curl -s -H "$AUTH" -X POST $R/shutdown
 | `remote_view_position_unknown` | 422 | 要素を指定した `/tap`・`/press` で、選んだ要素が共有シート（別のプロセスが描くビュー）の中にあり、画面上の位置が決まらない（`reason: positionUnknown`）。何も送っていない（「[共有シートの中の要素](elements.md#共有シートの中の要素)」） | スクリーンショットで位置を確かめ、座標で指定する |
 | `covered_by_other_app` | 422 | 要素を指定した `/tap`・`/press` で、対象アプリが前面のアプリの一覧になく、先頭が SpringBoard（システムの許可ダイアログ、コントロールセンターなどに覆われている）。何も送っていない。`bundleId`・`foreground`・`alert`（SpringBoard の alert の label か `null`）が付く（「[別のアプリに覆われているとき](elements.md#別のアプリに覆われているとき)」） | スクリーンショットか `/find`（`bundleId: com.apple.springboard`、`type: alert`）で確かめ、ダイアログなどを閉じてから送り直す |
 | `touch_failed` | 422 / 500 | 合成したタッチが失敗した、時間内に終わらなかった、合成を始められなかった（500） | 1 回だけ再試行する。続くならランナーのログを見る |
+| `typing_failed` | 422 / 500 | `/type`・`/key` で合成した入力が失敗した、時間内に終わらなかった（422）、合成を始められなかった（500） | `/find` の `value` で入った文字を確かめ、必要なら消してから送り直す |
 | `xcui_failed` | 422 | XCUI が失敗を報告した（XCTest の issue、要素ツリーの取得の失敗など）。`error` に XCUI の文 | `error` を読み、前面アプリと画面を観察し直す |
 | `internal_error` | 500 | ランナーの内部エラー（JPEG エンコードの失敗、終了処理中など） | 1 回だけ再試行する。続くならランナーのログを見る |
 
@@ -208,12 +209,17 @@ curl -s -H "$AUTH" -X POST $R/shutdown
 
 ## 文字入力と特殊キー
 
-- `/type {"text":"..."}` は前面アプリ（または `bundleId`）で、キーボードのフォーカスがある要素に `XCUIElement.typeText` で入力します。入力欄をタップしてフォーカスを当ててから送ってください。
+- `/type {"text":"..."}` は前面アプリ（または `bundleId`）で、キーボードのフォーカスがある要素に入力します。入力欄をタップしてフォーカスを当ててから送ってください。
+- 入力は XCTest の非公開 API で直接合成し、アプリがアイドルになるのを待ちません（「[文字入力の合成](private-api.md#文字入力の合成)」）。`/health` の `typeSynthesis` が `private` です。
+- 非公開 API が使えないときと、表示が複数ある端末では、以前と同じ `XCUIElement.typeText` で入力し、`typeSynthesis` は `xcui` です。この経路は前後でアプリのアイドルを待つので、アイドルにならないアプリでは 3 分ほど busy になることがあります。
 - `fallback`（非公開 API が使えない場合）では手で切り替えたアプリを判別できないので、`/type`・`/key` の `bundleId` を明示してください（「[前面アプリ](#前面アプリ)」）。
 - 特殊キーは `POST /key {"key":"return"}`、または `/type` の `keys` 配列（`{"text":"abc","keys":["delete","return"]}`。`text` の後に順に送ります）で送ります。キー名は大文字小文字を区別せず、別名 `enter`（= return）、`backspace`（= delete）も使えます。
 - 対応するキーは `return`・`delete`・`space` だけです。`tab` と `escape` は iPhone のソフトウェアキーボードにキーがなく、tab は `\t` の文字として入力され、escape は何も起きなかったため、外しました。対応していないキー名は、`/key` でも `keys` でも `400 {"ok":false,"code":"invalid_request","error":"invalid field: key: unsupported key 'tab' (expected return, delete, space)"}` を返し、何も入力しません。
-- キーは `XCUIKeyboardKey` の文字（return は `\r`、delete は U+007F、space は ` `）として `typeText` で送ります。`typeKey(_:modifierFlags:)`（ハードウェアキーのイベント）も試しましたが、iPhone ではシミュレータ・実機とも space と tab しか届かず、return・delete・escape は何も起きませんでした。
-- フォーカスがない場合は、XCUI の長いエラー文の代わりに `422 {"ok":false,"code":"no_keyboard_focus","error":"no element has keyboard focus in <bundleId>"}` を返します（XCUI が待つため約 2–3 秒かかります）。
+- キーは `XCUIKeyboardKey` の文字（return は `\r`、delete は U+007F、space は ` `）として、`text` に続けて同じ経路で送ります。`typeKey(_:modifierFlags:)`（ハードウェアキーのイベント）も試しましたが、iPhone ではシミュレータ・実機とも space と tab しか届かず、return・delete・escape は何も起きませんでした。
+- フォーカスがない場合は、XCUI の長いエラー文の代わりに `422 {"ok":false,"code":"no_keyboard_focus","error":"no element has keyboard focus in <bundleId>"}` を返します。何も入力しません。
+- `private` では、タップした直後の入力欄がフォーカスを持つまで、最大 1 秒探してから `no_keyboard_focus` を返します（シミュレータで約 1.1–1.2 秒）。`xcui` では XCUI が待つため約 2–3 秒かかります。
+- `private` の入力が時間内に終わらなければ、`422 {"ok":false,"code":"typing_failed",…}` を返して busy を解きます。時間は、10 秒に 1 文字（Unicode スカラー）0.1 秒とキー 1 つ 1 秒を足した長さです。
+- `typing_failed` のときは入力の一部が入っていて、応答の後も残りが入り続けることがあります。`/find` の `value` で確かめてから送り直してください。
 
 RelayRunnerHost の入力欄（`relay.input`）で確認した結果（シミュレータ・実機とも同じ。`tab`・`escape` は外す前の結果）:
 
@@ -227,3 +233,8 @@ RelayRunnerHost の入力欄（`relay.input`）で確認した結果（シミュ
 | `escape`（対応外、400） | 何も起きませんでした（ソフトウェアキーボードに Esc キーがなく、キーイベントとしても届かない） |
 
 1 回の `/key` は、シミュレータで約 0.26 秒、実機で約 0.66 秒でした。`/type` の `text` は、シミュレータで約 15 ms/文字（ASCII 1,000 文字で約 17 秒、日本語も同じくらい）かかり、応答は入力し終わってから返ります。長い文字列を送るクライアントは、その分 HTTP のタイムアウトを長くしてください（`relay type` は 1 文字 0.1 秒とキー 1 つ 1 秒を足します）。
+
+`private` の `/type`（10 文字）は、ネイティブの入力欄で約 0.39–0.42 秒でした。`xcui`（`typeText`）では約 0.42–0.62 秒でした。
+メインのランループが眠らない画面では、`private` は同じく約 0.40 秒で、`xcui` は約 141–181 秒 busy になりました（「[文字入力の経路](design.md#文字入力の経路)」）。
+
+確かめた環境（`private`）: iPhone 17 シミュレータ、iOS 27.2、Xcode 27.2。ネイティブの入力欄、WKWebView と Safari のページの入力欄で、文字・`--stdin`・`return`・`delete`・`space` を確かめました。

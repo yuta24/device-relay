@@ -189,4 +189,13 @@ struct AppInstallCheckTests {
     #expect(reason.contains("relay stop"))
     #expect(RunnerControl.timeoutReason(for: .ping, seconds: 30) == "no response within 30s; check it with relay ping")
   }
+
+  @Test func typeTimeoutSaysTheRunnerMayStillBeTyping() {
+    for operation in [RunnerOperation.type(text: "a", keys: [], bundleID: nil), .key("return", bundleID: nil)] {
+      let reason = RunnerControl.timeoutReason(for: operation, seconds: 31)
+      #expect(reason.hasPrefix("no response within 31s; "))
+      #expect(reason.contains("\"busy\":false"))
+      #expect(reason.contains("relay find"))
+    }
+  }
 }

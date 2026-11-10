@@ -58,6 +58,7 @@ Failure JSON is `{"ok":false,"code":"…","error":"…"}`. `code` is a string th
 | `remote_view_position_unknown` | 6 | An element tap/press selected an element inside the share sheet whose frame can't be put on the screen; nothing was sent. Find it in `relay screenshot` and use `relay tap <x> <y>` |
 | `covered_by_other_app` | 6 | An element tap/press found SpringBoard in front of the target app (a system alert, Control Center, …); nothing was sent. `foreground` and `alert` (the alert's question, or null) tell what covers it. Check with `relay screenshot` or `relay find --type alert --bundle-id com.apple.springboard`, close it, and send it again ([system-alerts](system-alerts.md)) |
 | `touch_failed` | 6 / 8 | Retry once. If it persists, `relay status` and the logs |
+| `typing_failed` | 6 / 8 | `relay type` / `relay key` did not finish typing in time (the runner gave up and is no longer busy). Some of the text may be in the field, and the rest may still arrive after the answer: check its `value` with `relay find`, clear it if needed, and send it again |
 | `xcui_failed` | 6 | Read the error text (XCUI's message) and observe the foreground app and the screen again |
 | `app_not_installed` | 6 | relay decides before sending (the runner doesn't return it). Check the bundle ID, or install the app |
 | `internal_error` | 8 | Retry once. If it persists, `relay status` and the logs |
