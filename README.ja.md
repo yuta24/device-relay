@@ -173,25 +173,26 @@ RELAY_SESSION=agent-2 codex    # 別のターミナルで、別のセッショ�
 - まず `relay doctor`（シミュレータなら `relay doctor --simulator`）で環境を確かめます。✗ と ! の項目には直し方が 1 行添えてあります。
 - ログは `~/.relay/logs/` にあります（`start-*.log`、`build-*.log`、`runner-*.log`）。`relay start --background` は失敗したときに原因とログの末尾を表示します。`relay start` は更新から 7 日を過ぎたログを消します（種類ごとに新しい 20 件は残します）。
 - サブコマンドの終了コード（`2` = 書き方の誤り、`3` = ランナーに届かない、`5` = busy、`6` = XCUI で失敗 など）は [docs/cli.md](docs/cli.md) にまとめています。
-- 実機特有の問題（UI オートメーション、パスコード、ホームボタンなど）は [docs/limitations.md](docs/limitations.md) を参照してください。
+- 実機特有の問題（UI オートメーション、パスコード、ホームボタンなど）は [docs/device.md](docs/device.md) を参照してください。
+- 症状から説明のある節を探すときは、[既知の制約の索引](docs/limitations.md)を使います。
 
 ## ドキュメント
 
-| 文書 | 内容 |
-| --- | --- |
-| [docs/setup.md](docs/setup.md) | インストールと更新、Runner の探し方（`relay install`）、端末の選択、環境の確認（`relay doctor`）、シミュレータ |
-| [docs/device.md](docs/device.md) | 実機の準備、Team ID、バンドル ID の接頭辞、接続の経路、録画の準備 |
-| [docs/sessions.md](docs/sessions.md) | 起動と停止、生存確認、接続先（runner.json）の探し方、並列セッション、エージェントの sandbox、ログとテスト結果の掃除 |
-| [docs/cli.md](docs/cli.md) | CLI のサブコマンドと終了コード、シナリオの実行（`relay run`、実験的）、録画の使い方（`relay record`）、エージェントスキル |
-| [docs/http-api.md](docs/http-api.md) | HTTP API のエンドポイントとステータスコード、認証、同時リクエストと生存確認（`/ping`）、前面アプリ、文字入力と特殊キー |
-| [docs/elements.md](docs/elements.md) | 要素ツリー（`/source`、compact、interactive）、要素セレクタ、待機（timeout） |
-| [docs/screen.md](docs/screen.md) | 座標系と画面の向き、スクリーンショットの縮小 |
-| [docs/design.md](docs/design.md) | アーキテクチャとファイル配置、タッチ合成の経路、計測したレイテンシ |
-| [docs/limitations.md](docs/limitations.md) | 既知の制約 |
-| [docs/private-api.md](docs/private-api.md) | ランナーが使う Apple の非公開 API の一覧と、使えないときの挙動 |
-| [CHANGELOG.md](CHANGELOG.md) | 以前の版から更新するときに直す必要がある変更（破壊的な変更、移行の注意） |
-| [docs/development.md](docs/development.md) | 開発者向け: リポジトリ内での実行、ランナーの手動起動、検証用のホストアプリ、文書の書き方、リリースの手順 |
-| [skills/device-relay/](skills/device-relay/) | コーディングエージェント向けのスキル（`SKILL.md` と、話題ごとのファイルを置く `references/` とその索引 `reference.md`） |
+| 読み手 | 文書 | 内容 |
+| --- | --- | --- |
+| 初めて使う人 | [docs/setup.md](docs/setup.md) | インストールと更新、Runner の探し方（`relay install`）、端末の選択、環境の確認（`relay doctor`）、シミュレータ |
+| 初めて使う人 | [docs/device.md](docs/device.md) | 実機の準備、UI オートメーションとパスコード、Team ID、バンドル ID の接頭辞、接続の経路、ホームと音量ボタン、録画の準備 |
+| 使っている人 | [docs/sessions.md](docs/sessions.md) | 起動と停止、生存確認、強制終了したとき、接続先（runner.json）の探し方、並列セッション、外部コマンドの時間切れ、エージェントの sandbox、ログとテスト結果の掃除 |
+| 使っている人 | [docs/cli.md](docs/cli.md) | CLI のサブコマンド、出力と終了コード、アプリの指定と起動、シナリオの実行（`relay run`、実験的）、録画（`relay record`）、エージェントスキル |
+| 使っている人 | [docs/http-api.md](docs/http-api.md) | HTTP API のエンドポイントとステータスコード、`/health` の応答、認証、同時リクエストと生存確認（`/ping`）、前面アプリ、文字入力と特殊キー |
+| 使っている人 | [docs/elements.md](docs/elements.md) | 要素ツリー（`/source`、compact、interactive）、要素セレクタ、共有シート、別のアプリに覆われているとき、待機（timeout）、システムの許可ダイアログ |
+| 使っている人 | [docs/screen.md](docs/screen.md) | 座標系と画面の向き、スクリーンショットの縮小、iPad のウィンドウ表示、表示が複数ある端末（iPhone Duo） |
+| 困っている人 | [docs/limitations.md](docs/limitations.md) | 既知の制約の索引（症状から読む節を引く表）と、どの機能にも属さない制約 |
+| 以前の版から更新する人 | [CHANGELOG.md](CHANGELOG.md) | 以前の版から更新するときに直す必要がある変更（破壊的な変更、移行の注意） |
+| 作る人 | [docs/design.md](docs/design.md) | アーキテクチャとファイル配置、タッチ合成の経路、計測したレイテンシ |
+| 作る人 | [docs/private-api.md](docs/private-api.md) | ランナーが使う Apple の非公開 API の一覧と、使えないときの挙動 |
+| 作る人 | [docs/development.md](docs/development.md) | リポジトリ内での実行、ランナーの手動起動、検証用のホストアプリ、実装の背景、文書の書き方、リリースの手順 |
+| エージェント | [skills/device-relay/](skills/device-relay/) | コーディングエージェント向けのスキル（`SKILL.md` と、話題ごとのファイルを置く `references/` とその索引 `reference.md`） |
 
 ## ライセンス
 
