@@ -57,9 +57,11 @@ skills/device-relay/               コーディングエージェント向けの
 | 経路 | 仕組み | 特徴 |
 | --- | --- | --- |
 | `private`（既定） | XCTest の非公開 API でタッチを直接合成（WebDriverAgent と同じ方式） | アプリのアイドル待ちをしない。完了 callback を待ってから応答する |
-| `xcui` | 公開 API の `XCUICoordinate.tap()` / `press(forDuration:)` / `press(forDuration:thenDragTo:…)` | 前後で quiescence を待つため遅い |
+| `xcui` | 公開 API の `XCUICoordinate.tap()` / `press(forDuration:)` / `press(forDuration:thenDragTo:…)` | イベントを送る前後に対象アプリがアイドルになる（quiescence）のを待つため遅い |
 
 `private` で使う非公開 API は「[タッチ合成](private-api.md#タッチ合成)」にまとめています。クラスとセレクタはすべて実行時に `NSClassFromString` / `respondsToSelector:` で確認します（`Runner/RelayRunnerUITests/RelayTouchSynthesizer.m`）。1 つでも欠けていれば自動で `xcui` に落ち、`/health` は `"touchSynthesis":"xcui"` になります。`mode: "private"` を明示して使えない場合は 400 を返します。
+
+`xcui` のタップの計測値は「[計測したレイテンシ](#計測したレイテンシ)」を参照してください。
 
 ジェスチャーの組み立て: tap は 0.05 秒押して離す、press は `duration` 秒後に離す、swipe は `from` で `hold` 秒止まってから `duration` 秒かけて `to` へ移動し、すぐ離します。座標は前面アプリの表示の向きから縦向きの画面座標に変換して送ります（「[座標系と画面の向き](screen.md#座標系と画面の向き)」を参照）。
 
@@ -104,3 +106,7 @@ iPhone 17 Pro シミュレータ（iOS 27.0、Apple Silicon Mac、`127.0.0.1`）
 | `GET /screenshot` (jpeg q=0.5、横・正規化あり) | 119 | 122 | 124 | 125 | 110 KB |
 | `POST /tap` (private) | 281 | 293 | 296 | 296 | – |
 | `POST /tap` (xcui) | 493 | 1217 | 1228 | 1246 | – |
+
+`xcui` のタップ 1 回は、シミュレータの Safari で約 1.6 秒、実機の計算機で約 1.2 秒でした。実機の以前の計測では約 1.9 秒でした。
+
+`/health` は前面アプリの取得のぶん遅くなりました。実機の p50 は約 3 ms → 約 16 ms です。
