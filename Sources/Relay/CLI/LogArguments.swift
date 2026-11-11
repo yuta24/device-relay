@@ -137,7 +137,7 @@ extension Arguments {
     return value
   }
 
-  private static func readTarget(_ option: String, from rest: inout ArraySlice<String>, into target: inout LogTargetOptions) throws {
+  static func readTarget(_ option: String, from rest: inout ArraySlice<String>, into target: inout LogTargetOptions) throws {
     let value = try logValue(for: option, from: &rest)
     switch option {
     case "--session": target.session = try sessionName(value)
@@ -146,7 +146,7 @@ extension Arguments {
     }
   }
 
-  private static func checkTarget(_ target: LogTargetOptions, command: String) throws {
+  static func checkTarget(_ target: LogTargetOptions, command: String) throws {
     guard [target.runnerPath, target.session, target.udid].compactMap({ $0 }).count <= 1 else {
       throw ArgumentError(description: "\(command) takes one of --session, --runner, and --udid")
     }

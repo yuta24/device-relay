@@ -58,7 +58,7 @@ ln -sfn ~/.local/share/device-relay/device-relay-v$VERSION/bin/relay ~/.local/bi
 
 - Add `~/.local/bin` to your PATH if it isn't there. To update, repeat these steps with the new version, then remove the old directory.
 - The binary is signed and notarized, so downloading the tarball with a browser works too. macOS checks the notarization online, so the first run of a browser download needs a network connection.
-- Link `bin/relay` rather than copying it: relay finds the Runner from its own location. If you do copy the binary alone somewhere else, run `relay install` once from the extracted directory.
+- Link `bin/relay` rather than copying it: relay finds the Runner from its own location. If you do copy the binary alone somewhere else, run `relay runner install` once from the extracted directory.
 
 ### Build from source
 
@@ -142,7 +142,8 @@ A physical device needs the following before `relay start`. For details, see [хо
 
 | Command | What it does |
 | --- | --- |
-| `relay install` / `relay uninstall` | Copy the Runner project to `~/.relay/runner` / remove it (only needed for a `relay` binary copied away from its directory) |
+| `relay install <path>` / `relay uninstall <bundle-id>` | Install an `.app` or `.ipa` on the runner's simulator or device / remove an app |
+| `relay runner install` / `relay runner uninstall` | Copy the Runner project to `~/.relay/runner` / remove it (only needed for a `relay` binary copied away from its directory) |
 | `relay doctor` | Check the environment: Xcode, the Runner, the device, signing, and so on |
 | `relay devices` | List physical devices and simulators |
 | `relay start [--background]` | Build and launch the runner (`--background` returns once it is ready) |
@@ -185,7 +186,7 @@ Detailed documentation in docs/ is currently in Japanese.
 
 | Reader | Document | Contents |
 | --- | --- | --- |
-| New users | [docs/setup.md](docs/setup.md) | Installing and updating, preparing the Runner (`relay install`), choosing a device, checking the environment (`relay doctor`), simulators |
+| New users | [docs/setup.md](docs/setup.md) | Installing and updating, preparing the Runner (`relay runner install`), choosing a device, checking the environment (`relay doctor`), simulators |
 | New users | [docs/device.md](docs/device.md) | Preparing physical devices, UI Automation and the passcode, Team ID, bundle ID prefixes, connection paths, the home and volume buttons, preparing to record |
 | Regular users | [docs/sessions.md](docs/sessions.md) | Starting and stopping, checking liveness, after a forced kill, finding the runner (runner.json), parallel sessions, when an external command does not answer, agent sandboxes, cleaning up logs and test results |
 | Regular users | [docs/cli.md](docs/cli.md) | CLI subcommands, output and exit codes, choosing and launching apps, running scenarios (`relay run`, experimental), recording (`relay record`), logs and crash reports (`relay logs`, `relay crashes`), the agent skill |

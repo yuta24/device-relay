@@ -181,6 +181,11 @@ struct FailureJSONTests {
       .runnerBadResponse: "runner_bad_response",
       .screenshotSaveFailed: "screenshot_save_failed",
       .appNotInstalled: "app_not_installed",
+      .appBundleInvalid: "app_bundle_invalid",
+      .appPlatformMismatch: "app_platform_mismatch",
+      .appInstallFailed: "app_install_failed",
+      .appUninstallFailed: "app_uninstall_failed",
+      .appUninstallRefused: "app_uninstall_refused",
       .devicesUnavailable: "devices_unavailable",
       .recordingUnavailable: "recording_unavailable",
       .deviceUnavailable: "device_unavailable",
@@ -284,7 +289,8 @@ struct FailureJSONTests {
 /// Every line of every help text fits in `HelpText.width` characters, so a terminal of that width never wraps one.
 struct HelpWidthTests {
   private var texts: [(name: String, text: String)] {
-    var texts: [(String, String)] = [("relay --help", Arguments.usage), ("relay skill --help", SkillCommand.usage)]
+    var texts: [(String, String)] = [("relay --help", Arguments.usage), ("relay skill --help", SkillCommand.usage),
+                                     ("relay runner --help", Arguments.usage(for: "runner"))]
     for name in ["start", "install", "uninstall", "devices", "doctor", "config", "bench"] {
       texts.append(("relay \(name) --help", Arguments.usage(for: name)))
     }
@@ -296,8 +302,8 @@ struct HelpWidthTests {
 
   @Test func noLineIsLongerThanTheWidth() {
     #expect(HelpText.width == 100)
-    // The overall usage, every runner command (16), status, stop, record, run, and skill.
-    #expect(texts.count == 9 + Arguments.runnerUsages.count + Arguments.lifecycleUsages.count)
+    // The overall usage, every runner command (16), status, stop, record, run, skill, and runner.
+    #expect(texts.count == 10 + Arguments.runnerUsages.count + Arguments.lifecycleUsages.count)
     for (name, text) in texts {
       for line in text.components(separatedBy: "\n") {
         #expect(line.count <= HelpText.width, "\(name): \(line.count) characters: \(line)")
@@ -396,6 +402,9 @@ struct EveryCommandHasHelpTests {
     #expect(!Arguments.usage(for: "bench").contains("one process"))
     #expect(!Arguments.usage(for: "start").contains("Records the screen"))
     #expect(Arguments.usage(for: "uninstall").contains("relay uninstall"))
-    #expect(Arguments.usage(for: "uninstall").contains("--remove"))
+    #expect(Arguments.usage(for: "uninstall").contains("<BUNDLE_ID>"))
+    // relay runner has its own text, like relay skill.
+    #expect(Arguments.usage(for: "runner") == InstallCommand.usage)
+    #expect(InstallCommand.usage.hasPrefix("Usage:\n  relay runner install"))
   }
 }

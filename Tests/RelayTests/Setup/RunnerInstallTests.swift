@@ -241,12 +241,17 @@ struct RunnerInstallTests {
   }
 
   @Test func parsesInstallCommands() throws {
-    #expect(try Arguments.parse(["install"]) == .install(InstallOptions()))
-    #expect(try Arguments.parse(["install", "--project", "..", "--build"]) == .install(InstallOptions(project: "..", build: true)))
-    #expect(try Arguments.parse(["install", "--build", "--verbose"]) == .install(InstallOptions(build: true, verbose: true)))
+    #expect(try Arguments.parse(["runner", "install"]) == .install(InstallOptions()))
+    #expect(try Arguments.parse(["runner", "install", "--project", "..", "--build"]) == .install(InstallOptions(project: "..", build: true)))
+    #expect(try Arguments.parse(["runner", "install", "--build", "--verbose"]) == .install(InstallOptions(build: true, verbose: true)))
+    #expect(try Arguments.parse(["runner", "uninstall"]) == .install(InstallOptions(remove: true)))
+    #expect(throws: ArgumentError.self) { try Arguments.parse(["runner", "uninstall", "--verbose"]) }
+    // The old form, without an app, until the next release.
+    #expect(try Arguments.parse(["install"]) == .install(InstallOptions(legacy: true)))
+    #expect(try Arguments.parse(["install", "--project", "..", "--build"]) == .install(InstallOptions(project: "..", build: true, legacy: true)))
     #expect(throws: ArgumentError.self) { try Arguments.parse(["install", "--remove", "--verbose"]) }
-    #expect(try Arguments.parse(["install", "--remove"]) == .install(InstallOptions(remove: true)))
-    #expect(try Arguments.parse(["uninstall"]) == .install(InstallOptions(remove: true)))
+    #expect(try Arguments.parse(["install", "--remove"]) == .install(InstallOptions(remove: true, legacy: true)))
+    #expect(try Arguments.parse(["uninstall"]) == .install(InstallOptions(remove: true, legacy: true)))
     #expect(throws: ArgumentError.self) { try Arguments.parse(["install", "--remove", "--build"]) }
     #expect(throws: ArgumentError.self) { try Arguments.parse(["uninstall", "--build"]) }
     #expect(try Arguments.parse(["--version"]) == .version)

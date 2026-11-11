@@ -14,8 +14,19 @@ enum RelayErrorCode: String, CaseIterable {
   case runnerBadResponse = "runner_bad_response"
   /// Exit 1: the screenshot arrived but could not be written to the file.
   case screenshotSaveFailed = "screenshot_save_failed"
-  /// Exit 6: `relay launch` of an app that is not installed; nothing was sent to the runner.
+  /// Exit 6: `relay launch` of an app that is not installed; nothing was sent to the runner. `relay uninstall`
+  /// of one: nothing was removed.
   case appNotInstalled = "app_not_installed"
+  /// Exit 1: `relay install` of a path that is not an `.app` or `.ipa` with an Info.plist that has a bundle ID.
+  case appBundleInvalid = "app_bundle_invalid"
+  /// Exit 1: `relay install` of an app built for a device on a simulator, or the other way round; nothing was sent.
+  case appPlatformMismatch = "app_platform_mismatch"
+  /// Exit 1: `simctl install` or `devicectl device install app` failed or timed out.
+  case appInstallFailed = "app_install_failed"
+  /// Exit 1: `simctl uninstall` or `devicectl device uninstall app` failed or timed out.
+  case appUninstallFailed = "app_uninstall_failed"
+  /// Exit 1: `relay uninstall` of a relay runner app (`<prefix>.RelayRunnerHost`, its UI test runner).
+  case appUninstallRefused = "app_uninstall_refused"
   /// Exit 1: `relay devices` could not list the devices or simulators.
   case devicesUnavailable = "devices_unavailable"
   /// Exit 1: `relay record status` could not find or read the recording state.

@@ -149,7 +149,7 @@ struct StartSetup {
     info("runner project: \(project.root.path) (from \(project.source.label))")
     if let reason = staleness(project.root, project.source) {
       // Not fatal: the old runner may still work, and the person may want to finish something first.
-      info("\(reason); run relay install again to update the runner")
+      info("\(reason); run relay runner install again to update the runner")
     }
 
     let (devices, warnings) = try DeviceList.load(commands, udid: options.udid, simulator: options.simulator)

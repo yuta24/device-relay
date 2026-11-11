@@ -25,14 +25,14 @@ WebDriverAgent と同じ「常駐 XCTest ランナー」方式を使います。
 - `relay` CLI（SwiftPM）は、ビルド、ランナーの起動、到達可能なアドレスの探索、Ctrl-C（または `relay stop`）での後片付けをまとめて行います。
 
 ```
-Package.swift / Sources/Relay      ホスト CLI (relay start / status / stop / install / devices / doctor / ランナー操作のサブコマンドなど)
+Package.swift / Sources/Relay      ホスト CLI (relay start / status / stop / install / runner / devices / doctor / ランナー操作のサブコマンドなど)
   main.swift                       エントリポイント
   Shared/                          Runner のプロジェクトもコンパイルする共有ソース (認証、HTTP の framing、要素の判定、エラーなど)
   CLI/                             引数の解釈、出力、ランナー操作のサブコマンド、シナリオ、ベンチマーク
-  Setup/                           relay install / doctor / skill、Runner プロジェクトの場所・ハッシュ・バンドル ID・Team ID
+  Setup/                           relay runner install / doctor / skill、Runner プロジェクトの場所・ハッシュ・バンドル ID・Team ID
   Start/                           relay start (ビルドとランナーの起動、バックグラウンド起動、ロック、ビルドディレクトリの掃除)
   Client/                          起動中のランナーへの接続 (HTTP クライアント、状態、ランナーの探索、セッション)
-  Device/                          端末の一覧、アプリのインストール確認、録画
+  Device/                          端末の一覧、アプリのインストール確認とインストール・削除 (relay install / uninstall)、録画
   Support/                         外部コマンドの実行 (Shell、HostCommands)、ロック付きの値、プロセスの扱い
 Tests/RelayTests                   CLI のユニットテスト (Swift Testing)
   <Dir>/<File>Tests.swift          Sources/Relay/<Dir>/<File>.swift のテスト (ソースと同じディレクトリ構成)。複数のファイルが使う補助は Fixtures/
@@ -41,7 +41,7 @@ Makefile                           make install / make uninstall (relay を ~/.l
 scripts/package.sh                 リリースの tarball を作る (.github/workflows/release.yml も使う)
 skills/device-relay/               コーディングエージェント向けのスキル (SKILL.md、references/ の話題別ファイルと索引の reference.md)
 
-~/.relay/runner/                   relay install がコピーした Runner プロジェクト、エージェントスキル (skills/device-relay) と install.json
+~/.relay/runner/                   relay runner install がコピーした Runner プロジェクト、エージェントスキル (skills/device-relay) と install.json
 ~/.relay/build/                    DerivedData (Runner プロジェクトごと)、テスト実行のログと xcresult (TestData/port-<port>)、使用の記録 (relay-build-dir.json)。古い結果と、元の Runner がないか 30 日使っていないディレクトリは relay start が消す
 ~/.relay/logs/                     ビルドとランナーのログ、relay start --background の出力 (start-<時刻>-<port>.log、セッションは start-<時刻>-<名前>-<port>.log。古いものは relay start が消す)
 ~/.relay/runner.json               起動中のランナーの URL・トークン・端末名と、relay start の PID・起動時刻、ビルドディレクトリの名前 (0600)

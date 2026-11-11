@@ -274,7 +274,7 @@ struct SkillTests {
     #expect(source.label == "checkout")
     #expect(source.commit == nil)
 
-    #expect(try sourceLine(checkout: false).hasSuffix("\(tree.installedSkill.path) (relay \(RelayVersion.current), from relay install)"))
+    #expect(try sourceLine(checkout: false).hasSuffix("\(tree.installedSkill.path) (relay \(RelayVersion.current), from relay runner install)"))
   }
 
   /// The source may be older than the installed copy: the message says they differ, not which is newer.
@@ -300,8 +300,8 @@ struct SkillTests {
     var lines = try tree.run(["status"], checkout: false).lines
     #expect(lines[1].hasPrefix("  ! project"))
     #expect(lines[1].contains("written for relay 0.0.1"))
-    #expect(lines[1].contains("→ run relay install, then relay skill install"))
-    #expect(try tree.run(["status", "--global"], checkout: false).lines[1].hasSuffix("→ run relay install, then relay skill install --global"))
+    #expect(lines[1].contains("→ run relay runner install, then relay skill install"))
+    #expect(try tree.run(["status", "--global"], checkout: false).lines[1].hasSuffix("→ run relay runner install, then relay skill install --global"))
 
     // Once a checkout can be found, relay install is not part of the fix.
     #expect(try tree.run(["status"]).lines[1].hasSuffix("→ run relay skill install to update it"))

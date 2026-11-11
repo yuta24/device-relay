@@ -13,7 +13,7 @@ struct StartupFailure: Equatable {
 /// even while a command runs, and it never makes a user's request fail with 409. A runner built from
 /// sources older than `/ping` answers 404; the monitor then falls back to `/health`, where 409 also means
 /// alive. relay rebuilds when the sources change (`RunnerBuildPlan`), so that takes an installed copy
-/// (`relay install`) older than `/ping`, which `relay start` already reports as out of date.
+/// (`relay runner install`) older than `/ping`, which `relay start` already reports as out of date.
 struct LivenessMonitor {
   static let interval: TimeInterval = 3
   static let failureLimit = 3
@@ -272,7 +272,7 @@ final class RunnerLauncher: Sendable {
         // A warning, not a failure: it answers and its sources are the current ones (relay just built or
         // checked them); only what it reports is off. Old sources report nothing, and --rebuild can't fix that.
         let hint = reported?.sourceHash == nil
-          ? (RunnerProject.isInstalledRoot(rootURL) ? "relay install updates the installed copy" : "update the runner sources")
+          ? (RunnerProject.isInstalledRoot(rootURL) ? "relay runner install updates the installed copy" : "update the runner sources")
           : "relay start --rebuild builds it again"
         info("warning: \(mismatch); \(hint)")
       } else if let reported {
@@ -280,7 +280,7 @@ final class RunnerLauncher: Sendable {
       }
       // pid and startedAt let relay stop find this process, and tell it from one that reuses the pid.
       // runner is what relay expects it to report, so runner commands never hash the sources.
-      // hostBundleID is read from the built app: a project that ignores the prefix (an old relay install
+      // hostBundleID is read from the built app: a project that ignores the prefix (an old relay runner install
       // copy) keeps its own ID.
       let runnerInfo = RunnerInfo(url: url.absoluteString, token: token, udid: udid, name: deviceName,
                                   pid: getpid(), startedAt: RelayProcess.currentStartTime(),
@@ -352,7 +352,7 @@ final class RunnerLauncher: Sendable {
       }
       if !wasLegacy, monitor.usesLegacyHealth {
         info("runner has no /ping (its sources predate it); checking /health instead, which can make requests fail with 409. "
-          + "Update the runner sources (relay install for the installed copy) and restart")
+          + "Update the runner sources (relay runner install for the installed copy) and restart")
       }
     }
     return true

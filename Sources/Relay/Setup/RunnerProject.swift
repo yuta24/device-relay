@@ -6,9 +6,9 @@ import Foundation
 /// Order: `--project <path>`, then `$RELAY_HOME`, then a device-relay checkout in the current directory
 /// or its parents, then the directory holding the relay executable (symlinks resolved, so `make install`'s
 /// link finds its checkout, and `bin/relay` of an extracted release or a link to it finds `../Runner`), then
-/// the copy `relay install` made in `~/.relay/runner`. A "checkout" is anything with the repository's layout,
+/// the copy `relay runner install` made in `~/.relay/runner`. A "checkout" is anything with the repository's layout,
 /// an extracted release included. The executable's own directory wins over the installed copy, so upgrading
-/// relay never keeps building the runner of an older `relay install`; the copy is for a relay binary copied
+/// relay never keeps building the runner of an older `relay runner install`; the copy is for a relay binary copied
 /// away from its directory. Build products, logs, and `runner.json` go under `~/.relay`, never to the current directory (see
 /// `buildDirectory`).
 enum RunnerProject {
@@ -26,19 +26,19 @@ enum RunnerProject {
       switch self {
       case .option: return "--project"
       case .environment: return "$\(RunnerProject.environmentKey)"
-      case .installed: return "relay install"
+      case .installed: return "relay runner install"
       case .currentDirectory: return "current directory"
       case .executable: return "relay executable"
       }
     }
   }
 
-  /// The copy `relay install` makes: `Runner/` and the shared sources it compiles, as in the checkout.
+  /// The copy `relay runner install` makes: `Runner/` and the shared sources it compiles, as in the checkout.
   static func installedRoot(home: URL = UserHome.url) -> URL {
     home.appendingPathComponent(".relay", isDirectory: true).appendingPathComponent("runner", isDirectory: true)
   }
 
-  /// Whether `root` is the copy `relay install` made, however it was found (`--project` can name it too).
+  /// Whether `root` is the copy `relay runner install` made, however it was found (`--project` can name it too).
   static func isInstalledRoot(_ root: URL, home: URL = UserHome.url) -> Bool {
     root.canonicalFileURL.path == installedRoot(home: home).canonicalFileURL.path
   }
@@ -57,7 +57,7 @@ enum RunnerProject {
 
   /// The runner root. A path given with `--project` or `$RELAY_HOME` must hold the project: falling
   /// back to another one would build something the caller did not ask for. `includeInstalled: false`
-  /// finds a checkout or extracted release only, which is what `relay install` copies from.
+  /// finds a checkout or extracted release only, which is what `relay runner install` copies from.
   static func resolve(
     explicitPath: String?,
     environment: [String: String] = ProcessInfo.processInfo.environment,
@@ -103,9 +103,9 @@ enum RunnerProject {
     }
     throw SetupError(description: includeInstalled
       ? "cannot find the runner project (\(projectPath)) around the relay executable or in \(installed.path); "
-      + "a relay binary copied away from its directory needs relay install run once from the extracted release "
+      + "a relay binary copied away from its directory needs relay runner install run once from the extracted release "
       + "directory (or the checkout). Otherwise pass --project <path to device-relay>, or set \(environmentKey)=<path to device-relay>"
-      : "cannot find a device-relay checkout or extracted release to install the runner from; run relay install from inside "
+      : "cannot find a device-relay checkout or extracted release to install the runner from; run relay runner install from inside "
       + "one, pass --project <path to device-relay>, or set \(environmentKey)=<path to device-relay>")
   }
 

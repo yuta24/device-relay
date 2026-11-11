@@ -15,6 +15,24 @@
 
 文字や画像に当たる、API がないなど、別のコントロールへの hit を確かめられないときは、これまでどおり送ります。
 
+### Runner のコピーは relay runner install に（0.7.0 から）
+
+`relay install` と `relay uninstall` は、アプリを端末に入れる・消すコマンドになりました。
+Runner プロジェクトを `~/.relay/runner` にコピーする・消すコマンドは、`relay runner install` と `relay runner uninstall` に移りました。
+
+| 0.7.0 までの書き方 | 今の書き方 |
+| --- | --- |
+| `relay install [--project <path>] [--build [--verbose]]` | `relay runner install` に同じオプション |
+| `relay install --remove`、`relay uninstall` | `relay runner uninstall` |
+
+古い書き方は、次の版まで同じように動きます。そのときは stderr に `relay:` で始まる注意を 1 行出し、終了コードは変わりません。
+次の版で外すので、スクリプトは `relay runner install` に書き換えてください。
+
+アプリを渡した `relay install <path>` と `relay uninstall <bundle-id>` は新しいコマンドです（「[アプリを入れる・消す](docs/cli.md#アプリを入れる消すrelay-install--relay-uninstall)」）。
+アプリと、`--project`・`--build`・`--verbose`・`--remove` を一緒に渡すと、書き方の誤りで終了コード 2 です。
+
+`relay doctor` や `relay start` の案内も、`run relay runner install again` などに変わりました。
+
 ### 更新の後にすること
 
 - ランナーは、次の `relay start` で自動でビルドし直します。

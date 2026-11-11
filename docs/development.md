@@ -4,7 +4,7 @@ device-relay 自体を開発・検証するときの情報です（リポジト�
 
 ## リポジトリ内での開発
 
-- 開発中はリポジトリ内で `xcrun swift run relay …` でも動きます。リポジトリ内ではカレントディレクトリのチェックアウトの Runner を使うので、`relay install` 済みでもインストールしたコピーではなく手元の変更がビルドされます。
+- 開発中はリポジトリ内で `xcrun swift run relay …` でも動きます。リポジトリ内ではカレントディレクトリのチェックアウトの Runner を使うので、`relay runner install` 済みでもインストールしたコピーではなく手元の変更がビルドされます。
 
 ```sh
 xcrun swift build
@@ -357,9 +357,9 @@ Runner のソースのハッシュと、ランナーが返す版の作り方を�
 | Runner | `Runner/` 以下のすべてのファイルです。プロジェクト、スキーム、ランナーのソース、`Info.plist` などを含みます。 |
 | CLI との共有ファイル | プロジェクトが `../Sources/Relay/Shared/*.swift` として参照するファイルです。 |
 
-共有ファイルは、`relay install` がコピーするものと同じです。
+共有ファイルは、`relay runner install` がコピーするものと同じです。
 Xcode の利用者ごとの状態 `xcuserdata` と、`.DS_Store` などの隠しファイルは含めません。
-`relay install` したコピーは元のチェックアウトと同じファイルなので、同じハッシュになります。
+`relay runner install` したコピーは元のチェックアウトと同じファイルなので、同じハッシュになります。
 
 ### ランナーの版の埋め込み
 
@@ -378,7 +378,7 @@ Xcode の利用者ごとの状態 `xcuserdata` と、`.DS_Store` などの隠し
 `/ping` のない古いソースから作ったランナーでは、`relay start` は `/health` で生存を確認します。
 `/ping` が `404` になるので警告を出し、それ以後の確認先を切り替えます。
 
-`/ping` より前に `relay install` したコピーなどが該当します。
+`/ping` より前に `relay install`（今の `relay runner install`）したコピーなどが該当します。
 `relay start` は、そのコピーが古いことも知らせます。
 
 このときは `409` も生存扱いにします。そのため、利用者のリクエストが `409` になることがあります。

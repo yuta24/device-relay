@@ -75,6 +75,7 @@ relay crashes                                  # 直近 24 時間のクラッシ
 | `record start` / `stop` / `status` | –（ホスト側で録画） | `-o <file>`、`--force`、`--max-duration <s>`（start）、`--json`（status）、`--port <n>`（stop・status）、`--runner`、`--session` |
 | `logs` | –（ホスト側で `log` を読む） | `--bundle-id <id>`、`--since <時間>`、`--follow`、`--archive <path>`、`-o <file>`、`--session`・`--runner`・`--udid` |
 | `crashes` | –（ホスト側で記録を読む） | `--bundle-id <id>`、`--since <時間>`、`--name <relativePath>`、`-o <dir>`、`--session`・`--runner`・`--udid` |
+| `install` / `uninstall` | –（ホスト側で `simctl`・`devicectl`） | `<path>`（install）、`<bundle-id>`（uninstall）、`--session`・`--runner`・`--udid` |
 
 `shutdown` はコマンドの一覧には載せません。普段は `relay stop` を使います（「[shutdown と stop](sessions.md#shutdown-と-stop)」）。
 
@@ -82,6 +83,7 @@ relay crashes                                  # 直近 24 時間のクラッシ
 
 `run` は「[シナリオの実行（relay run、実験的）](#シナリオの実行relay-run実験的)」、`record` は「[録画（relay record）](#録画relay-record)」で説明します。
 `logs` と `crashes` は「[ログとクラッシュ記録（relay logs / relay crashes）](#ログとクラッシュ記録relay-logs--relay-crashes)」で説明します。
+`install` と `uninstall` は「[アプリを入れる・消す（relay install / relay uninstall）](#アプリを入れる消すrelay-install--relay-uninstall)」で説明します。
 
 ### 観察と要素の検索
 
@@ -137,6 +139,7 @@ relay: image 471x1024 px, screen 402x874 pt, 1.172 px/pt (tap in points: px / 1.
 
 `activate()` も中断できないため、`relay launch` と `relay run` の `launch` は、送る前にアプリが端末に入っているかを Mac 側の `simctl` / `devicectl` で確かめます。
 入っていなければランナーに送らず、すぐに終了コード 6 で終わります。ランナーは busy になりません。
+アプリは `relay install` で入れられます（「[アプリを入れる・消す](#アプリを入れる消すrelay-install--relay-uninstall)」）。
 
 | 出力先 | アプリが入っていないときの出力 |
 | --- | --- |
@@ -339,6 +342,7 @@ relay が自分で出す JSON は、すべて **1 行・キーを辞書順・`/`
 
 - `status --json`・`status --all --json`・`record status --json`・`devices --json`・`doctor --json`
 - `logs`・`crashes`（`logs --follow` の各行も同じ形）
+- `install`・`uninstall`
 - relay 側の失敗と、`find --require` の一致なし
 
 #### 終了コードの一覧
@@ -348,12 +352,12 @@ relay が自分で出す JSON は、すべて **1 行・キーを辞書順・`/`
 | 終了コード | 意味 |
 | --- | --- |
 | `0` | 成功（2xx） |
-| `1` | ローカルの失敗: runner.json が読めない、スクリーンショットを保存できない、端末が使用中・ビルドの失敗・シミュレータがない・ファイルがない、`relay start --background` で「すでに動いている」「ポートを握られている」、`relay doctor` が問題を見つけた、など |
+| `1` | ローカルの失敗: runner.json が読めない、スクリーンショットを保存できない、端末が使用中・ビルドの失敗・シミュレータがない・ファイルがない、`relay start --background` で「すでに動いている」「ポートを握られている」、`relay doctor` が問題を見つけた、アプリを入れられない・消せない、など |
 | `2` | 書き方の誤り: 不明なオプション、値の不足・不正、両立しないオプション、不正なセッション名、`RELAY_RUNNER` と `RELAY_SESSION` の両方の設定、`relay run` の不正な手順（何も実行しない）など |
 | `3` | ランナーに届かない（runner.json がない、接続できない・タイムアウト、接続が OS に拒否された） |
 | `4` | `401`: runner.json のトークンが動いているランナーのものではない（古いファイル、別のランナー） |
 | `5` | `409`（busy）: 再試行してよい |
-| `6` | `422` の XCUI の失敗（フォーカスがない、要素が見つからない・1 つに決まらない、URL を開けないなど）、または `relay launch`・`relay open --bundle-id` の `app_not_installed` |
+| `6` | `422` の XCUI の失敗（フォーカスがない、要素が見つからない・1 つに決まらない、URL を開けないなど）、または `relay launch`・`relay open --bundle-id`・`relay uninstall` の `app_not_installed` |
 | `7` | `400` とその他の 4xx |
 | `8` | 5xx などそれ以外 |
 | `130` / `143` | `relay logs` を SIGINT / SIGTERM で止めた（`--follow` を止めたときを含む） |
@@ -376,7 +380,12 @@ relay 自身は次の `code` を出します。ランナーは返しません。
 | `runner_info_invalid` | `1` | runner.json が読めない、url が不正、`host` を解決できない |
 | `runner_bad_response` | ランナーのステータスによる（`8` など） | JSON でない本文のエラー（古いランナー、別のサーバー）で、`status` に HTTP ステータスが入ります。 |
 | `screenshot_save_failed` | `1` | 画像を受け取ったが、ファイルに保存できない |
-| `app_not_installed` | `6` | `launch` と `open --bundle-id` で、アプリが端末に入っていない（ランナーには送らない） |
+| `app_not_installed` | `6` | `launch` と `open --bundle-id` で、アプリが端末に入っていない（ランナーには送らない）。`uninstall` では何も消していない |
+| `app_bundle_invalid` | `1` | `install` のパスがない、`.app`・`.ipa` でない、Info.plist が読めない |
+| `app_platform_mismatch` | `1` | `install` で、シミュレータ用のアプリを実機に、または実機用をシミュレータに入れようとした（送らない） |
+| `app_install_failed` | `1` | `simctl install`・`devicectl device install app` が失敗した・時間切れ（署名やプロビジョニングの誤りを含む） |
+| `app_uninstall_failed` | `1` | `simctl uninstall`・`devicectl device uninstall app` が失敗した・時間切れ |
+| `app_uninstall_refused` | `1` | `uninstall` で、relay のランナーのアプリを指定した（送らない） |
 | `element_not_found` | `6` | `find --require` で一致なし（ランナーの `code` と同じで、`count`・`elements` も付く） |
 | `device_unavailable` | `1` | `logs`・`crashes` で、UDID の端末がない、シミュレータが boot していない（logs）、実機が接続していない |
 | `logs_unavailable` | `1` | `log` が失敗した・時間切れ・読めない行を出した、出す JSON が 64 MiB を超えた |
@@ -396,7 +405,7 @@ JSON 形式の状態確認の失敗も、stdout に JSON を 1 つ出します�
 | `relay status --json` | 上記と同じ形に `alive:false` を追加 |
 | `relay record status --json` | `runner_unavailable` か `recording_unavailable` |
 | `relay devices --json` | `devices_unavailable`（終了コード 1）の `{"ok":false,"code":…,"error":…}` |
-| `relay logs`・`relay crashes` | 上の表の `code`。`crashes -o` の一部失敗は、一覧の JSON に `ok:false` と `code` を足したもの |
+| `relay logs`・`relay crashes`・`relay install`・`relay uninstall` | 上の表の `code`。`crashes -o` の一部失敗は、一覧の JSON に `ok:false` と `code` を足したもの |
 
 終了コードは、ランナーに送らない `app_not_installed` を除いて、ステータスだけで決まります。
 同じ終了コード内の違いは `code` で判断します。たとえば `6` のうち、フォーカスがないのか、要素が 1 つに決まらないのかを区別できます。
@@ -1024,6 +1033,103 @@ OS が出さない項目は null です。`level` は OS の `messageType` を�
 
 確かめた環境: iPhone 18 Pro シミュレータ（iOS 27.2）、macOS 27.2.1、Xcode 27.2。保存した記録は元の記録と同じ内容でした。
 
+## アプリを入れる・消す（relay install / relay uninstall）
+
+`relay install <path>` は、`.app` か `.ipa` を端末に入れます。`relay uninstall <bundle-id>` は、入っているアプリを消します。
+ランナーには送らず、Mac の `simctl` と `devicectl` で行います。ランナーが動いていなくても、`--udid` で使えます。
+
+```sh
+relay install build/Debug-iphonesimulator/MyApp.app   # ランナーのシミュレータに入れる
+relay install MyApp.ipa --udid <UDID>                 # 実機に入れる（署名したもの）
+relay launch com.example.myapp                        # 入れたアプリを起動する
+relay uninstall com.example.myapp                     # 消す
+```
+
+0.7.0 までの `relay install`（ランナーのコピー）は `relay runner install` になりました（「[Runner の用意（relay runner install）](setup.md#runner-の用意relay-runner-install)」）。
+
+### 入れる・消す端末
+
+端末は `relay logs` と同じ決め方です（「[対象の端末](#対象の端末)」）。
+`--session`・`--runner` ではその runner.json の端末、`--udid` では runner.json を読まずにその UDID の端末です。
+
+| 端末 | 入れるコマンド | 消すコマンド | 受け付けるもの |
+| --- | --- | --- | --- |
+| シミュレータ | `xcrun simctl install` | `xcrun simctl uninstall` | `.app`、`.ipa` |
+| 実機 | `xcrun devicectl device install app` | `xcrun devicectl device uninstall app` | 署名した `.app`、`.ipa` |
+
+- シミュレータは起動している必要があります。止まっていれば `device_unavailable` で、relay は起動しません（`xcrun simctl boot <UDID>`）。
+- 実機は接続している必要があります。接続していなければ `device_unavailable` です。
+- 同じバンドル ID のアプリが入っていれば、確かめずに上書きします。
+
+### 入れる前の確認
+
+relay は、送る前にアプリの Info.plist を読みます。`.ipa` では中の `Payload/<名前>.app/Info.plist` を読みます。
+読めない、`CFBundleIdentifier` がない、`.ipa` の `Payload/` の `.app` が 1 つでない場合は、`app_bundle_invalid` で何も送りません。
+
+Info.plist の `CFBundleSupportedPlatforms` が端末と合わなければ、`app_platform_mismatch` で何も送りません。
+シミュレータには `iPhoneSimulator`、実機には `iPhoneOS` のアプリが入ります。`CFBundleSupportedPlatforms` がなければ確かめずに送ります。
+
+この確認がないと、ツールは署名や更新の誤りのように見えるエラーを返します。
+
+| 取り違え | ツールのエラー |
+| --- | --- |
+| シミュレータ用のアプリを実機に | `The executable contains an invalid signature.` |
+| 実機用のアプリをシミュレータに | `“<名前>” Needs to Be Updated` |
+
+署名やプロビジョニングが合わないときは、`app_install_failed` の `error` に `devicectl` の理由を入れます。
+たとえば `0xe8008015 (A valid provisioning profile for this executable was not found.)` です。
+
+### 出力
+
+成功すると、stdout に JSON を 1 行出します。
+
+```json
+{"app":{"build":"7","bundleID":"com.example.myapp","name":"MyApp","path":"/abs/MyApp.app","version":"1.0"},"device":{"kind":"simulator","name":"iPhone 18 Pro","os":"iOS 27.2","udid":"<UDID>"},"ok":true}
+{"bundleID":"com.example.myapp","device":{"kind":"device","name":"<名前>","os":"iOS 26.7.1","udid":"<UDID>"},"ok":true}
+```
+
+| キー | 内容 |
+| --- | --- |
+| `app.bundleID` | Info.plist の `CFBundleIdentifier` です（install）。 |
+| `app.name` | `CFBundleDisplayName`、なければ `CFBundleName` です。どちらもなければ `null` です。 |
+| `app.version` / `app.build` | `CFBundleShortVersionString` / `CFBundleVersion` です。なければ `null` です。 |
+| `app.path` | 入れたファイルの絶対パスです。 |
+| `bundleID` | 消したアプリのバンドル ID です（uninstall）。 |
+| `device` | `relay logs` の `device` と同じ形です。 |
+
+失敗は `{"ok":false,"code":…,"error":…}` で、`code` は「[失敗の code とヒント](#失敗の-code-とヒント)」の表にあります。
+
+### 消すときの確認
+
+`simctl` も `devicectl` も、入っていないアプリを消すと成功を返します。
+relay は先に、`relay launch` と同じ方法でアプリが入っているかを確かめます（「[アプリの指定と起動](#アプリの指定と起動)」）。
+
+- 入っていなければ、`app_not_installed`（終了コード `6`）で何も送りません。バンドル ID の誤りに気づけます。
+- 入っているか確かめられないときは送り、ツールの結果に従います。
+- 消しておくだけでよいスクリプトでは、終了コード `6` を成功として扱ってください。
+
+relay のランナーのアプリは消さず、`app_uninstall_refused` を返します。
+バンドル ID が `.RelayRunnerHost` か `.RelayRunnerHost.UITests.xctrunner` で終わるもの、または `host` が該当します。
+ランナーの UI テストのアプリを消すと、動いているランナーはすぐに応答しなくなるためです。
+
+### ランナーが動いているとき
+
+前面で動いているアプリを入れ直す・消すと、そのアプリは終了し、ホーム画面に戻ります。
+ランナーはそのまま使えます。入れ直したアプリは `relay launch` で起動し直せます。
+
+実機では、ランナーが動いている間の入れ直しを確かめていません。
+
+### 待ち時間
+
+| 操作 | 上限 | 実測 |
+| --- | --- | --- |
+| 入れる | 300 秒 | シミュレータの起動直後の 1 回目は約 50 秒、以降は 1 秒未満でした。実機は約 1 秒でした。 |
+| 消す | 60 秒 | シミュレータは 1 秒未満、実機は約 1 秒でした。 |
+
+上限を過ぎると、`app_install_failed` か `app_uninstall_failed` で終わります。
+
+確かめた環境: iPhone 18 Pro シミュレータ（iOS 27.2）、iPhone 14 Pro（iOS 26.7.1）、Xcode 27.2。
+
 ## エージェントスキル
 
 `skills/device-relay/` は、コーディングエージェントが対象アプリのリポジトリで作業しながら、relay でアプリの動作を確かめるためのスキルです。
@@ -1048,7 +1154,7 @@ Claude Code などで使います。
 `relay skill install` は、展開したリリースやチェックアウトの `skills/device-relay` から、対象アプリのリポジトリなどへスキルを入れます。
 使う前に relay をインストールし、`relay doctor` で確認してください（「[インストール](../README.ja.md#インストール)」）。
 
-展開したリリースもチェックアウトも見つからない場合は、`relay install` がコピーした `~/.relay/runner/skills/device-relay` を使います。
+展開したリリースもチェックアウトも見つからない場合は、`relay runner install` がコピーした `~/.relay/runner/skills/device-relay` を使います。
 `relay` のバイナリだけをコピーした場合が該当します。
 
 ```sh
@@ -1066,10 +1172,10 @@ relay skill uninstall          # relay が入れたものだけを削除（--glo
 どのコマンドも、入れ先や削除先のパスを必ず表示します。
 表示・比較するパスは、存在する部分のシンボリックリンクを解決した形にそろえます。macOS では `/private/tmp/...` も `/tmp/...` になります。
 
-取り出し元は、`relay install` と同じ探し方で見つけた、展開したリリースか device-relay のチェックアウトの `skills/device-relay` です。
+取り出し元は、`relay runner install` と同じ探し方で見つけた、展開したリリースか device-relay のチェックアウトの `skills/device-relay` です。
 `$RELAY_HOME`、カレントディレクトリとその親、`relay` の実行ファイルの場所から探します。
 
-なければ、`relay install` した `~/.relay/runner/skills/device-relay` を使います。`--link` でも同じ順です。
+なければ、`relay runner install` した `~/.relay/runner/skills/device-relay` を使います。`--link` でも同じ順です。
 
 コピーには、SKILL.md を変えずに隠しファイル `.relay-skill.json` を置きます。
 relay のバージョン、コミット、取り出し元、日時を記録します。
@@ -1098,10 +1204,10 @@ relay のバージョン、コミット、取り出し元、日時を記録し�
 | --- | --- |
 | `checkout` | `.git` がある git のチェックアウト |
 | `release` | `.git` のない展開したリリース |
-| `relay install` | `~/.relay/runner` のコピー |
+| `relay runner install` | `~/.relay/runner` のコピー |
 
 relay を更新したら、`relay skill install` をやり直してください。`--global` などで入れたなら同じオプションを使います。
-バイナリだけをコピーして `relay install` のコピーから取り出している場合は、先に展開したディレクトリ、またはチェックアウトで `relay install` を実行します。
+バイナリだけをコピーして `relay runner install` のコピーから取り出している場合は、先に展開したディレクトリ、またはチェックアウトで `relay runner install` を実行します。
 
 ### スキルが使うランナーと端末
 

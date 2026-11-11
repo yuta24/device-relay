@@ -16,7 +16,11 @@ enum Command: Equatable {
   case devices(json: Bool, os: String?)
   case doctor(DoctorOptions)
   case config(ConfigOptions)
+  /// `relay runner install|uninstall`, and the old `relay install` / `relay uninstall` without an app.
   case install(InstallOptions)
+  /// `relay install <path>` / `relay uninstall <bundle-id>`: an app on the device, without the runner.
+  case appInstall(AppInstallOptions)
+  case appUninstall(AppUninstallOptions)
   case skill(SkillOptions)
   case version
   case help
@@ -263,21 +267,9 @@ enum Arguments {
     case "config":
       return .config(try parseConfig(rest))
     case "install", "uninstall":
-      var options = InstallOptions(remove: subcommand == "uninstall")
-      while !rest.isEmpty {
-        let option = rest.removeFirst()
-        switch option {
-        case "--project" where subcommand == "install": options.project = try value(for: option)
-        case "--build" where subcommand == "install": options.build = true
-        case "--verbose" where subcommand == "install": options.verbose = true
-        case "--remove" where subcommand == "install": options.remove = true
-        default: throw ArgumentError(description: "unknown option: \(option)")
-        }
-      }
-      guard !(options.remove && (options.build || options.verbose || options.project != nil)) else {
-        throw ArgumentError(description: "install --remove takes no other options")
-      }
-      return .install(options)
+      return try parseInstall(subcommand, rest)
+    case "runner":
+      return try parseRunnerSetup(rest)
     case "skill":
       return .skill(try parseSkill(rest))
     case "--version", "version":
@@ -527,7 +519,14 @@ enum Arguments {
     relay crashes [--bundle-id <ID>] [--since 24h] [--name <NAME>] [-o <dir>]
         [--session <NAME> | --runner <PATH> | --udid <UDID>]
     """),
-    (["install", "uninstall"], "relay install [--project <PATH>] [--build [--verbose]] | relay install --remove | relay uninstall"),
+    (["install", "uninstall"], """
+    relay install <APP.app | APP.ipa> [--session <NAME> | --runner <PATH> | --udid <UDID>]
+    relay uninstall <BUNDLE_ID> [--session <NAME> | --runner <PATH> | --udid <UDID>]
+    """),
+    (["runner"], """
+    relay runner install [--project <PATH>] [--build [--verbose]]
+    relay runner uninstall
+    """),
     (["skill"], """
     relay skill install [--global | --dir <skills dir>] [--link] [--force]
     relay skill uninstall
@@ -576,8 +575,8 @@ enum Arguments {
            take host for its bundle ID.
            The runner project is --project, else $RELAY_HOME, else a device-relay checkout around the
            current directory, else the directory of the relay executable (an extracted release or
-           a checkout), else the copy relay install made in ~/.relay/runner. Builds and logs go to
-           ~/.relay/build and ~/.relay/logs.
+           a checkout), else the copy relay runner install made in ~/.relay/runner. Builds and logs
+           go to ~/.relay/build and ~/.relay/logs.
            Devices are reached over the CoreDevice tunnel only; --allow-wifi also tries the device's
            Wi-Fi addresses, where the token travels as plain HTTP.
            --background runs it detached from the terminal (log: ~/.relay/logs/start-*.log) and exits
@@ -610,13 +609,16 @@ enum Arguments {
   crashes  Lists the crash reports of the simulator (the Mac's DiagnosticReports) or device
            (devicectl) of the last 24 hours, or --since, as one JSON object; -o <dir> saves them (on
            a device, the one --name chooses). relay crashes --help for details.
-  install  Only needed for a relay binary copied away from its directory: copies the runner
-           project and the agent skill from the extracted release or checkout (--project,
-           $RELAY_HOME, the current directory, or the relay executable's directory) to
-           ~/.relay/runner, replacing a previous copy, and records the relay version. --build also
-           builds it for simulators (log: ~/.relay/logs/build-*.log; --verbose also shows
-           xcodebuild's output). --remove (or relay
-           uninstall) deletes ~/.relay/runner and its builds; config.json and runner.json stay.
+  install  Installs an .app or .ipa on the runner's simulator or device (--session, --runner, as
+           for relay logs) or on --udid, with simctl or devicectl and without the runner, and prints
+           its bundle ID, name, and version as JSON. A simulator must be booted. An app built for the
+           other kind of device is refused before anything is sent. A running copy of the app quits.
+           relay uninstall <bundle ID> removes an app (app_not_installed, exit 6, if it is not
+           there); the runner's own apps are refused. Without an app, both still do what relay runner
+           install and uninstall do, with a note on stderr, until the next release.
+  runner   relay runner install copies the runner project to ~/.relay/runner, for a relay binary
+           copied away from its directory; relay runner uninstall removes the copy. relay runner
+           --help for details.
   skill    Installs the device-relay agent skill into .claude/skills of the current git repository
            (--global: ~/.claude/skills; relay skill --help for details).
   devices  Lists devices (devicectl) and iOS simulators (simctl): name, UDID, kind, OS, and state.
