@@ -50,6 +50,8 @@ enum RunnerErrorCode: String, CaseIterable {
   case touchFailed = "touch_failed"
   /// 422 or 500: synthesized text failed or was not typed in time (some of it may have been typed).
   case typingFailed = "typing_failed"
+  /// 422: `/open` was refused: no installed app handles the URL, or the app named could not open it.
+  case openFailed = "open_failed"
   /// 422: XCUI reported a failure (a recorded test issue, a snapshot that failed).
   case xcuiFailed = "xcui_failed"
   /// 500: anything else that went wrong in the runner.
@@ -98,6 +100,8 @@ enum RunnerError: Error, CustomStringConvertible {
   case windowPositionUnknown(String)
   /// Another app is in front of the app an element touch is for (422); nothing was sent.
   case coveredByOtherApp(RunnerCoverage.Covered)
+  /// `/open` was refused (422).
+  case openFailed(String)
   /// A selector that didn't lead to one touchable element; answered with the failure's JSON.
   case elementNotResolved(RunnerElementLookupFailure)
 
@@ -110,7 +114,7 @@ enum RunnerError: Error, CustomStringConvertible {
     case .methodNotAllowed: return "method not allowed"
     case .internalError(let message), .touchFailed(let message), .touchSynthesisError(let message),
          .actionFailed(let message), .touchUnreachable(let message), .displayUnknown(let message),
-         .windowPositionUnknown(let message), .typingFailed(let message, _):
+         .windowPositionUnknown(let message), .typingFailed(let message, _), .openFailed(let message):
       return message
     case .noKeyboardFocus(let bundleID): return RunnerTyping.missingKeyboardFocusMessage(bundleID: bundleID)
     case .coveredByOtherApp(let covered): return covered.message
@@ -126,7 +130,7 @@ enum RunnerError: Error, CustomStringConvertible {
     case .internalError, .touchSynthesisError: return 500
     case .typingFailed(_, let status): return status
     case .touchFailed, .actionFailed, .touchUnreachable, .noKeyboardFocus, .displayUnknown, .windowPositionUnknown,
-         .coveredByOtherApp, .elementNotResolved: return 422
+         .coveredByOtherApp, .elementNotResolved, .openFailed: return 422
     }
   }
 
@@ -145,6 +149,7 @@ enum RunnerError: Error, CustomStringConvertible {
     case .displayUnknown: return .displayUnknown
     case .windowPositionUnknown: return .windowPositionUnknown
     case .coveredByOtherApp: return .coveredByOtherApp
+    case .openFailed: return .openFailed
     case .elementNotResolved(let failure): return failure.code
     }
   }

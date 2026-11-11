@@ -6,7 +6,7 @@
 
 - **予告なく変わります**: 非公開 API は、Xcode や iOS の更新で消えたり変わったりすることがあります。ランナーは Xcode や iOS の版では分岐せず、実行時にクラス・セレクタ・シンボルがあるかだけを確かめます。引数や戻り値の型だけが変わった場合は検出できず、そのときの挙動は決まっていません（Objective-C の例外も捕捉しません）。
 - **対象アプリには何も入りません**: 非公開 API を使うのは、XCTest の UI テストバンドルとして端末上で動くランナー（`Runner/RelayRunnerUITests`）だけです。Mac 側の `relay` CLI は使いません。`Runner/` のコードやバンドルを対象アプリのターゲットに埋め込まないでください。App Store に提出するアプリに含めるものではありません。
-- **動作を確認した版**: Xcode 27 と iOS 26.7.1 の実機、iOS 27.0 のシミュレータです。表示が複数ある端末の項目は、Xcode 27.2 と iOS 27.2 のシミュレータで確認しました。文字入力の合成は、Xcode 27.2 と iOS 27.2 のシミュレータ、iOS 26.7.1 の実機で確認しました。ほかの版は確認していません。下の API は、Xcode 27.2 の XCTest と XCUIAutomation の公開ヘッダに宣言がないことを確かめています（実体は `XCUIAutomation.framework` と `XCTAutomationSupport.framework` にあります）。
+- **動作を確認した版**: Xcode 27 と iOS 26.7.1 の実機、iOS 27.0 のシミュレータです。表示が複数ある端末の項目は、Xcode 27.2 と iOS 27.2 のシミュレータで確認しました。文字入力の合成は、Xcode 27.2 と iOS 27.2 のシミュレータ、iOS 26.7.1 の実機で確認しました。URL を開く項目は、Xcode 27.2 と iOS 27.2 のシミュレータ、iOS 26.7.1 の実機で確認しました。ほかの版は確認していません。下の API は、Xcode 27.2 の XCTest と XCUIAutomation の公開ヘッダに宣言がないことを確かめています（実体は `XCUIAutomation.framework` と `XCTAutomationSupport.framework` にあります）。
 - **更新の後の確かめ方**: `/health` の `touchSynthesis` が `private`、`foreground.source` が `private` なら、タッチ合成と前面アプリの経路は使えています。文字入力の合成は、`/health` の `typeSynthesis` が `private` であることで確かめます。iPad のウィンドウの位置は、全画面でないウィンドウで `relay find --type window` の `window` が付くことで確かめます。要素のキーボードのフォーカスは、`/source` の `hasKeyboardFocus` が `null` でないことで確かめます。共有シートの入れ物は、iPhone で共有シートを開いて `relay find --label Copy --type cell` の frame がシートの中（縦向きなら画面の下のほう）にあることで確かめます。
 - **無効にして試す**: 次のランナーの環境変数で、代わりの経路を試せます。
 - xcodebuild と `relay start` には `TEST_RUNNER_` を前に付けて渡します（`TEST_RUNNER_RELAY_DISABLE_PRIVATE_HITTEST=1 relay start …` など）。ほかの項目に無効にするスイッチはありません。
@@ -17,6 +17,7 @@
 | `RELAY_DISABLE_PRIVATE_TYPING=1` | 文字入力の合成 |
 | `RELAY_DISABLE_PRIVATE_FOREGROUND=1` | 前面アプリ |
 | `RELAY_DISABLE_PRIVATE_HITTEST=1` | 要素のタッチ位置の確認 |
+| `RELAY_DISABLE_PRIVATE_OPEN=1` | URL を開く |
 
 ## 一覧
 
@@ -33,6 +34,7 @@
 | [window の表示 ID](#window-の表示-id) | 点いている表示で判定（遅くなる） | 判定できなければ `display: null`、`display_unknown` |
 | [ウィンドウの位置](#ウィンドウの位置) | 要素指定のタッチは何も送らずに `422`。全画面に見えるアプリはそのまま | `window_position_unknown`、`window: null` と `warning` |
 | [共有シートの入れ物](#共有シートの入れ物) | 変換しない（中の要素の frame は相対座標のまま。要素指定のタッチは外れる） | なし |
+| [URL を開く](#url-を開く) | 公開 API で開く（アイドル待ちが入る） | なし |
 | [アプリの状態の待ち時間](#アプリの状態の待ち時間) | 120 秒のまま | なし |
 
 項目ごとの説明に「同じ方式のツール」を書いていなくても、ほかのツールが使っていないという意味ではありません。`code` の意味は「[エラーの形式と code](http-api.md#エラーの形式と-code)」を参照してください。
@@ -154,6 +156,25 @@
 - **機能**: 共有シートの中の要素の frame とタップ位置を画面の座標に変換し、変換できない形のときは要素指定のタッチを止めます（「[共有シートの中の要素](elements.md#共有シートの中の要素)」）。
 - **公開 API では足りない理由**: スナップショットには、要素が別のプロセスのビューの中にあることも、どこから相対座標になるかも出ません。どんな要素の下でも「(0, 0) から親と同じ大きさ」を相対座標の始まりとみなすと、アプリ自身の要素を誤って動かすおそれがあるので、入れ物を識別子で決めています。
 - **使えないとき**: 識別子が変わると入れ物が見つからず、何も変換しません。中の要素の frame は相対座標のままで、要素指定のタッチは以前と同じく `ok: true` のまま外れます。応答では見分けられません。
+
+### URL を開く
+
+- **API**: `+[XCTRunnerDaemonSession sharedSession]` の `-openDefaultApplicationForURL:completion:` と `-openURL:usingApplication:completion:`（completion は `^(BOOL, NSError *)`）。公開 API の `XCUIDevice.system.open(_:)` と `XCUIApplication.open(_:)` が中で呼ぶものです。実装は `RelayURLOpener.m` です。
+- **機能**: `/open`。`bundleId` があれば後者、なければ前者を使います。
+- **公開 API では足りない理由**: 公開 API は、開いた後に前面のアプリ（`XCUIApplication.open` では開くアプリ）がアイドルになるのを待ちます。メインのランループが眠らないアプリでは、1 回 73–83 秒かかりました。
+- **同じ方式のツール**: WebDriverAgent。
+
+使えないときの挙動:
+
+| 状況 | 挙動 |
+| --- | --- |
+| API が欠けている、または `RELAY_DISABLE_PRIVATE_OPEN=1` | 公開 API で開きます。開けない場合は XCUI の失敗を `422`、`open_failed` にします |
+| 完了の callback がエラーを返した、または 30 秒以内に返らない | `422`、`open_failed` |
+
+どちらの経路でも、URL を開くアプリが前面に来るのは呼び出しが返った後なので、ランナーが前面アプリを最大 5 秒待ちます。
+前面アプリの取得が使えないランナーでは、待たずに応答します。
+
+確かめた環境: iPhone 17 シミュレータ（iOS 27.2、Xcode 27.2）、iPhone 14 Pro（iOS 26.7.1、Xcode 27.2）。実機で公開 API の経路を試したのは 1 回だけです。
 
 ### アプリの状態の待ち時間
 

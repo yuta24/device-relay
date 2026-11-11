@@ -12,7 +12,8 @@ extension Arguments {
     "press": selectorOptions.union(["--duration", "--mode", "--timeout", "--bundle-id"]),
     "swipe": ["--duration", "--hold", "--mode"],
     "type": ["--key", "--bundle-id"],
-    "key": ["--bundle-id"]
+    "key": ["--bundle-id"],
+    "open": ["--bundle-id"]
   ]
   static let selectorOptions: Set<String> = ["--id", "--label", "--type", "--value", "--index"]
   /// Options without a value.
@@ -217,6 +218,18 @@ extension Arguments {
       "relay launch <bundle-id>",
       "Launches the app, or brings it to the foreground. An app not installed fails at once (exit 6)."
     ),
+    "open": (
+      "relay open <url> [--bundle-id <id>]",
+      """
+      Opens a URL as tapping a link does: https:// in Safari, a custom scheme (myapp://item/42) in the
+      app that registered it, launching it if needed. --bundle-id sends the URL to that app whatever its
+      scheme (an https:// link to the app itself, say). Waits up to \(Int(RunnerOpen.foregroundWait)) seconds for the app to
+      come to the front, then prints the foreground app ({"ok":true,"foreground":{"bundleId":...}}).
+      When the app already in front opens the URL, the whole wait passes unless --bundle-id names it.
+      Quote the URL for the shell and percent-encode it: a space or no scheme is a usage error (exit 2).
+      A scheme no installed app handles fails with exit 6 (code open_failed).
+      """
+    ),
     "terminate": ("relay terminate <bundle-id>", "Terminates the app."),
     "shutdown": (
       "relay shutdown",
@@ -343,7 +356,7 @@ extension Arguments {
 
   static let runnerCommandOrder = [
     "ping", "health", "foreground", "screenshot", "source", "find", "tap", "press", "swipe",
-    "type", "key", "button", "orientation", "launch", "terminate", "shutdown"
+    "type", "key", "button", "orientation", "launch", "open", "terminate", "shutdown"
   ]
 
   /// The runner commands the overall usage lists. `relay shutdown` works, and has its help, but it is left
@@ -467,6 +480,12 @@ private struct RunnerArgumentValues {
       return .orientation(try choice(name, "orientation", orientations))
     case "launch":
       return .launch(bundleID: try positional(1, "<bundle-id>")[0])
+    case "open":
+      let text = try positional(1, "<url> (quote it for the shell)")[0]
+      switch RunnerOpen.url(text) {
+      case .success: return .open(url: text, bundleID: try string("--bundle-id"))
+      case .failure(let error): throw ArgumentError(description: error.description)
+      }
     case "terminate":
       return .terminate(bundleID: try positional(1, "<bundle-id>")[0])
     default:

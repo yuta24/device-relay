@@ -65,6 +65,7 @@ relay record stop                              # 録画を止め、MP4 の絶対
 | `type` | `POST /type` | `<text>` か `--stdin`、`--key <name>`（複数可、順に送る）、`--bundle-id` |
 | `key` / `button` / `orientation` | `POST /key` / `/button` / `/orientation` | 名前（`key` は `--bundle-id` も可、`orientation` は `landscape` を `landscapeLeft` として送る） |
 | `launch` / `terminate` | `POST /launch` / `/terminate` | `<bundle-id>`（`host` も可） |
+| `open` | `POST /open` | `<url>`、`--bundle-id <id>`（`host` も可） |
 | `shutdown` | `POST /shutdown` | – |
 | `status` | `GET /ping` と runner.json（ランナーの版も表示） | `--json`、`--all`（全セッションの一覧） |
 | `stop` | `relay start` への SIGTERM（なければ `POST /shutdown`） | – |
@@ -159,7 +160,8 @@ relay: image 471x1024 px, screen 402x874 pt, 1.172 px/pt (tap in points: px / 1.
 
 バンドル ID は大文字小文字も区別されます。`com.apple.preferences` では設定は起動せず、`relay launch` は入っていないと判定します。
 
-`terminate` と `--bundle-id` は、入っていないアプリでもすぐ返るため確かめません。
+`terminate` と、`open` 以外の `--bundle-id` は、入っていないアプリでもすぐ返るため確かめません。
+`open --bundle-id` は、`launch` と同じように確かめます（「[URL を開く（relay open）](#url-を開くrelay-open)」）。
 `terminate` は成功し、`find` などは `xcui_failed` になります。
 
 #### 入っていないアプリを起動したときの待ち時間
@@ -172,6 +174,99 @@ relay: image 471x1024 px, screen 402x874 pt, 1.172 px/pt (tap in points: px / 1.
 | 実機 | 150 秒の打ち切りの後、さらに 153 秒以上 busy でした。 |
 
 確かめた環境: シミュレータ（iOS 27.0）、実機（iOS 26.4）。
+
+### URL を開く（relay open）
+
+`relay open <url>` は、リンクをタップしたときと同じように URL を開きます。
+テストの手順で、アプリの特定の画面（作品の詳細や再生画面など）へディープリンクで直接入るときに使います。
+
+```sh
+relay open 'https://example.com/'                 # Safari で開く
+relay open 'myapp://title/42?autoplay=1'          # そのスキームを登録したアプリで開く
+relay open 'https://example.com/title/42' --bundle-id com.example.video   # そのアプリに渡す
+```
+
+| 指定 | 開くアプリ |
+| --- | --- |
+| `https://` / `http://` | Safari |
+| カスタムスキーム（`myapp://…`） | そのスキームを登録したアプリ。動いていなければ起動します |
+| `--bundle-id <id>` | スキームにかかわらず、そのアプリ。`host` も書けます |
+
+`--bundle-id` を付けると、アプリが登録していないスキームの URL でも、そのアプリに届きます。
+`https://` のリンクをアプリ自身に渡して、ユニバーサルリンクの処理を試せます。
+`--bundle-id` なしの `https://` がアプリで開くか（ユニバーサルリンクの関連付け）は、確かめていません。
+
+URL はシェルの引用符で囲み、パーセントエンコードした形で書きます。
+空白・制御文字・ASCII でない文字を含む URL と、スキームのない URL は書き方の誤り（終了コード `2`）で、何も送りません。
+URL は書いたとおりに送り、relay は書き換えません。
+
+成功すると、開いた後の前面アプリを返します。
+
+```json
+{"foreground":{"bundleId":"com.example.video","pid":4321,"source":"private"},"ok":true}
+```
+
+ランナーは、URL を開くアプリが前面に来るまで最大 5 秒待ってから応答します。
+`--bundle-id` があればそのアプリ、なければ送る前と違うアプリが前面に来たら、すぐ応答します。
+前面にいるアプリ自身が URL を開くときは前面が変わらないので、5 秒待ちます。そのアプリを `--bundle-id` で指定すると待ちません。
+
+アプリのアイドルは待ちません。再生中の画面のように、メインのランループが眠らないアプリでも止まりません。
+ただし XCTest の非公開 API が使えないランナーでは、公開 API がアプリのアイドルを待ち、1 回 60 秒以上かかることがあります（「[URL を開く](private-api.md#url-を開く)」）。
+
+開いた後の画面は、`relay find --id … --timeout <秒>` で確かめてください。
+`relay run` の手順にも書けます（`open myapp://title/42`）。
+
+| 失敗 | 結果 |
+| --- | --- |
+| スキームを扱うアプリが入っていない（シミュレータの `tel:` など） | 終了コード `6`、`open_failed` |
+| `--bundle-id` のアプリが入っていない | 終了コード `6`、`app_not_installed`（ランナーには送らない） |
+| URL の書き方の誤り | 終了コード `2`（ランナーには送らない）。`/open` を直接呼ぶと `400`、`invalid_request` |
+
+`--bundle-id` のアプリは、`relay launch` と同じように、送る前に端末に入っているかを確かめます（「[アプリの指定と起動](#アプリの指定と起動)」）。
+
+シミュレータと実機では、「"〜" で開きますか?」などの確認のダイアログは出ませんでした。
+実機で確かめたのは、Safari で開く `https://`、設定アプリの `App-prefs:`、ホストアプリへの `--bundle-id` です。ほかのアプリのカスタムスキームでは確かめていません。
+出たときは SpringBoard のアラートなので、`relay find --type alert --bundle-id com.apple.springboard` で確かめ、`relay tap --label <ボタン名> --bundle-id com.apple.springboard` で押します。
+開いたアプリのステータスバーの左上には、前のアプリへ戻るリンク（`◀ <アプリ名>`）が出ます。
+
+<details>
+<summary>確かめた結果と所要時間</summary>
+
+シミュレータで、確認用アプリのラベルに届いた URL を `relay find --id` で確かめました。各 5 回の `relay open` の時間です。
+
+| 状況 | 結果 | 時間 |
+| --- | --- | --- |
+| カスタムスキーム、アプリが動いていない（Safari が前面） | 起動して届き、前面に来た | 1649–2527 ms |
+| 同、`--bundle-id` あり | 同上 | 1692–1751 ms |
+| カスタムスキーム、アプリが裏にいる | 届き、前面に来た | 879–944 ms |
+| カスタムスキーム、アプリが前面にいる | 届いた（前面は変わらず 5 秒待つ） | 5127–5173 ms |
+| 同、`--bundle-id` あり | 届いた | 151–175 ms |
+| `http://`、Safari が動いていない | Safari が開いた | 1564–1622 ms |
+| `http://`、Safari が裏にいる | Safari が開いた | 97–123 ms |
+| 扱うアプリのないスキーム | `open_failed` | 46–58 ms |
+
+メインのランループが眠らない状態のアプリへ、またはそのアプリから開いても、17–1120 ms で応答しました。
+同じ状態で公開 API（`XCUIDevice.system.open`・`XCUIApplication.open`）を使うと、1 回 73–83 秒かかりました。
+`https://example.com/` も Safari で開きました。
+
+実機（iPhone 14 Pro、iOS 26.7.1）では、確認用アプリの代わりに、入っているアプリで前面に来るかを確かめました。
+URL がアプリの中に届いたかは、設定アプリが開いたこと以外は確かめていません。各 5 回の `relay open` の時間です。
+
+| 状況 | 結果 | 時間 |
+| --- | --- | --- |
+| `https://`、Safari が動いていない | Safari が前面に来た | 182–197 ms |
+| `https://`、Safari が裏にいる | 同上 | 146–216 ms |
+| `App-prefs:`、設定アプリが動いていない | 設定アプリが前面に来た | 165–241 ms |
+| `--bundle-id host`、ホストアプリが動いていない | ホストアプリが前面に来た | 956–981 ms |
+| `https://`、Safari が前面（1 回） | 5 秒待った / `--bundle-id` ありは待たない | 5177 ms / 221 ms |
+| 扱うアプリのないスキーム（1 回） | `open_failed` | 88 ms |
+
+実機では `prefs:` を扱うアプリはなく、`open_failed` でした。
+`RELAY_DISABLE_PRIVATE_OPEN=1` の公開 API の経路でも、`App-prefs:` で設定アプリが開きました（1 回、436 ms）。
+
+</details>
+
+確かめた環境: iPhone 17 シミュレータ（iOS 27.2、Xcode 27.2）、iPhone 14 Pro（iOS 26.7.1、Xcode 27.2）。ユニバーサルリンクは確かめていません。
 
 ### オプションの書き方
 
@@ -195,6 +290,7 @@ relay: image 471x1024 px, screen 402x874 pt, 1.172 px/pt (tap in points: px / 1.
 | `press` | `--timeout` と `--duration` の時間（`--duration` の既定は 1 秒） |
 | `swipe` | `--duration` と `--hold` の時間 |
 | `launch` / `terminate` | 120 秒 |
+| `open` | 120 秒（通常は前面を待つ 5 秒までで応答します） |
 | `type` | 1 文字（Unicode スカラー）につき 0.1 秒と、キー 1 つにつき 1 秒 |
 | `key` | 1 秒 |
 
@@ -250,7 +346,7 @@ relay が自分で出す JSON は、すべて **1 行・キーを辞書順・`/`
 | `3` | ランナーに届かない（runner.json がない、接続できない・タイムアウト、接続が OS に拒否された） |
 | `4` | `401`: runner.json のトークンが動いているランナーのものではない（古いファイル、別のランナー） |
 | `5` | `409`（busy）: 再試行してよい |
-| `6` | `422` の XCUI の失敗（フォーカスがない、要素が見つからない・1 つに決まらないなど）、または `relay launch` の `app_not_installed` |
+| `6` | `422` の XCUI の失敗（フォーカスがない、要素が見つからない・1 つに決まらない、URL を開けないなど）、または `relay launch`・`relay open --bundle-id` の `app_not_installed` |
 | `7` | `400` とその他の 4xx |
 | `8` | 5xx などそれ以外 |
 
@@ -272,7 +368,7 @@ relay 自身は次の `code` を出します。ランナーは返しません。
 | `runner_info_invalid` | `1` | runner.json が読めない、url が不正、`host` を解決できない |
 | `runner_bad_response` | ランナーのステータスによる（`8` など） | JSON でない本文のエラー（古いランナー、別のサーバー）で、`status` に HTTP ステータスが入ります。 |
 | `screenshot_save_failed` | `1` | 画像を受け取ったが、ファイルに保存できない |
-| `app_not_installed` | `6` | `launch` で、アプリが端末に入っていない（ランナーには送らない） |
+| `app_not_installed` | `6` | `launch` と `open --bundle-id` で、アプリが端末に入っていない（ランナーには送らない） |
 | `element_not_found` | `6` | `find --require` で一致なし（ランナーの `code` と同じで、`count`・`elements` も付く） |
 
 JSON 形式の状態確認の失敗も、stdout に JSON を 1 つ出します。stderr に同じ文は出しません。
@@ -299,6 +395,7 @@ code を返さない古いランナーでは、`401`・`409` のヒントだけ�
 | `element_point_covered` | `relay screenshot` / `relay source` で対象を確かめ、覆いを閉じるか、スクリーンショットで確認した座標を指定する |
 | `covered_by_other_app` | `relay screenshot` か `relay find --type alert --bundle-id com.apple.springboard` で覆っている画面を確かめ、閉じてから送り直す |
 | `remote_view_position_unknown` | `relay screenshot` で位置を確かめ、`relay tap <x> <y>` で座標を指定する |
+| `open_failed` | URL のスキームと、それを扱うアプリが入っているかを確かめる。`--bundle-id <id>` でそのアプリに渡せる |
 | `not_found` | ランナーが relay より古いかもしれない（`relay start --rebuild` でビルドし直す） |
 
 `covered_by_other_app` は、システムのダイアログやコントロールセンターなどがアプリを覆っている場合です。
@@ -379,7 +476,7 @@ screenshot --output about.png --scale 1
 | --- | --- |
 | 観察 | `ping`、`health`、`foreground`、`screenshot`、`source`、`find` |
 | 操作 | `tap`、`press`、`swipe`、`type`、`key`、`button`、`orientation` |
-| アプリ | `launch`、`terminate` |
+| アプリ | `launch`、`open`、`terminate` |
 | 疑似手順 | `sleep <秒>`（0 < 秒 ≤ 60） |
 
 オプションと値の確認は単独のコマンドと同じです。`--json` は何も変えず、`--opt=value` も書けます。
