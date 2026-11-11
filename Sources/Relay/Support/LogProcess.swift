@@ -11,6 +11,9 @@ struct LogToolExit: Equatable {
   var timedOut = false
   /// Why relay stopped it before it ended by itself, if it did.
   var stopped: LogStop.Reason?
+  /// `stream` returned while `onLine` was still handling a line (a write to a stdout nobody reads, for
+  /// example). That call may still write: the caller must not close what it writes to, nor write there.
+  var deliveryAbandoned = false
 }
 
 /// A request to stop a tool `LogProcess` runs, from a signal, from the code reading its output, or from the
@@ -150,9 +153,9 @@ enum LogProcess {
     if process.isRunning {
       end(process, with: stopped.flatMap(signalNumber) ?? (timedOut ? SIGTERM : SIGINT), exited: events)
     }
-    reader.finish(wait: drainDelay)
+    let settled = reader.finish(wait: drainDelay)
     return LogToolExit(status: process.isRunning ? SIGKILL : process.terminationStatus, stderr: errorReader.finish(),
-                       timedOut: timedOut, stopped: stopped)
+                       timedOut: timedOut, stopped: stopped, deliveryAbandoned: !settled)
   }
 
   private static func signalNumber(_ reason: LogStop.Reason) -> Int32? {
@@ -193,15 +196,17 @@ private final class TailReader: Sendable {
         let count = read(handle.fileDescriptor, &buffer, buffer.count)
         if count < 0, errno == EINTR { continue }
         guard count > 0 else { break }
-        state.withLock { state in
-          guard !state.isFinished else { return }
-          if echo {
-            _ = LogOutput.write(Data(buffer[..<count]), to: STDERR_FILENO)
-          }
+        let kept = state.withLock { state in
+          guard !state.isFinished else { return false }
           state.data.append(contentsOf: buffer[..<count])
           if state.data.count > limit {
             state.data.removeFirst(state.data.count - limit)
           }
+          return true
+        }
+        // Outside the lock: a stderr nobody reads must not keep `finish()` waiting.
+        if kept, echo {
+          _ = LogOutput.write(Data(buffer[..<count]), to: STDERR_FILENO)
         }
       }
       reachedEnd.signal()
@@ -218,20 +223,39 @@ private final class TailReader: Sendable {
 }
 
 /// Splits what a pipe gets into lines and hands each to `onLine`, on a thread of its own. A last line
-/// without a line break is handed over at the end of the pipe.
+/// without a line break is handed over at the end of the pipe. No line is handed over once `finish` was
+/// called; `onLine` runs outside the lock, so a call stuck in a write never keeps `finish` waiting.
 private final class LineReader: Sendable {
-  private let isFinished = Locked(false)
+  private struct State {
+    var isFinished = false
+    var isDelivering = false
+  }
+
+  private let state = Locked(State())
   private let reachedEnd = DispatchSemaphore(value: 0)
+  /// Signaled when a call of `onLine` that `finish` waits for returns.
+  private let delivered = DispatchSemaphore(value: 0)
 
   init(_ handle: FileHandle, maxLineBytes: Int, stop: LogStop, onLine: @escaping @Sendable (Data) -> Bool, ended: DispatchSemaphore) {
-    Thread.detachNewThread { [isFinished, reachedEnd] in
+    Thread.detachNewThread { [state, reachedEnd, delivered] in
       var buffer = [UInt8](repeating: 0, count: 65536)
       var pending = Data()
       var reading = true
       func deliver(_ line: Data) {
         guard reading else { return }
-        // Under the lock, so nothing is handed over after `finish()`.
-        let keep = isFinished.withLock { finished in finished ? false : onLine(line) }
+        let allowed = state.withLock { state in
+          guard !state.isFinished else { return false }
+          state.isDelivering = true
+          return true
+        }
+        let keep = allowed && onLine(line)
+        if allowed {
+          let waited = state.withLock { state in
+            state.isDelivering = false
+            return state.isFinished
+          }
+          if waited { delivered.signal() }
+        }
         if !keep {
           reading = false
           stop.request(.consumer)
@@ -261,9 +285,15 @@ private final class LineReader: Sendable {
     }
   }
 
-  func finish(wait: TimeInterval) {
+  /// Hands nothing over from now on, after waiting up to `wait` for the end of the pipe and up to `wait`
+  /// more for a call of `onLine` in progress. False when that call has not returned.
+  func finish(wait: TimeInterval) -> Bool {
     _ = reachedEnd.wait(timeout: .now() + wait)
-    isFinished.set(true)
+    let busy = state.withLock { state in
+      state.isFinished = true
+      return state.isDelivering
+    }
+    return !busy || delivered.wait(timeout: .now() + wait) == .success
   }
 }
 

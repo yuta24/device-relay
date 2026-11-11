@@ -1005,6 +1005,7 @@ OS が出さない項目は null です。`level` は OS の `messageType` を�
 
 実機の一覧は、アプリのクラッシュとは限らない記録を含む候補です。実機の `--bundle-id` は `crash_filter_unsupported` で `1` です。
 `--name <relativePath>` で、一覧の `relativePath` の 1 件だけを出せます。名前が一覧になければ `crashes_unavailable` で `1` です。
+`--name` があるときは、`--since` と `--bundle-id` では絞りません。
 
 確かめた環境: iPhone 18 Pro シミュレータ（iOS 27.2）と USB 接続の iPhone 14 Pro（iOS 26.7.1）、macOS 27.2.1、Xcode 27.2。実機の 30 日分の一覧は 1 秒ほどでした。
 

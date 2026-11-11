@@ -657,7 +657,8 @@ enum DeviceLogs {
   /// `--follow`: `log stream` of a simulator as NDJSON, until a signal (exit 128 + the signal) or an error.
   private static func follow(device: Device, filter: LogFilter?, limitations: [String], output: URL?, tools: LogTools) throws -> Int32 {
     let fd = try output.map { url throws(LogFailure) in try createNewFile(url) } ?? -1
-    defer { if fd >= 0 { close(fd) } }
+    var keepOpen = false
+    defer { if fd >= 0, !keepOpen { close(fd) } }
     let emit: @Sendable (Data) -> Bool = { data in
       let line = data + Data("\n".utf8)
       return fd >= 0 ? LogOutput.write(line, to: fd) : tools.write(line)
@@ -695,6 +696,14 @@ enum DeviceLogs {
       }
     }
     let final = state.value
+    if exit.deliveryAbandoned {
+      // A line is still being written (to a stdout nobody reads, say): another write would wait the same
+      // way, and the fd stays open so that write never reaches a file opened later. relay ends now.
+      keepOpen = true
+      CLIOutput.note("cannot finish writing \(output?.path ?? "to stdout"); stopped")
+      let number = exit.stopped.flatMap { reason -> Int32? in if case .signal(let n) = reason { n } else { nil } }
+      return number.map(LogStop.exitStatus) ?? RunnerExitCode.failure.rawValue
+    }
     if final.outputClosed {
       // Nothing more can go where the lines went.
       CLIOutput.note("cannot write \(output?.path ?? "to stdout"); stopped")

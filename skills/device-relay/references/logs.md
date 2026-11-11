@@ -43,6 +43,6 @@ relay crashes --since 2026-11-11T01:40:24Z
 | `logs_follow_unsupported` / `logs_filter_unsupported` | 1 | Not on a device (or with `--archive`): drop the option |
 | `log_app_unavailable` | 1 | App not installed on the simulator: check the bundle ID |
 | `logs_save_failed` / `crashes_save_failed` | 1 | The file exists or the directory is missing: give another path (don't delete the user's files) |
-| `crashes_unavailable` | 1 | The list failed, or `--name` isn't in it: list again |
+| `crashes_unavailable` | 1 | The list failed, or `--name` isn't in it: list again (`--name` ignores `--since` and `--bundle-id`) |
 | `crash_filter_unsupported` | 1 | Device: use `processHint` and `--name` |
 | `runner_unavailable` | 3 | No runner.json: pass `--udid <udid>` |

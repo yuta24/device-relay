@@ -110,6 +110,28 @@ struct LogProcessTests {
     #expect(hung.stopped == .signal(SIGHUP))
   }
 
+  @Test func streamStopsWhileALineIsStuck() throws {
+    // onLine writes to a pipe nobody reads, as `--follow` does to a stdout nobody reads.
+    signal(SIGPIPE, SIG_IGN)
+    let unread = Pipe()
+    let calls = Locked(0)
+    let stop = LogStop()
+    DispatchQueue.global().asyncAfter(deadline: .now() + 0.3) { stop.request(.signal(SIGTERM)) }
+    let started = Date()
+    let exit = try LogProcess.stream("/bin/sh", ["-c", "while :; do echo x; done"], maxLineBytes: 100, stop: stop) { _ in
+      calls.withLock { $0 += 1 }
+      return LogOutput.write(Data(count: 1 << 20), to: unread.fileHandleForWriting.fileDescriptor)
+    }
+    let elapsed = Date().timeIntervalSince(started)
+    #expect(exit.stopped == .signal(SIGTERM))
+    #expect(exit.deliveryAbandoned)
+    #expect(elapsed < 0.3 + LogProcess.killDelay + 2 * LogProcess.drainDelay + 1)
+    // The stuck write ends once the pipe closes; no line is handed over after stream returned.
+    try unread.fileHandleForReading.close()
+    Thread.sleep(forTimeInterval: 0.3)
+    #expect(calls.value == 1)
+  }
+
   @Test func exitStatusOfASignal() {
     #expect(LogStop.exitStatus(for: SIGINT) == 130)
     #expect(LogStop.exitStatus(for: SIGTERM) == 143)
@@ -123,13 +145,32 @@ struct LogProcessTests {
     try pipe.fileHandleForReading.close()
     #expect(!LogOutput.write(Data("x".utf8), to: pipe.fileHandleForWriting.fileDescriptor))
   }
+}
 
+/// `LogSignals` changes how this process handles signals, so these run one at a time. Real signals are
+/// never sent to this process: other tests run in it at the same time.
+@Suite(.serialized) struct LogSignalsTests {
   @Test func signalsAreHandledWhileInstalled() {
-    // Real signals are not raised: other tests run in this process at the same time.
     let sources = LogSignals.install(LogStop())
     #expect(sources.count == 3)
     LogSignals.uninstall(sources)
     let cancelled = sources.allSatisfy { $0.isCancelled }
     #expect(cancelled)
+  }
+
+  @Test func aToolStartedWhileSignalsAreIgnoredEndsOnTheSignalSent() throws {
+    // relay ignores SIGINT and SIGTERM while they are installed; the tool it starts must not inherit that,
+    // or the signal it gets would do nothing and only SIGKILL (after killDelay) would end it.
+    let sources = LogSignals.install(LogStop())
+    defer { LogSignals.uninstall(sources) }
+    for number in [SIGTERM, SIGINT] {
+      let stop = LogStop()
+      DispatchQueue.global().asyncAfter(deadline: .now() + 0.3) { stop.request(.signal(number)) }
+      let started = Date()
+      let exit = try LogProcess.stream("/bin/sleep", ["30"], maxLineBytes: 100, stop: stop) { _ in true }
+      #expect(exit.stopped == .signal(number))
+      #expect(exit.status == number, "ended by \(exit.status), not by the signal sent")
+      #expect(Date().timeIntervalSince(started) < 0.3 + LogProcess.killDelay)
+    }
   }
 }

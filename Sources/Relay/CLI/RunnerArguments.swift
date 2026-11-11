@@ -370,9 +370,9 @@ extension Arguments {
       A device's come from devicectl (systemCrashLogs) without being opened: the name, the time the file
       was written (modifiedAt), and a processHint from the name; bundleID is null, so --bundle-id is
       crash_filter_unsupported. They are candidates: not all are crashes of an app.
-      --name <name> keeps the one with that relativePath. -o <dir> copies the reports listed into that
-      existing directory (mode 0600) and adds each one's path; an existing file is not replaced. On a
-      device, -o copies only the one --name chooses.
+      --name <name> keeps the one with that relativePath, whatever --since and --bundle-id say.
+      -o <dir> copies the reports listed into that existing directory (mode 0600) and adds each one's
+      path; an existing file is not replaced. On a device, -o copies only the one --name chooses.
       Exit status: 0 ok (0 reports included), 1 not a simulator or a connected device
         (device_unavailable), --bundle-id on a device (crash_filter_unsupported), the list failing
         (crashes_unavailable), a report not saved (crashes_save_failed), 2 usage (-o without --name on

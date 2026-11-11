@@ -528,6 +528,18 @@ struct DeviceLogsCommandTests {
     #expect(objects[1]["message"] as? String == "one")
   }
 
+  @Test func followEndsAtOnceWhenALineIsStuck() throws {
+    // stream returned while a line was still being written: nothing more is written, and the status is the signal's.
+    let output = CapturedOutput()
+    let stuck = LogToolExit(status: SIGINT, stopped: .signal(SIGINT), deliveryAbandoned: true)
+    let tools = fakeLogTools(home: try temporaryHome(), output: output, stream: fakeStream([fakeLogLine("one")], exit: stuck))
+    #expect(DeviceLogs.run(options("SIM-ON") { $0.follow = true }, tools: tools, now: now) == 130)
+    #expect(output.objects.map { $0["type"] as? String } == ["start", "log"])
+    let ended = LogToolExit(status: 0, deliveryAbandoned: true)
+    let file = fakeLogTools(home: try temporaryHome(), output: CapturedOutput(), stream: fakeStream([], exit: ended))
+    #expect(DeviceLogs.run(options("SIM-ON") { $0.follow = true; $0.output = "s.ndjson" }, tools: file, now: now) == 1)
+  }
+
   @Test func followWritesTheFileAndASummary() throws {
     let home = try temporaryHome()
     let output = CapturedOutput()

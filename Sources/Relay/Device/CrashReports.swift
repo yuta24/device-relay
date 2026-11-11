@@ -209,9 +209,11 @@ enum CrashReports {
     case .simulator:
       let bundleID = try options.bundleID.map { value throws(LogFailure) in try target.bundleID(value) }
       let (found, unreadable) = simulatorReports(udid: device.udid, since: since, name: options.name, home: tools.home)
-      reports = select(found.filter { bundleID == nil || $0.bundleID == bundleID }, since: since, name: options.name)
+      // --name wins over --bundle-id, as over --since: the report named is shown whatever its app.
+      let filterID = options.name == nil ? bundleID : nil
+      reports = select(found.filter { filterID == nil || $0.bundleID == filterID }, since: since, name: options.name)
       extra["unreadable"] = unreadable
-      extra["filter"] = bundleID.map { ["bundleID": $0] } ?? NSNull()
+      extra["filter"] = filterID.map { ["bundleID": $0] } ?? NSNull()
       limitations = simulatorLimitations
       backend = "DiagnosticReports"
     case .device:

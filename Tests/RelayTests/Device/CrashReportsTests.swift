@@ -170,6 +170,13 @@ struct CrashReportsCommandTests {
                              now: now) == 0)
     #expect(named.object["count"] as? Int == 1)
 
+    // --name wins over --bundle-id: the report named is there whatever its app.
+    let otherApp = CapturedOutput()
+    #expect(CrashReports.run(options("SIM-ON") { $0.name = "Other-2026-11-11-092100.ips"; $0.bundleID = "com.example.probe" },
+                             tools: fakeLogTools(home: home, output: otherApp), now: now) == 0)
+    #expect(otherApp.object["count"] as? Int == 1)
+    #expect(otherApp.object["filter"] is NSNull)
+
     let missing = CapturedOutput()
     #expect(CrashReports.run(options("SIM-ON") { $0.name = "Nope.ips" }, tools: fakeLogTools(home: home, output: missing), now: now) == 1)
     #expect(missing.object["code"] as? String == "crashes_unavailable")
