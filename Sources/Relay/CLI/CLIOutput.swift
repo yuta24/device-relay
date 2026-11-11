@@ -20,6 +20,27 @@ enum RelayErrorCode: String, CaseIterable {
   case devicesUnavailable = "devices_unavailable"
   /// Exit 1: `relay record status` could not find or read the recording state.
   case recordingUnavailable = "recording_unavailable"
+  /// Exit 1: `relay logs` / `relay crashes`: no simulator or device with the UDID, a simulator not booted
+  /// (logs), or a device not connected.
+  case deviceUnavailable = "device_unavailable"
+  /// Exit 1: `log` failed, timed out, printed what relay cannot read, or more than 64 MiB.
+  case logsUnavailable = "logs_unavailable"
+  /// Exit 1: collecting a device's log needs an administrator; relay does not run sudo (`hint` has the command).
+  case logsPermissionDenied = "logs_permission_denied"
+  /// Exit 1: `relay logs --follow` of a device.
+  case logsFollowUnsupported = "logs_follow_unsupported"
+  /// Exit 1: `relay logs --bundle-id` of a device or with `--archive`.
+  case logsFilterUnsupported = "logs_filter_unsupported"
+  /// Exit 1: `relay logs --bundle-id` of an app that is not installed on the simulator.
+  case logAppUnavailable = "log_app_unavailable"
+  /// Exit 1: `relay logs -o` could not create or write the file.
+  case logsSaveFailed = "logs_save_failed"
+  /// Exit 1: `relay crashes` could not list the crash reports.
+  case crashesUnavailable = "crashes_unavailable"
+  /// Exit 1: `relay crashes --bundle-id` of a device, whose list has no bundle IDs.
+  case crashFilterUnsupported = "crash_filter_unsupported"
+  /// Exit 1: `relay crashes -o` could not save one or more reports.
+  case crashesSaveFailed = "crashes_save_failed"
 }
 
 /// What relay prints for people and for scripts, and where.

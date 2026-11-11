@@ -24,7 +24,8 @@ struct ExitStatusTests {
     let wrong: [[String]] = [
       ["start", "--bogus"], ["start", "--port", "abc"], ["start", "--port"], ["start", "--udid", "A", "--device", "B"],
       ["start", "--session", "bad/name"], ["tap", "--bogus"], ["tap", "1"], ["type", "--stdin", "text"], ["status", "--runner", "a", "--session", "b"],
-      ["bogus"], ["record", "bogus"], ["skill", "bogus"], ["config", "get", "nope"], ["run"], ["bench", "--runner", "a", "--session", "b"]
+      ["bogus"], ["record", "bogus"], ["skill", "bogus"], ["config", "get", "nope"], ["run"], ["bench", "--runner", "a", "--session", "b"],
+      ["logs", "--since", "x"], ["logs", "--follow", "--since", "5m"], ["crashes", "--name", "../a"], ["crashes", "--udid", "A", "--session", "b"]
     ]
     for arguments in wrong {
       #expect(throws: ArgumentError.self, "\(arguments)") { try Arguments.parse(arguments) }
@@ -97,6 +98,9 @@ struct OptionEqualsTests {
       == Arguments.parse(["record", "start", "--output", "/tmp/a.mp4", "--max-duration", "5"]))
     #expect(try Arguments.parse(["record", "status", "--port=8100", "--json"]) == Arguments.parse(["record", "status", "--port", "8100", "--json"]))
     #expect(try Arguments.parse(["skill", "install", "--dir=x"]) == Arguments.parse(["skill", "install", "--dir", "x"]))
+    #expect(try Arguments.parse(["logs", "--since=5m", "--bundle-id=a", "--udid=SIM", "--output=a.json"])
+      == Arguments.parse(["logs", "--since", "5m", "--bundle-id", "a", "--udid", "SIM", "-o", "a.json"]))
+    #expect(try Arguments.parse(["crashes", "--name=a.ips", "--session=a"]) == Arguments.parse(["crashes", "--name", "a.ips", "--session", "a"]))
     #expect(try Arguments.parse(["run", "--step=ping", "--session=a"]) == Arguments.parse(["run", "--step", "ping", "--session", "a"]))
     #expect(try Arguments.parse(["tap", "--label=OK", "--type=button", "--timeout=3", "--session=a"])
       == Arguments.parse(["tap", "--label", "OK", "--type", "button", "--timeout", "3", "--session", "a"]))
@@ -178,7 +182,17 @@ struct FailureJSONTests {
       .screenshotSaveFailed: "screenshot_save_failed",
       .appNotInstalled: "app_not_installed",
       .devicesUnavailable: "devices_unavailable",
-      .recordingUnavailable: "recording_unavailable"
+      .recordingUnavailable: "recording_unavailable",
+      .deviceUnavailable: "device_unavailable",
+      .logsUnavailable: "logs_unavailable",
+      .logsPermissionDenied: "logs_permission_denied",
+      .logsFollowUnsupported: "logs_follow_unsupported",
+      .logsFilterUnsupported: "logs_filter_unsupported",
+      .logAppUnavailable: "log_app_unavailable",
+      .logsSaveFailed: "logs_save_failed",
+      .crashesUnavailable: "crashes_unavailable",
+      .crashFilterUnsupported: "crash_filter_unsupported",
+      .crashesSaveFailed: "crashes_save_failed"
     ]
     #expect(RelayErrorCode.allCases.count == expected.count)
     for code in RelayErrorCode.allCases {

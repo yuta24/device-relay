@@ -157,6 +157,8 @@ relay screenshot --scale 1                            # 1 px = 1 pt に縮小し
 | `relay button` / `relay orientation` | ハードウェアボタンを押す / 端末の向きを変える |
 | `relay run`（実験的） | 1 行 1 手順のシナリオを順に実行する |
 | `relay record start` / `relay record stop` | シミュレータか実機（USB 接続）の画面を MP4 に録画する / 止めて保存先を出力する（実機は初回にカメラの許可が要る） |
+| `relay logs` | アプリのログを JSON で出す（`--since` で期間、`--bundle-id` でアプリ、`--follow` で追う。実機は管理者の権限が要る） |
+| `relay crashes` | クラッシュ記録の一覧を JSON で出す / `-o` で保存する（実機は記録を開かない候補の一覧） |
 | `relay skill install` | コーディングエージェント向けのスキルを対象アプリのリポジトリなどに入れる |
 | `relay config` | 設定（Team ID、バンドル ID の接頭辞）を表示・変更する |
 
@@ -184,7 +186,7 @@ RELAY_SESSION=agent-2 codex    # 別のターミナルで、別のセッショ�
 | 初めて使う人 | [docs/setup.md](docs/setup.md) | インストールと更新、Runner の用意（`relay install`）、端末の選択、環境の確認（`relay doctor`）、シミュレータ |
 | 初めて使う人 | [docs/device.md](docs/device.md) | 実機の準備、UI オートメーションとパスコード、Team ID、バンドル ID の接頭辞、接続の経路、ホームと音量ボタン、録画の準備 |
 | 使っている人 | [docs/sessions.md](docs/sessions.md) | 起動と停止、生存確認、強制終了したとき、接続先（runner.json）の探し方、並列セッション、外部コマンドが応答しないとき、エージェントの sandbox、ログとテスト結果の掃除 |
-| 使っている人 | [docs/cli.md](docs/cli.md) | CLI のサブコマンド、出力と終了コード、アプリの指定と起動、シナリオの実行（`relay run`、実験的）、録画（`relay record`）、エージェントスキル |
+| 使っている人 | [docs/cli.md](docs/cli.md) | CLI のサブコマンド、出力と終了コード、アプリの指定と起動、シナリオの実行（`relay run`、実験的）、録画（`relay record`）、ログとクラッシュ記録（`relay logs`・`relay crashes`）、エージェントスキル |
 | 使っている人 | [docs/http-api.md](docs/http-api.md) | HTTP API のエンドポイントとステータスコード、`/health` の応答、認証、同時リクエストと生存確認（`/ping`）、前面アプリ、文字入力と特殊キー |
 | 使っている人 | [docs/elements.md](docs/elements.md) | 要素ツリー（`/source`、compact、interactive）、要素セレクタ、共有シートの中の要素、別のアプリに覆われているとき、待機（timeout）、システムの許可ダイアログ |
 | 使っている人 | [docs/screen.md](docs/screen.md) | 座標系と画面の向き、スクリーンショットの縮小、iPad のウィンドウ表示、表示が複数ある端末（iPhone Duo） |

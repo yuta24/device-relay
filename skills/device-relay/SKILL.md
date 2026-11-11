@@ -70,7 +70,7 @@ relay stop                                   # when done, if you started it
   - `covered_by_other_app`: an alert etc. covers the app: `relay screenshot`, close it, resend
   - `app_not_installed`: check the bundle ID (case-sensitive) or install the app
   - `point_offscreen` (7): re-read `screen` in `relay health`
-  - others: [failures](references/failures.md), [list of codes](references/failures.md#list-of-codes)
+  - others: [list of codes](references/failures.md#list-of-codes)
 
 ## When a person is needed
 
@@ -78,7 +78,7 @@ Device asking for its passcode during automation mode (`Failed to initialize for
 
 ## More
 
-Each file in `references/` stands alone; read only the one you need:
+Each file stands alone; read only the one you need:
 
 - [starting-and-stopping](references/starting-and-stopping.md): `start` options, which device, the app, doctor, `relay skill`
 - [start-status-stop](references/start-status-stop.md): their output and exit codes
@@ -89,7 +89,7 @@ Each file in `references/` stands alone; read only the one you need:
 - [failures](references/failures.md): all exit codes, `code`s, `reason`s
 - [coordinates](references/coordinates.md): orientation, iPad windows, iPhone Duo
 - [scrolling](references/scrolling.md): to an element off the screen
-- [recording](references/recording.md): `relay record`
+- [recording](references/recording.md), [logs](references/logs.md): `record`, `logs`, `crashes`
 - [relay-run](references/relay-run.md): replaying confirmed steps
 - [test-app](references/test-app.md): an app to try things on
 - [troubleshooting](references/troubleshooting.md): start failures, prompts, logs
