@@ -453,7 +453,9 @@ final class RelayRunnerUITests: XCTestCase {
     }
     // Filtering runs here, next to the snapshot, so only the short list is serialized and sent.
     let screen = CGRect(origin: .zero, size: self.screen(in: interfaceOrientation()).size)
-    var verifyHit: (([Int], CGPoint) -> Bool?)?
+    // Where hit testing isn't checked (iPad windows, several displays), a candidate under a later control's
+    // frame is dropped by the frames alone, as before hit testing was added.
+    var verifyHit: ([Int], CGPoint) -> Bool? = { _, _ in false }
     if canVerifyCommandHit {
       verifyHit = { path, point in
         guard let hitPath = self.hitPath(at: point),
