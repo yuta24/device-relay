@@ -38,6 +38,16 @@ struct RunnerElementNode: Sendable {
 }
 
 enum RunnerElementTree {
+  /// The hit-test coordinate space has only been checked without window/display placement.
+  /// Remote views in a full-screen app keep using the same verification as the app.
+  static func canVerifyHit(window: RunnerWindowLookup?, displayCount: Int) -> Bool {
+    guard displayCount <= 1 else { return false }
+    switch window {
+    case nil, .fullScreen?: return true
+    case .placed?, .unknown?: return false
+    }
+  }
+
   /// Finds the receiver by its identity in the original snapshot, including after display filtering.
   /// A path not present in this tree cannot establish that another element would receive the touch.
   static func node(at path: [Int], in root: RunnerElementNode) -> RunnerElementNode? {

@@ -8,7 +8,15 @@
 - **対象アプリには何も入りません**: 非公開 API を使うのは、XCTest の UI テストバンドルとして端末上で動くランナー（`Runner/RelayRunnerUITests`）だけです。Mac 側の `relay` CLI は使いません。`Runner/` のコードやバンドルを対象アプリのターゲットに埋め込まないでください。App Store に提出するアプリに含めるものではありません。
 - **動作を確認した版**: Xcode 27 と iOS 26.7.1 の実機、iOS 27.0 のシミュレータです。表示が複数ある端末の項目は、Xcode 27.2 と iOS 27.2 のシミュレータで確認しました。文字入力の合成は、Xcode 27.2 と iOS 27.2 のシミュレータ、iOS 26.7.1 の実機で確認しました。ほかの版は確認していません。下の API は、Xcode 27.2 の XCTest と XCUIAutomation の公開ヘッダに宣言がないことを確かめています（実体は `XCUIAutomation.framework` と `XCTAutomationSupport.framework` にあります）。
 - **更新の後の確かめ方**: `/health` の `touchSynthesis` が `private`、`foreground.source` が `private` なら、タッチ合成と前面アプリの経路は使えています。文字入力の合成は、`/health` の `typeSynthesis` が `private` であることで確かめます。iPad のウィンドウの位置は、全画面でないウィンドウで `relay find --type window` の `window` が付くことで確かめます。要素のキーボードのフォーカスは、`/source` の `hasKeyboardFocus` が `null` でないことで確かめます。共有シートの入れ物は、iPhone で共有シートを開いて `relay find --label Copy --type cell` の frame がシートの中（縦向きなら画面の下のほう）にあることで確かめます。
-- **無効にして試す**: ランナーの環境変数 `RELAY_DISABLE_PRIVATE_TOUCH=1`（タッチ合成）、`RELAY_DISABLE_PRIVATE_TYPING=1`（文字入力の合成）、`RELAY_DISABLE_PRIVATE_FOREGROUND=1`（前面アプリ）で、代わりの経路を試せます。xcodebuild と `relay start` には `TEST_RUNNER_` を前に付けて渡します（`TEST_RUNNER_RELAY_DISABLE_PRIVATE_TOUCH=1` など）。ほかの項目に無効にするスイッチはありません。
+- **無効にして試す**: 次のランナーの環境変数で、代わりの経路を試せます。
+- xcodebuild と `relay start` には `TEST_RUNNER_` を前に付けて渡します（`TEST_RUNNER_RELAY_DISABLE_PRIVATE_HITTEST=1 relay start …` など）。ほかの項目に無効にするスイッチはありません。
+
+| ランナーの環境変数 | 無効にする経路 |
+| --- | --- |
+| `RELAY_DISABLE_PRIVATE_TOUCH=1` | タッチ合成 |
+| `RELAY_DISABLE_PRIVATE_TYPING=1` | 文字入力の合成 |
+| `RELAY_DISABLE_PRIVATE_FOREGROUND=1` | 前面アプリ |
+| `RELAY_DISABLE_PRIVATE_HITTEST=1` | 要素のタッチ位置の確認 |
 
 ## 一覧
 
@@ -84,6 +92,8 @@
 - **公開 API では足りない理由**: `frame` の中心が別の要素に重なることがあります。`isHittable` は、こちらで選んだ点に何があるかを返しません。
 - **コントロールの判定**: `RunnerElementTree.interactiveTypes` を再利用します。名前や enabled による一覧の条件は使いません。`staticText`・`other`・`image`・`group` などの内容は、ラベルやセルへクリックを渡す場合があるため、拒否の根拠にしません。
 - **使えないとき**: API が欠ける、nil・エラーが返る、返された要素がスナップショットにない場合は、確認を省き、従来どおり送ります。座標指定のタッチには使いません。
+- **無効にするとき**: `RELAY_DISABLE_PRIVATE_HITTEST=1` で `hitPathAtPoint:` は nil を返し、タッチと一覧の確認を省きます。`relay start` には `TEST_RUNNER_RELAY_DISABLE_PRIVATE_HITTEST=1` を渡します。
+- **確かめていない座標**: iPad のウィンドウが placed または unknown のときと、画面が複数ある端末では、hit test の座標を確かめていないため使いません。全画面のアプリとその共有シートでは、これまでどおり確認します。
 - **結果の整合性**: `com.apple.SafariViewService` の Close・Cancel では、点を含まない Address 要素が返ることがありました。返された要素の frame が点を含まない場合も、確認できないものとして送ります。
 - **同じ方式のツール**: [WebDriverAgent の iOS 用インターフェース宣言](https://github.com/appium/WebDriverAgent/blob/master/PrivateHeaders/XCTest/XCAXClient_iOS.h)にも同じメソッドがあります。
 - **一覧での利用**: `filter=interactive` では、後のコントロールの枠と重なる候補だけを同じ方法で確認します。別のコントロールに当たると確認できた候補だけを外します。確認できない候補は残します。

@@ -453,11 +453,15 @@ final class RelayRunnerUITests: XCTestCase {
     }
     // Filtering runs here, next to the snapshot, so only the short list is serialized and sent.
     let screen = CGRect(origin: .zero, size: self.screen(in: interfaceOrientation()).size)
-    let elements = RunnerElementTree.interactiveElements(in: root, screen: screen) { path, point in
-      guard let hitPath = self.hitPath(at: point),
-            RunnerElementTree.hitControl(at: point, path: hitPath, in: root) != nil else { return nil }
-      return RunnerElementTree.isRelatedHit(hitPath, to: path)
+    var verifyHit: (([Int], CGPoint) -> Bool?)?
+    if canVerifyCommandHit {
+      verifyHit = { path, point in
+        guard let hitPath = self.hitPath(at: point),
+              RunnerElementTree.hitControl(at: point, path: hitPath, in: root) != nil else { return nil }
+        return RunnerElementTree.isRelatedHit(hitPath, to: path)
+      }
     }
+    let elements = RunnerElementTree.interactiveElements(in: root, screen: screen, verifyHit: verifyHit)
     if format == "compact" {
       return Self.text(warning + RunnerElementTree.compactText(elements))
     }
@@ -596,7 +600,9 @@ final class RelayRunnerUITests: XCTestCase {
       var resolved = selector.resolve(in: root, screen: screen)
       if case .success(let target) = resolved {
         try self.requireUncovered(bundleID)
-        resolved = target.verified(hitPath: self.hitPath(at: target.point), in: root)
+        if self.canVerifyCommandHit {
+          resolved = target.verified(hitPath: self.hitPath(at: target.point), in: root)
+        }
       }
       switch resolved {
       case .success(let target):
@@ -614,6 +620,10 @@ final class RelayRunnerUITests: XCTestCase {
       "element": target.match.json,
       "point": RunnerElementTree.json(target.point)
     ])
+  }
+
+  private var canVerifyCommandHit: Bool {
+    RunnerElementTree.canVerifyHit(window: commandWindow, displayCount: displays().count)
   }
 
   private func hitPath(at point: CGPoint) -> [Int]? {

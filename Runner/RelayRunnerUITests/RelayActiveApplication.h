@@ -27,7 +27,8 @@ NS_ASSUME_NONNULL_BEGIN
 + (nullable NSArray<RelayActiveApplicationInfo *> *)activeApplicationsWithError:(NSError **)error;
 
 /// Path in the supplied snapshot of the accessibility element at a screen point. Nil when the
-/// private API is absent, fails, or returns an element outside the snapshot. Never sends input.
+/// private API is disabled by RELAY_DISABLE_PRIVATE_HITTEST=1, absent, fails, or returns an element
+/// outside the snapshot. Never sends input.
 + (nullable NSArray<NSNumber *> *)hitPathAtPoint:(CGPoint)point snapshot:(id)snapshot;
 
 @end

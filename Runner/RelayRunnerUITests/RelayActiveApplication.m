@@ -148,6 +148,9 @@ static NSString *const RelayActiveApplicationErrorDomain = @"RelayActiveApplicat
 }
 
 + (nullable NSArray<NSNumber *> *)hitPathAtPoint:(CGPoint)point snapshot:(id)snapshot {
+    if ([NSProcessInfo.processInfo.environment[@"RELAY_DISABLE_PRIVATE_HITTEST"] isEqualToString:@"1"]) {
+        return nil;
+    }
     XCUIDevice *device = XCUIDevice.sharedDevice;
     if (![device respondsToSelector:@selector(accessibilityInterface)]) {
         return nil;

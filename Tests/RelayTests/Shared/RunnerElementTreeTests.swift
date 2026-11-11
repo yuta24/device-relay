@@ -4,6 +4,22 @@ import Foundation
 import Testing
 
 struct RunnerElementTreeTests {
+  @Test func verifiesHitsOnlyInCheckedCoordinateSpaces() {
+    let placed = RunnerWindowLookup.placed(RunnerWindowPlacement(
+      frame: CGRect(x: 120, y: 80, width: 600, height: 800), scaleX: 1, scaleY: 1
+    ))
+    for count in [0, 1] {
+      #expect(RunnerElementTree.canVerifyHit(window: nil, displayCount: count))
+      #expect(RunnerElementTree.canVerifyHit(window: .fullScreen, displayCount: count))
+      #expect(!RunnerElementTree.canVerifyHit(window: placed, displayCount: count))
+      #expect(!RunnerElementTree.canVerifyHit(window: .unknown("no window position"), displayCount: count))
+    }
+    for window in [nil, .fullScreen, placed, .unknown("no window position")] as [RunnerWindowLookup?] {
+      #expect(!RunnerElementTree.canVerifyHit(window: window, displayCount: 2))
+      #expect(!RunnerElementTree.canVerifyHit(window: window, displayCount: 3))
+    }
+  }
+
   private func node(_ type: String, children: [RunnerElementNode] = [], truncated: Bool = false) -> RunnerElementNode {
     RunnerElementNode(
       type: type, identifier: "", label: "", value: nil, placeholder: nil, frame: .zero,
@@ -208,6 +224,27 @@ struct RunnerElementTreeTests {
     }
     #expect(filtered(hitPath: [1]) == ["I agree", "Password"])
     #expect(filtered(hitPath: [2]) == ["Password"])
+  }
+
+  @Test func filteringKeepsOverlappingControlsWhenHitCoordinatesAreUnchecked() {
+    let root = element("application", frame: screen, children: [
+      element("switch", label: "I agree", frame: CGRect(x: 16, y: 211, width: 329, height: 46)),
+      element("secureTextField", label: "Password", frame: CGRect(x: 93, y: 214, width: 155, height: 21))
+    ])
+    let placed = RunnerWindowLookup.placed(RunnerWindowPlacement(
+      frame: CGRect(x: 120, y: 80, width: 600, height: 800), scaleX: 1, scaleY: 1
+    ))
+    let contexts: [(RunnerWindowLookup?, Int)] = [(placed, 1), (.unknown("no position"), 1), (nil, 2), (.fullScreen, 2)]
+    for (window, count) in contexts {
+      var called = false
+      var verifyHit: (([Int], CGPoint) -> Bool?)?
+      if RunnerElementTree.canVerifyHit(window: window, displayCount: count) {
+        verifyHit = { _, _ in called = true; return false }
+      }
+      let listed = RunnerElementTree.interactiveElements(in: root, screen: screen, verifyHit: verifyHit)
+      #expect(!called)
+      #expect(listed.map(\.label) == ["I agree", "Password"])
+    }
   }
 
   @Test func keepsAnUnnamedCellsTextWhenTheHitIsItsAncestor() {
