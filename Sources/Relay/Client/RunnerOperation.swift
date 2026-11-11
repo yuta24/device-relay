@@ -19,7 +19,7 @@ enum RunnerOperation: Equatable {
   case button(String)
   case orientation(String)
   case launch(bundleID: String)
-  /// A URL checked with `RunnerRequestValues.openURL`; nil `bundleID` lets the system pick the app.
+  /// A URL checked with `RunnerOpen.url(_:)`; nil `bundleID` lets the system pick the app.
   case open(url: String, bundleID: String?)
   case terminate(bundleID: String)
   case shutdown
