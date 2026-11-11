@@ -127,8 +127,34 @@ extension Arguments {
       description.append(String(line.dropFirst(indent)))
     }
     let synopsis = entry.synopsis.components(separatedBy: "\n").map { "  " + $0 }.joined(separator: "\n")
-    return "Usage:\n\(synopsis)\n\n\(description.joined(separator: "\n"))"
+    let more = commandHelpDetails[name].map { "\n\($0)" } ?? ""
+    return "Usage:\n\(synopsis)\n\n\(description.joined(separator: "\n"))\(more)"
   }
+
+  /// What `relay <command> --help` adds to the command's entry of the overall usage: details the overall
+  /// usage leaves out to stay short.
+  static let commandHelpDetails: [String: String] = [
+    "start": """
+    Options: --port is the runner's port on the device (8100; a session without it takes a free one in
+    8101-8199). --rebuild builds the runner even when the build is current. --verbose shows the build's
+    and the runner's output on stderr. --ready-timeout is how many seconds the runner gets from its
+    launch to answer /health (180). Build and boot time are not counted: a build has no time limit.
+    Output: relay start prints ready: <url> and token: <runner.json path> once the runner answers
+    (the token itself is only in runner.json, mode 0600), then runs until Ctrl-C or relay stop.
+    --background prints, once ready, the lines ready: <url>, session: <name> (with a session),
+    device: <name> (<udid>), pid: <relay start's pid>, log: <its log>, and token: <runner.json path>.
+    Exit status: 0 ready (--background), 1 a local failure (no device, a device in use, a failed build,
+      the runner failing to start, a port or session already in use), 2 usage, 3 not ready in time
+      (--background: not launched within \(Int(BackgroundStart.launchTimeout / 60)) minutes, or no answer within
+      --ready-timeout seconds of the launch). Without --background, the exit status after the runner
+      ends is that of xcodebuild, or 1.
+    """,
+    "doctor": """
+    ✗ is a problem to fix, and doctor exits 1. ! is a warning (unknown, or worth a look): it does not
+    stop relay start, which prints a device's warnings as relay: lines and goes on, and doctor exits 0
+    when there is no ✗.
+    """
+  ]
 
   /// Synopsis and description of each runner command, for `relay <command> --help`.
   static let runnerUsages: [String: (synopsis: String, details: String)] = [
@@ -144,9 +170,14 @@ extension Arguments {
     "health": (
       "relay health",
       """
-      What to know before operating the device: its name, the screen size in points (a tap must be inside
-      it), the orientation, the touch path, and the foreground app. It is a command like the others: while
+      What to know before operating the device: its model and OS (device), the screen size in points
+      (screen; a tap must be inside it), the orientation, the touch and typing paths (touchSynthesis,
+      typeSynthesis: private or xcui), and the foreground app. It is a command like the others: while
       another runs it fails with exit 5 (busy); relay ping answers even then.
+      displays lists the device's displays ({"id","width","height" in portrait points,"scale","main"}):
+      one on most devices, two on iPhone Duo. display is the id of the one the foreground app is on, and
+      screen is that display's size; display is null when that cannot be told, and touches and
+      screenshots then fail (exit 6).
       """
     ),
     "foreground": ("relay foreground", "The foreground app's bundle ID and pid."),
@@ -167,17 +198,25 @@ extension Arguments {
       "relay source [--format json|text|compact] [--filter interactive] [--max-depth <n>]\n      [--bundle-id <id>]",
       """
       Prints the element tree of the foreground app (or --bundle-id). --max-depth 0 is the root only.
-      --format compact prints one line per element (type, label, id, value, placeholder, frame).
+      --format compact prints one line per element: the type, then label="..", id="..", value="..", and
+      placeholder=".." when not empty, frame=x,y,width,height (points), and the flags that apply:
+      selected, focused (keyboard focus), disabled, truncated (children cut off by --max-depth).
       --filter interactive lists only the enabled controls on screen that a selector can name (buttons,
       cells, text fields, switches, ...; not keyboard keys), as a flat list of elements (json) or lines
       (compact).
+      \(HelpText.wrapped("Types (the names --type takes; a newer type is type<n>): "
+          + RunnerElementTree.typeNames.joined(separator: " "), hanging: 2))
       """
     ),
     "find": (
       "relay find <selector> [--limit 20] [--timeout <s>] [--require] [--bundle-id <id>]",
       """
       Lists the elements that match every given condition exactly (at most --limit, 1-100). --timeout
-      waits up to 10 seconds for a match. An element's index works as --index of tap and press.
+      waits up to 10 seconds for a match. Prints {"ok":true,"bundleId":..,"count":n,"elements":[{"index",
+      "type","identifier","label","value","frame":{"x","y","width","height"},"enabled"}],
+      "truncated":bool}:
+      count is every match, elements the first --limit, truncated whether more were left out. index
+      counts from 0 in screen order (the tree's order), and works as --index of find, tap, and press.
       No match is exit 0 ("count":0); with --require it is exit 6, the answer (count, elements) coming
       back as {"ok":false,"code":"element_not_found",...} on stdout (also when --index is out of range),
       so find --timeout <s> --require waits for an element and fails if it does not appear.
@@ -189,6 +228,8 @@ extension Arguments {
       Taps a point (points in the displayed orientation) or the center of the element the selector picks.
       --timeout (up to 10 seconds) and --bundle-id apply to a selector only. A point outside the screen (0
       <= x < width, 0 <= y < height as relay health reports it) is rejected with exit 7; nothing is sent.
+      --mode xcui (public XCUI, which waits for the app to be idle before and after) is slower than the
+      default private path: about 1-2 seconds a tap when measured. relay health shows the default path.
       """
     ),
     "press": (
@@ -219,7 +260,13 @@ extension Arguments {
     ),
     "launch": (
       "relay launch <bundle-id>",
-      "Launches the app, or brings it to the foreground. An app not installed fails at once (exit 6)."
+      """
+      Launches the app, or brings it to the foreground. relay first checks with simctl or devicectl that
+      the app is installed: if not, it fails at once with app_not_installed (exit 6) and sends nothing
+      (relay install <app> installs one). When the check cannot tell (relay: cannot tell whether <id> is
+      installed ...), the app is sent anyway; a missing app then keeps the runner busy for minutes.
+      com.apple.* apps are not checked on a device. Waits up to 150 seconds for the answer.
+      """
     ),
     "open": (
       "relay open <url> [--bundle-id <id>]",
@@ -230,7 +277,10 @@ extension Arguments {
       come to the front, then prints the foreground app ({"ok":true,"foreground":{"bundleId":...}}).
       When the app already in front opens the URL, the whole wait passes unless --bundle-id names it.
       Quote the URL for the shell and percent-encode it: a space or no scheme is a usage error (exit 2).
-      A scheme no installed app handles fails with exit 6 (code open_failed).
+      A scheme no installed app handles fails with exit 6 (code open_failed). With --bundle-id, relay
+      checks the app is installed first, as relay launch does: app_not_installed (exit 6) sends nothing
+      (relay install <app> installs one), and when it cannot tell, it prints relay: cannot tell whether
+      <id> is installed ... and sends the URL anyway.
       """
     ),
     "terminate": ("relay terminate <bundle-id>", "Terminates the app."),
@@ -258,11 +308,16 @@ extension Arguments {
       after relay start.
       Exit status: 0 the runner answers /ping, 3 no runner.json or no answer, 4 the token was rejected
       (401).
+      --json keys: alive, url, udid, name, runnerInfo (the runner.json path), pid, processRunning,
+      startedAt, hostBundleID, session, runner and expectedRunner ({"version","sourceHash"}: what the
+      runner reports and what relay start expects), and ping ({"status":200,"busy","busyForMs"}, or
+      {"status"} for another answer, or {"error"} when nothing answers).
       With --json, a failure is one JSON object on stdout too
       ({"alive":false,"ok":false,"code":...,"error":...}).
       --all lists every session and the runner of ~/.relay/runner.json instead, one line each: session
       ((default) for that runner), state (starting, running, busy, no answer, rejected, unknown), device,
-      URL, and the relay start's pid; --json prints one array. It exits 0 whatever the states are.
+      URL, and the relay start's pid; --json prints one array of {"session","state","alive","url","udid",
+      "name","pid","processRunning","runnerInfo"}. It exits 0 whatever the states are.
       """
     ),
     "stop": (
@@ -318,11 +373,13 @@ extension Arguments {
       --port.
       status shows whether it records, the video, the elapsed time, and a device's frames having stopped
       (--json: one object); it exits 0.
+      A device is found among the capture devices by its name: two connected devices with the same name
+      cannot be told apart, and start fails (rename one in Settings > General > About, or unplug it).
       Exit status: 0 ok, 1 not a booted simulator, a device not connected with USB, no camera access, a
         missing directory, an existing file without --force, already recording, the recording failing to
-        start (simctl, or no frame from the device), or an empty video, 3 no runner (no runner.json or no
-        answer; for stop and status, a --runner or $RELAY_RUNNER that does not exist), 4 the token was
-        rejected (401).
+        start (simctl, no frame from the device, or two devices of that name), or an empty video, 3 no
+        runner (no runner.json or no answer; for stop and status, a --runner or $RELAY_RUNNER that does
+        not exist), 4 the token was rejected (401).
       """
     ),
     "logs": (
@@ -382,6 +439,45 @@ extension Arguments {
         a device included), 3 no runner.json.
       """
     ),
+    "install": (
+      "relay install <APP.app | APP.ipa> [--session <name> | --runner <path> | --udid <udid>]",
+      """
+      Installs an .app or .ipa on the simulator or device of the runner in runner.json (--session,
+      --runner, as for relay logs) or of --udid, with simctl install or devicectl device install app; the
+      runner is not used, and need not run with --udid. A simulator must be booted (relay does not boot
+      it) and a device connected. An app of the same bundle ID is replaced, and a running copy quits.
+      Info.plist is read first: an app built for the other kind of device (CFBundleSupportedPlatforms) is
+      refused before anything is sent. Waits up to \(Int(AppInstall.installTimeout)) seconds for the tool.
+      Prints {"ok":true,"app":{"bundleID","name","version","build","path"},"device":{..}} (device as for
+      relay logs). Then relay launch <bundle ID> starts it.
+      A failure is {"ok":false,"code":...,"error":...} on stdout.
+      Exit status: 0 ok, 1 no such file, not an .app or .ipa, or no readable Info.plist
+        (app_bundle_invalid), built for the other kind of device (app_platform_mismatch), the tool
+        failing or not done in time (app_install_failed), a simulator not booted, a device not connected,
+        or no such UDID (device_unavailable), 2 usage, 3 no runner.json.
+      Without an app, relay install still does what relay runner install does, with a note on stderr,
+      until the next release.
+      """
+    ),
+    "uninstall": (
+      "relay uninstall <BUNDLE_ID> [--session <name> | --runner <path> | --udid <udid>]",
+      """
+      Removes an app from the simulator or device of the runner in runner.json (--session, --runner, as
+      for relay logs) or of --udid, with simctl uninstall or devicectl device uninstall app; the runner is
+      not used. A simulator must be booted and a device connected.
+      relay checks first that the app is installed, as relay launch does: if not, it fails with
+      app_not_installed (exit 6) and removes nothing (a script that only needs it gone can take 6 as
+      done). When that cannot be told, the tool is run anyway. relay's own runner apps (host,
+      *.RelayRunnerHost, *.RelayRunnerHost.UITests.xctrunner) are refused (app_uninstall_refused).
+      Waits up to \(Int(AppInstall.uninstallTimeout)) seconds for the tool.
+      Prints {"ok":true,"bundleID":..,"device":{..}}; a failure is {"ok":false,"code":...,"error":...}.
+      Exit status: 0 ok, 1 a runner app (app_uninstall_refused), the tool failing or not done in time
+        (app_uninstall_failed), a simulator not booted, a device not connected, or no such UDID
+        (device_unavailable), 2 usage, 3 no runner.json, 6 not installed (app_not_installed).
+      Without a bundle ID, relay uninstall still does what relay runner uninstall does, with a note on
+      stderr, until the next release.
+      """
+    ),
     "run": (
       "relay run (<file> | - | --step <step>...) [--check] [--runner <path> | --session <name>] [--quiet]",
       """
@@ -419,29 +515,37 @@ extension Arguments {
     "type", "key", "button", "orientation", "launch", "open", "terminate", "shutdown"
   ]
 
-  /// The runner commands the overall usage lists. `relay shutdown` works, and has its help, but it is left
-  /// out: an agent that wants to stop the runner means `relay stop`, which does more (see `usage(for:)`).
-  static let listedRunnerCommands = runnerCommandOrder.filter { $0 != "shutdown" }
+  /// The runner commands the overall usage lists: all of them. `relay shutdown` comes last, with a note
+  /// that `relay stop`, which does more, is what normally stops a runner.
+  static let listedRunnerCommands = runnerCommandOrder
 
   static let runnerCommonUsage = """
   <selector>: one or more of --id <identifier> --label <label> --type <type> --value <value>, which
     must all match exactly (the attributes relay source reports), plus --index <n> to pick one of
-    several matches.
+    several matches (from 0, in the order relay find lists them). --type takes an element type name
+    such as button, cell, staticText, textField, or switch (relay source --help lists them all).
   Runner commands read the runner URL and token from runner.json, never from the command line:
     --runner <path> or --session <name>, else $RELAY_RUNNER or $RELAY_SESSION (both set is an error),
     else ~/.relay/runner.json (where relay start without a session writes it). A session is
     ~/.relay/sessions/<name>/runner.json, with no fallback. A .relay/runner.json in the current
-    directory is not read: pass it with --runner.
+    directory is not read: pass it with --runner. A session name is up to 64 letters, digits, '.',
+    '_', and '-', starting with a letter or digit.
+  relay waits 30 seconds for the answer, plus what the command itself may wait: --timeout (find, tap,
+    press), --duration and --hold (press, swipe), 120 s (launch, open, terminate: 150 s in all), 0.1 s
+    a character and 1 s a key (type, key). Past that it fails with runner_timeout (exit 3), but the
+    runner keeps at the command and stays busy (exit 5 for others) until it ends: wait until relay
+    ping shows "busy":false.
   Output is always JSON (a screenshot prints the saved file's path); --json is accepted, not needed.
   A failure is JSON on stdout too: the runner's {"ok":false,"code":...,"error":...}, or relay's own in
     that shape when it fails before the runner answers (code runner_unavailable, runner_timeout,
     runner_info_invalid, app_not_installed, ...). relay: lines on stderr are hints for people.
     Exception: screenshot -o - writes the image to stdout, so a failure's JSON goes to stderr.
   Options may be written --opt value or --opt=value; text after -- is never split.
-  Exit status: 0 ok, 1 local failure (runner.json unreadable, screenshot not saved), 2 usage error
-    (the command line is wrong: two relay: lines on stderr, no JSON), 3 runner unavailable (no
-    runner.json or no connection), 4 unauthorized (401), 5 busy (409; retry), 6 action failed (422), 7
-    bad request (other 4xx), 8 runner error.
+  Exit status: 0 ok, 1 local failure (runner.json unreadable, screenshot not saved; for relay install
+    and uninstall, the app or device), 2 usage error (the command line is wrong: two relay: lines on
+    stderr, no JSON), 3 runner unavailable (no runner.json, no connection, or no answer in time), 4
+    unauthorized (401), 5 busy (409; retry), 6 action failed (422, or app_not_installed from launch,
+    open --bundle-id, and uninstall), 7 bad request (other 4xx), 8 runner error.
   """
 }
 

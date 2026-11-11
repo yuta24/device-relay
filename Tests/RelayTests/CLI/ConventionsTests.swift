@@ -333,10 +333,76 @@ struct HelpWidthTests {
 
 /// What the help says about which command to use when.
 struct HelpGuidanceTests {
-  @Test func shutdownIsLeftOutOfTheListsAndPointsToStop() {
-    #expect(!Arguments.usage.contains("shutdown"))
-    #expect(!Arguments.usage.contains("relay shutdown"))
+  @Test func shutdownIsListedAndPointsToStop() {
+    #expect(Arguments.usage.contains("\n  relay shutdown\n"))
+    #expect(flattened(Arguments.usage).contains("normally use relay stop"))
     #expect(Arguments.usage(for: "shutdown").hasPrefix("Usage:\n  relay shutdown\n\nNormally use relay stop."))
+  }
+
+  @Test func uninstallHasItsOwnHelp() {
+    let install = flattened(Arguments.usage(for: "install"))
+    let uninstall = flattened(Arguments.usage(for: "uninstall"))
+    #expect(install != uninstall)
+    #expect(Arguments.usage(for: "uninstall").hasPrefix("Usage:\n  relay uninstall <BUNDLE_ID>"))
+    #expect(uninstall.contains("app_not_installed (exit 6)"))
+    #expect(uninstall.contains("app_uninstall_refused"))
+    #expect(uninstall.contains("up to \(Int(AppInstall.uninstallTimeout)) seconds"))
+    for code in ["app_bundle_invalid", "app_platform_mismatch", "app_install_failed", "device_unavailable", "Exit status:"] {
+      #expect(install.contains(code), "\(code)")
+    }
+    #expect(install.contains("up to \(Int(AppInstall.installTimeout)) seconds"))
+  }
+
+  @Test func startSaysWhatItPrintsAndHowItExits() {
+    let start = flattened(Arguments.usage(for: "start"))
+    for text in ["device: <name> (<udid>)", "pid: <relay start's pid>", "log: <its log>", "token: <runner.json path>",
+                 "Exit status:", "--rebuild builds", "--verbose shows", "--ready-timeout is", "--port is"] {
+      #expect(start.contains(text), "\(text)")
+    }
+    // The overall usage stays as it was.
+    #expect(!flattened(Arguments.usage).contains("--rebuild builds"))
+  }
+
+  @Test func runnerCommandsSayHowLongRelayWaits() {
+    let common = flattened(Arguments.runnerCommonUsage)
+    #expect(common.contains("relay waits \(Int(RunnerControl.baseTimeout)) seconds"))
+    #expect(common.contains("150 s in all"))
+    #expect(common.contains("stays busy"))
+    #expect(Int(RunnerControl.baseTimeout + RunnerOperation.applicationStateWait) == 150)
+    #expect(common.contains("up to \(RelaySession.maxNameLength) letters"))
+    #expect(common.contains("from 0"))
+    #expect(common.contains("app_not_installed from launch, open --bundle-id, and uninstall"))
+  }
+
+  @Test func launchAndOpenPointToRelayInstall() {
+    for name in ["launch", "open"] {
+      let help = flattened(Arguments.usage(for: name))
+      #expect(help.contains("app_not_installed (exit 6)"), "\(name)")
+      #expect(help.contains("relay install <app>"), "\(name)")
+      #expect(help.contains("cannot tell whether"), "\(name)")
+    }
+  }
+
+  @Test func findSourceAndHealthDescribeTheirOutput() {
+    let find = flattened(Arguments.usage(for: "find"))
+    #expect(find.contains("\"identifier\",\"label\"") && find.contains("counts from 0"))
+    let source = flattened(Arguments.usage(for: "source"))
+    for flag in ["selected", "focused", "disabled", "truncated"] {
+      #expect(source.contains(flag), "\(flag)")
+    }
+    for type in RunnerElementTree.typeNames {
+      #expect(source.contains(" \(type) ") || source.hasSuffix(" \(type)") || source.contains(" \(type)\n"), "\(type)")
+    }
+    let health = flattened(Arguments.usage(for: "health"))
+    #expect(health.contains("displays") && health.contains("display is the id"))
+    let status = flattened(Arguments.usage(for: "status"))
+    #expect(status.contains("--json keys:") && status.contains("processRunning"))
+    #expect(flattened(Arguments.usage(for: "tap")).contains("--mode xcui"))
+  }
+
+  @Test func doctorAndRecordSayWhatFailsAndWhatDoesNot() {
+    #expect(flattened(Arguments.usage(for: "doctor")).contains("does not stop relay start"))
+    #expect(flattened(Arguments.usage(for: "record")).contains("two connected devices with the same name"))
   }
 
   @Test func pingHealthAndStatusSayHowTheyDiffer() {
@@ -392,10 +458,11 @@ struct EveryCommandHasHelpTests {
     let start = Arguments.usage(for: "start")
     #expect(start.hasPrefix("Usage:\n  relay start [--udid"))
     #expect(start.contains("Builds the RelayRunner XCTest runner"))
-    #expect(!start.contains("status "))
+    // Only its own entry and its details: not the next entry (status).
+    #expect(!start.contains("The check after relay start"))
     for name in ["install", "uninstall", "devices", "doctor", "config", "bench"] {
       let text = Arguments.usage(for: name)
-      #expect(text.hasPrefix("Usage:\n  relay \(name == "uninstall" ? "install" : name)"), "\(name)")
+      #expect(text.hasPrefix("Usage:\n  relay \(name)"), "\(name)")
       #expect(text.components(separatedBy: "\n\n").count == 2, "\(name)")
     }
     // Only its own entry: the next one (run) does not follow bench.

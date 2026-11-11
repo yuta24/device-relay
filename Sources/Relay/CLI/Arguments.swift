@@ -646,6 +646,8 @@ enum Arguments {
   ping, health, and status: ping asks whether the runner is alive and busy, and answers even while a
   command runs; health returns the screen size and the like, and fails with exit 5 while a command
   runs; status also reads runner.json and looks at the relay start behind it.
+  shutdown only asks the runner to end; normally use relay stop, which also waits for relay start to
+  clean up.
 
   \(runnerCommonUsage)
   """
