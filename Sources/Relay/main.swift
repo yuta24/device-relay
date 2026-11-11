@@ -69,7 +69,14 @@ do {
   case .config(let options):
     exit(ConfigCommand.run(options))
   case .install(let options):
+    if options.legacy {
+      CLIOutput.note(InstallCommand.legacyNote(options))
+    }
     exit(try InstallCommand.run(options))
+  case .appInstall(let options):
+    exit(AppInstall.install(options))
+  case .appUninstall(let options):
+    exit(AppInstall.uninstall(options))
   case .skill(let options):
     exit(try SkillCommand.run(options))
   case .version:

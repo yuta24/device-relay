@@ -101,10 +101,10 @@ struct RunnerProjectTests {
     let copied = tree.root.appendingPathComponent("elsewhere/bin/relay")
 
     let missing: String = #expect(throws: SetupError.self) { try tree.resolve(executable: copied) }?.description ?? ""
-    #expect(missing.contains("copied away from its directory needs relay install run once from the extracted release directory (or the checkout)"))
+    #expect(missing.contains("copied away from its directory needs relay runner install run once from the extracted release directory (or the checkout)"))
     #expect(missing.contains("--project"))
     let toInstall: String = #expect(throws: SetupError.self) { try tree.resolve(executable: copied, includeInstalled: false) }?.description ?? ""
-    #expect(toInstall.contains("run relay install from inside one"))
+    #expect(toInstall.contains("run relay runner install from inside one"))
   }
 
   @Test func buildsGoUnderTheHomeDirectoryPerSource() {

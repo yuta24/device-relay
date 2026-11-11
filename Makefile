@@ -21,7 +21,7 @@ install: build
 	@case ":$$PATH:" in *":$(BINDIR):"*) ;; *) echo "note: $(BINDIR) is not in PATH" >&2 ;; esac
 	@echo "next: relay doctor"
 
-# Removes the link only when it points to this checkout's build. relay uninstall removes ~/.relay/runner.
+# Removes the link only when it points to this checkout's build. relay runner uninstall removes ~/.relay/runner.
 uninstall:
 	@if [ -L "$(BINDIR)/relay" ] && [ "$$(readlink "$(BINDIR)/relay")" = "$(PRODUCT)" ]; then \
 		rm "$(BINDIR)/relay" && echo "removed $(BINDIR)/relay"; \

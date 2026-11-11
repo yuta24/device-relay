@@ -24,7 +24,7 @@ device-relay-v<version>/
 | 手動 | tarball を展開し、`bin/relay` へのリンクを PATH に置きます（[README](../README.ja.md#手動でインストールする)）。 | 新しい tarball を展開し、リンクを張り直します（`ln -sfn`）。 |
 | ソース | `git clone` して `make install` します。 | `git pull` して `make install` します。 |
 
-どの入れ方でも、`relay` は自分の実行ファイルの場所から Runner を見つけるので、`relay install` は要りません。
+どの入れ方でも、`relay` は自分の実行ファイルの場所から Runner を見つけるので、`relay runner install` は要りません。
 
 ### 更新後の Runner とビルド
 
@@ -35,13 +35,13 @@ DerivedData は Runner の場所ごとに分かれるので、古いバージョ
 元の Runner がなくなったものと、30 日使っていないものは `relay start` が消します。
 詳しくは「[ログとテスト結果の掃除](sessions.md#ログとテスト結果の掃除)」を参照してください。
 
-以前 `relay install` したコピーの `~/.relay/runner` は、更新後は使われません。
+以前 `relay runner install`（0.7.0 までは `relay install`）したコピーの `~/.relay/runner` は、更新後は使われません。
 `relay skill install` の取り出し元にもなりません（「[エージェントスキル](cli.md#エージェントスキル)」）。
-要らなければ `relay uninstall` で削除できます。
+要らなければ `relay runner uninstall` で削除できます。
 
-## Runner の用意（relay install）
+## Runner の用意（relay runner install）
 
-`relay install` は、Runner プロジェクトを `~/.relay/runner/` にコピーします。
+`relay runner install` は、Runner プロジェクトを `~/.relay/runner/` にコピーします。
 必要なのは、`relay` のバイナリだけを別の場所にコピーして、そこから Runner が見つからないときです。
 展開したディレクトリ、またはチェックアウトで 1 回実行します。
 
@@ -49,7 +49,7 @@ relay のバージョンと、元がチェックアウトならそのコミッ�
 
 ### コピー元とコピーするファイル
 
-`relay install` は、展開したリリースか device-relay のチェックアウトを次の順に探します。どちらも同じ配置です。
+`relay runner install` は、展開したリリースか device-relay のチェックアウトを次の順に探します。どちらも同じ配置です。
 
 | 優先順 | コピー元を探す場所 |
 | --- | --- |
@@ -70,16 +70,25 @@ relay のバージョンと、元がチェックアウトならそのコミッ�
 
 ### コピーの更新と削除
 
-`relay install` を再実行すると、コピーを上書き更新します。
+`relay runner install` を再実行すると、コピーを上書き更新します。
 一時ディレクトリにコピーしてから入れ替えるので、途中で失敗しても前の Runner は残ります。
 入れ替えたときは、古いソースのビルド成果物 `~/.relay/build/installed` を削除します。
 
-`relay uninstall` は `relay install --remove` と同じで、`~/.relay/runner` とそのビルド成果物を削除します。
+`relay runner uninstall` は、`~/.relay/runner` とそのビルド成果物を削除します。
 `config.json`、`runner.json`、ログは残します。
+
+0.7.0 までの書き方も、次の版までは同じように動き、stderr に `relay runner …` を使うよう注意を出します。
+
+| 0.7.0 までの書き方 | 今の書き方 |
+| --- | --- |
+| `relay install [--project <path>] [--build [--verbose]]` | `relay runner install` に同じオプション |
+| `relay install --remove`、アプリを渡さない `relay uninstall` | `relay runner uninstall` |
+
+パスを渡した `relay install` と、バンドル ID を渡した `relay uninstall` は、アプリを入れる・消すコマンドです（「[アプリを入れる・消す](cli.md#アプリを入れる消すrelay-install--relay-uninstall)」）。
 
 ### コピー時にビルドする
 
-`relay install --build` は、コピー後にシミュレータ用の `build-for-testing` を行います。
+`relay runner install --build` は、コピー後にシミュレータ用の `build-for-testing` を行います。
 ビルド先は `generic/platform=iOS Simulator` です。
 
 「[ランナーの版（ソースのハッシュ）](#ランナーの版ソースのハッシュ)」の記録も書くので、ソースが同じなら初回の `relay start` はそのビルドを使い回し、ビルドを省きます。
@@ -91,7 +100,7 @@ relay のバージョンと、元がチェックアウトならそのコミッ�
 
 ### コピーの古さの確認
 
-`relay start` は、`~/.relay/runner` に記録したバージョンが `relay` と違えば、「relay install を再実行して」と知らせます。
+`relay start` は、`~/.relay/runner` に記録したバージョンが `relay` と違えば、「relay runner install を再実行して」と知らせます。
 そのコピーを使う場合に確認し、古くても止めません。
 
 `relay doctor` も同じ確認をします。チェックアウトの中などで別の Runner を使っているときも、コピーが古ければ知らせます。
@@ -110,7 +119,7 @@ relay のバージョンと、元がチェックアウトならそのコミッ�
 | 2 | `$RELAY_HOME` で指定した場所です。 |
 | 3 | カレントディレクトリとその親にある device-relay のチェックアウトです。 |
 | 4 | `relay` の実行ファイルの場所とその親にある Runner です（シンボリックリンクを解決します）。 |
-| 5 | `relay install` した `~/.relay/runner` です。 |
+| 5 | `relay runner install` した `~/.relay/runner` です。 |
 
 `--project <path>` と `$RELAY_HOME` には、チェックアウトのルート、`Runner/`、`.xcodeproj` のどれでも指定できます。
 どちらも、指定した場所にプロジェクトがなければ、ほかを探さずにエラーにします。
@@ -125,7 +134,7 @@ relay を更新すれば Runner も一緒に新しくなり、以前のコピー
 `make install` したリンクでは、チェックアウトの外から実行しても 4 でそのチェックアウトの Runner を使います。
 
 どこにもプロジェクトが見つからなければ、設定方法を示して終了します。
-バイナリだけをコピーした場合は、展開したディレクトリかチェックアウトで `relay install` を 1 回実行することなどを案内します。
+バイナリだけをコピーした場合は、展開したディレクトリかチェックアウトで `relay runner install` を 1 回実行することなどを案内します。
 
 ### ビルドの保存先と Xcode の切り替え
 
@@ -133,7 +142,7 @@ DerivedData は Runner プロジェクトごとに分けるので、別のソー
 
 | Runner | DerivedData の保存先 |
 | --- | --- |
-| `relay install` したもの | `~/.relay/build/installed` です。 |
+| `relay runner install` したもの | `~/.relay/build/installed` です。 |
 | それ以外 | `~/.relay/build/<ディレクトリ名>-<パスのハッシュ>` です。 |
 
 Xcode ごとには分けません。`DEVELOPER_DIR` で Xcode を切り替えてビルドすると、SDK のバージョン入りの `.xctestrun` が並びます。
@@ -165,12 +174,12 @@ SDK が同じでも、Runner のソースがビルド後に変わっていれば
 
 ### ランナーの版（ソースのハッシュ）
 
-relay はソースのハッシュでビルドを見分け、`git pull` や `relay install` 後に古いソースのランナーが黙って使われるのを防ぎます。
+relay はソースのハッシュでビルドを見分け、`git pull` や `relay runner install` 後に古いソースのランナーが黙って使われるのを防ぎます。
 `relay start` のたびに計算し、数 ms で済みます。
 対象ファイルと計算方法は「[ソースのハッシュの計算](development.md#ソースのハッシュの計算)」を参照してください。
 
 ビルドが成功すると、`.xctestrun` の横の `DerivedData-*/Build/Products/relay-runner-build.json` に記録します。
-`relay install --build` も同じ記録を書きます。
+`relay runner install --build` も同じ記録を書きます。
 
 | 記録する値 | 内容 |
 | --- | --- |
@@ -342,7 +351,7 @@ relay doctor [--udid <UDID> | --device <名前>] [--simulator] [--os <version>] 
 | --- | --- |
 | ホスト | relay のバージョン、Xcode、xcrun、devicectl です。 |
 | Xcode | `xcodebuild -version` と `xcode-select -p` の結果です。 |
-| Runner | プロジェクトの解決結果と、`relay install` の状態です。 |
+| Runner | プロジェクトの解決結果と、`relay runner install` の状態です。 |
 | コピーの記録 | バージョン・コミット・コピー元がずれていれば ! です。 |
 
 エージェントスキルは、カレントディレクトリの git のルートの `.claude/skills/device-relay` と `~/.claude/skills/device-relay` を確認します。
@@ -531,7 +540,7 @@ ready の判定、つまり起動直後の探索には、XCUI が動くことを
 
 端末の指定は、`--simulator`、`--os <version>` と合わせて「[端末の選択（relay devices）](#端末の選択relay-devices)」を参照してください。
 
-`--project <path>` の指定先は「[Runner の用意（relay install）](#runner-の用意relay-install)」にあります。
+`--project <path>` の指定先は「[Runner の用意（relay runner install）](#runner-の用意relay-runner-install)」にあります。
 
 `--rebuild` がなくても、最後のビルドが今の Xcode の SDK と違う場合、Runner のソースやバンドル ID の接頭辞が変わった場合、記録のない古いビルドの場合は再ビルドします。
 詳しくは「[ランナーの版（ソースのハッシュ）](#ランナーの版ソースのハッシュ)」を参照してください。

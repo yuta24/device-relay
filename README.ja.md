@@ -58,7 +58,7 @@ ln -sfn ~/.local/share/device-relay/device-relay-v$VERSION/bin/relay ~/.local/bi
 
 - `~/.local/bin` が PATH になければ追加してください。更新するときは新しいバージョンで同じ手順を繰り返し、古いディレクトリを削除します。
 - バイナリは署名と公証（notarize）を済ませているので、tarball はブラウザでダウンロードしてもかまいません。macOS は公証をオンラインで確認するので、ブラウザでダウンロードしたものの初回の実行にはネットワーク接続が必要です。
-- `bin/relay` はコピーせずリンクしてください。relay は自分の場所から Runner を探します。バイナリだけを別の場所にコピーした場合は、展開したディレクトリで `relay install` を 1 回実行します。
+- `bin/relay` はコピーせずリンクしてください。relay は自分の場所から Runner を探します。バイナリだけを別の場所にコピーした場合は、展開したディレクトリで `relay runner install` を 1 回実行します。
 
 ### ソースからビルドする
 
@@ -142,7 +142,8 @@ relay screenshot --scale 1                            # 1 px = 1 pt に縮小し
 
 | コマンド | 内容 |
 | --- | --- |
-| `relay install` / `relay uninstall` | Runner プロジェクトを `~/.relay/runner` にコピーする / 削除する（`relay` のバイナリだけを別の場所にコピーしたときにだけ必要） |
+| `relay install <path>` / `relay uninstall <bundle-id>` | `.app` か `.ipa` をランナーのシミュレータ・実機に入れる / アプリを消す |
+| `relay runner install` / `relay runner uninstall` | Runner プロジェクトを `~/.relay/runner` にコピーする / 削除する（`relay` のバイナリだけを別の場所にコピーしたときにだけ必要） |
 | `relay doctor` | Xcode・Runner・端末・署名などの環境を確認する |
 | `relay devices` | 実機とシミュレータを一覧表示する |
 | `relay start [--background]` | ランナーをビルドして起動する（`--background` なら ready で戻る） |
@@ -183,7 +184,7 @@ RELAY_SESSION=agent-2 codex    # 別のターミナルで、別のセッショ�
 
 | 読み手 | 文書 | 内容 |
 | --- | --- | --- |
-| 初めて使う人 | [docs/setup.md](docs/setup.md) | インストールと更新、Runner の用意（`relay install`）、端末の選択、環境の確認（`relay doctor`）、シミュレータ |
+| 初めて使う人 | [docs/setup.md](docs/setup.md) | インストールと更新、Runner の用意（`relay runner install`）、端末の選択、環境の確認（`relay doctor`）、シミュレータ |
 | 初めて使う人 | [docs/device.md](docs/device.md) | 実機の準備、UI オートメーションとパスコード、Team ID、バンドル ID の接頭辞、接続の経路、ホームと音量ボタン、録画の準備 |
 | 使っている人 | [docs/sessions.md](docs/sessions.md) | 起動と停止、生存確認、強制終了したとき、接続先（runner.json）の探し方、並列セッション、外部コマンドが応答しないとき、エージェントの sandbox、ログとテスト結果の掃除 |
 | 使っている人 | [docs/cli.md](docs/cli.md) | CLI のサブコマンド、出力と終了コード、アプリの指定と起動、シナリオの実行（`relay run`、実験的）、録画（`relay record`）、ログとクラッシュ記録（`relay logs`・`relay crashes`）、エージェントスキル |

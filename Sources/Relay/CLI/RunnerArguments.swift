@@ -102,6 +102,9 @@ extension Arguments {
 
   /// The usage of a runner command, or the whole usage for anything else.
   static func usage(for name: String?) -> String {
+    if name == "runner" {
+      return InstallCommand.usage
+    }
     if let name, let command = lifecycleUsages[name] {
       return "Usage:\n  \(command.synopsis)\n\n\(command.details)"
     }
@@ -113,7 +116,7 @@ extension Arguments {
   /// The help of a command that has no text of its own: its synopsis from `commandSynopses` and its entry
   /// of the overall usage (the lines indented under its name), with that indent removed. Nil for other names.
   static func commandHelp(for name: String) -> String? {
-    guard let entry = commandSynopses.first(where: { $0.names.contains(name) }), name != "skill" else { return nil }
+    guard let entry = commandSynopses.first(where: { $0.names.contains(name) }), !["skill", "runner"].contains(name) else { return nil }
     let lines = usage.components(separatedBy: "\n")
     let described = entry.names.first { first in lines.contains { $0.hasPrefix(first + " ") } } ?? name
     guard let start = lines.firstIndex(where: { $0.hasPrefix(described + " ") }) else { return nil }

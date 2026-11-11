@@ -358,7 +358,7 @@ relay: waiting for another relay start's build …
 
 待機中に同じソースのビルドが終われば、`--rebuild` も満たされたものとします。ビルドしない起動どうしは並列に進みます。待機中も Ctrl-C と `relay stop` で止められます。
 
-`~/.relay/locks/build-<ハッシュ>.lock` は、ビルド中は排他、成果物からのランナー起動から ready までは共有で保持します。起動途中で成果物が書き換わるのを防ぎます。`relay install --build` も同じロックを取ります。
+`~/.relay/locks/build-<ハッシュ>.lock` は、ビルド中は排他、成果物からのランナー起動から ready までは共有で保持します。起動途中で成果物が書き換わるのを防ぎます。`relay runner install --build` も同じロックを取ります。
 
 `test-without-building` のログと xcresult は、ポートごとの `~/.relay/build/…/TestData/port-<port>/` に分けます。分ける理由は「[テスト実行の出力先](development.md#テスト実行の出力先)」を参照してください。
 
@@ -535,7 +535,7 @@ Claude Code の設定の根拠: [Sandboxing](https://code.claude.com/docs/en/san
 
 ビルドディレクトリは、元の Runner がなくなるか、30 日使わないと、ディレクトリごと削除されます。必要になれば、次の `relay start` がビルドし直します。
 
-`relay start` と `relay install --build` は、ディレクトリを作るか使い回すたびに、直下の `relay-build-dir.json` を書き直します。
+`relay start` と `relay runner install --build` は、ディレクトリを作るか使い回すたびに、直下の `relay-build-dir.json` を書き直します。
 
 ```json
 {"root": "<Runner の正規のパス>", "lastUsed": "<ISO 8601 の日時>"}
@@ -550,7 +550,7 @@ Claude Code の設定の根拠: [Sandboxing](https://code.claude.com/docs/en/san
 
 | 削除しないもの・状況 | 判定・補足 |
 | --- | --- |
-| `~/.relay/build/installed` | `relay install` と `relay uninstall` が管理します。 |
+| `~/.relay/build/installed` | `relay runner install` と `relay runner uninstall` が管理します。 |
 | いま起動している `relay start` のディレクトリ | 削除しません。 |
 | 使用中のディレクトリ | ポートのロック直後に書く `~/.relay/locks/start-<port>.build.json` と、runner.json の `buildDirectory` で分かります。 |
 | ビルド・起動途中のディレクトリ | `~/.relay/locks/build-<ハッシュ>.lock` でも分かります。 |

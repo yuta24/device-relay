@@ -19,7 +19,7 @@ import Foundation
 /// A whole `~/.relay/build/<dir>` goes when the runner project it was built from no longer exists, or when
 /// relay has not used it for `buildUnusedMaxAge` (only its `BuildDirectoryRecord` tells). A directory from before
 /// that record has `DerivedData-*/info.plist` to name its project, which is enough for the first rule only.
-/// `installed` belongs to `relay install`. Being in use is told by `StartBuildClaim` and runner.json; when either
+/// `installed` belongs to `relay runner install`. Being in use is told by `StartBuildClaim` and runner.json; when either
 /// cannot tell (a relay before them, or a start that took its lock a moment ago), nothing goes in that run.
 ///
 /// Moving a directory away holds its `BuildLock` exclusively and looks at all of this once more first. A `relay start`
@@ -41,7 +41,7 @@ enum RelayPrune {
   /// A month covers a version or a worktree put aside for a holiday or another project and picked up again. A
   /// build takes minutes and tens to hundreds of MB, so it stays longer than a log, and a wrong guess is one rebuild.
   static let buildUnusedMaxAge: TimeInterval = 30 * 24 * 60 * 60
-  /// `relay install` and `relay uninstall` look after this one (`RunnerProject.buildDirectory`).
+  /// `relay runner install` and `relay runner uninstall` look after this one (`RunnerProject.buildDirectory`).
   static let installedBuildName = "installed"
   /// A build directory being removed. Hidden, so it is never taken for a build.
   static let removingPrefix = ".removing-"

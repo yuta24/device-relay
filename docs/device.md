@@ -42,7 +42,7 @@ Mac からは設定の状態を読めないため、`relay doctor` は確認を�
 いったん許可されるとしばらくは有効なようで、直後に起動し直すと有効化は数 ms で終わります。
 待ち時間の仕組みは「[アプリの状態の待ち時間](private-api.md#アプリの状態の待ち時間)」を参照してください。
 
-`relay install` で入れた Runner（`~/.relay/runner`）はコピーの時点のソースなので、コピーが古ければ `relay start` の案内に従って `relay install` をやり直してください。
+`relay runner install` で入れた Runner（`~/.relay/runner`）はコピーの時点のソースなので、コピーが古ければ `relay start` の案内に従って `relay runner install` をやり直してください。
 ビルドの作り直しは「[ランナーの版](setup.md#ランナーの版ソースのハッシュ)」を参照してください。
 
 起動に失敗したときの hint は、失敗の種類によって次のように表示します。

@@ -6,7 +6,7 @@ import Foundation
 /// reused (`RunnerBuildPlan`), and is built into the runner, which reports it from `/ping` and `/health`.
 ///
 /// The installed copy holds the same files as the checkout it was copied from, so both hash the same.
-/// Per-user Xcode state (`xcuserdata`, which `relay install` drops) and hidden files (`.DS_Store`) do not
+/// Per-user Xcode state (`xcuserdata`, which `relay runner install` drops) and hidden files (`.DS_Store`) do not
 /// change the build and are left out.
 enum RunnerSourceHash {
   /// The paths, relative to `root`, that the hash covers, sorted.
@@ -75,7 +75,7 @@ struct RunnerBuildVersion: Codable, Equatable {
   var version: String?
   var sourceHash: String?
 
-  /// The build settings `relay start` and `relay install --build` pass to xcodebuild. The UI test
+  /// The build settings `relay start` and `relay runner install --build` pass to xcodebuild. The UI test
   /// target's Info.plist (`Runner/RelayRunnerUITests/Info.plist`) expands them into these keys.
   static let versionSetting = "RELAY_RUNNER_VERSION"
   static let sourceHashSetting = "RELAY_RUNNER_SOURCE_HASH"

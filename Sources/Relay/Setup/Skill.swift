@@ -1,11 +1,11 @@
 import Foundation
 
 /// The agent skill in `skills/device-relay` of the checkout: instructions for coding agents (Claude Code and
-/// the like) on driving apps with relay. `relay install` copies it next to the runner, and `relay skill
+/// the like) on driving apps with relay. `relay runner install` copies it next to the runner, and `relay skill
 /// install` puts it where an agent looks for skills (`.claude/skills/device-relay`).
 enum AgentSkill {
   static let name = "device-relay"
-  /// Relative to a checkout, and to `relay install`'s copy, which keeps the checkout's layout.
+  /// Relative to a checkout, and to `relay runner install`'s copy, which keeps the checkout's layout.
   static let path = "skills/device-relay"
 
   static func installedSource(home: URL = UserHome.url) -> URL {
@@ -54,20 +54,20 @@ struct SkillSource: Equatable {
   var directory: URL
   var relayVersion: String
   var commit: String?
-  /// For messages: "relay install" (the copy `relay install` made), "checkout" (a git checkout), or
+  /// For messages: "relay runner install" (the copy `relay runner install` made), "checkout" (a git checkout), or
   /// "release" (an extracted release, which has no `.git`).
   var label: String
 
-  /// The checkout or extracted release `relay install` would copy from first, as for the runner
+  /// The checkout or extracted release `relay runner install` would copy from first, as for the runner
   /// (`RunnerProject.resolve`), so upgrading relay never keeps handing out the skill of an older
-  /// `relay install`, and a `--link` shows edits at once. `relay install`'s copy is the fallback.
+  /// `relay runner install`, and a `--link` shows edits at once. `relay runner install`'s copy is the fallback.
   static func resolve(home: URL, commands: HostCommands, findCheckout: () -> URL?) throws -> SkillSource {
     func installed() -> SkillSource? {
       let directory = AgentSkill.installedSource(home: home)
       guard AgentSkill.contains(directory) else { return nil }
       let record = RunnerInstallRecord.read(root: RunnerProject.installedRoot(home: home))
       return SkillSource(directory: directory, relayVersion: record?.relayVersion ?? "unknown", commit: record?.commit,
-                         label: "relay install")
+                         label: "relay runner install")
     }
     func checkout() -> SkillSource? {
       guard let root = findCheckout() else { return nil }
@@ -78,7 +78,7 @@ struct SkillSource: Equatable {
                          label: CheckoutRunnerSource.isGitCheckout(root) ? "checkout" : "release")
     }
     guard let source = checkout() ?? installed() else {
-      throw SetupError(description: "cannot find the \(AgentSkill.name) skill (\(AgentSkill.path)); run relay install from an "
+      throw SetupError(description: "cannot find the \(AgentSkill.name) skill (\(AgentSkill.path)); run relay runner install from an "
         + "extracted release or a device-relay checkout, or set \(RunnerProject.environmentKey)=<path to device-relay>")
     }
     return source
@@ -250,23 +250,23 @@ enum SkillInstaller {
       if target.canonicalFileURL.path == AgentSkill.installedSource(home: home).canonicalFileURL.path,
          let version = RunnerInstallRecord.read(root: RunnerProject.installedRoot(home: home))?.relayVersion, version != RelayVersion.current {
         return .warning(title, "\(destination.path) -> \(target.path), installed by relay \(version), but this is relay \(RelayVersion.current)",
-                        fix: "run relay install again")
+                        fix: "run relay runner install again")
       }
       return .ok(title, "\(destination.path) -> \(target.path) (link)")
     case .copy(let record):
-      // The source fell back to relay install's copy, which is itself from another relay, so installing
+      // The source fell back to relay runner install's copy, which is itself from another relay, so installing
       // from it again would not help.
       let staleSource = source.map {
         $0.directory.canonicalFileURL.path == AgentSkill.installedSource(home: home).canonicalFileURL.path
           && $0.relayVersion != RelayVersion.current
       } ?? false
-      let fix = staleSource ? "run relay install, then relay skill install\(scopeOption)" : updateFix
+      let fix = staleSource ? "run relay runner install, then relay skill install\(scopeOption)" : updateFix
       let detail = "\(destination.path) (relay \(record.relayVersion)\(record.commit.map { ", commit \($0.prefix(12))" } ?? ""), \(record.installedAt))"
       if record.relayVersion != RelayVersion.current {
         return .warning(title, "\(detail): written for relay \(record.relayVersion), but this is relay \(RelayVersion.current)", fix: fix)
       }
       if let source, source.relayVersion != record.relayVersion || (source.commit != nil && record.commit != nil && source.commit != record.commit) {
-        // Nothing says which is newer: the source may be an older checkout, or relay install's older copy.
+        // Nothing says which is newer: the source may be an older checkout, or relay runner install's older copy.
         return .warning(title, "\(detail): differs from the source \(source.directory.path) (relay \(source.relayVersion)"
           + "\(source.commit.map { ", commit \($0.prefix(12))" } ?? ""))", fix: fix)
       }
@@ -303,10 +303,11 @@ enum SkillCommand {
   the git root of the current directory (else the current directory), where the team can commit it.
   --global installs it to ~/.claude/skills/device-relay, --dir to <skills dir>/device-relay.
   --link makes a symbolic link instead of a copy, for working on the skill in a checkout.
-  The skill comes from the extracted release or device-relay checkout relay install copies from, else
-  from the copy relay install made in ~/.relay/runner/skills. A copy records the relay
-  version in .relay-skill.json next to SKILL.md. A skill relay installed is updated in place; anything
-  else at the destination is replaced only with --force. uninstall removes only what relay installed.
+  The skill comes from the extracted release or device-relay checkout relay runner install copies
+  from, else from the copy relay runner install made in ~/.relay/runner/skills. A copy records the
+  relay version in .relay-skill.json next to SKILL.md. A skill relay installed is updated in place;
+  anything else at the destination is replaced only with --force. uninstall removes only what relay
+  installed.
   status shows where the skill is installed, marking with ! one that is out of date.
   """
 
@@ -344,7 +345,7 @@ enum SkillCommand {
     case .status:
       let source = try? SkillSource.resolve(home: home, commands: commands, findCheckout: findCheckout)
       output((source.map { Check.ok("source", "\($0.directory.path) (relay \($0.relayVersion), from \($0.label))") }
-          ?? .warning("source", "\(AgentSkill.path) not found", fix: "run relay install from an extracted release or a device-relay checkout")).formatted())
+          ?? .warning("source", "\(AgentSkill.path) not found", fix: "run relay runner install from an extracted release or a device-relay checkout")).formatted())
       let scopes: [(String, SkillOptions.Scope)]
       switch options.scope {
       case nil: scopes = [("project", .project), ("global", .global)]

@@ -9,7 +9,7 @@
 | `--allow-wifi` doesn't reach it | Ask the user to allow it in the "Local Network" permission dialog on the device | docs/device.md, "準備" |
 | A physical device doesn't become `connected`, or the DDI isn't mounted | Ask the user to connect with USB and get it ready in Xcode's Devices and Simulators window | docs/device.md, "実機" |
 | Signing or Team ID errors (physical device) | Ask the user to sign in to Xcode and create an Apple Development certificate. With several teams, `--team-id` | docs/device.md, "Team ID（実機の署名）" |
-| `run relay install again to update the runner` appears | relay was updated after `relay install`. Ask the user to run `relay install` (it doesn't stop anything from working) | docs/setup.md, "Runner の用意（relay install）" |
+| `run relay install again to update the runner` appears | relay was updated after `relay install`. Ask the user to run `relay install` (it doesn't stop anything from working) | docs/setup.md, "Runner の用意（relay runner install）" |
 | `unknown argument: '-target-arch-variant'` (building relay) | Another Swift comes first in PATH. `make install` uses `xcrun swift`, so use that | README, "Requirements" |
 | One operation doesn't return for minutes, and busy continues meanwhile | A sheet from another process (Apple Account sign-in, for example) is up, and snapshots are stuck. Wait, or ask the user to close it | docs/elements.md, "待機（timeout）" |
 | After an Xcode or iOS update, `touchSynthesis` in `relay health` became `xcui` and `foreground.source` became `fallback`, or elements' `hasKeyboardFocus` is `null` | Private APIs the runner uses became unavailable. It mostly keeps working through alternatives, so expect slower touches and name the target with `--bundle-id` | docs/private-api.md |

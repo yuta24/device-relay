@@ -192,7 +192,7 @@ enum Doctor {
       checks.append(.ok("runner project", "\(project.root.path) (from \(project.source.label))"))
     } else {
       checks.append(.problem("runner project", "\(RunnerProject.projectPath) not found",
-                             fix: "run relay install from the extracted release or the checkout (or pass --project <path to device-relay>, or set \(RunnerProject.environmentKey))"))
+                             fix: "run relay runner install from the extracted release or the checkout (or pass --project <path to device-relay>, or set \(RunnerProject.environmentKey))"))
     }
     checks.append(installCheck(project: project, home: home, staleness: staleness))
     let currentDirectory = WorkingDirectory.url
@@ -219,14 +219,14 @@ enum Doctor {
         return .ok("runner install", "not needed; using the runner project of the relay executable")
       }
       return .warning("runner install", "not installed\(project.map { "; using \($0.root.path)" } ?? "")",
-                      fix: "run relay install so relay start works without the extracted release or checkout")
+                      fix: "run relay runner install so relay start works without the extracted release or checkout")
     }
     let record = RunnerInstallRecord.read(root: installed)
     let detail = record.map { record in
       "relay \(record.relayVersion)\(record.commit.map { ", commit \($0.prefix(12))" } ?? ""), from \(record.source), \(record.installedAt)"
     } ?? "\(installed.path) (no \(RunnerInstallRecord.fileName))"
     if !besideExecutable, let reason = staleness(installed, .installed) {
-      return .warning("runner install", reason, fix: "run relay install again to update \(installed.path)")
+      return .warning("runner install", reason, fix: "run relay runner install again to update \(installed.path)")
     }
     if let project, project.source != .installed {
       return .ok("runner install", "\(detail) (not used: \(project.source.label) wins)")
