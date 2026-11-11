@@ -184,11 +184,11 @@ struct RunnerElementTarget {
   var point: CGPoint
   var count: Int = 1
 
-  /// Refuse only a hit positively identified on an unrelated branch in this snapshot. An unavailable hit test
+  /// Refuse only a control positively identified on an unrelated branch in this snapshot. An unavailable hit test
   /// or an element absent from the tree (for example a remote view) preserves the existing touch.
   func verified(hitPath: [Int]?, in root: RunnerElementNode) -> Result<RunnerElementTarget, RunnerElementLookupFailure> {
     guard let hitPath, !RunnerElementTree.isRelatedHit(hitPath, to: match.path),
-          let hit = RunnerElementTree.hitNode(at: point, path: hitPath, in: root) else { return .success(self) }
+          let hit = RunnerElementTree.hitControl(at: point, path: hitPath, in: root) else { return .success(self) }
     return .failure(RunnerElementLookupFailure(reason: .pointCovered, count: count, candidates: [match], hit: hit))
   }
 }
@@ -231,7 +231,7 @@ struct RunnerElementLookupFailure: Error {
     case .emptyFrame: return "the element has an empty frame"
     case .offscreen: return "the element is outside the screen"
     case .disabled: return "the element is disabled"
-    case .pointCovered: return "the touch point hits another element; nothing was sent"
+    case .pointCovered: return "the touch point hits another control; nothing was sent"
     case .positionUnknown:
       return RunnerRemoteViews.touchError(candidates.first?.node.positionUnknown ?? "cannot tell where the element is on the screen")
     }

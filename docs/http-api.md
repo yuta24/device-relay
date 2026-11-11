@@ -138,7 +138,7 @@ curl -s -H "$AUTH" -X POST $R/shutdown
 | `method_not_allowed` | 405 | メソッド違い | メソッドを直す |
 | `element_not_found` | 422 | セレクタに一致する要素がない、または `index` が範囲外（`reason` は `notFound` / `indexOutOfRange`） | 待つ（`timeout`）、前面アプリを確かめる、`/find`・`/source` で実際の値を確かめる |
 | `element_ambiguous` | 422 | 2 つ以上一致して `index` がない（`reason` は `ambiguous`）。待たずに返る | `candidates` を見て条件か `index` を足す。待っても直らない |
-| `element_point_covered` | 422 | 押す点が別の要素に当たると確認できたため、何も送っていない（「[要素セレクタ](elements.md#要素セレクタ)」） | 画面で対象を確かめ、覆いを閉じるか、確認した座標を指定する |
+| `element_point_covered` | 422 | 押す点が別のコントロールに当たると確認できたため、何も送っていない（「[要素セレクタ](elements.md#要素セレクタ)」） | 画面で対象を確かめ、覆いを閉じるか、確認した座標を指定する |
 | `element_not_hittable` | 422 | 要素はあるが触れない: frame が空、画面の外、`enabled: false`（`reason` は `emptyFrame` / `offscreen` / `disabled`） | スクロールする、前提の操作をする、画面を観察し直す |
 | `no_keyboard_focus` | 422 | `/type`・`/key` でキーボードのフォーカスがある要素がない | 入力欄をタップしてから送り直す |
 | `display_unknown` | 422 | 表示が複数ある端末で、前面アプリの表示を判定できない（どの表示も暗いなど）。何も送っていない | 画面の状態を利用者に確かめる |

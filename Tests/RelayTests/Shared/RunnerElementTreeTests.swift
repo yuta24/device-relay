@@ -194,6 +194,22 @@ struct RunnerElementTreeTests {
       == ["I agree", "Plan"])
   }
 
+  @Test func filteringTreatsLabelContentAndOtherControlsDifferently() {
+    let root = element("application", frame: screen, children: [
+      element("switch", label: "I agree", frame: CGRect(x: 16, y: 211, width: 329, height: 46)),
+      element("staticText", label: "I agree", frame: CGRect(x: 16, y: 211, width: 329, height: 46)),
+      element("secureTextField", label: "Password", frame: CGRect(x: 93, y: 214, width: 155, height: 21))
+    ])
+    func filtered(hitPath: [Int]) -> [String] {
+      RunnerElementTree.interactiveElements(in: root, screen: screen) { path, point in
+        guard RunnerElementTree.hitControl(at: point, path: hitPath, in: root) != nil else { return nil }
+        return RunnerElementTree.isRelatedHit(hitPath, to: path)
+      }.map(\.label)
+    }
+    #expect(filtered(hitPath: [1]) == ["I agree", "Password"])
+    #expect(filtered(hitPath: [2]) == ["Password"])
+  }
+
   @Test func keepsAnUnnamedCellsTextWhenTheHitIsItsAncestor() {
     let root = element("application", frame: screen, children: [
       element("cell", frame: row(0), children: [element("staticText", label: "General", frame: row(0))]),

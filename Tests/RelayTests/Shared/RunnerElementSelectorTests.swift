@@ -213,6 +213,38 @@ struct RunnerElementSelectorTests {
     #expect(try password.verified(hitPath: [0], in: root).get().point == CGPoint(x: 170.5, y: 224.5))
   }
 
+  @Test func letsSiblingLabelTextReceiveCheckboxAndRadioTouches() throws {
+    // Safari iOS 27: actual one-line label frames. Radios are exposed as other, not radioButton.
+    let examples: [(String, String, CGRect, CGRect, Bool)] = [
+      ("Remember me", "switch", CGRect(x: 16, y: 115, width: 136, height: 22), CGRect(x: 36, y: 115, width: 116, height: 22), false),
+      ("SD", "other", CGRect(x: 16, y: 154, width: 47, height: 22), CGRect(x: 36, y: 154, width: 27, height: 22), false),
+      ("HD", "other", CGRect(x: 67, y: 154, width: 49, height: 22), CGRect(x: 87, y: 154, width: 29, height: 22), false),
+      ("Accept terms", "switch", CGRect(x: 18, y: 193, width: 125, height: 22), CGRect(x: 40, y: 193, width: 103, height: 22), true)
+    ]
+    for (label, type, controlFrame, textFrame, separateLabel) in examples {
+      let text = node("staticText", label: label, frame: textFrame)
+      let root = node("application", frame: screen, children: [
+        node(type, label: label, value: "0", frame: controlFrame),
+        separateLabel ? node("other", label: label, frame: textFrame, children: [text]) : text
+      ])
+      let target = try RunnerElementSelector(label: label, type: type).resolve(in: root, screen: screen).get()
+      let path = separateLabel ? [1, 0] : [1]
+      #expect(!RunnerElementTree.isRelatedHit(path, to: target.match.path))
+      #expect(try target.verified(hitPath: path, in: root).get().point == target.point, "\(label)")
+    }
+  }
+
+  @Test func letsTouchesThroughNonControlContent() throws {
+    for type in ["staticText", "other", "image", "group"] {
+      let root = node("application", frame: screen, children: [
+        node("switch", label: "Remember me", frame: CGRect(x: 16, y: 115, width: 136, height: 22)),
+        node(type, label: "Label content", frame: CGRect(x: 36, y: 115, width: 116, height: 22))
+      ])
+      let target = try RunnerElementSelector(label: "Remember me", type: "switch").resolve(in: root, screen: screen).get()
+      #expect(try target.verified(hitPath: [1], in: root).get().point == target.point, "\(type)")
+    }
+  }
+
   @Test func acceptsAStaticTextsAncestorsButRejectsASibling() throws {
     let frame = CGRect(x: 16, y: 380, width: 370, height: 52)
     let root = node("application", frame: screen, children: [
@@ -261,9 +293,12 @@ struct RunnerElementSelectorTests {
     ])
     let target = try RunnerElementSelector(identifier: "Close").resolve(in: root, screen: screen).get()
     #expect(target.point == CGPoint(x: 38, y: 100))
-    #expect(RunnerElementTree.hitNode(at: target.point, path: [1], in: root) == nil)
+    #expect(RunnerElementTree.hitControl(at: target.point, path: [1], in: root) == nil)
     #expect(try target.verified(hitPath: [1], in: root).get().point == target.point)
-    #expect(RunnerElementTree.hitNode(at: target.point, path: [99], in: root) == nil)
+    #expect(RunnerElementTree.hitControl(at: target.point, path: [99], in: root) == nil)
+    var control = root
+    control.children[1].type = "button"
+    #expect(try target.verified(hitPath: [1], in: control).get().point == target.point)
   }
 
   @Test func parsesTimeoutAndLimit() {

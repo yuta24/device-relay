@@ -32,7 +32,7 @@ enum RunnerErrorCode: String, CaseIterable {
   case elementAmbiguous = "element_ambiguous"
   /// 422: the element has an empty frame, is outside the screen, or is disabled.
   case elementNotHittable = "element_not_hittable"
-  /// 422: hit testing identified another element at the selected touch point; nothing was sent.
+  /// 422: hit testing identified another control at the selected touch point; nothing was sent.
   case elementPointCovered = "element_point_covered"
   /// 422: `/type` or `/key` found no element with keyboard focus.
   case noKeyboardFocus = "no_keyboard_focus"

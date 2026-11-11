@@ -455,7 +455,7 @@ final class RelayRunnerUITests: XCTestCase {
     let screen = CGRect(origin: .zero, size: self.screen(in: interfaceOrientation()).size)
     let elements = RunnerElementTree.interactiveElements(in: root, screen: screen) { path, point in
       guard let hitPath = self.hitPath(at: point),
-            RunnerElementTree.hitNode(at: point, path: hitPath, in: root) != nil else { return nil }
+            RunnerElementTree.hitControl(at: point, path: hitPath, in: root) != nil else { return nil }
       return RunnerElementTree.isRelatedHit(hitPath, to: path)
     }
     if format == "compact" {

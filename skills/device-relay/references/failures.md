@@ -34,7 +34,7 @@ The `code`s of element failures are `element_not_found` (`notFound`, `indexOutOf
 | `emptyFrame` | The element's width or height is 0 | It isn't displayed. Observe the screen again |
 | `offscreen` | The element is off the screen | Scroll with `relay swipe`, then look again |
 | `disabled` | The element is `enabled: false` | A prerequisite input or step is missing. Check the screen |
-| `pointCovered` | Hit testing identified an unrelated element in the snapshot at the touch point; nothing was sent. `hit` summarizes its type, label, and frame | Check `relay screenshot` / `relay source`, reveal the target, or use coordinates verified in the screenshot |
+| `pointCovered` | Hit testing identified an unrelated control in the snapshot at the touch point; nothing was sent. `hit` summarizes its type, label, and frame | Check `relay screenshot` / `relay source`, reveal the target, or use coordinates verified in the screenshot |
 | `positionUnknown` | The element is inside the share sheet, and where it is on the screen can't be told; nothing was sent | Find it in `relay screenshot` and tap by coordinates |
 
 If `relay type` / `relay key` report `no_keyboard_focus` (`no element has keyboard focus in <bundleId>`), tap the text field and send it again (the check takes 2–3 seconds).
@@ -53,7 +53,7 @@ Failure JSON is `{"ok":false,"code":"…","error":"…"}`. `code` is a string th
 | `busy` | 5 | Wait and retry |
 | `not_found` / `method_not_allowed` | 7 | Wrong path or method. If a relay command gets it, the runner is old (if you started it yourself, `relay stop` and then `relay start --rebuild`) |
 | `element_not_found` / `element_ambiguous` / `element_not_hittable` | 6 | The `reason` table above |
-| `element_point_covered` | 6 | An unrelated element was confirmed at the touch point; nothing was sent. See `pointCovered` above |
+| `element_point_covered` | 6 | An unrelated control was confirmed at the touch point; nothing was sent. See `pointCovered` above |
 | `no_keyboard_focus` | 6 | Tap the text field and send it again |
 | `display_unknown` | 6 | The screen is dark. Check with the user |
 | `window_position_unknown` | 6 | The iPad window's position is unknown. Reduce to one window, or use coordinates from a screenshot |

@@ -77,7 +77,7 @@ searchField label="Search" placeholder="Search" frame=28,808,346,28
 各要素は、セレクタに使う `type`・`identifier`・`label`・`value` と、`placeholder`、`frame`、`selected` を持ちます（子要素はありません）。`relay tap --type button --label General` や `--id` のように、そのままセレクタに使えます。
 
 - 絞り込みはランナー（端末側）で行います。スナップショットの取得はどちらでも同じ時間がかかりますが、ランナーで絞れば JSON に変換して送るのが短い一覧だけで済み、curl などほかのクライアントからも使えます。判定は SwiftPM のテストで確かめられるよう、CLI と共有するソース（`Sources/Relay/Shared/RunnerElementTree.swift`）に置いています。
-- 後に続くコントロールの frame がタップ位置を覆うときは、アクセシビリティの hit test で、別の要素に当たると確認できたものだけを外します。ラベルの大きな枠と重なる入力欄やボタン、hit test で確認できないものは残します。
+- 後に続くコントロールの frame がタップ位置を覆うときは、アクセシビリティの hit test で、別のコントロールに当たると確認できたものだけを外します。ラベルの大きな枠と重なる入力欄やボタン、hit test で確認できないものは残します。
 - キーボード以外の、コントロールでない覆いの下にある要素は、一覧から外れないことがあります。要素指定のタッチは、送る前にも確認します（下の「[要素セレクタ](#要素セレクタ)」）。
 - 一覧から外れても、セレクタは全体のツリーから探します。`--label General` だけでは同じラベルの `staticText` にも一致して `ambiguous` になることがあるので、一覧の `type` も付けるか `--id` を使います。
 
@@ -134,9 +134,10 @@ searchField label="Search" placeholder="Search" frame=28,808,346,28
 - ラベルは `/find`・`/source` の値をそのままコピーしてください。システムの許可ダイアログの `Don’t Allow` はアポストロフィが `’`（U+2019）で、ASCII の `'` を使った `relay tap --label "Don't Allow"` は一致しません。
 - 解決には `/source` と同じ `snapshot()` を使い、frame は表示の向きのポイント（`/tap` と同じ座標系）なので、横向きでもそのまま使えます。タップ位置は「frame と画面の重なる部分」の中心です（画面端で一部が切れたセルも、見えている部分の中心を押します）。iPad のウィンドウでは、frame を画面の座標に変換したうえで、見えているウィンドウとの重なりの中心を押します。タッチは座標指定と同じ経路（`private`、だめなら `xcui`。`mode` も同じ）で送ります。
 - `x`・`y` と `element` を両方指定すると `400` です。
-- 要素指定のタッチは、送信前に中心の hit test を行います。同じスナップショット内で、選んだ要素でも、その祖先・子孫でもない要素に当たると確認できた場合だけ、何も送らず `422`、`element_point_covered`（`reason: pointCovered`）を返します。
+- 要素指定のタッチは、送信前に中心の hit test を行います。同じスナップショット内で、選んだ要素でも、その祖先・子孫でもないコントロールに当たると確認できた場合だけ、何も送らず `422`、`element_point_covered`（`reason: pointCovered`）を返します。
 - hit test の API がない、nil・エラーが返る、返された要素が取得済みのツリーにない場合は、従来どおり送ります。座標指定のタッチにはこの確認を行いません。
 - hit test がタッチ点を含まない frame の要素を返した場合も、確認できないものとして従来どおり送ります。
+- 拒否の対象は、ボタン・スイッチ・入力欄など、上の一覧で操作対象として挙げた型のコントロールです。`staticText`・`other`・`image`・`group` などの内容に当たる場合は送ります。ラベルの文字が、選んだチェックボックスやラジオへのクリックを受けることがあるためです。
 - `pointCovered` の応答には、当たる要素の要約が `hit`（`type`・`label`・画面上の `frame`）に入ります。覆いを閉じるか、スクリーンショットで対象の位置を確かめて座標を指定してください。
 - 隠れた要素を外す `/source?filter=interactive` の近似判定は「[操作できる要素だけに絞る](#操作できる要素だけに絞るfilterinteractive)」を参照してください。
 - `/launch` の直後は、前面アプリの取得が切り替え前のアプリを返すことがあります。確実に対象を決めたい場合は `bundleId` を指定してください。
@@ -169,7 +170,7 @@ iPad のウィンドウでは、応答（`/tap`・`/press`・`/find`・`/source`
 | `indexOutOfRange` | `element_not_found` | `index` が一致件数以上 | 一致した要素（先頭 5 件） |
 | `emptyFrame` | `element_not_hittable` | 選んだ要素の frame の幅か高さが 0 | 選んだ要素 |
 | `offscreen` | `element_not_hittable` | 選んだ要素の frame が画面（iPad のウィンドウでは、見えているウィンドウ）と重ならない | 選んだ要素 |
-| `pointCovered` | `element_point_covered` | 押す点が別の要素に当たると確認できたため、何も送らなかった | 選んだ要素 |
+| `pointCovered` | `element_point_covered` | 押す点が別のコントロールに当たると確認できたため、何も送らなかった | 選んだ要素 |
 | `disabled` | `element_not_hittable` | 選んだ要素が `enabled: false` | 選んだ要素 |
 | `positionUnknown` | `remote_view_position_unknown` | 選んだ要素が共有シートの中にあり、画面上の位置が決まらない（「[共有シートの中の要素](#共有シートの中の要素)」）。何も送っていない | 選んだ要素 |
 
@@ -251,7 +252,7 @@ iPhone の縦・横で、変換した frame がスクリーンショットの位
 - この一覧の判定では止めないもの: アプリ内のアラート、共有シート、写真の選択、キーボード、通知のバナー、音量 HUD（一覧はアプリだけ）。
 - この一覧の判定では止めないもの: `SFSafariViewController`（全画面・`.pageSheet`）と `ASWebAuthenticationSession` の画面で、`--bundle-id com.apple.SafariViewService` を指定した Close・Reload などのタップ（一覧はアプリだけで、対象は一覧にない）。
 - 止めるもの: 位置情報・通知の許可ダイアログ、コントロールセンター、通知センター、`ASWebAuthenticationSession` の「“…” Wants to Use “…” to Sign In」の確認ダイアログ（いずれも一覧は SpringBoard だけ）。
-- バナーは前面アプリの一覧には出ません。押す点が別の要素に当たると確認できた場合は `element_point_covered` で止まります（「[要素セレクタ](#要素セレクタ)」）。
+- バナーは前面アプリの一覧には出ません。押す点が別のコントロールに当たると確認できた場合は `element_point_covered` で止まります（「[要素セレクタ](#要素セレクタ)」）。
 - ダイアログのボタンは、要素ツリーに出た直後にタップしても、`ok: true` のまま無視されることがあります。システムとアプリ内の両方で、シミュレータでは 0.2 秒後まで、実機では 0.2 秒未満に起きました。
 - 写真の選択や共有シートの「More」の一覧も、出た直後に `--timeout` で待って押した Cancel・Done が無視されました。少し待ってから押すと効きました。
 - 速さ: 一覧の読み取りは 1 回あたりシミュレータで 3–4 ms、実機で 7–9 ms です。止めないとき、要素指定のタップ（iPhone 17 Pro シミュレータの RelayRunnerHost に curl で 40 回）の中央値は、判定なしで 331.0 ms、判定ありで 330.9 ms と、差はばらつきに埋もれました。止めるときは読み直しと alert の探索のぶん、応答まで約 480 ms（シミュレータ）、約 670 ms（実機）かかります。

@@ -57,10 +57,11 @@ enum RunnerElementTree {
     hitPath.starts(with: targetPath) || targetPath.starts(with: hitPath)
   }
 
-  /// AX can report a receiver whose frame excludes the point (Safari service chrome). Such an
-  /// inconsistent result cannot establish coverage, so it is treated like an unavailable hit test.
-  static func hitNode(at point: CGPoint, path: [Int], in root: RunnerElementNode) -> RunnerElementNode? {
-    guard let node = node(at: path, in: root), node.frame.contains(point), node.clip?.contains(point) != false else { return nil }
+  /// Only a known control can establish coverage. Text, images, and generic containers may forward
+  /// the touch to their label or cell. Reuse interactiveTypes without the listing's naming filters.
+  /// A frame or clip excluding the point is also inconclusive (Safari service chrome).
+  static func hitControl(at point: CGPoint, path: [Int], in root: RunnerElementNode) -> RunnerElementNode? {
+    guard let node = node(at: path, in: root), interactiveTypes.contains(node.type), node.frame.contains(point), node.clip?.contains(point) != false else { return nil }
     return node
   }
 
@@ -168,7 +169,7 @@ extension RunnerElementTree {
   ///
   /// Keyboard coverage is checked from the snapshot. A later unrelated control covering the center
   /// is only a possible obstruction (a wrapped web label's rectangle can surround other controls).
-  /// `verifyHit` drops such a candidate only when hit testing confirms a different receiver.
+  /// `verifyHit` drops such a candidate only when hit testing confirms an unrelated control.
   /// Unknown hits keep the candidate. Overlays that aren't controls aren't filtered here; touches verify separately.
   static func interactiveElements(
     in root: RunnerElementNode, screen: CGRect, verifyHit: (([Int], CGPoint) -> Bool?)? = nil
