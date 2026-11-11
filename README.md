@@ -153,6 +153,7 @@ A physical device needs the following before `relay start`. For details, see [хо
 | `relay tap` / `relay press` / `relay swipe` | Touch by coordinates or by element selector (`--id`, `--label`, `--type`) |
 | `relay type` / `relay key` | Send text or special keys to the element with keyboard focus |
 | `relay launch` / `relay terminate` | Launch an app (or bring it to the foreground) / terminate it |
+| `relay open` | Open a URL or deep link (`https://` in Safari, `myapp://` in its app, `--bundle-id` to pick the app) |
 | `relay button` / `relay orientation` | Press a hardware button / change the device orientation |
 | `relay run` (experimental) | Run a scenario of one step per line, in order |
 | `relay record start` / `relay record stop` | Record the screen of a simulator or a device connected with USB to an MP4 / stop and print where it was saved (a device needs camera access the first time) |

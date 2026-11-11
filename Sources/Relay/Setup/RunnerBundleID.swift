@@ -121,6 +121,8 @@ extension RunnerOperation {
       return .key(key, bundleID: try resolve(bundleID))
     case .launch(let bundleID):
       return .launch(bundleID: try resolve(bundleID) ?? bundleID)
+    case .open(let url, let bundleID):
+      return .open(url: url, bundleID: try resolve(bundleID))
     case .terminate(let bundleID):
       return .terminate(bundleID: try resolve(bundleID) ?? bundleID)
     default:

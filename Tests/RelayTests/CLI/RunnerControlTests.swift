@@ -67,6 +67,7 @@ struct RunnerControlHintTests {
   private let infoURL = URL(fileURLWithPath: "/tmp/runner.json")
 
   @Test func hintsByCode() {
+    #expect(RunnerControl.hint(for: .actionFailed, errorCode: .openFailed, infoURL: infoURL)?.contains("--bundle-id") == true)
     #expect(RunnerControl.hint(for: .actionFailed, errorCode: .noKeyboardFocus, infoURL: infoURL)?.contains("tap the text field first") == true)
     #expect(RunnerControl.hint(for: .actionFailed, errorCode: .typingFailed, infoURL: infoURL)?.contains("relay find") == true)
     #expect(RunnerControl.hint(for: .actionFailed, errorCode: .elementNotFound, infoURL: infoURL)?.contains("--timeout") == true)

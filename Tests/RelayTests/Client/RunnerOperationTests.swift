@@ -48,6 +48,9 @@ struct RunnerOperationTests {
     #expect(try body(RunnerOperation.orientation("portrait").request) == #"{"orientation":"portrait"}"#)
     #expect(try body(RunnerOperation.launch(bundleID: "b").request) == #"{"bundleId":"b"}"#)
     #expect(RunnerOperation.terminate(bundleID: "b").request.path == "/terminate")
+    #expect(try body(RunnerOperation.open(url: "myapp://x", bundleID: nil).request) == #"{"url":"myapp:\/\/x"}"#)
+    #expect(try body(RunnerOperation.open(url: "myapp://x", bundleID: "b").request) == #"{"bundleId":"b","url":"myapp:\/\/x"}"#)
+    #expect(RunnerOperation.open(url: "myapp://x", bundleID: nil).request.path == "/open")
     #expect(RunnerOperation.shutdown.request.method == "POST")
   }
 
@@ -61,6 +64,9 @@ struct RunnerOperationTests {
   @Test func allowsForTheApplicationStateTimeout() {
     #expect(RunnerOperation.launch(bundleID: "b").waitTime == 120)
     #expect(RunnerOperation.terminate(bundleID: "b").waitTime == 120)
+    // Without the private path the runner opens the URL with XCTest's public calls, which wait for the app as /launch does.
+    #expect(RunnerOperation.open(url: "myapp://x", bundleID: nil).waitTime == 120)
+    #expect(RunnerOperation.open(url: "myapp://x", bundleID: nil).waitTime > RunnerOpen.acceptWait + RunnerOpen.foregroundWait)
     #expect(RunnerControl.baseTimeout + RunnerOperation.launch(bundleID: "b").waitTime > 120)
   }
 

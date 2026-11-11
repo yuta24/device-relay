@@ -214,6 +214,9 @@ final class RelayRunnerUITests: XCTestCase {
       XCUIApplication(bundleIdentifier: bundleID).activate()
       lastActivatedBundleID = bundleID
       return ok()
+    case ("POST", "/open"):
+      let body = try RunnerJSON(request.body)
+      return try open(body.string("url"), bundleID: body.optionalString("bundleId"))
     case ("POST", "/terminate"):
       let bundleID = try RunnerJSON(request.body).string("bundleId")
       XCUIApplication(bundleIdentifier: bundleID).terminate()
@@ -223,7 +226,7 @@ final class RelayRunnerUITests: XCTestCase {
       return ok()
     case (_, "/health"), (_, "/foreground"), (_, "/screenshot"), (_, "/source"), (_, "/tap"), (_, "/press"),
          (_, "/find"), (_, "/swipe"), (_, "/type"), (_, "/key"), (_, "/button"), (_, "/orientation"), (_, "/launch"),
-         (_, "/terminate"), (_, "/shutdown"):
+         (_, "/open"), (_, "/terminate"), (_, "/shutdown"):
       throw RunnerError.methodNotAllowed
     default:
       throw RunnerError.notFound
@@ -266,6 +269,73 @@ final class RelayRunnerUITests: XCTestCase {
       }
     }
     return object
+  }
+
+  // MARK: - Open URL
+
+  /// Opens `text` with the app the system picks for it (`XCUIDevice.system.open`), or with `bundleID`
+  /// (`XCUIApplication.open`), and answers with the foreground app once the app that opens it is in front.
+  ///
+  /// The URL goes through XCTest's private daemon session when it is available (`RelayURLOpener`): the public
+  /// calls wait for the foreground app, and for `bundleID`, to idle, which held them for 60 s or more on a
+  /// screen whose run loop never idles. Both paths return before the app comes to the front (about 3 s
+  /// before, for a cold start), so the runner waits for that itself, up to `RunnerOpen.foregroundWait`.
+  private func open(_ text: String, bundleID: String?) throws -> RunnerHTTPResponse {
+    let url: URL
+    switch RunnerOpen.url(text) {
+    case .success(let parsed): url = parsed
+    case .failure(let problem): throw RunnerError.invalidField(problem.description)
+    }
+    let before = foregroundApplication().bundleID
+    if RelayURLOpener.isAvailable {
+      try openWithoutIdleWait(url, text: text, bundleID: bundleID)
+    } else {
+      let issueCount = capturedIssues?.count ?? 0
+      if let bundleID {
+        XCUIApplication(bundleIdentifier: bundleID).open(url)
+      } else {
+        XCUIDevice.shared.system.open(url)
+      }
+      if let issues = capturedIssues, issues.count > issueCount {
+        let reason = issues[issueCount...].joined(separator: "; ")
+        capturedIssues?.removeSubrange(issueCount...)
+        throw RunnerError.openFailed(RunnerOpen.failureMessage(url: text, bundleID: bundleID, reason: reason))
+      }
+    }
+    waitForForeground(before: before, bundleID: bundleID)
+    if let bundleID {
+      lastActivatedBundleID = bundleID
+    }
+    return .json(["ok": true, "foreground": foregroundApplication().json])
+  }
+
+  /// Sends the URL and waits, up to `RunnerOpen.acceptWait`, for the system to accept it or say why not.
+  private func openWithoutIdleWait(_ url: URL, text: String, bundleID: String?) throws {
+    let completion = TouchCompletion()
+    RelayURLOpener.open(url, bundleID: bundleID) { completion.finish($0) }
+    let deadline = Date(timeIntervalSinceNow: RunnerOpen.acceptWait)
+    while !completion.isFinished {
+      guard Date() < deadline else { throw RunnerError.openFailed(RunnerOpen.acceptTimeoutMessage(url: text)) }
+      _ = RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.01))
+    }
+    if let error = completion.error as NSError? {
+      let reason = RunnerOpen.reason(domain: error.domain, code: error.code, description: error.localizedDescription,
+                                     scheme: url.scheme)
+      throw RunnerError.openFailed(RunnerOpen.failureMessage(url: text, bundleID: bundleID, reason: reason))
+    }
+  }
+
+  /// Waits up to `RunnerOpen.foregroundWait` for the app that opens the URL to be in front (`RunnerOpen.hasArrived`).
+  /// Without the private foreground lookup there is nothing to watch, so it returns at once.
+  private func waitForForeground(before: String, bundleID: String?) {
+    guard RelayActiveApplication.isAvailable else { return }
+    let deadline = Date(timeIntervalSinceNow: RunnerOpen.foregroundWait)
+    while Date() < deadline {
+      if RunnerOpen.hasArrived(foreground: foregroundApplication().bundleID, before: before, bundleID: bundleID) {
+        return
+      }
+      _ = RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.05))
+    }
   }
 
   // MARK: - Foreground application

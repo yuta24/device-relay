@@ -161,6 +161,20 @@ struct RunnerArgumentsTests {
     #expect(throws: ArgumentError.self) { try Arguments.parse(["launch"]) }
   }
 
+  @Test func parsesOpen() throws {
+    #expect(try operation(["open", "myapp://item/42?from=relay"]) == .open(url: "myapp://item/42?from=relay", bundleID: nil))
+    #expect(try operation(["open", "https://example.com/a%20b", "--bundle-id", "com.example"])
+      == .open(url: "https://example.com/a%20b", bundleID: "com.example"))
+    // A URL is sent as written; one the runner would reject is a usage error before anything is sent.
+    for bad in [["open"], ["open", "a", "b"], ["open", "example.com"], ["open", "https://example.com/a b"], ["open", "https://例え.jp/"]] {
+      #expect(throws: ArgumentError.self, "\(bad)") { try Arguments.parse(bad) }
+    }
+    #expect(throws: ArgumentError.self) { try Arguments.parse(["open", "myapp://x", "--bundle-id", ""]) }
+    #expect(throws: ArgumentError.self) { try Arguments.parse(["open", "myapp://x", "--timeout", "1"]) }
+    #expect(Arguments.usage(for: "open").contains("relay open <url> [--bundle-id <id>]"))
+    #expect(try Scenario.action(["open", "myapp://item/1"]) == .runner(.open(url: "myapp://item/1", bundleID: nil)))
+  }
+
   @Test func showsCommandHelp() throws {
     #expect(try Arguments.parse(["tap", "--help"]) == .commandHelp("tap"))
     #expect(try Arguments.parse(["screenshot", "-h"]) == .commandHelp("screenshot"))

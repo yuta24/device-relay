@@ -22,10 +22,21 @@
 | `POST /button` | `{"name":"home"}`（`volumeUp` / `volumeDown` は実機のみ） | ハードウェアボタン。`home` は実機では画面下端からのスワイプで代用します（「[ホームと音量ボタン](device.md#ホームと音量ボタン)」を参照） |
 | `POST /orientation` | `{"orientation":"portrait\|portraitUpsideDown\|landscapeLeft\|landscapeRight"}` | 端末の向き（`UIDeviceOrientation`）を設定 |
 | `POST /launch` | `{"bundleId":"com.apple.Preferences"}` | アプリの起動・前面化（`activate()`）で、入っていないアプリの扱いは「[アプリの指定と起動](cli.md#アプリの指定と起動)」を参照してください。 |
+| `POST /open` | `{"url":"myapp://title/42","bundleId":"…"}`（`bundleId` は省略可） | URL を開きます。`bundleId` を省くと、システムが選ぶアプリ（`https://` なら Safari）で開きます。詳しくは下の「URL を開く（/open）」 |
 | `POST /terminate` | `{"bundleId":"com.apple.Preferences"}` | アプリの終了。終了するまで `/launch` と同じだけ待ちます |
 | `POST /shutdown` | – | ランナーを停止（テストメソッドから抜ける） |
 
 `/launch` は、アプリが前面になるまで XCTest のアプリの状態の待ち時間（60 秒、戻せないランナーでは 120 秒）まで待ってから応答します。
+
+**URL を開く（/open）**: `/open` は `url` を、`bundleId` があればそのアプリで、なければシステムが選ぶアプリで開き、前面アプリを返します（`{"ok":true,"foreground":{"bundleId":…,"pid":…,"source":…}}`。`foreground` は `/foreground` と同じ形）。
+
+- `url` は絶対 URL（スキーム付き）で、パーセントエンコードした形で送ります。空白・制御文字・URL に使えない文字を含む値と、スキームのない値は `400`、`invalid_request` です。ランナーは URL を書き換えません。
+- URL を開くアプリが前面に来るまで、最大 5 秒待ってから応答します。`bundleId` があればそのアプリ、なければ送る前と違うアプリが前面に来た時点で応答します。前面のアプリ自身が開くときは前面が変わらないので、5 秒待ちます。
+- アプリのアイドルは待ちません（「[URL を開く](private-api.md#url-を開く)」）。システムが受け付けたかの答えは最大 30 秒待ち、答えがなければ `422`、`open_failed` です。
+- スキームを扱うアプリがない、`bundleId` のアプリで開けない場合は `422`、`open_failed` です。
+- `bundleId` のアプリが入っていないときも `open_failed` ですが、`relay open` は送る前に確かめて `app_not_installed` にします（「[URL を開く（relay open）](cli.md#url-を開くrelay-open)」）。
+
+確かめた環境: iPhone 17 シミュレータ（iOS 27.2、Xcode 27.2）、iPhone 14 Pro（iOS 26.7.1、Xcode 27.2）。
 
 **画面の外の座標**: `/tap`・`/press` の `x`・`y` と `/swipe` の `from`・`to` は、前面アプリの表示の向きでの画面（`/health` の `screen`）の中、つまり `0 ≤ x < screen.width` かつ `0 ≤ y < screen.height` でなければなりません（小数も可。`x = screen.width` は画面の外です）。外なら何も送らずに `400` と `{"ok":false,"code":"point_offscreen","error":"invalid field: x, y: (500, 100) is outside the screen, which is 402x874 points in portrait (0 <= x < 402, 0 <= y < 874; relay health shows the screen)"}` のように返します（`/swipe` では `from:` / `to:`）。以前は画面の外のタッチも `200` を返し、何も起きませんでした。`422`（XCUI で操作に失敗）ではなく `400` にしたのは、操作を試す前に値の範囲で判定でき、ほかの範囲外の値と同じ扱い（CLI では終了コード `7`）にするためです。画面は向きを変えると縦横が入れ替わるので、`relay orientation` の後は `/health` を読み直します。要素を指定したタップ（`element`）は、要素の frame の画面内の部分の中心に当たるので、この判定はありません（画面の外の要素は `422` の `offscreen`）。画面の大きさを SpringBoard から取れず `UIScreen` の値で代用している間（実機では 320×480 の互換モードの値になります）は、正しい座標を拒否しないよう判定を省きます。
 
@@ -107,6 +118,7 @@ curl -s -H "$AUTH" -X POST $R/type        -H 'Content-Type: application/json' -d
 curl -s -H "$AUTH" -X POST $R/key         -H 'Content-Type: application/json' -d '{"key":"delete"}'
 curl -s -H "$AUTH" -X POST $R/button      -H 'Content-Type: application/json' -d '{"name":"home"}'
 curl -s -H "$AUTH" -X POST $R/orientation -H 'Content-Type: application/json' -d '{"orientation":"landscapeLeft"}'
+curl -s -H "$AUTH" -X POST $R/open        -H 'Content-Type: application/json' -d '{"url":"myapp://title/42"}'
 curl -s -H "$AUTH" -X POST $R/terminate   -H 'Content-Type: application/json' -d '{"bundleId":"com.apple.Preferences"}'
 curl -s -H "$AUTH" -X POST $R/shutdown
 ```
@@ -147,6 +159,7 @@ curl -s -H "$AUTH" -X POST $R/shutdown
 | `covered_by_other_app` | 422 | 要素を指定した `/tap`・`/press` で、対象アプリが前面のアプリの一覧になく、先頭が SpringBoard（システムの許可ダイアログ、コントロールセンターなどに覆われている）。何も送っていない。`bundleId`・`foreground`・`alert`（SpringBoard の alert の label か `null`）が付く（「[別のアプリに覆われているとき](elements.md#別のアプリに覆われているとき)」） | スクリーンショットか `/find`（`bundleId: com.apple.springboard`、`type: alert`）で確かめ、ダイアログなどを閉じてから送り直す |
 | `touch_failed` | 422 / 500 | 合成したタッチが失敗した、時間内に終わらなかった、合成を始められなかった（500） | 1 回だけ再試行する。続くならランナーのログを見る |
 | `typing_failed` | 422 / 500 | `/type`・`/key` で合成した入力が失敗した、時間内に終わらなかった（422）、合成を始められなかった（500） | `/find` の `value` で入った文字を確かめ、必要なら消してから送り直す |
+| `open_failed` | 422 | `/open` で URL を開けなかった: スキームを扱うアプリが入っていない、`bundleId` のアプリで開けない、システムが時間内に答えない | URL のスキームと、扱うアプリが入っているかを確かめる。`bundleId` を指定すると、スキームにかかわらずそのアプリに渡せる |
 | `xcui_failed` | 422 | XCUI が失敗を報告した（XCTest の issue、要素ツリーの取得の失敗など）。`error` に XCUI の文 | `error` を読み、前面アプリと画面を観察し直す |
 | `internal_error` | 500 | ランナーの内部エラー（JPEG エンコードの失敗、終了処理中など） | 1 回だけ再試行する。続くならランナーのログを見る |
 

@@ -19,6 +19,8 @@ enum RunnerOperation: Equatable {
   case button(String)
   case orientation(String)
   case launch(bundleID: String)
+  /// A URL checked with `RunnerRequestValues.openURL`; nil `bundleID` lets the system pick the app.
+  case open(url: String, bundleID: String?)
   case terminate(bundleID: String)
   case shutdown
 
@@ -39,6 +41,7 @@ enum RunnerOperation: Equatable {
     case .button: return "button"
     case .orientation: return "orientation"
     case .launch: return "launch"
+    case .open: return "open"
     case .terminate: return "terminate"
     case .shutdown: return "shutdown"
     }
@@ -87,6 +90,10 @@ enum RunnerOperation: Equatable {
     case .button(let name): return .post("/button", ["name": name])
     case .orientation(let name): return .post("/orientation", ["orientation": name])
     case .launch(let bundleID): return .post("/launch", ["bundleId": bundleID])
+    case .open(let url, let bundleID):
+      var body: [String: Any] = ["url": url]
+      body["bundleId"] = bundleID
+      return .post("/open", body)
     case .terminate(let bundleID): return .post("/terminate", ["bundleId": bundleID])
     case .shutdown: return .post("/shutdown", [:])
     }
@@ -101,12 +108,22 @@ enum RunnerOperation: Equatable {
     case .tap(let touch): return touch.timeout ?? 0
     case .press(let touch): return (touch.timeout ?? 0) + (touch.duration ?? 1)
     case .swipe(_, _, let duration, let hold, _): return (duration ?? 0.3) + (hold ?? 0.05)
-    case .launch, .terminate: return Self.applicationStateWait
+    case .launch, .open, .terminate: return Self.applicationStateWait
     // The runner gives up on synthesized text `RunnerTyping.synthesisGrace` after this, so it answers within
     // the 30 s on top.
     case .type(let text, let keys, _): return RunnerTyping.wait(text: text ?? "", keyCount: keys.count)
     case .key: return RunnerTyping.wait(text: "", keyCount: 1)
     default: return 0
+    }
+  }
+
+  /// The app that must be installed for the operation to do anything: relay checks it before sending
+  /// (`AppInstallCheck`), so a typo fails at once rather than after the runner's wait.
+  var installRequiredBundleID: String? {
+    switch self {
+    case .launch(let bundleID): return bundleID
+    case .open(_, let bundleID): return bundleID
+    default: return nil
     }
   }
 

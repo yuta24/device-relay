@@ -84,7 +84,7 @@ Each file in `references/` stands alone; read only the one you need:
 - [start-status-stop](references/start-status-stop.md): their output and exit codes
 - [sessions](references/sessions.md): parallel sessions, runner.json lookup
 - [sandbox](references/sandbox.md): `Operation not permitted`
-- [commands](references/commands.md): options and timeouts of each command
+- [commands](references/commands.md): options, timeouts, deep links (`open`)
 - [element-tree](references/element-tree.md): `source` formats, selectors
 - [failures](references/failures.md): all exit codes, `code`s, `reason`s
 - [coordinates](references/coordinates.md): orientation, iPad windows, iPhone Duo

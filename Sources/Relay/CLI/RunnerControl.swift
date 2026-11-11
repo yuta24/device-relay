@@ -128,7 +128,7 @@ enum RunnerControl {
     } catch {
       return fail(.runnerInfoInvalid, "\(error)", exit: .failure, to: failureOutput)
     }
-    if case .launch(let bundleID) = resolved {
+    if let bundleID = resolved.installRequiredBundleID {
       let device = info.name ?? info.udid
       switch AppInstallCheck.state(of: bundleID, udid: info.udid, hostBundleID: info.hostBundleID) {
       case .notInstalled:
@@ -136,7 +136,8 @@ enum RunnerControl {
         CLIOutput.note(AppInstallCheck.notInstalledHint(bundleID: bundleID, device: device))
         return RunnerExitCode.actionFailed.rawValue
       case .unknown(let reason?):
-        CLIOutput.note(AppInstallCheck.uncheckedHint(bundleID: bundleID, reason: reason))
+        CLIOutput.note(AppInstallCheck.uncheckedHint(bundleID: bundleID, reason: reason,
+                                                     waits: resolved.commandName == "launch"))
       case .installed, .unknown(nil):
         break
       }
@@ -215,7 +216,7 @@ enum RunnerControl {
   /// `/launch` it may hold on for minutes more (298 s in all for an app that isn't installed).
   static func timeoutReason(for operation: RunnerOperation, seconds: Int) -> String {
     switch operation {
-    case .launch: break
+    case .launch, .open: break
     case .type, .key:
       // Only `typeText`, the fallback when the runner can't synthesize text, waits for the app to idle.
       return "no response within \(seconds)s; the runner may be waiting for the app to become idle and stays busy until "
@@ -260,6 +261,9 @@ enum RunnerControl {
     case .remoteViewPositionUnknown:
       return "the element is in a view another process draws (the share sheet) and its frame is not on the screen: "
         + "find it in relay screenshot and tap it by coordinates (relay tap <x> <y>)"
+    case .openFailed:
+      return "check the URL's scheme and that the app that handles it is installed; relay open <url> --bundle-id <id> "
+        + "sends it to that app"
     case .notFound:
       return "no such endpoint; the runner may be older than this relay (relay start --rebuild builds it again)"
     default:

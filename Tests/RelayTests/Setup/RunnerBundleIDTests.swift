@@ -110,6 +110,8 @@ struct RunnerBundleIDTests {
 
     #expect(try RunnerOperation.launch(bundleID: "host").resolvingHostAlias(host) == .launch(bundleID: host))
     #expect(try RunnerOperation.terminate(bundleID: "host").resolvingHostAlias(host) == .terminate(bundleID: host))
+    #expect(try RunnerOperation.open(url: "a://b", bundleID: "host").resolvingHostAlias(host) == .open(url: "a://b", bundleID: host))
+    #expect(try RunnerOperation.open(url: "a://b", bundleID: nil).resolvingHostAlias(host) == .open(url: "a://b", bundleID: nil))
     #expect(try RunnerOperation.launch(bundleID: "com.apple.Preferences").resolvingHostAlias(nil) == .launch(bundleID: "com.apple.Preferences"))
     #expect(try RunnerOperation.key("return", bundleID: "host").resolvingHostAlias(host) == .key("return", bundleID: host))
     #expect(try RunnerOperation.type(text: "a", keys: [], bundleID: "host").resolvingHostAlias(host) == .type(text: "a", keys: [], bundleID: host))

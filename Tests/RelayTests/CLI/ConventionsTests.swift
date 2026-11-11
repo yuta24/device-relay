@@ -136,7 +136,8 @@ struct JSONFlagTests {
       ["ping"], ["health"], ["foreground"], ["screenshot", "-o", "/tmp/a.png"], ["source", "--format", "compact"],
       ["find", "--label", "OK"], ["tap", "1", "2"], ["tap", "--label", "OK"], ["press", "1", "2"], ["swipe", "1", "2", "3", "4"],
       ["type", "hello"], ["key", "return"], ["button", "home"], ["orientation", "portrait"], ["launch", "com.example"],
-      ["terminate", "com.example"], ["shutdown"]
+      ["open", "myapp://item/1"], ["open", "https://example.com", "--bundle-id", "com.example"], ["terminate", "com.example"],
+      ["shutdown"]
     ]
     for line in lines {
       let plain = try Arguments.parse(line)

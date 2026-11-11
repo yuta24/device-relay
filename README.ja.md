@@ -153,6 +153,7 @@ relay screenshot --scale 1                            # 1 px = 1 pt に縮小し
 | `relay tap` / `relay press` / `relay swipe` | 座標か要素セレクタ（`--id`・`--label`・`--type`）でタッチ操作する |
 | `relay type` / `relay key` | フォーカスのある要素に文字・特殊キーを入力する |
 | `relay launch` / `relay terminate` | アプリを起動（前面化）する / 終了する |
+| `relay open` | URL・ディープリンクを開く（`https://` は Safari、`myapp://` はそのアプリ、`--bundle-id` でアプリを指定） |
 | `relay button` / `relay orientation` | ハードウェアボタンを押す / 端末の向きを変える |
 | `relay run`（実験的） | 1 行 1 手順のシナリオを順に実行する |
 | `relay record start` / `relay record stop` | シミュレータか実機（USB 接続）の画面を MP4 に録画する / 止めて保存先を出力する（実機は初回にカメラの許可が要る） |

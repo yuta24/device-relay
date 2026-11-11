@@ -145,17 +145,19 @@ enum AppInstallCheck {
     bundleID.lowercased().hasPrefix("com.apple.")
   }
 
-  /// What relay prints instead of sending `/launch`: the same JSON a failure from the runner has, for
+  /// What relay prints instead of sending `/launch` or `/open`: the same JSON a failure from the runner has, for
   /// stdout (see `RunnerControl`); the `relay:` line of `notInstalledHint` goes to stderr.
   static func notInstalledBody(bundleID: String, device: String) -> Data {
     CLIOutput.failureBody(.appNotInstalled, "\(bundleID) is not installed on \(device)")
   }
 
   static func notInstalledHint(bundleID: String, device: String) -> String {
-    "\(bundleID) is not installed on \(device); nothing was sent to the runner. Check the bundle ID, or install the app first (relay launch only starts installed apps)"
+    "\(bundleID) is not installed on \(device); nothing was sent to the runner. Check the bundle ID, or install the app first (relay launch and relay open --bundle-id only reach installed apps)"
   }
 
-  static func uncheckedHint(bundleID: String, reason: String) -> String {
-    "cannot tell whether \(bundleID) is installed (\(reason)); sending it to the runner, which waits for minutes if it is not"
+  /// `waits`: the runner holds on for minutes when the app is missing (`/launch`), rather than failing at once (`/open`).
+  static func uncheckedHint(bundleID: String, reason: String, waits: Bool = true) -> String {
+    "cannot tell whether \(bundleID) is installed (\(reason)); sending it to the runner"
+      + (waits ? ", which waits for minutes if it is not" : "")
   }
 }

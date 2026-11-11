@@ -13,7 +13,7 @@ relay run --step "launch <bundle-id>" --step "tap --id login.button --timeout 5"
 relay run steps.relay --check   # validate only (no runner needed, runs nothing; 0 if there are no problems)
 ```
 
-- Steps are runner commands without `relay` (`tap`, `press`, `swipe`, `type`, `key`, `button`, `orientation`, `launch`, `terminate`, `find`, `source`, `screenshot`, `health`, `foreground`, `ping`) and `sleep <seconds>` (up to 60). `start` / `stop` / `shutdown` and the like can't be written.
+- Steps are runner commands without `relay` (`tap`, `press`, `swipe`, `type`, `key`, `button`, `orientation`, `launch`, `open`, `terminate`, `find`, `source`, `screenshot`, `health`, `foreground`, `ping`) and `sleep <seconds>` (up to 60). `start` / `stop` / `shutdown` and the like can't be written.
 - Words split as in a shell (spaces, `'...'`, `"..."`, `\`). `--runner` and `--session` go on `relay run` and can't be in a step. `type --stdin` can't be used either. `screenshot` requires `--output <file>`.
 - For a scenario you save, write `# relay-run: 1` (the format version) on the first line. For an unsupported version, that line is an error and nothing runs.
 - All lines are checked before running. For an invalid line it prints `relay: line <N>: <reason>`, runs nothing, and exits 2 (stderr only). You can check a scenario you wrote with `--check` before running it.
