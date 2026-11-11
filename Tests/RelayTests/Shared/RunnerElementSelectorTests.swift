@@ -183,6 +183,124 @@ struct RunnerElementSelectorTests {
     """)
   }
 
+  @Test func verifiesTheHitIdentityForOverlappingWebControls() throws {
+    // Safari / WKWebView: the label's union rectangle contains three unrelated controls.
+    let root = node("application", frame: screen, children: [
+      node("secureTextField", label: "Password", frame: CGRect(x: 93, y: 214, width: 155, height: 21)),
+      node("button", label: "Sign in", frame: CGRect(x: 251, y: 214, width: 61, height: 21)),
+      node("switch", label: "I agree", value: "0", frame: CGRect(x: 16, y: 211, width: 329, height: 46)),
+      node("button", label: "Plan", frame: CGRect(x: 63, y: 237, width: 72, height: 21))
+    ])
+    let target = try RunnerElementSelector(label: "I agree", type: "switch").resolve(in: root, screen: screen).get()
+    #expect(target.point == CGPoint(x: 180.5, y: 234))
+    let rejected = try #require(failure(target.verified(hitPath: [0], in: root)))
+    #expect(rejected.reason == .pointCovered)
+    #expect(rejected.code == .elementPointCovered)
+    #expect(rejected.json["code"] as? String == "element_point_covered")
+    #expect(RunnerError.elementNotResolved(rejected).status == 422)
+    #expect(rejected.isRetryable)
+    #expect(!rejected.message.isEmpty)
+    let hit = try #require(rejected.json["hit"] as? [String: Any])
+    #expect(hit["type"] as? String == "secureTextField")
+    #expect(hit["label"] as? String == "Password")
+    #expect(hit["frame"] != nil)
+    #expect(try target.verified(hitPath: nil, in: root).get().point == target.point)
+    #expect(try target.verified(hitPath: [99], in: root).get().point == target.point)
+    #expect(try target.verified(hitPath: [], in: root).get().point == target.point)
+    #expect(try target.verified(hitPath: [2], in: root).get().point == target.point)
+    #expect(try target.verified(hitPath: [2, 0], in: root).get().point == target.point)
+    let password = try RunnerElementSelector(label: "Password").resolve(in: root, screen: screen).get()
+    #expect(try password.verified(hitPath: [0], in: root).get().point == CGPoint(x: 170.5, y: 224.5))
+  }
+
+  @Test func letsSiblingLabelTextReceiveCheckboxAndRadioTouches() throws {
+    // Safari iOS 27: actual one-line label frames. Radios are exposed as other, not radioButton.
+    let examples: [(String, String, CGRect, CGRect, Bool)] = [
+      ("Remember me", "switch", CGRect(x: 16, y: 115, width: 136, height: 22), CGRect(x: 36, y: 115, width: 116, height: 22), false),
+      ("SD", "other", CGRect(x: 16, y: 154, width: 47, height: 22), CGRect(x: 36, y: 154, width: 27, height: 22), false),
+      ("HD", "other", CGRect(x: 67, y: 154, width: 49, height: 22), CGRect(x: 87, y: 154, width: 29, height: 22), false),
+      ("Accept terms", "switch", CGRect(x: 18, y: 193, width: 125, height: 22), CGRect(x: 40, y: 193, width: 103, height: 22), true)
+    ]
+    for (label, type, controlFrame, textFrame, separateLabel) in examples {
+      let text = node("staticText", label: label, frame: textFrame)
+      let root = node("application", frame: screen, children: [
+        node(type, label: label, value: "0", frame: controlFrame),
+        separateLabel ? node("other", label: label, frame: textFrame, children: [text]) : text
+      ])
+      let target = try RunnerElementSelector(label: label, type: type).resolve(in: root, screen: screen).get()
+      let path = separateLabel ? [1, 0] : [1]
+      #expect(!RunnerElementTree.isRelatedHit(path, to: target.match.path))
+      #expect(try target.verified(hitPath: path, in: root).get().point == target.point, "\(label)")
+    }
+  }
+
+  @Test func letsTouchesThroughNonControlContent() throws {
+    for type in ["staticText", "other", "image", "group"] {
+      let root = node("application", frame: screen, children: [
+        node("switch", label: "Remember me", frame: CGRect(x: 16, y: 115, width: 136, height: 22)),
+        node(type, label: "Label content", frame: CGRect(x: 36, y: 115, width: 116, height: 22))
+      ])
+      let target = try RunnerElementSelector(label: "Remember me", type: "switch").resolve(in: root, screen: screen).get()
+      #expect(try target.verified(hitPath: [1], in: root).get().point == target.point, "\(type)")
+    }
+  }
+
+  @Test func acceptsAStaticTextsAncestorsButRejectsASibling() throws {
+    let frame = CGRect(x: 16, y: 380, width: 370, height: 52)
+    let root = node("application", frame: screen, children: [
+      node("window", frame: screen, children: [
+        node("cell", label: "General", frame: frame, children: [
+          node("staticText", label: "General", frame: CGRect(x: 30, y: 392, width: 101, height: 28))
+        ]),
+        node("button", label: "Overlay", frame: frame)
+      ])
+    ])
+    let target = try RunnerElementSelector(label: "General", type: "staticText").resolve(in: root, screen: screen).get()
+    #expect(target.match.path == [0, 0, 0])
+    for ancestor in [[], [0], [0, 0]] {
+      #expect(try target.verified(hitPath: ancestor, in: root).get().point == target.point)
+    }
+    let covered = try #require(failure(target.verified(hitPath: [0, 1], in: root)))
+    #expect(covered.reason == .pointCovered)
+    #expect(covered.hit?.label == "Overlay")
+  }
+
+  @Test func verifiesDuplicateAttributesByPathIncludingTheIndex() throws {
+    let root = node("application", children: [node("button", label: "Same"), node("button", label: "Same")])
+    let target = try RunnerElementSelector(label: "Same", index: 1).resolve(in: root, screen: screen).get()
+    #expect(target.match.path == [1])
+    #expect(failure(target.verified(hitPath: [0], in: root))?.count == 2)
+    #expect(failure(target.verified(hitPath: [0], in: root))?.reason == .pointCovered)
+    #expect(try target.verified(hitPath: [1], in: root).get().match.index == 1)
+  }
+
+  @Test func retainsTheOriginalIdentityAfterDisplayFiltering() throws {
+    var button = node("button", label: "General")
+    button.snapshotPath = [2, 0]
+    let root = node("application", children: [node("window", children: [button])])
+    let target = try RunnerElementSelector(label: "General").resolve(in: root, screen: screen).get()
+    #expect(target.match.path == [2, 0])
+    #expect(try target.verified(hitPath: [2, 0, 1], in: root).get().match.node.label == "General")
+    #expect(try target.verified(hitPath: [0, 0], in: root).get().point == target.point)
+  }
+
+  @Test func ignoresAnInconsistentSafariServiceHit() throws {
+    // iOS 27 SafariViewService: AX reports Address for the visible Close/Cancel button, but the
+    // reported Address frame is far to its right. This is not evidence that the point is covered.
+    let root = node("application", frame: screen, children: [
+      node("button", identifier: "Close", label: "Cancel", frame: CGRect(x: 16, y: 78, width: 44, height: 44)),
+      node("other", label: "Address", frame: CGRect(x: 167, y: 87.667, width: 67.667, height: 20.333))
+    ])
+    let target = try RunnerElementSelector(identifier: "Close").resolve(in: root, screen: screen).get()
+    #expect(target.point == CGPoint(x: 38, y: 100))
+    #expect(RunnerElementTree.hitControl(at: target.point, path: [1], in: root) == nil)
+    #expect(try target.verified(hitPath: [1], in: root).get().point == target.point)
+    #expect(RunnerElementTree.hitControl(at: target.point, path: [99], in: root) == nil)
+    var control = root
+    control.children[1].type = "button"
+    #expect(try target.verified(hitPath: [1], in: control).get().point == target.point)
+  }
+
   @Test func parsesTimeoutAndLimit() {
     #expect(RunnerElementLookup.timeout(nil) == 0)
     #expect(RunnerElementLookup.timeout(NSNumber(value: 2.5)) == 2.5)

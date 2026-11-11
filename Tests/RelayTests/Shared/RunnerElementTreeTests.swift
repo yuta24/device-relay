@@ -4,6 +4,22 @@ import Foundation
 import Testing
 
 struct RunnerElementTreeTests {
+  @Test func verifiesHitsOnlyInCheckedCoordinateSpaces() {
+    let placed = RunnerWindowLookup.placed(RunnerWindowPlacement(
+      frame: CGRect(x: 120, y: 80, width: 600, height: 800), scaleX: 1, scaleY: 1
+    ))
+    for count in [0, 1] {
+      #expect(RunnerElementTree.canVerifyHit(window: nil, displayCount: count))
+      #expect(RunnerElementTree.canVerifyHit(window: .fullScreen, displayCount: count))
+      #expect(!RunnerElementTree.canVerifyHit(window: placed, displayCount: count))
+      #expect(!RunnerElementTree.canVerifyHit(window: .unknown("no window position"), displayCount: count))
+    }
+    for window in [nil, .fullScreen, placed, .unknown("no window position")] as [RunnerWindowLookup?] {
+      #expect(!RunnerElementTree.canVerifyHit(window: window, displayCount: 2))
+      #expect(!RunnerElementTree.canVerifyHit(window: window, displayCount: 3))
+    }
+  }
+
   private func node(_ type: String, children: [RunnerElementNode] = [], truncated: Bool = false) -> RunnerElementNode {
     RunnerElementNode(
       type: type, identifier: "", label: "", value: nil, placeholder: nil, frame: .zero,
@@ -81,9 +97,9 @@ struct RunnerElementTreeTests {
     return element
   }
 
-  private func filtered(_ children: [RunnerElementNode]) -> [String] {
+  private func filtered(_ children: [RunnerElementNode], verifyHit: (([Int], CGPoint) -> Bool?)? = nil) -> [String] {
     let root = element("application", label: "App", frame: screen, children: [element("window", frame: screen, children: children)])
-    return RunnerElementTree.interactiveElements(in: root, screen: screen).map { "\($0.type) \($0.label)\($0.identifier)" }
+    return RunnerElementTree.interactiveElements(in: root, screen: screen, verifyHit: verifyHit).map { "\($0.type) \($0.label)\($0.identifier)" }
   }
 
   /// The frame of the nth row of a list, so elements don't overlap.
@@ -143,7 +159,7 @@ struct RunnerElementTreeTests {
           element("button", label: "Dictate", frame: dictate)
         ])
       ])
-    ]) == ["button StandBy", "searchField Search", "button Dictate"])
+    ], verifyHit: { _, _ in false }) == ["button StandBy", "searchField Search", "button Dictate"])
   }
 
   /// A control's own contents and the controls before it are not on top of it.
@@ -151,7 +167,7 @@ struct RunnerElementTreeTests {
     #expect(filtered([
       element("button", label: "Background", frame: row(0)),
       element("cell", label: "Row", frame: row(0), children: [element("button", label: "Info", frame: row(0))])
-    ]) == ["cell Row", "button Info"])
+    ], verifyHit: { _, _ in false }) == ["cell Row", "button Info"])
   }
 
   /// Table cells often have no label of their own; their texts name them, and tapping a text hits the cell.
@@ -170,6 +186,83 @@ struct RunnerElementTreeTests {
                 children: [element("staticText", label: "General", frame: row(3))])
       ])])
     ]) == ["staticText Wi-Fi", "staticText Off", "button Generalcom.apple.settings.general"])
+  }
+
+  @Test func hitTestingKeepsFieldsInsideAnUnrelatedLabelRectangle() {
+    let root = element("application", frame: screen, children: [
+      element("secureTextField", label: "Password", frame: CGRect(x: 93, y: 214, width: 155, height: 21)),
+      element("button", label: "Sign in", frame: CGRect(x: 251, y: 214, width: 61, height: 21)),
+      element("switch", label: "I agree", frame: CGRect(x: 16, y: 211, width: 329, height: 46)),
+      element("button", label: "Plan", frame: CGRect(x: 63, y: 237, width: 72, height: 21))
+    ])
+    var checked: [[Int]] = []
+    let elements = RunnerElementTree.interactiveElements(in: root, screen: screen) { path, point in
+      checked.append(path)
+      return path == [0] && point == CGPoint(x: 170.5, y: 224.5) || path == [1] && point == CGPoint(x: 281.5, y: 224.5)
+    }
+    #expect(checked == [[0], [1]])
+    #expect(RunnerElementTree.interactiveElements(in: root, screen: screen).map(\.label)
+      == ["Password", "Sign in", "I agree", "Plan"])
+    #expect(RunnerElementTree.interactiveElements(in: root, screen: screen) { _, _ in nil }.map(\.label)
+      == ["Password", "Sign in", "I agree", "Plan"])
+    #expect(elements.map(\.label) == ["Password", "Sign in", "I agree", "Plan"])
+    #expect(RunnerElementTree.interactiveElements(in: root, screen: screen) { _, _ in false }.map(\.label)
+      == ["I agree", "Plan"])
+  }
+
+  @Test func filteringTreatsLabelContentAndOtherControlsDifferently() {
+    let root = element("application", frame: screen, children: [
+      element("switch", label: "I agree", frame: CGRect(x: 16, y: 211, width: 329, height: 46)),
+      element("staticText", label: "I agree", frame: CGRect(x: 16, y: 211, width: 329, height: 46)),
+      element("secureTextField", label: "Password", frame: CGRect(x: 93, y: 214, width: 155, height: 21))
+    ])
+    func filtered(hitPath: [Int]) -> [String] {
+      RunnerElementTree.interactiveElements(in: root, screen: screen) { path, point in
+        guard RunnerElementTree.hitControl(at: point, path: hitPath, in: root) != nil else { return nil }
+        return RunnerElementTree.isRelatedHit(hitPath, to: path)
+      }.map(\.label)
+    }
+    #expect(filtered(hitPath: [1]) == ["I agree", "Password"])
+    #expect(filtered(hitPath: [2]) == ["Password"])
+  }
+
+  @Test func filteringKeepsOverlappingControlsWhenHitCoordinatesAreUnchecked() {
+    let root = element("application", frame: screen, children: [
+      element("switch", label: "I agree", frame: CGRect(x: 16, y: 211, width: 329, height: 46)),
+      element("secureTextField", label: "Password", frame: CGRect(x: 93, y: 214, width: 155, height: 21))
+    ])
+    let placed = RunnerWindowLookup.placed(RunnerWindowPlacement(
+      frame: CGRect(x: 120, y: 80, width: 600, height: 800), scaleX: 1, scaleY: 1
+    ))
+    let contexts: [(RunnerWindowLookup?, Int)] = [(placed, 1), (.unknown("no position"), 1), (nil, 2), (.fullScreen, 2)]
+    for (window, count) in contexts {
+      var called = false
+      var verifyHit: (([Int], CGPoint) -> Bool?)?
+      if RunnerElementTree.canVerifyHit(window: window, displayCount: count) {
+        verifyHit = { _, _ in called = true; return false }
+      }
+      let listed = RunnerElementTree.interactiveElements(in: root, screen: screen, verifyHit: verifyHit)
+      #expect(!called)
+      #expect(listed.map(\.label) == ["I agree", "Password"])
+    }
+  }
+
+  @Test func keepsAnUnnamedCellsTextWhenTheHitIsItsAncestor() {
+    let root = element("application", frame: screen, children: [
+      element("cell", frame: row(0), children: [element("staticText", label: "General", frame: row(0))]),
+      element("button", label: "Overlay", frame: row(0))
+    ])
+    var checked: [[Int]] = []
+    let kept = RunnerElementTree.interactiveElements(in: root, screen: screen) { path, _ in
+      checked.append(path)
+      return RunnerElementTree.isRelatedHit([0], to: path)
+    }
+    #expect(checked == [[0, 0]])
+    #expect(kept.map(\.label) == ["General", "Overlay"])
+    let covered = RunnerElementTree.interactiveElements(in: root, screen: screen) { path, _ in
+      RunnerElementTree.isRelatedHit([1], to: path)
+    }
+    #expect(covered.map(\.label) == ["Overlay"])
   }
 
   @Test func buildsFilteredJSON() throws {

@@ -79,6 +79,8 @@ struct RunnerControlHintTests {
     let remote = RunnerControl.hint(for: .actionFailed, errorCode: .remoteViewPositionUnknown, infoURL: infoURL)
     #expect(remote?.contains("relay screenshot") == true && remote?.contains("relay tap <x> <y>") == true)
     // Codes whose message already says what to do get no hint.
+    #expect(RunnerControl.hint(for: .actionFailed, errorCode: .elementPointCovered, infoURL: infoURL)?
+      .contains("screenshot") == true)
     for code in [RunnerErrorCode.pointOffscreen, .invalidRequest, .elementNotHittable, .displayUnknown, .xcuiFailed, .touchFailed] {
       #expect(RunnerControl.hint(for: .actionFailed, errorCode: code, infoURL: infoURL) == nil, "\(code)")
     }

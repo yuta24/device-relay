@@ -18,6 +18,7 @@ struct RunnerErrorCodeTests {
       .elementNotFound: "element_not_found",
       .elementAmbiguous: "element_ambiguous",
       .elementNotHittable: "element_not_hittable",
+      .elementPointCovered: "element_point_covered",
       .noKeyboardFocus: "no_keyboard_focus",
       .displayUnknown: "display_unknown",
       .windowPositionUnknown: "window_position_unknown",

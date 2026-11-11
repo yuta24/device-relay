@@ -75,15 +75,15 @@ struct RunnerElementSelector: Equatable {
   /// Every matching element in document order (depth first, parents before children), ignoring `index`.
   func allMatches(in root: RunnerElementNode) -> [RunnerElementMatch] {
     var matches: [RunnerElementMatch] = []
-    func visit(_ node: RunnerElementNode) {
+    func visit(_ node: RunnerElementNode, path: [Int]) {
       if self.matches(node) {
         var element = node
         element.children = []
-        matches.append(RunnerElementMatch(index: matches.count, node: element))
+        matches.append(RunnerElementMatch(index: matches.count, node: element, path: node.snapshotPath ?? path))
       }
-      node.children.forEach(visit)
+      for (index, child) in node.children.enumerated() { visit(child, path: path + [index]) }
     }
-    visit(root)
+    visit(root, path: [])
     return matches
   }
 
@@ -132,7 +132,7 @@ struct RunnerElementSelector: Equatable {
     guard match.node.enabled else {
       return .failure(RunnerElementLookupFailure(reason: .disabled, count: matches.count, candidates: [match]))
     }
-    return .success(RunnerElementTarget(match: match, point: CGPoint(x: visible.midX, y: visible.midY)))
+    return .success(RunnerElementTarget(match: match, point: CGPoint(x: visible.midX, y: visible.midY), count: matches.count))
   }
 }
 
@@ -162,6 +162,9 @@ struct RunnerElementMatch: Sendable {
   /// The element without its children.
   var node: RunnerElementNode
 
+  /// Identity within the snapshot; attributes and frames need not be unique. Not serialized.
+  var path: [Int] = []
+
   /// The summary `/find`, `/tap`, and lookup errors return for an element.
   var json: [String: Any] {
     [
@@ -179,6 +182,15 @@ struct RunnerElementMatch: Sendable {
 struct RunnerElementTarget {
   var match: RunnerElementMatch
   var point: CGPoint
+  var count: Int = 1
+
+  /// Refuse only a control positively identified on an unrelated branch in this snapshot. An unavailable hit test
+  /// or an element absent from the tree (for example a remote view) preserves the existing touch.
+  func verified(hitPath: [Int]?, in root: RunnerElementNode) -> Result<RunnerElementTarget, RunnerElementLookupFailure> {
+    guard let hitPath, !RunnerElementTree.isRelatedHit(hitPath, to: match.path),
+          let hit = RunnerElementTree.hitControl(at: point, path: hitPath, in: root) else { return .success(self) }
+    return .failure(RunnerElementLookupFailure(reason: .pointCovered, count: count, candidates: [match], hit: hit))
+  }
 }
 
 /// Why a selector didn't lead to one element that can be touched; the runner answers 422 with `json`.
@@ -190,6 +202,7 @@ struct RunnerElementLookupFailure: Error {
     case emptyFrame
     case offscreen
     case disabled
+    case pointCovered
     /// The element is inside a view another process draws (the share sheet), and where it is on the screen
     /// can't be told (`RunnerRemoteViews`). Nothing was sent.
     case positionUnknown
@@ -203,6 +216,8 @@ struct RunnerElementLookupFailure: Error {
   var count: Int
   /// All matches for ambiguous and indexOutOfRange; the chosen element for the other reasons.
   var candidates: [RunnerElementMatch]
+  /// The known receiver at the touch point, for pointCovered only.
+  var hit: RunnerElementNode? = nil
 
   /// Waiting can make an element appear, scroll into view, or become enabled, but more matches won't
   /// go away by themselves, so an ambiguous selector fails without waiting out the timeout.
@@ -216,6 +231,7 @@ struct RunnerElementLookupFailure: Error {
     case .emptyFrame: return "the element has an empty frame"
     case .offscreen: return "the element is outside the screen"
     case .disabled: return "the element is disabled"
+    case .pointCovered: return "the touch point hits another control; nothing was sent"
     case .positionUnknown:
       return RunnerRemoteViews.touchError(candidates.first?.node.positionUnknown ?? "cannot tell where the element is on the screen")
     }
@@ -227,12 +243,13 @@ struct RunnerElementLookupFailure: Error {
     case .notFound, .indexOutOfRange: return .elementNotFound
     case .ambiguous: return .elementAmbiguous
     case .emptyFrame, .offscreen, .disabled: return .elementNotHittable
+    case .pointCovered: return .elementPointCovered
     case .positionUnknown: return .remoteViewPositionUnknown
     }
   }
 
   var json: [String: Any] {
-    [
+    var body: [String: Any] = [
       "ok": false,
       "code": code.rawValue,
       "error": message,
@@ -240,6 +257,10 @@ struct RunnerElementLookupFailure: Error {
       "count": count,
       "candidates": candidates.prefix(Self.candidateLimit).map(\.json)
     ]
+    if let hit {
+      body["hit"] = ["type": hit.type, "label": hit.label, "frame": RunnerElementTree.json(hit.frame)]
+    }
+    return body
   }
 }
 

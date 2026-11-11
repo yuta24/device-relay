@@ -21,6 +21,8 @@ struct RunnerElementNode: Sendable {
   var children: [RunnerElementNode]
   /// True when `children` was cut off by `maxDepth`; the element has more descendants than shown.
   var truncated = false
+  /// Identity in the original XCUI snapshot, retained when display/window transforms reshape the tree.
+  var snapshotPath: [Int]?
   /// The part of the screen where this element can be touched, when that is less than the whole screen:
   /// the visible part of an iPad window. Not in the JSON.
   var clip: CGRect?
@@ -36,6 +38,43 @@ struct RunnerElementNode: Sendable {
 }
 
 enum RunnerElementTree {
+  /// The hit-test coordinate space has only been checked without window/display placement.
+  /// Remote views in a full-screen app keep using the same verification as the app.
+  static func canVerifyHit(window: RunnerWindowLookup?, displayCount: Int) -> Bool {
+    guard displayCount <= 1 else { return false }
+    switch window {
+    case nil, .fullScreen?: return true
+    case .placed?, .unknown?: return false
+    }
+  }
+
+  /// Finds the receiver by its identity in the original snapshot, including after display filtering.
+  /// A path not present in this tree cannot establish that another element would receive the touch.
+  static func node(at path: [Int], in root: RunnerElementNode) -> RunnerElementNode? {
+    func visit(_ node: RunnerElementNode, path fallback: [Int]) -> RunnerElementNode? {
+      if (node.snapshotPath ?? fallback) == path { return node }
+      for (index, child) in node.children.enumerated() {
+        if let found = visit(child, path: fallback + [index]) { return found }
+      }
+      return nil
+    }
+    return visit(root, path: [])
+  }
+
+  /// A hit on a containing control is compatible with tapping its text, just as a hit on a
+  /// control's contents is compatible with tapping the control. Only a different branch can cover it.
+  static func isRelatedHit(_ hitPath: [Int], to targetPath: [Int]) -> Bool {
+    hitPath.starts(with: targetPath) || targetPath.starts(with: hitPath)
+  }
+
+  /// Only a known control can establish coverage. Text, images, and generic containers may forward
+  /// the touch to their label or cell. Reuse interactiveTypes without the listing's naming filters.
+  /// A frame or clip excluding the point is also inconclusive (Safari service chrome).
+  static func hitControl(at point: CGPoint, path: [Int], in root: RunnerElementNode) -> RunnerElementNode? {
+    guard let node = node(at: path, in: root), interactiveTypes.contains(node.type), node.frame.contains(point), node.clip?.contains(point) != false else { return nil }
+    return node
+  }
+
   /// `XCUIElement.ElementType` case names, indexed by raw value (XCUIElementTypes.h in Xcode 27).
   static let typeNames = [
     "any", "other", "application", "group", "window", "sheet", "drawer", "alert", "dialog", "button",
@@ -138,11 +177,13 @@ extension RunnerElementTree {
   /// cell often doesn't, its labeled static texts are kept instead (unless a named control inside it is
   /// listed): tapping one of them hits the control.
   ///
-  /// XCUI snapshots don't report hittability, so it is approximated: an element is dropped when its tap
-  /// point is under the keyboard (part of the app's tree) or inside a listed control that comes after it
-  /// in document order and is not its descendant, which is drawn on top. A sheet or overlay that isn't a
-  /// control doesn't hide what is under it.
-  static func interactiveElements(in root: RunnerElementNode, screen: CGRect) -> [RunnerElementNode] {
+  /// Keyboard coverage is checked from the snapshot. A later unrelated control covering the center
+  /// is only a possible obstruction (a wrapped web label's rectangle can surround other controls).
+  /// `verifyHit` drops such a candidate only when hit testing confirms an unrelated control.
+  /// Unknown hits keep the candidate. Overlays that aren't controls aren't filtered here; touches verify separately.
+  static func interactiveElements(
+    in root: RunnerElementNode, screen: CGRect, verifyHit: (([Int], CGPoint) -> Bool?)? = nil
+  ) -> [RunnerElementNode] {
     var keyboards: [CGRect] = []
     func findKeyboards(_ node: RunnerElementNode) {
       if node.type == "keyboard" {
@@ -173,9 +214,9 @@ extension RunnerElementTree {
 
     // Candidates in document order, with the position after their subtree, so that a later control
     // that isn't a descendant can be told apart from the candidate's own contents.
-    var candidates: [(node: RunnerElementNode, point: CGPoint, isControl: Bool, subtreeEnd: Int)] = []
+    var candidates: [(node: RunnerElementNode, point: CGPoint, isControl: Bool, subtreeEnd: Int, path: [Int])] = []
     var position = 0
-    func visit(_ node: RunnerElementNode, insideUnlabeledControl: Bool) {
+    func visit(_ node: RunnerElementNode, path: [Int], insideUnlabeledControl: Bool) {
       guard node.type != "keyboard" else { return }
       position += 1
       var candidate: Int?
@@ -183,29 +224,31 @@ extension RunnerElementTree {
       if isListedControl(node) {
         if node.enabled, let point = tapPoint(node) {
           candidate = candidates.count
-          candidates.append((withoutChildren(node), point, true, 0))
+          candidates.append((withoutChildren(node), point, true, 0, node.snapshotPath ?? path))
         }
       } else if interactiveTypes.contains(node.type) {
         // A Settings cell holds a named button, which is listed instead of the texts.
         unlabeledControl = node.enabled && !containsListedControl(node)
       } else if insideUnlabeledControl, node.type == "staticText", isNamed(node), let point = tapPoint(node) {
         candidate = candidates.count
-        candidates.append((withoutChildren(node), point, false, 0))
+        candidates.append((withoutChildren(node), point, false, 0, node.snapshotPath ?? path))
       }
-      node.children.forEach { visit($0, insideUnlabeledControl: unlabeledControl) }
+      for (index, child) in node.children.enumerated() {
+        visit(child, path: path + [index], insideUnlabeledControl: unlabeledControl)
+      }
       if let candidate {
         candidates[candidate].subtreeEnd = position
       }
     }
-    visit(root, insideUnlabeledControl: false)
+    visit(root, path: [], insideUnlabeledControl: false)
 
-    // Later siblings are drawn on top (a bottom search bar over the last cells, the second of two
-    // identical buttons), so a tap at a point a later control covers would hit that control. Later
-    // candidates are either descendants, whose subtree ends with the candidate's, or come after it.
+    // Later controls may be drawn on top, but bounding rectangles alone don't prove that. Descendants
+    // aren't obstructions; a later unrelated candidate ends after this candidate's subtree.
     return candidates.enumerated().filter { index, candidate in
-      !candidates[(index + 1)...].contains { later in
+      let possiblyCovered = candidates[(index + 1)...].contains { later in
         later.isControl && later.subtreeEnd > candidate.subtreeEnd && later.node.frame.contains(candidate.point)
       }
+      return !possiblyCovered || verifyHit?(candidate.path, candidate.point) != false
     }.map(\.element.node)
   }
 

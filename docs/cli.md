@@ -296,6 +296,7 @@ code を返さない古いランナーでは、`401`・`409` のヒントだけ�
 | `element_not_found` | `relay find --type …` / `relay source` で画面を確かめるか、`--timeout <秒>` で待つ |
 | `element_ambiguous` | `--type`・`--label`・`--id` を足すか、候補から `--index <n>` で選ぶ |
 | `touch_mode_unavailable` | `--mode` を外すか、エラーが示す経路で送り直す |
+| `element_point_covered` | `relay screenshot` / `relay source` で対象を確かめ、覆いを閉じるか、スクリーンショットで確認した座標を指定する |
 | `covered_by_other_app` | `relay screenshot` か `relay find --type alert --bundle-id com.apple.springboard` で覆っている画面を確かめ、閉じてから送り直す |
 | `remote_view_position_unknown` | `relay screenshot` で位置を確かめ、`relay tap <x> <y>` で座標を指定する |
 | `not_found` | ランナーが relay より古いかもしれない（`relay start --rebuild` でビルドし直す） |

@@ -9,7 +9,13 @@
 - (pid_t)processIdentifier;
 @end
 
+@protocol RelayHitSnapshot <NSObject>
+- (id)accessibilityElement;
+- (NSArray<id<RelayHitSnapshot>> *)children;
+@end
+
 @protocol RelayXCAXClient <NSObject>
+- (id)hitTestElement:(id)element withPoint:(CGPoint)point error:(NSError **)error;
 - (NSArray<id<RelayXCAccessibilityElement>> *)activeApplications;
 @end
 
@@ -120,6 +126,50 @@ static NSString *const RelayActiveApplicationErrorDomain = @"RelayActiveApplicat
         return nil;
     }
     return applications;
+}
+
++ (nullable NSArray<NSNumber *> *)pathOfElement:(id)element inSnapshot:(id<RelayHitSnapshot>)snapshot {
+    if (![snapshot respondsToSelector:@selector(accessibilityElement)] ||
+        ![snapshot respondsToSelector:@selector(children)]) {
+        return nil;
+    }
+    if ([[snapshot accessibilityElement] isEqual:element]) {
+        return @[];
+    }
+    NSUInteger index = 0;
+    for (id<RelayHitSnapshot> child in [snapshot children]) {
+        NSArray<NSNumber *> *suffix = [self pathOfElement:element inSnapshot:child];
+        if (suffix != nil) {
+            return [@[@(index)] arrayByAddingObjectsFromArray:suffix];
+        }
+        index++;
+    }
+    return nil;
+}
+
++ (nullable NSArray<NSNumber *> *)hitPathAtPoint:(CGPoint)point snapshot:(id)snapshot {
+    if ([NSProcessInfo.processInfo.environment[@"RELAY_DISABLE_PRIVATE_HITTEST"] isEqualToString:@"1"]) {
+        return nil;
+    }
+    XCUIDevice *device = XCUIDevice.sharedDevice;
+    if (![device respondsToSelector:@selector(accessibilityInterface)]) {
+        return nil;
+    }
+    id<RelayXCAXClient> client = [(id<RelayXCUIDeviceAccessibility>)device accessibilityInterface];
+    if (![client respondsToSelector:@selector(hitTestElement:withPoint:error:)] ||
+        ![snapshot respondsToSelector:@selector(accessibilityElement)]) {
+        return nil;
+    }
+    id applicationElement = [(id<RelayHitSnapshot>)snapshot accessibilityElement];
+    if (applicationElement == nil) {
+        return nil;
+    }
+    NSError *error = nil;
+    id hit = [client hitTestElement:applicationElement withPoint:point error:&error];
+    if (hit == nil || error != nil) {
+        return nil;
+    }
+    return [self pathOfElement:hit inSnapshot:snapshot];
 }
 
 @end
