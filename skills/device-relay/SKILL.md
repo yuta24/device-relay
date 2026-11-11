@@ -20,7 +20,7 @@ Details are in topic files under `references/` (index: [reference.md](reference.
 relay status                                 # 0: a runner answers, use it. 3: none. 4: token rejected
 relay devices                                # NAME, UDID, KIND, OS, STATE
 relay start --background --device "<name>"   # or --udid; --os narrows. Note the pid: it prints
-relay launch <bundle-id>                     # the app must already be installed
+relay launch <bundle-id>                     # not installed? relay install <path>
 relay screenshot --scale 1                   # prints a path; read it as an image
 relay source --format compact --filter interactive   # operable elements, one per line
 relay find --type button                     # elements matching a selector (JSON)
@@ -68,7 +68,7 @@ relay stop                                   # when done, if you started it
   - `element_not_hittable`: `offscreen` → scroll; `disabled` → do the prior step; `emptyFrame` → observe again
   - `no_keyboard_focus`: tap the text field, resend
   - `covered_by_other_app`: an alert etc. covers the app: `relay screenshot`, close it, resend
-  - `app_not_installed`: check the bundle ID (case-sensitive) or install the app
+  - `app_not_installed`: check the bundle ID (case-sensitive) or install it (`relay install <path>`)
   - `point_offscreen` (7): re-read `screen` in `relay health`
   - others: [list of codes](references/failures.md#list-of-codes)
 
@@ -78,13 +78,11 @@ Device asking for its passcode during automation mode (`Failed to initialize for
 
 ## More
 
-Each file stands alone; read only the one you need:
-
 - [starting-and-stopping](references/starting-and-stopping.md): `start` options, which device, the app, doctor, `relay skill`
 - [start-status-stop](references/start-status-stop.md): their output and exit codes
 - [sessions](references/sessions.md): parallel sessions, runner.json lookup
 - [sandbox](references/sandbox.md): `Operation not permitted`
-- [commands](references/commands.md): options, timeouts, deep links (`open`)
+- [commands](references/commands.md): options, timeouts, deep links (`open`), `install`
 - [element-tree](references/element-tree.md): `source` formats, selectors
 - [failures](references/failures.md): all exit codes, `code`s, `reason`s
 - [coordinates](references/coordinates.md): orientation, iPad windows, iPhone Duo

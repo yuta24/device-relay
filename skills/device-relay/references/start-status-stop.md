@@ -1,6 +1,6 @@
 # start --background / status / stop
 
-See "バックグラウンドで動かす" in docs/sessions.md of device-relay for details.
+See "バックグラウンドで動かす（relay start --background / status / stop）" in docs/sessions.md of device-relay for details.
 
 **`relay start --background`**: starts `relay start` with the same options as a new session (it survives closing the terminal; stdin is `/dev/null`, output goes to `~/.relay/logs/start-<time>-<port>.log`), then reads that log and waits.
 
