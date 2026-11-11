@@ -182,12 +182,11 @@ struct RunnerArgumentsTests {
     #expect(try Arguments.parse(["help", "start"]) == .commandHelp("start"))
     #expect(try Arguments.parse(["help", "bogus"]) == .help)
     #expect(Arguments.usage(for: "swipe").contains("relay swipe <x1> <y1> <x2> <y2>"))
-    // Every runner command is in the overall usage, except shutdown: relay stop is what stops a runner.
-    for name in Arguments.runnerUsages.keys where name != "shutdown" {
+    // Every runner command is in the overall usage, shutdown included (with a note pointing to relay stop).
+    for name in Arguments.runnerUsages.keys {
       #expect(Arguments.usage.contains("relay \(name)"))
     }
-    #expect(!Arguments.usage.contains("shutdown"))
-    #expect(!Arguments.listedRunnerCommands.contains("shutdown"))
+    #expect(Arguments.listedRunnerCommands == Arguments.runnerCommandOrder)
     #expect(Set(Arguments.runnerCommandOrder) == Set(Arguments.runnerUsages.keys))
     // It still has its help, which says to use relay stop first.
     #expect(try Arguments.parse(["shutdown", "--help"]) == .commandHelp("shutdown"))
