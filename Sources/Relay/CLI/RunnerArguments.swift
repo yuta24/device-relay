@@ -322,6 +322,63 @@ extension Arguments {
         rejected (401).
       """
     ),
+    "logs": (
+      """
+      relay logs [--bundle-id <id>] [--since 5m] [-o <file>] [<target>]
+        relay logs --follow [--bundle-id <id>] [-o <file>] [<target>]
+        relay logs --archive <path> [--since <time>] [-o <file>] [<target>]
+        <target>: --session <name> | --runner <path> | --udid <udid>
+      """,
+      """
+      Reads the unified log (Logger, os_log, NSLog) of the simulator or device the runner in runner.json
+      runs on, on the Mac and without the runner: it works while the runner is busy, and --udid needs no
+      runner at all (after relay stop, for example). An app's stdout and stderr (print) are not in it.
+      --since 5m (s, m, h, d) or --since 2026-11-11T00:20:00Z (RFC 3339 with a time zone) is where it
+      starts; 5 minutes by default. Note the time before a test, and pass it after a failure.
+      --bundle-id <id> (host: the runner's host app) keeps the lines of the app's main executable as
+      installed now (its UUID): not its extensions, nor lines of an earlier build.
+      Prints one JSON object: {"ok":true,"backend":..,"count":n,"device":{..},"entries":[{"category":..,
+      "level":..,"message":..,"process":..,"processID":..,"subsystem":..,"timestamp":..}],"filter":..,
+      "limitations":[..],"range":{..}}. -o <file> writes it to a new file (mode 0600) and prints a
+      summary with its path instead. Debug lines are not kept in the past log; --follow shows them.
+      --follow (simulators) prints new lines as NDJSON until SIGINT or SIGTERM: {"type":"start"}, one
+      {"type":"log",..} per line, then {"type":"end"} (exit 130 or 143). An error after the start is
+      {"type":"error","ok":false,"code":..,"partial":true} (exit 1). With -o the lines go to the file.
+      A device's log needs an administrator to collect (log collect --device-udid): relay does not run
+      sudo and fails with logs_permission_denied, whose hint is the command to run. --archive <path>
+      reads the .logarchive it writes (the whole archive unless --since).
+      --bundle-id works on simulators only: on a device or with --archive it is logs_filter_unsupported.
+      Exit status: 0 ok (0 lines included), 1 not a booted simulator or a connected device
+        (device_unavailable), no administrator (logs_permission_denied), --follow on a device
+        (logs_follow_unsupported), --bundle-id where it does not work (logs_filter_unsupported), an
+        app that is not installed (log_app_unavailable), log failing or printing more than 64 MiB
+        (logs_unavailable), -o not written (logs_save_failed), 2 usage, 3 no runner.json.
+      """
+    ),
+    "crashes": (
+      """
+      relay crashes [--bundle-id <id>] [--since 24h] [--name <name>] [-o <dir>]
+          [--session <name> | --runner <path> | --udid <udid>]
+      """,
+      """
+      Lists the crash reports (.ips) of the simulator or device the runner in runner.json runs on, or of
+      --udid, as one JSON object: {"ok":true,"count":n,"reports":[{"name":..,"relativePath":..,..}],..}.
+      --since 24h (s, m, h, d) or an RFC 3339 time is where the list starts; 24 hours by default.
+      A simulator's are in ~/Library/Logs/DiagnosticReports of the Mac: relay keeps those whose process
+      ran in that simulator, with the process, bundleID, and the time it crashed (occurredAt).
+      --bundle-id keeps one app's. Reports it cannot read are counted in unreadable.
+      A device's come from devicectl (systemCrashLogs) without being opened: the name, the time the file
+      was written (modifiedAt), and a processHint from the name; bundleID is null, so --bundle-id is
+      crash_filter_unsupported. They are candidates: not all are crashes of an app.
+      --name <name> keeps the one with that relativePath, whatever --since and --bundle-id say.
+      -o <dir> copies the reports listed into that existing directory (mode 0600) and adds each one's
+      path; an existing file is not replaced. On a device, -o copies only the one --name chooses.
+      Exit status: 0 ok (0 reports included), 1 not a simulator or a connected device
+        (device_unavailable), --bundle-id on a device (crash_filter_unsupported), the list failing
+        (crashes_unavailable), a report not saved (crashes_save_failed), 2 usage (-o without --name on
+        a device included), 3 no runner.json.
+      """
+    ),
     "run": (
       "relay run (<file> | - | --step <step>...) [--check] [--runner <path> | --session <name>] [--quiet]",
       """

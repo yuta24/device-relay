@@ -157,6 +157,8 @@ A physical device needs the following before `relay start`. For details, see [хо
 | `relay button` / `relay orientation` | Press a hardware button / change the device orientation |
 | `relay run` (experimental) | Run a scenario of one step per line, in order |
 | `relay record start` / `relay record stop` | Record the screen of a simulator or a device connected with USB to an MP4 / stop and print where it was saved (a device needs camera access the first time) |
+| `relay logs` | Print an app's log as JSON (`--since` for the period, `--bundle-id` for the app, `--follow` to keep reading; a device needs an administrator) |
+| `relay crashes` | List crash reports as JSON / save them with `-o` (on a device, candidates listed without opening them) |
 | `relay skill install` | Install the skill for coding agents, into the target app's repository for example |
 | `relay config` | Show or change settings (Team ID, bundle ID prefix) |
 
@@ -186,7 +188,7 @@ Detailed documentation in docs/ is currently in Japanese.
 | New users | [docs/setup.md](docs/setup.md) | Installing and updating, preparing the Runner (`relay install`), choosing a device, checking the environment (`relay doctor`), simulators |
 | New users | [docs/device.md](docs/device.md) | Preparing physical devices, UI Automation and the passcode, Team ID, bundle ID prefixes, connection paths, the home and volume buttons, preparing to record |
 | Regular users | [docs/sessions.md](docs/sessions.md) | Starting and stopping, checking liveness, after a forced kill, finding the runner (runner.json), parallel sessions, when an external command does not answer, agent sandboxes, cleaning up logs and test results |
-| Regular users | [docs/cli.md](docs/cli.md) | CLI subcommands, output and exit codes, choosing and launching apps, running scenarios (`relay run`, experimental), recording (`relay record`), the agent skill |
+| Regular users | [docs/cli.md](docs/cli.md) | CLI subcommands, output and exit codes, choosing and launching apps, running scenarios (`relay run`, experimental), recording (`relay record`), logs and crash reports (`relay logs`, `relay crashes`), the agent skill |
 | Regular users | [docs/http-api.md](docs/http-api.md) | HTTP API endpoints and status codes, the `/health` response, authentication, concurrent requests and liveness checks (`/ping`), the foreground app, text input and special keys |
 | Regular users | [docs/elements.md](docs/elements.md) | The element tree (`/source`, compact, interactive), element selectors, elements in share sheets, when another app covers the target, waiting (timeout), system permission dialogs |
 | Regular users | [docs/screen.md](docs/screen.md) | The coordinate system and screen orientation, shrinking screenshots, iPad windowing, devices with more than one display (iPhone Duo) |

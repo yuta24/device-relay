@@ -10,6 +10,9 @@ enum Command: Equatable {
   case stop(RunnerStopOptions)
   /// `relay record start|stop|status` (simulators, and devices plugged in with USB).
   case record(RecordOptions)
+  /// `relay logs` and `relay crashes`: read on the host, without the runner (see `DeviceLogs`, `CrashReports`).
+  case logs(LogsOptions)
+  case crashes(CrashesOptions)
   case devices(json: Bool, os: String?)
   case doctor(DoctorOptions)
   case config(ConfigOptions)
@@ -109,7 +112,8 @@ enum Arguments {
   /// Every option that takes no value, whichever command it belongs to: `--opt=value` on one of them is an error.
   static let valuelessOptions: Set<String> = [
     "--json", "--simulator", "--rebuild", "--verbose", "--allow-wifi", "--background", "--all", "--stdin",
-    "--require", "--quiet", "--check", "--force", "--build", "--remove", "--link", "--global", "--help", "--version"
+    "--require", "--quiet", "--check", "--force", "--build", "--remove", "--link", "--global", "--help", "--version",
+    "--follow"
   ]
 
   /// Rewrites `--opt=value` as `--opt value`, the one form the parsers read, before any of them looks at the
@@ -222,6 +226,10 @@ enum Arguments {
       return try parseRun(rest)
     case "record":
       return try parseRecord(rest)
+    case "logs":
+      return try parseLogs(rest)
+    case "crashes":
+      return try parseCrashes(rest)
     case "devices":
       var json = false
       var os: String?
@@ -511,6 +519,14 @@ enum Arguments {
     relay record stop
     relay record status [--json]
     """),
+    (["logs"], """
+    relay logs [--bundle-id <ID>] [--since 5m] [--follow] [--archive <PATH>] [-o <file>]
+        [--session <NAME> | --runner <PATH> | --udid <UDID>]
+    """),
+    (["crashes"], """
+    relay crashes [--bundle-id <ID>] [--since 24h] [--name <NAME>] [-o <dir>]
+        [--session <NAME> | --runner <PATH> | --udid <UDID>]
+    """),
     (["install", "uninstall"], "relay install [--project <PATH>] [--build [--verbose]] | relay install --remove | relay uninstall"),
     (["skill"], """
     relay skill install [--global | --dir <skills dir>] [--link] [--force]
@@ -587,6 +603,13 @@ enum Arguments {
            MP4 (detached from the terminal) until relay record stop, which prints the video's path, or
            until --max-duration seconds. A device needs camera access for the terminal. relay record
            --help for details.
+  logs     Prints the unified log of the runner's simulator or device (or --udid) as one JSON object:
+           the last 5 minutes, or --since; --bundle-id keeps the app's own lines. --follow prints
+           new lines as NDJSON (simulators only). A device needs an administrator to collect its
+           log, and relay does not run sudo; --archive reads a .logarchive collected that way.
+  crashes  Lists the crash reports of the simulator (the Mac's DiagnosticReports) or device
+           (devicectl) of the last 24 hours, or --since, as one JSON object; -o <dir> saves them (on
+           a device, the one --name chooses). relay crashes --help for details.
   install  Only needed for a relay binary copied away from its directory: copies the runner
            project and the agent skill from the extracted release or checkout (--project,
            $RELAY_HOME, the current directory, or the relay executable's directory) to

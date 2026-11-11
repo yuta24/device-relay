@@ -425,6 +425,52 @@ PID だけでなく、起動時刻と実行ファイル名・引数も一致し�
 切り離した内部用のプロセス `relay record supervise` が、自動停止までの時間を数えます。
 シミュレータなら simctl に SIGINT を送り、実機なら自分で書き出しを終えます。
 
+## ログとクラッシュ記録の実装の背景
+
+`relay logs` と `relay crashes` は、ランナーの HTTP API を使わず、CLI の側で `simctl`・`devicectl`・`log` を呼びます。
+ランナーが busy のときや、`relay stop` の後（`--udid`）にも調べられるようにするためです。利用者向けの説明は「[ログとクラッシュ記録（relay logs / relay crashes）](cli.md#ログとクラッシュ記録relay-logs--relay-crashes)」にあります。
+
+### ログの読み方
+
+`log` の出力は、ファイルにもメモリにも溜めず、1 行ずつ読んで正規化します（`LogProcess.stream`、`LogCollector`）。
+シミュレータ全体の `log show --style ndjson` は 2 分で約 37 MB（約 2.4 万行）あり、生の出力に上限を掛けると数分しか読めないためです。
+上限の 64 MiB は、relay が出す JSON の大きさに掛けます。
+
+`Shell` は stdout と stderr を混ぜ、終わるまで出力を溜めるため使いません。stderr は末尾だけを失敗の理由に使います。
+`log` の stderr には、成功しても `getpwuid_r did not find a match for uid …` が出ます。理由からはこの行を除きます。
+
+| `log` の行 | 扱い |
+| --- | --- |
+| `eventType` が `logEvent` | `entries` の 1 行にします。 |
+| ほかの `eventType`（`activityCreateEvent` など） | 数だけを `skippedEvents` に入れます。 |
+| `log show` の最後の `{"count":…,"finished":1}` | 読み飛ばします。 |
+| `log stream` の最初の `Filtering the log data using …` と空行 | stderr に回します。 |
+| それ以外（JSON でない行など） | 飛ばさずに `logs_unavailable` で失敗します。 |
+
+### アプリの絞り込み
+
+`--bundle-id` は、`log` に `process == "<実行ファイル名>"` を渡し、relay が `processImageUUID` を比べて絞ります。
+UUID は、`simctl get_app_container` で得た `.app` の実行ファイルの LC_UUID です（`MachO.uuids`）。
+
+`processImagePath` の完全一致で絞らないのは、同じ UUID の実行ファイルを入れ直すと、過去のログが最初のパスを記録し続けたためです。
+`log stream` は今のパスを出しましたが、`log show` は前のコンテナのパスを出し、今のパスでは 0 件でした。
+
+`processImageUUID == "<UUID>"` の predicate も試しましたが、一致する行がありませんでした。
+`process ==` だけでは、同じ名前の別のアプリと前のビルドの行が混ざるため、UUID も比べます。
+
+### 実機とクラッシュ記録
+
+実機のログは `log collect --device-udid` が要りますが、一般のユーザーでは終了コード 77 で `Must be admin to run 'collect' command` でした。
+relay は sudo も認証ダイアログも出さず、`logs_permission_denied` と、自分で実行するコマンドを返します。
+
+実機のクラッシュ記録は、`devicectl` の一覧にプロセス名もバンドル ID も発生時刻もありません。
+本文を開くと、ほかのアプリの記録まで端末から取り出すことになるため、一覧はメタデータだけにし、保存は `--name` の 1 件に限ります。
+
+シミュレータの記録は Mac 全体のフォルダーにあるので、`procPath` の `/CoreSimulator/Devices/<UDID>/` で対象を選びます。
+`procPath` のホームの部分は `/Users/USER/` のように伏せられていることがあるため、パス全体では比べません。
+
+確かめた環境: iPhone 18 Pro シミュレータ（iOS 27.2）と USB 接続の iPhone 14 Pro（iOS 26.7.1）、macOS 27.2.1、Xcode 27.2。
+
 ## 文書の書き方
 
 README と `docs/` を書くときの決まりです。`skills/` は配布物なので、この決まりでは書き直しません（下の「skills との関係」）。

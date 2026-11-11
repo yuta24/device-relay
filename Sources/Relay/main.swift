@@ -86,6 +86,10 @@ do {
     exit(RunnerStop.run(options))
   case .record(let options):
     exit(Recording.run(options))
+  case .logs(let options):
+    exit(DeviceLogs.run(options))
+  case .crashes(let options):
+    exit(CrashReports.run(options))
   case .help:
     print(Arguments.usage)
   case .commandHelp(let name):

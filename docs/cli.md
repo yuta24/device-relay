@@ -48,6 +48,8 @@ relay stop                                     # relay start ごと止める（b
 relay run about.relay                          # 1 行 1 手順のシナリオを順に実行（実験的。下の「シナリオの実行」）
 relay record start                             # 画面の録画を始める（下の「録画」。シミュレータと USB 接続の実機）
 relay record stop                              # 録画を止め、MP4 の絶対パスを出力
+relay logs --bundle-id com.example.app --since 5m   # アプリのログ（下の「ログとクラッシュ記録」）
+relay crashes                                  # 直近 24 時間のクラッシュ記録の一覧
 ```
 
 ### サブコマンドの一覧
@@ -71,12 +73,15 @@ relay record stop                              # 録画を止め、MP4 の絶対
 | `stop` | `relay start` への SIGTERM（なければ `POST /shutdown`） | – |
 | `run`（実験的） | 手順ごとに上のエンドポイント | `<file>` か `-` か `--step <手順>`（複数可）、`--runner`、`--session`、`--quiet` |
 | `record start` / `stop` / `status` | –（ホスト側で録画） | `-o <file>`、`--force`、`--max-duration <s>`（start）、`--json`（status）、`--port <n>`（stop・status）、`--runner`、`--session` |
+| `logs` | –（ホスト側で `log` を読む） | `--bundle-id <id>`、`--since <時間>`、`--follow`、`--archive <path>`、`-o <file>`、`--session`・`--runner`・`--udid` |
+| `crashes` | –（ホスト側で記録を読む） | `--bundle-id <id>`、`--since <時間>`、`--name <relativePath>`、`-o <dir>`、`--session`・`--runner`・`--udid` |
 
 `shutdown` はコマンドの一覧には載せません。普段は `relay stop` を使います（「[shutdown と stop](sessions.md#shutdown-と-stop)」）。
 
 `status` の終了コードは「[バックグラウンドで動かす](sessions.md#バックグラウンドで動かすrelay-start---background--status--stop)」を参照してください。
 
 `run` は「[シナリオの実行（relay run、実験的）](#シナリオの実行relay-run実験的)」、`record` は「[録画（relay record）](#録画relay-record)」で説明します。
+`logs` と `crashes` は「[ログとクラッシュ記録（relay logs / relay crashes）](#ログとクラッシュ記録relay-logs--relay-crashes)」で説明します。
 
 ### 観察と要素の検索
 
@@ -323,6 +328,7 @@ runner.json がない、接続できない、アプリが入っていない、�
 | `source --format text` / `compact` | テキスト |
 | `relay screenshot` の成功 | 保存先のパス 1 行 |
 | `screenshot -o -` | stdout は画像そのものなので、失敗時の JSON は stderr |
+| `logs --follow` | 1 行に JSON 1 つの NDJSON（「[ログを追う](#ログを追う--follow)」） |
 | 書き方の誤り（終了コード 2） | stderr に誤りとヘルプの案内の 2 行だけで、stdout は空 |
 
 書き方の誤りでは、`relay: <誤りの内容>` と `relay: see relay <command> --help` を出します。
@@ -332,6 +338,7 @@ relay が自分で出す JSON は、すべて **1 行・キーを辞書順・`/`
 次が対象です。ランナーが返した JSON はそのままなので、ランナーの書式です。
 
 - `status --json`・`status --all --json`・`record status --json`・`devices --json`・`doctor --json`
+- `logs`・`crashes`（`logs --follow` の各行も同じ形）
 - relay 側の失敗と、`find --require` の一致なし
 
 #### 終了コードの一覧
@@ -349,6 +356,7 @@ relay が自分で出す JSON は、すべて **1 行・キーを辞書順・`/`
 | `6` | `422` の XCUI の失敗（フォーカスがない、要素が見つからない・1 つに決まらない、URL を開けないなど）、または `relay launch`・`relay open --bundle-id` の `app_not_installed` |
 | `7` | `400` とその他の 4xx |
 | `8` | 5xx などそれ以外 |
+| `130` / `143` | `relay logs` を SIGINT / SIGTERM で止めた（`--follow` を止めたときを含む） |
 
 終了コード `3` なら `relay status` で確認し、動いていなければ `relay start --background` で起動してください。
 
@@ -370,6 +378,16 @@ relay 自身は次の `code` を出します。ランナーは返しません。
 | `screenshot_save_failed` | `1` | 画像を受け取ったが、ファイルに保存できない |
 | `app_not_installed` | `6` | `launch` と `open --bundle-id` で、アプリが端末に入っていない（ランナーには送らない） |
 | `element_not_found` | `6` | `find --require` で一致なし（ランナーの `code` と同じで、`count`・`elements` も付く） |
+| `device_unavailable` | `1` | `logs`・`crashes` で、UDID の端末がない、シミュレータが boot していない（logs）、実機が接続していない |
+| `logs_unavailable` | `1` | `log` が失敗した・時間切れ・読めない行を出した、出す JSON が 64 MiB を超えた |
+| `logs_permission_denied` | `1` | 実機のログの収集に管理者の権限が要る（`hint` に自分で実行するコマンド） |
+| `logs_follow_unsupported` | `1` | 実機の `logs --follow` |
+| `logs_filter_unsupported` | `1` | 実機の `logs --bundle-id`、`--archive` と `--bundle-id` の併用 |
+| `log_app_unavailable` | `1` | `logs --bundle-id` のアプリがシミュレータに入っていない、実行ファイルを読めない |
+| `logs_save_failed` | `1` | `logs -o` のファイルを作れない・書けない（同じ名前のファイルがあるときを含む） |
+| `crashes_unavailable` | `1` | クラッシュ記録の一覧を取れない、`--name` の記録が一覧にない |
+| `crash_filter_unsupported` | `1` | 実機の `crashes --bundle-id` |
+| `crashes_save_failed` | `1` | `crashes -o` で、保存できない記録がある、ディレクトリがない |
 
 JSON 形式の状態確認の失敗も、stdout に JSON を 1 つ出します。stderr に同じ文は出しません。
 
@@ -378,6 +396,7 @@ JSON 形式の状態確認の失敗も、stdout に JSON を 1 つ出します�
 | `relay status --json` | 上記と同じ形に `alive:false` を追加 |
 | `relay record status --json` | `runner_unavailable` か `recording_unavailable` |
 | `relay devices --json` | `devices_unavailable`（終了コード 1）の `{"ok":false,"code":…,"error":…}` |
+| `relay logs`・`relay crashes` | 上の表の `code`。`crashes -o` の一部失敗は、一覧の JSON に `ok:false` と `code` を足したもの |
 
 終了コードは、ランナーに送らない `app_not_installed` を除いて、ステータスだけで決まります。
 同じ終了コード内の違いは `code` で判断します。たとえば `6` のうち、フォーカスがないのか、要素が 1 つに決まらないのかを区別できます。
@@ -790,6 +809,221 @@ relay: no frame for 5s (the device may be locked, or the capture stalled); still
 
 ロックを解除すればふつうは再開します。再開しなければ `record stop` し、ロックを解除してから録画し直してください。
 
+## ログとクラッシュ記録（relay logs / relay crashes）
+
+`relay logs` はアプリのログ（Unified Logging）を、`relay crashes` はクラッシュ記録（`.ips`）を、JSON で出します。
+テストが失敗したとき、画面と要素ツリーのほかに、アプリが出したログと落ちた記録から原因を調べるために使います。
+
+どちらもランナーを使わず、Mac 側で `simctl`・`devicectl`・`log` を呼びます。ランナーが busy の間も使えます。
+シミュレータと実機で、取れる範囲が違います。
+
+| 機能 | シミュレータ | 実機 |
+| --- | --- | --- |
+| 過去のログ | 取れます。 | 管理者の権限が要るため、relay は `logs_permission_denied` で失敗し、取り方を案内します。 |
+| ログを追う（`--follow`） | 取れます。 | 対応していません（`logs_follow_unsupported`）。 |
+| アプリで絞る（`--bundle-id`） | 取れます。 | 対応していません（`logs_filter_unsupported`）。 |
+| クラッシュ記録の一覧 | 発生時刻とバンドル ID 付きで取れます。 | 記録を開かずに、名前と書き込み時刻だけを候補として出します。 |
+| クラッシュ記録の保存 | 取れます。 | `--name` で選んだ 1 件だけで、保存は確かめていません。 |
+
+```sh
+date -u +%Y-%m-%dT%H:%M:%SZ          # テストの前に時刻を控える（例: 2026-11-11T01:40:24Z）
+relay logs --bundle-id com.example.app --since 2026-11-11T01:40:24Z   # その後のアプリのログ
+relay logs --since 10m -o app-logs.json                              # 端末全体の直近 10 分をファイルに
+relay logs --follow --bundle-id com.example.app                      # 新しい行を NDJSON で流し続ける（Ctrl-C で止める）
+relay crashes --since 2026-11-11T01:40:24Z                           # その後のクラッシュ記録の一覧
+relay crashes --bundle-id com.example.app -o crashes                 # 既存のディレクトリ crashes に保存
+relay logs --udid <UDID> --since 5m                                  # relay stop の後でも、UDID を指定して
+```
+
+### 対象の端末
+
+`relay logs` と `relay crashes` は、runner.json の UDID から対象の端末を決めます。
+runner.json は「[接続先（runner.json）の探し方](sessions.md#接続先runnerjsonの探し方)」と同じ順に探し、`--session` と `--runner` も使えます。
+
+`--udid <UDID>` を付けると runner.json を探しません。`RELAY_SESSION` などが設定されていても、`--udid` が優先です。
+`relay stop` の後は runner.json がないので、`relay devices` の UDID を渡してください。
+
+| 指定 | 結果 |
+| --- | --- |
+| `--udid` と `--session`・`--runner` の両方 | 書き方の誤りで `2` |
+| 指定したセッション・runner.json がない | `runner_unavailable` で `3` |
+| どのシミュレータ・実機にもない UDID | `device_unavailable` で `1` |
+| boot していないシミュレータのログ | `device_unavailable` で `1`（relay は boot しません） |
+| 接続していない実機 | `device_unavailable` で `1` |
+
+`--bundle-id host` は、runner.json のホストアプリのバンドル ID です。`--udid` では使えません。
+
+### 過去のログ（relay logs）
+
+`relay logs` は、指定した時刻からコマンドを始めた時刻までのログを、JSON オブジェクト 1 つで出します。
+シミュレータでは `xcrun simctl spawn <UDID> log show --style ndjson` で読みます。
+
+`--since` で始まりを指定します。指定がなければ直近 5 分です。
+
+| `--since` の書き方 | 意味 |
+| --- | --- |
+| `30s`・`5m`・`2h`・`1d` | コマンドを始めた時刻から、その時間だけ前 |
+| `2026-11-11T01:40:24Z`・`2026-11-11T10:40:24+09:00` | タイムゾーン付きの RFC 3339 の時刻 |
+
+タイムゾーンのない時刻、未来の時刻、単位のない数は、書き方の誤りで `2` です。
+試験の前に `date -u +%Y-%m-%dT%H:%M:%SZ` で時刻を控えておき、失敗した後にその値を渡すと、その間のログを取れます。
+
+`--since` は要求した始まりで、ログがそこまで残っている保証ではありません。
+0 件でも、その間にログがなかったとは限りません。長い時間前の分がどこまで残るかは確かめていません。
+
+取れるのは Logger・os_log・NSLog の行です。過去のログには Debug の行が残らず、`--follow` でだけ見えます。
+アプリの標準出力・標準エラー（`print` など）は Unified Logging に入らないので、取れません。
+
+確かめた環境: iPhone 18 Pro シミュレータ（iOS 27.2）、macOS 27.2.1、Xcode 27.2。終了したアプリの行と、クラッシュ直前の Error の行も取れました。
+
+### アプリで絞る（--bundle-id）
+
+`--bundle-id <id>` は、そのアプリのメインの実行ファイルが出した行だけを残します。シミュレータでだけ使えます。
+アプリが入っていなければ `log_app_unavailable` で `1` です。バンドル ID は大文字小文字を区別します。
+
+relay はアプリの `.app` を `simctl get_app_container` で探し、実行ファイルの名前と UUID を読みます。
+`log` には実行ファイルの名前で絞らせ、relay がその UUID の行だけを残します。
+
+| 含まれないもの | 理由 |
+| --- | --- |
+| 拡張機能やほかのプロセスの行 | メインの実行ファイルだけを比べるためです。 |
+| 今と違うビルドが出した行 | 実行ファイルの UUID が変わるためです。 |
+| 入っていないアプリの行 | 実行ファイルを読めないためです。 |
+
+JSON の `filter` に、比べたバンドル ID・実行ファイル・UUID が入ります。
+同じ実行ファイルを入れ直した後の過去のログは、最初に入れたときのパスを `processImagePath` に記録していました。このため、パスでは比べません。
+
+確かめた環境: iPhone 18 Pro シミュレータ（iOS 27.2）、macOS 27.2.1、Xcode 27.2。確認用アプリの 8 行を、1.3〜2.0 秒で取れました。
+
+### ログを追う（--follow）
+
+`--follow` は、新しい行を NDJSON（1 行に JSON 1 つ）で stdout に出し続けます。シミュレータでだけ使えます。
+`xcrun simctl spawn <UDID> log stream --style ndjson --level debug` で読むので、Debug の行も出ます。
+
+SIGINT（Ctrl-C）か SIGTERM で止まり、relay は `log stream` を止めてから終わります。
+
+| 行の `type` | 内容 |
+| --- | --- |
+| `start` | 最初の 1 行で、端末・絞り込み・制約を持ちます。 |
+| `log` | ログ 1 行で、過去のログの `entries` と同じキーを持ちます。 |
+| `end` | 止めたときの最後の 1 行で、`count` と `reason`（`SIGINT` など）を持ちます。 |
+| `error` | 途中で失敗したときの最後の 1 行で、`ok:false`・`code`・`partial:true` を持ちます。 |
+
+`start` は `log stream` を起動したという意味で、その直後の行がすべて届く保証ではありません。
+`--follow` に `--since`・`--archive` は付けられません（`2`）。過去の分と続けて読むときは、別々に実行してください。
+
+| 終わり方 | 終了コード |
+| --- | --- |
+| SIGINT / SIGTERM で止めた | `130` / `143` |
+| `log stream` が自分で終わった（シミュレータの shutdown など） | `1`（`error` の行） |
+| 読めない行が来た | `1`（`error` の行） |
+
+`-o <file>` を付けると、NDJSON をそのファイルに書き、終わったときに stdout へ要約を 1 つ出します。
+
+確かめた環境: iPhone 18 Pro シミュレータ（iOS 27.2）、macOS 27.2.1、Xcode 27.2。SIGINT の後に `log stream` は残りませんでした。
+
+### 実機のログと logarchive
+
+実機のログは、macOS の `log collect --device-udid <UDID>` で logarchive に取ります。この収集には Mac の管理者の権限が要ります。
+管理者のアカウントで `sudo` を付けて実行します。管理者でないアカウント（sudoers に入っていないアカウント）では、`sudo` を付けても取れません。
+relay は sudo を実行しないので、relay からは `logs_permission_denied` で `1` です。
+
+失敗の JSON の `hint` に、自分で実行するコマンドが入ります。
+
+```text
+sudo log collect --device-udid <UDID> --start @<時刻> --output <dir>/device.logarchive,
+then relay logs --archive <dir>/device.logarchive --udid <UDID>
+```
+
+`--archive <path>` は、取った logarchive を `log show --archive` で読みます。端末の接続は要りません。
+`--since` がなければ archive 全体を読みます。
+セッションを選んでいなければ runner.json がなくても読めます。`RELAY_SESSION` などで選んだセッションに runner.json がなければ `3` なので、`--udid` を付けてください。
+
+| `--archive` の制約 | 結果 |
+| --- | --- |
+| archive が指定の端末のものかを確かめない | `deviceVerified` は常に `false` です。 |
+| アプリで絞れない | `--bundle-id` は `logs_filter_unsupported` で `1` です。 |
+| archive がない | `logs_unavailable` で `1` です。 |
+
+`relay` 全体を sudo で動かす使い方は勧めません。HOME が変わり、別の runner.json を探すことがあるためです。
+管理者の権限で収集した場合の所要時間・取れる期間は、確かめていません。
+`--archive` は、実物の logarchive では確かめていません。テストで使ったのは、`log show` の出力を模した行だけです。
+
+確かめた環境: USB 接続の iPhone 14 Pro（iOS 26.7.1）、macOS 27.2.1、Xcode 27.2。一般のユーザーで 0.3 秒ほどで `logs_permission_denied` になりました。
+管理者でないアカウントでは、`sudo log collect` も `is not in the sudoers file` で実行できませんでした。
+
+### ログの出力
+
+`--follow` なしの `relay logs` は、成功も失敗も JSON オブジェクトを 1 つ stdout に出します。
+
+| キー | 内容 |
+| --- | --- |
+| `ok`・`backend` | 成功か、読んだ方法（`simctl`・`log collect`・`archive`） |
+| `device` | UDID・名前・種類・OS（archive では分かる範囲） |
+| `filter` | `--bundle-id` の絞り込み（なければ null） |
+| `range` | `requestedSince`・`until`・`firstEntryAt`・`lastEntryAt`（UTC） |
+| `count`・`entries` | 行の数と、行の配列 |
+| `skippedEvents` | ログの行でない event（activity など）の数 |
+| `limitations` | 取れないものの説明 |
+
+`entries` の各行は、`timestamp`（UTC）・`level`・`processID`・`process`・`subsystem`・`category`・`message` を持ちます。
+OS が出さない項目は null です。`level` は OS の `messageType` を小文字にしたもの（`default`・`info`・`debug`・`error` など）です。
+
+`-o <file>` を付けると、同じ JSON を新しいファイル（パーミッション 0600）に書き、`entries` の代わりに `path` を持つ要約を stdout に出します。
+同じ名前のファイルがあれば上書きせず、`logs_save_failed` で `1` です。
+
+出す JSON が 64 MiB を超えると、`logs_unavailable` で `1` です。`--since` を後にするか、`--bundle-id` で絞ってください。
+`log` が JSON でない行を出したときも、行を飛ばさずに `logs_unavailable` で失敗します。
+
+確かめた環境: iPhone 18 Pro シミュレータ（iOS 27.2）、macOS 27.2.1、Xcode 27.2。端末全体の 3 分は約 7,700 行で、1.3 秒でした。
+
+### クラッシュ記録（relay crashes）
+
+`relay crashes` は、指定した時刻からのクラッシュ記録の一覧を、JSON オブジェクト 1 つで出します。`--since` がなければ直近 24 時間です。
+`--since` の書き方は `relay logs` と同じです。
+
+シミュレータの記録は、Mac の `~/Library/Logs/DiagnosticReports` にある `.ips` です。
+記録の中の `procPath` に対象のシミュレータの UDID があるものだけを出します。
+
+| シミュレータの記録の項目 | 内容 |
+| --- | --- |
+| `process`・`bundleID` | 記録の中のプロセス名とバンドル ID（`bundleIDVerified:true`） |
+| `occurredAt` | クラッシュした時刻（`captureTime`）で、`--since` はこれと比べます。 |
+| `sourcePath` | Mac の上の記録のパス |
+
+`--bundle-id` はシミュレータでだけ使え、記録の中のバンドル ID と完全一致で比べます。
+読めない `.ips` は一覧に入れず、`unreadable` に数を入れます。Jetsam・ハングなど、ほかの種類の記録は確かめていません。
+
+実機の記録は、`xcrun devicectl device info files --domain-type systemCrashLogs` の一覧です。relay は記録を開きません。
+`.ips` のファイルだけを出し、ディレクトリとほかの拡張子は除きます。
+
+| 実機の記録の項目 | 内容 |
+| --- | --- |
+| `processHint` | ファイル名から推したプロセス名で、確かめた値ではありません。 |
+| `modifiedAt` | 端末で記録が書かれた時刻で、`--since` はこれと比べます。 |
+| `process`・`bundleID`・`occurredAt` | 開かないので null（`bundleIDVerified:false`） |
+
+実機の一覧は、アプリのクラッシュとは限らない記録を含む候補です。実機の `--bundle-id` は `crash_filter_unsupported` で `1` です。
+`--name <relativePath>` で、一覧の `relativePath` の 1 件だけを出せます。名前が一覧になければ `crashes_unavailable` で `1` です。
+`--name` があるときは、`--since` と `--bundle-id` では絞りません。
+
+確かめた環境: iPhone 18 Pro シミュレータ（iOS 27.2）と USB 接続の iPhone 14 Pro（iOS 26.7.1）、macOS 27.2.1、Xcode 27.2。実機の 30 日分の一覧は 1 秒ほどでした。
+
+### クラッシュ記録の保存
+
+`-o <dir>` は、一覧の記録を既存のディレクトリにコピーし、各項目に保存先の `path` を足します。ファイルのパーミッションは 0600 です。
+ディレクトリがなければ relay は作らず、`crashes_save_failed` で `1` です。
+
+同じ名前のファイルがあれば上書きしません。その記録の項目に `error` が入り、JSON 全体は `ok:false`・`crashes_save_failed` で `1` です。
+ほかの記録の保存は続けます。
+
+実機では、`--name` で選んだ 1 件だけを `xcrun devicectl device copy from` で保存します。
+`--name` なしの `-o` は、ほかのアプリの記録まで端末から取り出すことになるため、書き方の誤りで `2` です。
+
+実機の記録の保存は、個人情報を含まない記録が端末になかったため、確かめていません。
+
+確かめた環境: iPhone 18 Pro シミュレータ（iOS 27.2）、macOS 27.2.1、Xcode 27.2。保存した記録は元の記録と同じ内容でした。
+
 ## エージェントスキル
 
 `skills/device-relay/` は、コーディングエージェントが対象アプリのリポジトリで作業しながら、relay でアプリの動作を確かめるためのスキルです。
@@ -804,7 +1038,7 @@ Claude Code などで使います。
 事故を防ぐ決まりには、動いているランナーを止めない、対象アプリの外に出ない、パスワードを勝手に入力しない、などがあります。
 
 詳細は `references/` に話題ごとのファイルとして置きます。それぞれ 8 KB 程度までで、単独で読める形です。
-オプション、終了コードと `code` の全一覧、並列実行、録画、`relay run`、トラブルシューティングを扱います。
+オプション、終了コードと `code` の全一覧、並列実行、録画、ログとクラッシュ記録、`relay run`、トラブルシューティングを扱います。
 エージェントが調べるたびに、必要な 1 つだけを読めば済むようにします。
 
 `reference.md` はその索引です。以前の版や入れたままのコピーから参照されるので残します。

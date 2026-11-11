@@ -65,3 +65,4 @@ Failure JSON is `{"ok":false,"code":"…","error":"…"}`. `code` is a string th
 | `xcui_failed` | 6 | Read the error text (XCUI's message) and observe the foreground app and the screen again |
 | `app_not_installed` | 6 | relay decides before sending (the runner doesn't return it). Check the bundle ID, or install the app |
 | `internal_error` | 8 | Retry once. If it persists, `relay status` and the logs |
+| `device_unavailable` / `logs_unavailable` / `logs_permission_denied` / `logs_follow_unsupported` / `logs_filter_unsupported` / `log_app_unavailable` / `logs_save_failed` / `crashes_unavailable` / `crash_filter_unsupported` / `crashes_save_failed` | 1 | From `relay logs` / `relay crashes` ([logs](logs.md)) |

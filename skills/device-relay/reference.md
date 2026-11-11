@@ -15,6 +15,7 @@ Each file in `references/` stands alone; read only the one you need.
 - [coordinates](references/coordinates.md): orientation, iPad windows, iPhone Duo
 - [scrolling](references/scrolling.md): to an element off the screen
 - [recording](references/recording.md): `relay record`
+- [logs](references/logs.md): `relay logs`, `relay crashes`
 - [relay-run](references/relay-run.md): replaying confirmed steps
 - [test-app](references/test-app.md): RelayRunnerHost, to try things on
 - [troubleshooting](references/troubleshooting.md): start failures, prompts, logs
