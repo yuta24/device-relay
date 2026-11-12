@@ -590,3 +590,22 @@ Claude Code の設定の根拠: [Sandboxing](https://code.claude.com/docs/en/san
 削除に失敗しても起動を止めません。消せないものがあれば `relay: cannot remove …` を 1 行出して続け、消せた場合は何も表示しません。
 
 調査に使うログや xcresult は `~/.relay` の外へコピーしてください。すぐ消したい場合、ランナーが動いていなければ `~/.relay/logs` の中身を削除してかまいません。
+
+### 以前の relay が残した画面録画
+
+以前の relay では、ランナーが動いている間ずっと XCTest が画面を録画していました。その動画がシミュレータに残っていることがあります。
+今の relay は録画させません（「[テストのログと結果の保存先](setup.md#テストのログと結果の保存先)」）。以前の動画は relay が自動では消しません。
+
+シミュレータでは、testmanagerd の一時ディレクトリに残っています。1 台で数 GB になることがあります。
+ファイル名は UUID だけで拡張子がないので、`file` で QuickTime の動画か確かめます。
+
+```sh
+file ~/Library/Developer/CoreSimulator/Devices/*/data/Containers/Data/InternalDaemon/*/tmp/Attachments/*
+du -sh ~/Library/Developer/CoreSimulator/Devices/*/data/Containers/Data/InternalDaemon/*/tmp/Attachments
+```
+
+ほかの UI テストの添付も同じ場所に入ります。中身と日時を確かめてから消してください。
+消すときは、先に `relay stop` とそのシミュレータの `xcrun simctl shutdown <UDID>` で止めてから、そのファイルを削除します。
+`xcrun simctl erase <UDID>` でも消えますが、シミュレータの中身がすべて消えます。
+
+実機にも同じように残っている可能性がありますが、場所はホストから確かめられません。
