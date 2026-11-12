@@ -15,7 +15,7 @@
 | `GET /source` | `?format=json\|text\|compact&filter=interactive&maxDepth=<n>&bundleId=`（既定は json、bundleId の既定は前面アプリ） | XCUI の要素ツリー。json は要素ごとの属性と frame、text は `debugDescription`、compact は 1 行 1 要素。`filter=interactive` で操作できる要素だけに絞ります。詳しくは「[要素ツリー（/source）](elements.md#要素ツリーsource)」 |
 | `POST /tap` | `{"x":200,"y":120}`、または `{"element":{"identifier":"relay.input"}}` | タップ。`element` で要素を指定すると、その frame の中心をタップします（「[要素セレクタ](elements.md#要素セレクタ)」）。座標が画面の外なら `400`（下の「画面の外の座標」） |
 | `POST /press` | `{"x":200,"y":120,"duration":1.0}`、または `{"element":{…},"duration":1.0}` | 長押し |
-| `POST /find` | `{"element":{"type":"button"},"limit":20,"bundleId":"…","timeout":0}`（`limit`・`bundleId`・`timeout` は省略可） | セレクタに一致する要素の一覧（type / identifier / label / value / frame / enabled）。ツリー全体を読まずに要素を探せます（「[要素セレクタ](elements.md#要素セレクタ)」） |
+| `POST /find` | `{"element":{"type":"button"},"limit":20,"bundleId":"…","timeout":0,"gone":false}`（`limit`・`bundleId`・`timeout`・`gone` は省略可） | セレクタに一致する要素の一覧（type / identifier / label / value / frame / enabled）。ツリー全体を読まずに要素を探せます（「[要素セレクタ](elements.md#要素セレクタ)」）。`gone: true` で、一致する要素がなくなるのを待ちます（「[消えるのを待つ（gone）](elements.md#消えるのを待つgone)」） |
 | `POST /swipe` | `{"from":{"x":200,"y":700},"to":{"x":200,"y":200},"duration":0.3,"hold":0.05}` | スワイプ（ドラッグ）。`from`・`to` のどちらかが画面の外なら `400` |
 | `POST /type` | `{"text":"hello","keys":["return"],"bundleId":"com.apple.Preferences"}`（`keys` と `bundleId` は省略可。`keys` があれば `text` は省略・空文字でも可。`text` が文字列以外なら `keys` があっても 400） | キーボードのフォーカスがある要素への文字入力。`text` の後に `keys` を順に送ります。対象の既定は前面アプリ |
 | `POST /key` | `{"key":"return","bundleId":"…"}`（bundleId は省略可） | 特殊キー（`return` / `delete` / `space`）を 1 つ送ります。それ以外のキー名は 400。詳しくは「文字入力と特殊キー」 |
@@ -112,6 +112,7 @@ curl -s -H "$AUTH" -X POST $R/tap         -H 'Content-Type: application/json' -d
 curl -s -H "$AUTH" -X POST $R/press       -H 'Content-Type: application/json' -d '{"x":200,"y":400,"duration":1.0}'
 curl -s -H "$AUTH" -X POST $R/tap         -H 'Content-Type: application/json' -d '{"element":{"label":"General","type":"button"}}'
 curl -s -H "$AUTH" -X POST $R/find        -H 'Content-Type: application/json' -d '{"element":{"type":"cell"},"limit":5}'
+curl -s -H "$AUTH" -X POST $R/find        -H 'Content-Type: application/json' -d '{"element":{"type":"alert"},"gone":true,"timeout":5}'
 curl -s -H "$AUTH" -X POST $R/swipe       -H 'Content-Type: application/json' -d '{"from":{"x":200,"y":700},"to":{"x":200,"y":200}}'
 curl -s -H "$AUTH" -X POST $R/type        -H 'Content-Type: application/json' -d '{"text":"hello"}'
 curl -s -H "$AUTH" -X POST $R/type        -H 'Content-Type: application/json' -d '{"text":"example.com","keys":["return"]}'
@@ -135,7 +136,7 @@ curl -s -H "$AUTH" -X POST $R/shutdown
 - `code` は「次に何をするか」が変わる単位です。1 つの code に複数の文言（ときには複数のステータス）が対応します。ステータスと code の対応は下の表のとおりで、ステータスは code を足す前から変えていません。
 - 要素の解決の失敗には、ほかに `reason`・`count`・`candidates` が付きます（「[要素セレクタ](elements.md#要素セレクタ)」）。`reason` は code より細かい区別です。
 - `code` がない応答は、code を返す前の古いランナーのものです。そのときはステータスで判断します。知らない `code` も同じく、ステータスで判断します。
-- `app_not_installed`・`runner_unavailable`・`runner_timeout`・`runner_info_invalid`・`runner_bad_response`・`screenshot_save_failed` は `relay` が出す code で、ランナーは返しません（「[CLI](cli.md)」）。CLI は失敗のとき、ランナーの本文もこれらも、同じ形で stdout に出します。
+- `app_not_installed`・`runner_unavailable`・`runner_timeout`・`runner_info_invalid`・`runner_bad_response`・`screenshot_save_failed`・`element_still_present` は `relay` が出す code で、ランナーは返しません（「[CLI](cli.md)」）。CLI は失敗のとき、ランナーの本文もこれらも、同じ形で stdout に出します。
 
 | `code` | ステータス | 意味 | 推奨する対処 |
 | --- | --- | --- | --- |

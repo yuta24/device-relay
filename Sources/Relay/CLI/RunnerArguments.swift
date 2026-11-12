@@ -19,7 +19,7 @@ extension Arguments {
   /// Options without a value.
   static let runnerFlags: [String: Set<String>] = [
     "type": ["--stdin"],
-    "find": ["--require"]
+    "find": ["--require", "--gone"]
   ]
 
   static let buttons = ["home", "volumeUp", "volumeDown"]
@@ -74,6 +74,7 @@ extension Arguments {
       }
       parser.standardInputText = try text(fromStandardInput: standardInput())
     }
+    parser.gone = givenFlags.contains("--gone")
     let operation = try parser.operation()
     let runnerPath = try parser.string("--runner")
     let session = try parser.string("--session")
@@ -209,7 +210,7 @@ extension Arguments {
       """
     ),
     "find": (
-      "relay find <selector> [--limit 20] [--timeout <s>] [--require] [--bundle-id <id>]",
+      "relay find <selector> [--limit 20] [--timeout <s>] [--gone] [--require] [--bundle-id <id>]",
       """
       Lists the elements that match every given condition exactly (at most --limit, 1-100). --timeout
       waits up to 10 seconds for a match. Prints {"ok":true,"bundleId":..,"count":n,"elements":[{"index",
@@ -220,6 +221,10 @@ extension Arguments {
       No match is exit 0 ("count":0); with --require it is exit 6, the answer (count, elements) coming
       back as {"ok":false,"code":"element_not_found",...} on stdout (also when --index is out of range),
       so find --timeout <s> --require waits for an element and fails if it does not appear.
+      --gone waits the other way, up to --timeout, for no element to match (an element counts while it
+      is in the tree, off the screen too) and adds "gone":true|false to the answer; --gone --require is
+      exit 6 when one is still there ({"ok":false,"code":"element_still_present",...}). --gone cannot
+      take --index. The app is the one in front when find starts, as with --timeout.
       """
     ),
     "tap": (
@@ -488,8 +493,9 @@ extension Arguments {
       globs).
       \(HelpText.wrapped("Steps: " + Scenario.stepCommands.joined(separator: " "), hanging: 2))
       sleep <s> waits a fixed time (0 < s <= \(Int(Scenario.maxSleep))); prefer find --timeout or tap --timeout,
-      which wait only as long as needed; find --require also stops the run (exit 6) when nothing matches,
-      while find without it succeeds either way, as it does alone. screenshot needs --output <file>; type
+      which wait only as long as needed, and find --gone --timeout for an element to go; find --require
+      also stops the run (exit 6) when nothing matches (with --gone: when one is left), while find
+      without it succeeds either way, as it does alone. screenshot needs --output <file>; type
       --stdin, --runner, --session, and --help cannot be in a step.
       A line # relay-run: 1 before the first step states the format the scenario is written for; another
       version is refused, so a scenario never runs with a meaning it was not written for.
@@ -556,6 +562,8 @@ private struct RunnerArgumentValues {
   let positionals: [String]
   /// The text of `relay type --stdin`.
   var standardInputText: String?
+  /// `relay find --gone`.
+  var gone = false
 
   func operation() throws -> RunnerOperation {
     switch command {
@@ -607,7 +615,10 @@ private struct RunnerArgumentValues {
       }
       let maxLimit = RunnerElementLookup.maxFindLimit
       let limit = try integer("--limit", "an integer in 1...\(maxLimit)") { (1 ... maxLimit).contains($0) }
-      return .find(selector, limit: limit, timeout: try timeout(), bundleID: try string("--bundle-id"))
+      if gone, selector.index != nil {
+        throw ArgumentError(description: "--gone cannot be combined with --index (it waits for every match to go)")
+      }
+      return .find(selector, limit: limit, timeout: try timeout(), bundleID: try string("--bundle-id"), gone: gone)
     case "tap":
       return .tap(try touch(duration: nil))
     case "press":

@@ -107,8 +107,8 @@ extension RunnerOperation {
     switch self {
     case .source(let format, let maxDepth, let filter, let bundleID):
       return .source(format: format, maxDepth: maxDepth, filter: filter, bundleID: try resolve(bundleID))
-    case .find(let selector, let limit, let timeout, let bundleID):
-      return .find(selector, limit: limit, timeout: timeout, bundleID: try resolve(bundleID))
+    case .find(let selector, let limit, let timeout, let bundleID, let gone):
+      return .find(selector, limit: limit, timeout: timeout, bundleID: try resolve(bundleID), gone: gone)
     case .tap(var touch):
       touch.bundleID = try resolve(touch.bundleID)
       return .tap(touch)

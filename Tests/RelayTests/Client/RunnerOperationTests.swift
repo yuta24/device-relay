@@ -39,6 +39,8 @@ struct RunnerOperationTests {
   @Test func buildsOtherBodies() throws {
     #expect(try body(RunnerOperation.find(RunnerElementSelector(type: "cell"), limit: 5, timeout: nil, bundleID: nil).request)
       == #"{"element":{"type":"cell"},"limit":5}"#)
+    #expect(try body(RunnerOperation.find(RunnerElementSelector(type: "cell"), limit: nil, timeout: 5, bundleID: nil, gone: true).request)
+      == #"{"element":{"type":"cell"},"gone":true,"timeout":5}"#)
     #expect(try body(RunnerOperation.swipe(from: RunnerPoint(x: 1, y: 2), to: RunnerPoint(x: 3, y: 4), duration: nil, hold: nil, mode: nil).request)
       == #"{"from":{"x":1,"y":2},"to":{"x":3,"y":4}}"#)
     #expect(try body(RunnerOperation.type(text: "hi", keys: ["return"], bundleID: nil).request) == #"{"keys":["return"],"text":"hi"}"#)
@@ -57,6 +59,7 @@ struct RunnerOperationTests {
   @Test func allowsForWaitsInTheTimeout() {
     #expect(RunnerOperation.health.waitTime == 0)
     #expect(RunnerOperation.find(RunnerElementSelector(type: "cell"), limit: nil, timeout: 5, bundleID: nil).waitTime == 5)
+    #expect(RunnerOperation.find(RunnerElementSelector(type: "cell"), limit: nil, timeout: 7, bundleID: nil, gone: true).waitTime == 7)
     #expect(RunnerOperation.press(RunnerTouch(target: .point(RunnerPoint(x: 0, y: 0)), duration: 4, timeout: 2)).waitTime == 6)
   }
 

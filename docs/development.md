@@ -292,6 +292,7 @@ xcodebuild の出力に `RELAY_RUNNER_READY port=8100 addresses=en0=…,utun3=�
 | `relay.submitted` | Return で確定したときの文字列と回数（`submitted #2: …`） |
 | `relay.events` | 直近の編集（insert / delete / return）とハードウェアキーの押下（`press Tab` など）。新しい順。パスワード欄の編集は文字数だけ（`insert 3 chars`） |
 | `relay.overlay` | 別プロセスの画面（許可のダイアログ、共有シート、写真の選択、通知のバナー）を試す画面を開く。下の表 |
+| `relay.showToast` | 押すと画面の下に `relay.toast` のラベルを出し、1.5 秒後にビューから外す（`relay find --gone` を試す） |
 
 `relay.overlay` で開く画面（`OverlayViewController`）は、アプリの上に別のプロセスが描く画面での relay の振る舞いを確かめるためのものです。
 

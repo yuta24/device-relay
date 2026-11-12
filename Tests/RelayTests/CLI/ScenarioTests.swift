@@ -248,6 +248,9 @@ struct ScenarioFindCheckTests {
     #expect(try Arguments.parse(["find", "--id", "a"])
       == .runner(RunnerControlOptions(operation: .find(selector, limit: nil, timeout: nil, bundleID: nil), runnerPath: nil)))
     #expect(throws: ArgumentError.self) { try Arguments.parse(["tap", "--id", "a", "--require"]) }
+    #expect(try Arguments.parse(["find", "--id", "a", "--gone", "--require", "--timeout", "5"])
+      == .runner(RunnerControlOptions(operation: .find(selector, limit: nil, timeout: 5, bundleID: nil, gone: true), runnerPath: nil,
+                                      requireMatch: true)))
     #expect(throws: ArgumentError.self) { try Arguments.parse(["source", "--require"]) }
   }
 
@@ -257,6 +260,9 @@ struct ScenarioFindCheckTests {
     #expect(steps.map(\.action) == [
       .runner(.find(selector, limit: nil, timeout: 5, bundleID: nil), requireMatch: false),
       .runner(.find(selector, limit: nil, timeout: 5, bundleID: nil), requireMatch: true)
+    ])
+    #expect(try Scenario.parse(Scenario.lines(of: "find --id a --gone --timeout 5 --require")).map(\.action) == [
+      .runner(.find(selector, limit: nil, timeout: 5, bundleID: nil, gone: true), requireMatch: true)
     ])
     var required: [Bool] = []
     #expect(Scenario.execute(steps, perform: { _, requireMatch in required.append(requireMatch); return 0 }, log: { _ in }) == 0)

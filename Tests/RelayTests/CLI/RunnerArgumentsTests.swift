@@ -78,6 +78,13 @@ struct RunnerArgumentsTests {
     #expect(throws: ArgumentError.self) { try Arguments.parse(["find", "--type", "notAType"]) }
     #expect(throws: ArgumentError.self) { try Arguments.parse(["find", "--id", "a", "--limit", "101"]) }
     #expect(throws: ArgumentError.self) { try Arguments.parse(["find", "--id", "a", "--timeout", "11"]) }
+    #expect(try operation(["find", "--id", "spinner", "--gone", "--timeout", "5", "--limit", "3"])
+      == .find(RunnerElementSelector(identifier: "spinner"), limit: 3, timeout: 5, bundleID: nil, gone: true))
+    // --index picks another element as the others go.
+    #expect(throws: ArgumentError.self) { try Arguments.parse(["find", "--type", "cell", "--index", "1", "--gone"]) }
+    #expect(throws: ArgumentError.self) { try Arguments.parse(["find", "--gone"]) }
+    #expect(throws: ArgumentError.self) { try Arguments.parse(["find", "--id", "a", "--gone=true"]) }
+    #expect(throws: ArgumentError.self) { try Arguments.parse(["tap", "--id", "a", "--gone"]) }
     #expect(throws: ArgumentError.self) { try Arguments.parse(["find", "--id", "a", "--id", "b"]) }
     #expect(throws: ArgumentError.self) { try Arguments.parse(["find", "--id", "a", "--duration", "1"]) }
   }

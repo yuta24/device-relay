@@ -41,7 +41,8 @@ struct RunnerControlOptions: Equatable {
   var runnerPath: String?
   /// `--session <name>` (see `RelaySession`); nil uses `$RELAY_SESSION`, else `~/.relay/runner.json`.
   var session: String?
-  /// `relay find --require`: no element is a failure (exit 6), not `"count":0` with exit 0.
+  /// `relay find --require`: no element is a failure (exit 6), not `"count":0` with exit 0. With
+  /// `find --gone`, an element still there is the failure.
   var requireMatch = false
 }
 
@@ -169,7 +170,18 @@ enum RunnerControl {
       return code.rawValue
     }
 
-    if requireMatch, !hasElements(response.body) {
+    if case .find(_, _, _, _, gone: true) = resolved {
+      guard let gone = goneAnswer(response.body) else {
+        // A runner from before `gone` ignored it and waited for an element to appear instead.
+        return fail(.runnerBadResponse, "the runner's /find answer has no gone; it predates find --gone (relay start --rebuild "
+          + "builds a current one)", exit: .runnerError, to: failureOutput)
+      }
+      if requireMatch, !gone {
+        CLIOutput.writeLine(stillPresentBody(response.body), to: failureOutput)
+        CLIOutput.note("an element still matches; wait longer (repeat find --gone --timeout <s>) or check the screen with relay screenshot")
+        return RunnerExitCode.actionFailed.rawValue
+      }
+    } else if requireMatch, !hasElements(response.body) {
       CLIOutput.writeLine(noMatchBody(response.body), to: failureOutput)
       return RunnerExitCode.actionFailed.rawValue
     }
@@ -209,6 +221,23 @@ enum RunnerControl {
     object["code"] = RunnerErrorCode.elementNotFound.rawValue
     object["error"] = "no element matched"
     return CLIOutput.json(object, fallback: body)
+  }
+
+  /// `find --gone --require` with an element left: the `/find` answer (its `count`, `elements`, `gone`) as an
+  /// `element_still_present` failure.
+  static func stillPresentBody(_ body: Data) -> Data {
+    var object = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] ?? [:]
+    object["ok"] = false
+    object["code"] = RelayErrorCode.elementStillPresent.rawValue
+    object["error"] = "an element still matched when the timeout ran out"
+    return CLIOutput.json(object, fallback: body)
+  }
+
+  /// The `gone` of a `/find` answer, nil when there is none (a runner from before `gone`).
+  static func goneAnswer(_ body: Data) -> Bool? {
+    guard let object = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+          let gone = object["gone"] as? NSNumber, CFGetTypeID(gone) == CFBooleanGetTypeID() else { return nil }
+    return gone.boolValue
   }
 
   /// What follows "cannot reach the runner" when a request timed out. The runner is fine but still at the

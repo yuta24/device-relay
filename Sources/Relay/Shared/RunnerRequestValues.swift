@@ -15,6 +15,12 @@ enum RunnerRequestValues {
     return number.doubleValue
   }
 
+  /// The value of a JSON boolean, or nil for anything else (a number included, though NSNumber holds both).
+  static func bool(_ value: Any) -> Bool? {
+    guard let number = value as? NSNumber, CFGetTypeID(number) == CFBooleanGetTypeID() else { return nil }
+    return number.boolValue
+  }
+
   /// The `quality` query value: the default when absent, nil when it isn't a number in `jpegQualityRange`.
   static func jpegQuality(_ value: String?) -> Double? {
     guard let value else { return defaultJPEGQuality }

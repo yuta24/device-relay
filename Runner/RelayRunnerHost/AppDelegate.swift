@@ -37,6 +37,8 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 /// was pressed, with a count), and `relay.events` (the latest edits and hardware key presses, newest
 /// first; edits to the password field show only their length). `relay.overlay` opens
 /// `OverlayViewController`, the screen for checking alerts and sheets drawn by other processes.
+/// `relay.showToast` shows the label `relay.toast` and takes it out of the view hierarchy 1.5 seconds later,
+/// something to wait for to go (`relay find --gone`).
 final class InputViewController: UIViewController, UITextFieldDelegate {
   private let input = KeyRecordingTextField()
   private let secondInput = KeyRecordingTextField()
@@ -69,8 +71,13 @@ final class InputViewController: UIViewController, UITextFieldDelegate {
     overlayButton.accessibilityIdentifier = "relay.overlay"
     overlayButton.addTarget(self, action: #selector(openOverlay), for: .touchUpInside)
 
+    let toastButton = UIButton(configuration: .bordered())
+    toastButton.configuration?.title = "Show toast"
+    toastButton.accessibilityIdentifier = "relay.showToast"
+    toastButton.addTarget(self, action: #selector(showToast), for: .touchUpInside)
+
     let stack = UIStackView(arrangedSubviews: [
-      input, secondInput, passwordInput, textLabel, passwordLengthLabel, submittedLabel, eventsLabel, overlayButton
+      input, secondInput, passwordInput, textLabel, passwordLengthLabel, submittedLabel, eventsLabel, overlayButton, toastButton
     ])
     stack.axis = .vertical
     stack.spacing = 12
@@ -107,6 +114,22 @@ final class InputViewController: UIViewController, UITextFieldDelegate {
   @objc private func openOverlay() {
     present(OverlayViewController(), animated: false)
   }
+
+  /// A label at the bottom of the screen, removed from the view hierarchy (not hidden) after `toastDuration`.
+  @objc private func showToast() {
+    let toast = UILabel()
+    toast.text = "toast"
+    toast.accessibilityIdentifier = "relay.toast"
+    toast.translatesAutoresizingMaskIntoConstraints = false
+    view.addSubview(toast)
+    NSLayoutConstraint.activate([
+      toast.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+      toast.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -24)
+    ])
+    DispatchQueue.main.asyncAfter(deadline: .now() + Self.toastDuration) { toast.removeFromSuperview() }
+  }
+
+  private static let toastDuration: TimeInterval = 1.5
 
   @objc private func textChanged() {
     textLabel.text = "text: \(input.text ?? "")"

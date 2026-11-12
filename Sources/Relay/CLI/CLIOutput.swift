@@ -52,6 +52,8 @@ enum RelayErrorCode: String, CaseIterable {
   case crashFilterUnsupported = "crash_filter_unsupported"
   /// Exit 1: `relay crashes -o` could not save one or more reports.
   case crashesSaveFailed = "crashes_save_failed"
+  /// Exit 6: `relay find --gone --require` still found a matching element when its `--timeout` ran out.
+  case elementStillPresent = "element_still_present"
 }
 
 /// What relay prints for people and for scripts, and where.

@@ -767,20 +767,27 @@ final class RelayRunnerUITests: XCTestCase {
     return mode
   }
 
-  /// `/find`: the elements `element` matches, in document order, waiting up to `timeout` for the first.
+  /// `/find`: the elements `element` matches, in document order, waiting up to `timeout` for the first, or
+  /// with `gone` for none to match.
   private func find(_ body: RunnerJSON) throws -> RunnerHTTPResponse {
     let selector = try body.elementSelector(body.object["element"] ?? NSNull())
     let timeout = try body.elementTimeout()
     guard let limit = RunnerElementLookup.findLimit(body.object["limit"]) else {
       throw RunnerError.invalidField("limit: expected an integer in 1...\(RunnerElementLookup.maxFindLimit)")
     }
+    let gone: Bool
+    switch RunnerElementLookup.gone(body.object["gone"], selector: selector) {
+    case .success(let value): gone = value
+    case .failure(let error): throw RunnerError.invalidField(error.description)
+    }
     let bundleID = body.optionalString("bundleId") ?? foregroundApplication().bundleID
     let (matches, count) = try waitForElements(bundleID: bundleID, timeout: timeout) { root, isLastAttempt in
       let all = selector.allMatches(in: root)
       let matches = selector.picked(from: all)
-      return matches.isEmpty && !isLastAttempt ? nil : (matches, all.count)
+      let done = RunnerElementLookup.findIsDone(matchCount: matches.count, gone: gone, isLastAttempt: isLastAttempt)
+      return done ? (matches, all.count) : nil
     }
-    return annotated(RunnerElementLookup.findJSON(matches, count: count, limit: limit, bundleID: bundleID))
+    return annotated(RunnerElementLookup.findJSON(matches, count: count, limit: limit, bundleID: bundleID, gone: gone))
   }
 
   /// Snapshots `bundleID` until `attempt` returns a value, every `pollInterval` for up to `timeout`

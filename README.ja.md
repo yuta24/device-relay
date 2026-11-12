@@ -150,7 +150,7 @@ relay screenshot --scale 1                            # 1 px = 1 pt に縮小し
 | `relay status` / `relay stop` | 動いているランナーを確認する / 止める（`--all` で全セッション） |
 | `relay screenshot` | スクリーンショットを保存してパスを出力する（`--scale 1` で縮小） |
 | `relay source` | 要素ツリーを取得する（`--format compact --filter interactive` で操作できる要素だけ） |
-| `relay find` | セレクタに一致する要素を探す（`--timeout` で待つ、`--require` で必須にする） |
+| `relay find` | セレクタに一致する要素を探す（`--timeout` で待つ、`--require` で必須にする、`--gone` で消えるのを待つ） |
 | `relay tap` / `relay press` / `relay swipe` | 座標か要素セレクタ（`--id`・`--label`・`--type`）でタッチ操作する |
 | `relay type` / `relay key` | フォーカスのある要素に文字・特殊キーを入力する |
 | `relay launch` / `relay terminate` | アプリを起動（前面化）する / 終了する |

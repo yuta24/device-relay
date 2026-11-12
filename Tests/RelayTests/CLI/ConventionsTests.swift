@@ -76,7 +76,8 @@ struct OptionEqualsTests {
   }
 
   @Test func aFlagWithAValueIsAnError() {
-    for argument in ["--json=true", "--rebuild=1", "--verbose=", "--stdin=x", "--require=1", "--all=1", "--help=x", "--background=no"] {
+    for argument in ["--json=true", "--rebuild=1", "--verbose=", "--stdin=x", "--require=1", "--all=1", "--help=x", "--background=no",
+                     "--gone=true"] {
       let error = #expect(throws: ArgumentError.self, "\(argument)") { try Arguments.splittingEquals(["x", argument]) }
       #expect(error?.description.contains("does not take a value") == true, "\(argument)")
     }
@@ -197,7 +198,8 @@ struct FailureJSONTests {
       .logsSaveFailed: "logs_save_failed",
       .crashesUnavailable: "crashes_unavailable",
       .crashFilterUnsupported: "crash_filter_unsupported",
-      .crashesSaveFailed: "crashes_save_failed"
+      .crashesSaveFailed: "crashes_save_failed",
+      .elementStillPresent: "element_still_present"
     ]
     #expect(RelayErrorCode.allCases.count == expected.count)
     for code in RelayErrorCode.allCases {
@@ -275,6 +277,20 @@ struct FailureJSONTests {
     #expect(body["error"] as? String == "no element matched")
     #expect(body["count"] as? Int == 3)
     #expect((body["elements"] as? [Any])?.isEmpty == true)
+  }
+
+  @Test func goneWithRequireKeepsTheAnswerAndSaysElementStillPresent() throws {
+    let answer = Data(#"{"count":1,"elements":[{"identifier":"spinner"}],"gone":false,"ok":true}"#.utf8)
+    let body = try object(RunnerControl.stillPresentBody(answer))
+    #expect(body["ok"] as? Bool == false)
+    #expect(body["code"] as? String == "element_still_present")
+    #expect(body["count"] as? Int == 1)
+    #expect(body["gone"] as? Bool == false)
+    #expect(RunnerControl.goneAnswer(answer) == false)
+    #expect(RunnerControl.goneAnswer(Data(#"{"count":0,"elements":[],"gone":true}"#.utf8)) == true)
+    // A runner from before gone answers without it, and 1 is not a boolean.
+    #expect(RunnerControl.goneAnswer(Data(#"{"count":0,"elements":[]}"#.utf8)) == nil)
+    #expect(RunnerControl.goneAnswer(Data(#"{"gone":1}"#.utf8)) == nil)
   }
 
   @Test func anUnreadableScenarioIsALocalFailureAndABadStepIsUsage() {

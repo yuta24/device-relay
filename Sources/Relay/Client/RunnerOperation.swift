@@ -10,7 +10,8 @@ enum RunnerOperation: Equatable {
   case foreground
   case screenshot(RunnerScreenshot)
   case source(format: String?, maxDepth: Int?, filter: String?, bundleID: String?)
-  case find(RunnerElementSelector, limit: Int?, timeout: TimeInterval?, bundleID: String?)
+  /// `gone`: wait for no element to match instead of for one to (`relay find --gone`).
+  case find(RunnerElementSelector, limit: Int?, timeout: TimeInterval?, bundleID: String?, gone: Bool = false)
   case tap(RunnerTouch)
   case press(RunnerTouch)
   case swipe(from: RunnerPoint, to: RunnerPoint, duration: TimeInterval?, hold: TimeInterval?, mode: String?)
@@ -63,11 +64,12 @@ enum RunnerOperation: Equatable {
       return .get("/source", query: [
         ("format", format), ("maxDepth", maxDepth.map(String.init)), ("filter", filter), ("bundleId", bundleID)
       ])
-    case .find(let selector, let limit, let timeout, let bundleID):
+    case .find(let selector, let limit, let timeout, let bundleID, let gone):
       var body: [String: Any] = ["element": selector.json]
       body["limit"] = limit
       body["timeout"] = timeout
       body["bundleId"] = bundleID
+      body["gone"] = gone ? true : nil
       return .post("/find", body)
     case .tap(let touch): return .post("/tap", touch.json)
     case .press(let touch): return .post("/press", touch.json)
@@ -104,7 +106,7 @@ enum RunnerOperation: Equatable {
   /// short leaves the runner busy with it, so the next command gets 409.
   var waitTime: TimeInterval {
     switch self {
-    case .find(_, _, let timeout, _): return timeout ?? 0
+    case .find(_, _, let timeout, _, _): return timeout ?? 0
     case .tap(let touch): return touch.timeout ?? 0
     case .press(let touch): return (touch.timeout ?? 0) + (touch.duration ?? 1)
     case .swipe(_, _, let duration, let hold, _): return (duration ?? 0.3) + (hold ?? 0.05)
