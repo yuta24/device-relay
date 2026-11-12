@@ -213,7 +213,8 @@ final class RunnerLauncher: Sendable {
     }
     let runnerLogURL = try Self.createLog("runner", in: logsURL, stamp: stamp, port: options.port, session: options.session)
     info("launching runner on \(udid) (log: \(runnerLogURL.path))")
-    let process = try launch(xctestrun: xctestrun, testData: Self.testDataURL(buildURL: buildURL, port: options.port), logURL: runnerLogURL)
+    let testData = Self.testDataURL(buildURL: buildURL, port: options.port)
+    let process = try launch(xctestrun: launchCopy(of: xctestrun, testData: testData), testData: testData, logURL: runnerLogURL)
     installSignalHandlers()
     if StartCancellation.isRequested {
       // SIGTERM arrived before the handlers above were installed.
@@ -395,6 +396,20 @@ final class RunnerLauncher: Sendable {
   /// other and with a build, and one port has one `relay start` at a time (`StartLock`).
   static func testDataURL(buildURL: URL, port: Int) -> URL {
     buildURL.appendingPathComponent("TestData", isDirectory: true).appendingPathComponent("port-\(port)", isDirectory: true)
+  }
+
+  /// The `.xctestrun` to launch: a copy without XCTest's screen recording (`XCTestRunCapture`), or the build's
+  /// own when the copy cannot be written, which still runs (and records) as before.
+  private func launchCopy(of xctestrun: URL, testData: URL) -> URL {
+    let copy = XCTestRunCapture.url(testData: testData)
+    do {
+      try XCTestRunCapture.write(from: xctestrun, to: copy)
+      return copy
+    } catch {
+      info("cannot write \(copy.path) (\(error)); launching \(xctestrun.lastPathComponent), "
+        + "with which XCTest records the screen for as long as the runner runs")
+      return xctestrun
+    }
   }
 
   private func launch(xctestrun: URL, testData: URL, logURL: URL) throws -> Process {

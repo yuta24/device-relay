@@ -169,6 +169,16 @@ SDK が同じでも、Runner のソースがビルド後に変わっていれば
 
 `~/Library/Developer/Xcode/DerivedData` には何も作りません。
 
+`-xctestrun` には、ビルドした `.xctestrun` ではなく、そのコピー `TestData/port-<port>/RelayRunner.xctestrun` を渡します。
+コピーでは XCTest の画面キャプチャを切ります（`PreferredScreenCaptureFormat` を `screenshots`、`SystemAttachmentLifetime` と `UserAttachmentLifetime` を `keepNever`）。
+Xcode の既定のままだと、ランナーが動いている間ずっと XCTest が画面を録画します。
+`relay stop` で止めればテストは成功扱いで動画は消えますが、xcodebuild の中断などで失敗扱いになると、動画が xcresult に残ります。
+コピーを使うので、xcresult には画面の録画もスクリーンショットも入りません。
+spindump などの添付も残りませんが、失敗時の診断（xcresult の diagnostics）はこれまでどおり集めます。
+画面を録るときは、必要な間だけ `relay record` を使います（「[録画（relay record）](cli.md#録画relay-record)」）。
+ビルド済みの成果物、`relay runner install` のコピー、`--project` の Runner のどれでも同じです。
+コピーを書けないときは `relay: cannot write …` を出して元の `.xctestrun` で起動し、その場合は録画されます。
+
 古い形式の保存先は「[古い形式の生成物](development.md#古い形式の生成物)」にあります。
 古いものは `relay start` が消します（「[ログとテスト結果の掃除](sessions.md#ログとテスト結果の掃除)」）。
 

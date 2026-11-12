@@ -623,6 +623,7 @@ relay: step 4/7 (line 5) failed: find --label About --type button --timeout 5 --
 
 操作の前後を動画で残したいときに、`record start` → 操作 → `record stop` の順で使います。プルリクエストに貼る動作の証拠などに使えます。
 どちらもランナーは使わず、ホスト側で録ります。音声は録りません。Wi-Fi だけで接続している端末は録れません。
+ランナーの実行中、XCTest 自体は画面を録画しません（「[テストのログと結果の保存先](setup.md#テストのログと結果の保存先)」）。録画が要るときは、その間だけ `relay record` を使います。
 
 シミュレータでは `xcrun simctl io <UDID> recordVideo --codec h264 --force <file>` で録ります。
 実機の初回準備は「[録画の準備](device.md#録画の準備)」、内部処理は「[録画の実装の背景](development.md#録画の実装の背景)」を参照してください。
