@@ -190,10 +190,17 @@ final class RelayRunnerUITests: XCTestCase {
     case ("POST", "/type"):
       let body = try RunnerJSON(request.body)
       let keys = try body.keys()
-      let text = try body.typedText(keyCount: keys.count)
+      let clear = try body.bool("clear")
+      let text = try body.typedText(keyCount: keys.count, clear: clear)
       let bundleID = body.optionalString("bundleId") ?? foregroundApplication().bundleID
-      try type(text: text, keys: keys, bundleID: bundleID)
-      return .json(["ok": true, "bundleId": bundleID])
+      if clear {
+        try clearFocusedField(bundleID: bundleID)
+      }
+      if !text.isEmpty || !keys.isEmpty {
+        try type(text: text, keys: keys, bundleID: bundleID)
+      }
+      // `cleared` tells the client this runner knows `clear`: an older one ignored it and typed after the text.
+      return .json(clear ? ["ok": true, "bundleId": bundleID, "cleared": true] : ["ok": true, "bundleId": bundleID])
     case ("POST", "/key"):
       let body = try RunnerJSON(request.body)
       let name = try body.string("key")
@@ -453,6 +460,88 @@ final class RelayRunnerUITests: XCTestCase {
       }
       guard Date() < deadline else { throw RunnerError.noKeyboardFocus(bundleID: bundleID) }
       _ = RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.1))
+    }
+  }
+
+  /// `/type`'s `clear`: empties the field with keyboard focus (`RunnerClearing`) or throws `clearFailed`, before
+  /// anything is typed. The keys go through the private synthesizer when `/type` uses it, else through
+  /// `typeKey` and `typeText` on the focused element, which wait for the app to idle.
+  private func clearFocusedField(bundleID: String) throws {
+    // Without the attribute nothing can be read back, and clearing could not say whether it worked.
+    guard Self.snapshotsHaveKeyboardFocus else {
+      throw RunnerError.actionFailed("cannot clear the field: this XCTest does not report keyboard focus; nothing was typed")
+    }
+    let application = XCUIApplication(bundleIdentifier: bundleID)
+    try requireKeyboardFocus(application, bundleID: bundleID)
+    let focused = application.descendants(matching: .any).matching(NSPredicate(format: "hasKeyboardFocus == 1")).firstMatch
+    let synthesize = privateTypingIsDefault && RelayTextSynthesizer.isKeyAvailable
+    let deadline = Date(timeIntervalSinceNow: RunnerTyping.clearGiveUp)
+    let read = { () throws -> RunnerClearing.Field in
+      // A read can't be interrupted, but none starts past the deadline, so relay's wait stays ahead.
+      guard Date() < deadline else {
+        throw RunnerError.typingFailed("clearing the field did not complete in time; nothing was typed", status: 422)
+      }
+      let (snapshot, failed) = self.ignoringIssues { try? focused.snapshot() }
+      guard !failed, let snapshot else {
+        throw RunnerError.actionFailed("failed to read the field with keyboard focus in \(bundleID); nothing was typed")
+      }
+      return RunnerClearing.Field(value: snapshot.value.map { String(describing: $0) }, placeholder: snapshot.placeholderValue)
+    }
+    let key = { (key: String, modifiers: XCUIElement.KeyModifierFlags) throws in
+      if synthesize {
+        try self.synthesizeKey(key, modifiers: modifiers, within: deadline.timeIntervalSinceNow)
+      } else {
+        focused.typeKey(key, modifierFlags: modifiers)
+      }
+    }
+    let deletes = { (count: Int) throws in
+      let text = String(repeating: XCUIKeyboardKey.delete.rawValue, count: count)
+      if synthesize {
+        try self.synthesizeText(text, within: deadline.timeIntervalSinceNow)
+      } else {
+        focused.typeText(text)
+      }
+    }
+    let perform = { (step: RunnerClearing.Step) throws in
+      switch step {
+      case .selectAllAndDelete:
+        try key("a", .command)
+        try deletes(1)
+      case .moveToEndAndDelete(let count):
+        try key(XCUIKeyboardKey.downArrow.rawValue, .command)
+        try deletes(count)
+      }
+    }
+    let wait = { (seconds: TimeInterval) in
+      let until = Date(timeIntervalSinceNow: seconds)
+      while Date() < until {
+        _ = RunLoop.current.run(mode: .default, before: until)
+      }
+    }
+    do {
+      _ = try RunnerClearing.clear(read: read, perform: perform, wait: wait)
+    } catch let failure as RunnerClearing.NotCleared {
+      throw RunnerError.clearFailed(failure)
+    }
+  }
+
+  /// One key event with the private synthesizer, waited for up to `seconds` as `synthesizeText` waits.
+  private func synthesizeKey(_ key: String, modifiers: XCUIElement.KeyModifierFlags, within seconds: TimeInterval) throws {
+    let completion = TouchCompletion()
+    do {
+      try RelayTextSynthesizer.synthesizeKey(key, modifiers: UInt(modifiers.rawValue)) { completion.finish($0) }
+    } catch {
+      throw RunnerError.typingFailed("key synthesis failed: \(error.localizedDescription); nothing was typed", status: 500)
+    }
+    let deadline = Date(timeIntervalSinceNow: max(seconds, 0))
+    while !completion.isFinished {
+      guard Date() < deadline else {
+        throw RunnerError.typingFailed("clearing the field did not complete in time; nothing was typed", status: 422)
+      }
+      _ = RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.005))
+    }
+    if let error = completion.error {
+      throw RunnerError.typingFailed("key synthesis failed: \(error.localizedDescription); nothing was typed", status: 422)
     }
   }
 
@@ -767,20 +856,27 @@ final class RelayRunnerUITests: XCTestCase {
     return mode
   }
 
-  /// `/find`: the elements `element` matches, in document order, waiting up to `timeout` for the first.
+  /// `/find`: the elements `element` matches, in document order, waiting up to `timeout` for the first, or
+  /// with `gone` for none to match.
   private func find(_ body: RunnerJSON) throws -> RunnerHTTPResponse {
     let selector = try body.elementSelector(body.object["element"] ?? NSNull())
     let timeout = try body.elementTimeout()
     guard let limit = RunnerElementLookup.findLimit(body.object["limit"]) else {
       throw RunnerError.invalidField("limit: expected an integer in 1...\(RunnerElementLookup.maxFindLimit)")
     }
+    let gone: Bool
+    switch RunnerElementLookup.gone(body.object["gone"], selector: selector) {
+    case .success(let value): gone = value
+    case .failure(let error): throw RunnerError.invalidField(error.description)
+    }
     let bundleID = body.optionalString("bundleId") ?? foregroundApplication().bundleID
     let (matches, count) = try waitForElements(bundleID: bundleID, timeout: timeout) { root, isLastAttempt in
       let all = selector.allMatches(in: root)
       let matches = selector.picked(from: all)
-      return matches.isEmpty && !isLastAttempt ? nil : (matches, all.count)
+      let done = RunnerElementLookup.findIsDone(matchCount: matches.count, gone: gone, isLastAttempt: isLastAttempt)
+      return done ? (matches, all.count) : nil
     }
-    return annotated(RunnerElementLookup.findJSON(matches, count: count, limit: limit, bundleID: bundleID))
+    return annotated(RunnerElementLookup.findJSON(matches, count: count, limit: limit, bundleID: bundleID, gone: gone))
   }
 
   /// Snapshots `bundleID` until `attempt` returns a value, every `pollInterval` for up to `timeout`
@@ -1493,10 +1589,17 @@ struct RunnerJSON {
     }
   }
 
-  /// The `text` of `/type`; see `RunnerTyping.text(_:keyCount:)`.
-  func typedText(keyCount: Int) throws -> String {
+  /// An optional JSON boolean, false when absent.
+  func bool(_ name: String) throws -> Bool {
+    guard let value = object[name] else { return false }
+    guard let bool = RunnerRequestValues.bool(value) else { throw RunnerError.invalidField("\(name): expected true or false") }
+    return bool
+  }
+
+  /// The `text` of `/type`; see `RunnerTyping.text(_:keyCount:clear:)`.
+  func typedText(keyCount: Int, clear: Bool) throws -> String {
     do {
-      return try RunnerTyping.text(object["text"], keyCount: keyCount)
+      return try RunnerTyping.text(object["text"], keyCount: keyCount, clear: clear)
     } catch RunnerTextError.missing {
       throw RunnerError.missingField("text")
     } catch RunnerTextError.notAString {

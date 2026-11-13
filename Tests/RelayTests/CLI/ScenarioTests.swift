@@ -248,6 +248,9 @@ struct ScenarioFindCheckTests {
     #expect(try Arguments.parse(["find", "--id", "a"])
       == .runner(RunnerControlOptions(operation: .find(selector, limit: nil, timeout: nil, bundleID: nil), runnerPath: nil)))
     #expect(throws: ArgumentError.self) { try Arguments.parse(["tap", "--id", "a", "--require"]) }
+    #expect(try Arguments.parse(["find", "--id", "a", "--gone", "--require", "--timeout", "5"])
+      == .runner(RunnerControlOptions(operation: .find(selector, limit: nil, timeout: 5, bundleID: nil, gone: true), runnerPath: nil,
+                                      requireMatch: true)))
     #expect(throws: ArgumentError.self) { try Arguments.parse(["source", "--require"]) }
   }
 
@@ -257,6 +260,9 @@ struct ScenarioFindCheckTests {
     #expect(steps.map(\.action) == [
       .runner(.find(selector, limit: nil, timeout: 5, bundleID: nil), requireMatch: false),
       .runner(.find(selector, limit: nil, timeout: 5, bundleID: nil), requireMatch: true)
+    ])
+    #expect(try Scenario.parse(Scenario.lines(of: "find --id a --gone --timeout 5 --require")).map(\.action) == [
+      .runner(.find(selector, limit: nil, timeout: 5, bundleID: nil, gone: true), requireMatch: true)
     ])
     var required: [Bool] = []
     #expect(Scenario.execute(steps, perform: { _, requireMatch in required.append(requireMatch); return 0 }, log: { _ in }) == 0)
@@ -293,6 +299,8 @@ struct ScenarioDisplayTests {
     #expect(try shown("type 'hunter 2' --key return") == "type *** --key return")
     #expect(try shown("type --bundle-id com.example \"p@ss\"") == "type --bundle-id com.example ***")
     #expect(try shown("type -- --secret") == "type -- ***")
+    #expect(try shown("type --clear 'hunter 2'") == "type --clear ***")
+    #expect(try shown("type --clear") == "type --clear")
     #expect(try shown("type --key delete") == "type --key delete")
     // Negative numbers are text, as relay type reads them.
     #expect(try shown("type -42") == "type ***")

@@ -10,11 +10,13 @@ enum RunnerOperation: Equatable {
   case foreground
   case screenshot(RunnerScreenshot)
   case source(format: String?, maxDepth: Int?, filter: String?, bundleID: String?)
-  case find(RunnerElementSelector, limit: Int?, timeout: TimeInterval?, bundleID: String?)
+  /// `gone`: wait for no element to match instead of for one to (`relay find --gone`).
+  case find(RunnerElementSelector, limit: Int?, timeout: TimeInterval?, bundleID: String?, gone: Bool = false)
   case tap(RunnerTouch)
   case press(RunnerTouch)
   case swipe(from: RunnerPoint, to: RunnerPoint, duration: TimeInterval?, hold: TimeInterval?, mode: String?)
-  case type(text: String?, keys: [String], bundleID: String?)
+  /// `clear`: empty the field first (`relay type --clear`).
+  case type(text: String?, keys: [String], bundleID: String?, clear: Bool = false)
   case key(String, bundleID: String?)
   case button(String)
   case orientation(String)
@@ -63,11 +65,12 @@ enum RunnerOperation: Equatable {
       return .get("/source", query: [
         ("format", format), ("maxDepth", maxDepth.map(String.init)), ("filter", filter), ("bundleId", bundleID)
       ])
-    case .find(let selector, let limit, let timeout, let bundleID):
+    case .find(let selector, let limit, let timeout, let bundleID, let gone):
       var body: [String: Any] = ["element": selector.json]
       body["limit"] = limit
       body["timeout"] = timeout
       body["bundleId"] = bundleID
+      body["gone"] = gone ? true : nil
       return .post("/find", body)
     case .tap(let touch): return .post("/tap", touch.json)
     case .press(let touch): return .post("/press", touch.json)
@@ -77,11 +80,12 @@ enum RunnerOperation: Equatable {
       body["hold"] = hold
       body["mode"] = mode
       return .post("/swipe", body)
-    case .type(let text, let keys, let bundleID):
+    case .type(let text, let keys, let bundleID, let clear):
       var body: [String: Any] = [:]
       body["text"] = text
       body["keys"] = keys.isEmpty ? nil : keys
       body["bundleId"] = bundleID
+      body["clear"] = clear ? true : nil
       return .post("/type", body)
     case .key(let key, let bundleID):
       var body: [String: Any] = ["key": key]
@@ -104,14 +108,16 @@ enum RunnerOperation: Equatable {
   /// short leaves the runner busy with it, so the next command gets 409.
   var waitTime: TimeInterval {
     switch self {
-    case .find(_, _, let timeout, _): return timeout ?? 0
+    case .find(_, _, let timeout, _, _): return timeout ?? 0
     case .tap(let touch): return touch.timeout ?? 0
     case .press(let touch): return (touch.timeout ?? 0) + (touch.duration ?? 1)
     case .swipe(_, _, let duration, let hold, _): return (duration ?? 0.3) + (hold ?? 0.05)
     case .launch, .open, .terminate: return Self.applicationStateWait
     // The runner gives up on synthesized text `RunnerTyping.synthesisGrace` after this, so it answers within
-    // the 30 s on top.
-    case .type(let text, let keys, _): return RunnerTyping.wait(text: text ?? "", keyCount: keys.count)
+    // the 30 s on top. Clearing comes first with a grace of its own, which is added whole (`clearGiveUp`), so
+    // the answer wait stays as far past the runner's give-up with --clear as without.
+    case .type(let text, let keys, _, let clear):
+      return RunnerTyping.wait(text: text ?? "", keyCount: keys.count) + (clear ? RunnerTyping.clearGiveUp : 0)
     case .key: return RunnerTyping.wait(text: "", keyCount: 1)
     default: return 0
     }

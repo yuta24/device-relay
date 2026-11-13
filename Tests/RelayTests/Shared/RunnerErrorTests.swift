@@ -27,6 +27,7 @@ struct RunnerErrorCodeTests {
       .touchFailed: "touch_failed",
       .typingFailed: "typing_failed",
       .openFailed: "open_failed",
+      .clearFailed: "clear_failed",
       .xcuiFailed: "xcui_failed",
       .internalError: "internal_error"
     ]
@@ -55,6 +56,7 @@ struct RunnerErrorCodeTests {
       (.typingFailed("text synthesis failed: no class; nothing was typed", status: 500), 500, .typingFailed),
       (.actionFailed("failed to snapshot com.example"), 422, .xcuiFailed),
       (.openFailed("could not open x://y: no installed app handles the scheme x:"), 422, .openFailed),
+      (.clearFailed(RunnerClearing.NotCleared(remaining: 3, steps: [.selectAllAndDelete])), 422, .clearFailed),
       (.noKeyboardFocus(bundleID: "com.example"), 422, .noKeyboardFocus),
       (.displayUnknown("cannot tell which display com.example is on"), 422, .displayUnknown),
       (.windowPositionUnknown("cannot tell where the window of com.example is"), 422, .windowPositionUnknown),
@@ -128,6 +130,15 @@ struct RunnerErrorCodeTests {
       #expect(json["candidates"] is [Any])
       #expect(json["error"] as? String == failure.message)
     }
+  }
+
+  /// The field may be a password field, so only how much is left is said, never what.
+  @Test func saysHowMuchAClearLeftButNotWhat() {
+    let error = RunnerError.clearFailed(RunnerClearing.NotCleared(remaining: 49, steps: [.selectAllAndDelete, .moveToEndAndDelete(count: 200)]))
+    #expect(error.json["remaining"] as? Int == 49)
+    #expect(error.json.count == 4)
+    #expect(error.description == "the field with keyboard focus still has 49 characters after select all and delete, then 200 deletes "
+      + "from the end; nothing was typed")
   }
 
   @Test func addsTheAppsToACoveredAppFailure() {

@@ -40,6 +40,20 @@ struct RunnerRequestValuesTests {
     #expect(try number(fromJSON: "-3") == -3)
   }
 
+  @Test func readsOnlyJSONBooleansAsBooleans() throws {
+    func bool(fromJSON text: String) throws -> Bool? {
+      let object = try JSONSerialization.jsonObject(with: Data("{\"v\":\(text)}".utf8)) as? [String: Any]
+      return try RunnerRequestValues.bool(#require(object?["v"]))
+    }
+    #expect(try bool(fromJSON: "true") == true)
+    #expect(try bool(fromJSON: "false") == false)
+    // NSNumber holds numbers too; 1 is not true.
+    #expect(try bool(fromJSON: "1") == nil)
+    #expect(try bool(fromJSON: "0") == nil)
+    #expect(try bool(fromJSON: "\"true\"") == nil)
+    #expect(try bool(fromJSON: "null") == nil)
+  }
+
   /// `{"x": true, "y": 1}` used to be read as a tap at (1, 1).
   @Test func rejectsBooleansAndNonNumbers() throws {
     #expect(try number(fromJSON: "true") == nil)

@@ -78,6 +78,13 @@ struct RunnerArgumentsTests {
     #expect(throws: ArgumentError.self) { try Arguments.parse(["find", "--type", "notAType"]) }
     #expect(throws: ArgumentError.self) { try Arguments.parse(["find", "--id", "a", "--limit", "101"]) }
     #expect(throws: ArgumentError.self) { try Arguments.parse(["find", "--id", "a", "--timeout", "11"]) }
+    #expect(try operation(["find", "--id", "spinner", "--gone", "--timeout", "5", "--limit", "3"])
+      == .find(RunnerElementSelector(identifier: "spinner"), limit: 3, timeout: 5, bundleID: nil, gone: true))
+    // --index picks another element as the others go.
+    #expect(throws: ArgumentError.self) { try Arguments.parse(["find", "--type", "cell", "--index", "1", "--gone"]) }
+    #expect(throws: ArgumentError.self) { try Arguments.parse(["find", "--gone"]) }
+    #expect(throws: ArgumentError.self) { try Arguments.parse(["find", "--id", "a", "--gone=true"]) }
+    #expect(throws: ArgumentError.self) { try Arguments.parse(["tap", "--id", "a", "--gone"]) }
     #expect(throws: ArgumentError.self) { try Arguments.parse(["find", "--id", "a", "--id", "b"]) }
     #expect(throws: ArgumentError.self) { try Arguments.parse(["find", "--id", "a", "--duration", "1"]) }
   }
@@ -107,6 +114,16 @@ struct RunnerArgumentsTests {
     #expect(try operation(["swipe", "200", "700", "200", "200", "--duration", "0.5", "--hold", "0", "--mode", "private"])
       == .swipe(from: RunnerPoint(x: 200, y: 700), to: RunnerPoint(x: 200, y: 200), duration: 0.5, hold: 0, mode: "private"))
     #expect(throws: ArgumentError.self) { try Arguments.parse(["swipe", "1", "2", "3"]) }
+  }
+
+  @Test func parsesTypeClear() throws {
+    #expect(try operation(["type", "--clear"]) == .type(text: nil, keys: [], bundleID: nil, clear: true))
+    #expect(try operation(["type", "--clear", "new", "--key", "return"]) == .type(text: "new", keys: ["return"], bundleID: nil, clear: true))
+    #expect(try operation(["type", "new", "--clear"]) == .type(text: "new", keys: [], bundleID: nil, clear: true))
+    #expect(throws: ArgumentError.self) { try Arguments.parse(["type", "--clear=yes"]) }
+    #expect(throws: ArgumentError.self) { try Arguments.parse(["key", "delete", "--clear"]) }
+    // Without --clear, there must still be something to type.
+    #expect(throws: ArgumentError.self) { try Arguments.parse(["type"]) }
   }
 
   @Test func parsesTypeTextAndKeys() throws {

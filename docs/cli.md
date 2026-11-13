@@ -26,12 +26,14 @@ relay health                                   # curl -s -H "$AUTH" $R/health
 relay launch host                              # RelayRunnerHost（host はそのバンドル ID の別名）
 relay find --type textField                    # POST /find {"element":{"type":"textField"}}
 relay find --id home.title --timeout 5 --require   # 現れるまで待ち、現れなければ終了コード 6
+relay find --id spinner --gone --timeout 5 --require   # 消えるまで待ち、消えなければ終了コード 6
 relay tap --id relay.input                     # POST /tap {"element":{"identifier":"relay.input"}}
 relay tap 200 120 --mode xcui                  # POST /tap {"x":200,"y":120,"mode":"xcui"}
 relay press --label General --type button --duration 1.0
 relay swipe 200 700 200 200 --duration 0.3
 relay type "hello" --key return                # POST /type {"text":"hello","keys":["return"]}
 printf '%s' "$PASSWORD" | relay type --stdin   # 文字列を標準入力から読む（ps やシェルの履歴に残さない）
+relay type --clear "new text"                  # POST /type {"clear":true,"text":"new text"}（空にしてから入力）
 relay key delete
 relay screenshot                               # 保存先の絶対パスを出力（既定は $TMPDIR/relay/screenshot-<時刻>.png）
 relay screenshot -o shot.jpg --quality 0.5     # 拡張子 .jpg / --quality で jpeg
@@ -61,10 +63,10 @@ relay crashes                                  # 直近 24 時間のクラッシ
 | `ping` / `health` / `foreground` | `GET /ping` / `/health` / `/foreground` | – |
 | `screenshot` | `GET /screenshot` | `-o <file>`（`-` で stdout）、`--format png\|jpeg`、`--quality 0.05–1.0`、`--max-size <px>`、`--scale <px/pt>` |
 | `source` | `GET /source` | `--format json\|text\|compact`、`--filter interactive`、`--max-depth <n>`、`--bundle-id <id>` |
-| `find` | `POST /find` | セレクタ、`--limit <n>`、`--timeout <s>`、`--require`、`--bundle-id <id>` |
+| `find` | `POST /find` | セレクタ、`--limit <n>`、`--timeout <s>`、`--gone`、`--require`、`--bundle-id <id>` |
 | `tap` / `press` | `POST /tap` / `/press` | `<x> <y>` かセレクタ、`--mode private\|xcui`、`--timeout`・`--bundle-id`（セレクタのみ）、`--duration`（press のみ） |
 | `swipe` | `POST /swipe` | `<x1> <y1> <x2> <y2>`、`--duration`、`--hold`、`--mode` |
-| `type` | `POST /type` | `<text>` か `--stdin`、`--key <name>`（複数可、順に送る）、`--bundle-id` |
+| `type` | `POST /type` | `<text>` か `--stdin`、`--key <name>`（複数可、順に送る）、`--clear`、`--bundle-id` |
 | `key` / `button` / `orientation` | `POST /key` / `/button` / `/orientation` | 名前（`key` は `--bundle-id` も可、`orientation` は `landscape` を `landscapeLeft` として送る） |
 | `launch` / `terminate` | `POST /launch` / `/terminate` | `<bundle-id>`（`host` も可） |
 | `open` | `POST /open` | `<url>`、`--bundle-id <id>`（`host` も可） |
@@ -96,6 +98,10 @@ relay crashes                                  # 直近 24 時間のクラッシ
 `relay find <セレクタ> --timeout 5 --require` は「現れるまで待ち、現れなければ失敗する」確認になります。
 スクリプトは JSON を読まずに終了コードだけで判断できます。
 
+`--gone` を付けると逆に、一致する要素がなくなるまで待ちます。読み込みの表示が消える、アラートが閉じる、を待つときに使います。
+応答には `gone`（`true` / `false`）が付きます。`--require` と組み合わせると、時間内に消えなければ終了コード 6（`element_still_present`）です。
+`--index` とは組み合わせられません。消えたとみなす条件は「[消えるのを待つ（gone）](elements.md#消えるのを待つgone)」にあります。
+
 `relay source` は要素ツリーを取得します。`source --format text` / `compact` の出力はテキストです。
 
 `relay screenshot` は画像をファイルに保存し、その絶対パスを 1 行出します。
@@ -117,6 +123,9 @@ relay: image 471x1024 px, screen 402x874 pt, 1.172 px/pt (tap in points: px / 1.
 
 `-` で始まる文字列を入力するときは `relay type -- --text` のように `--` を挟みます。
 パスワードなど、`ps` やシェルの履歴に残したくない文字列は `relay type --stdin` で標準入力から渡します。
+
+`relay type --clear` は、フォーカスがある入力欄を空にしてから入力します。文字列を省くと、空にするだけです。
+空にならなければ、何も入力せずに終了コード 6（`clear_failed`）です。消し方と確かめ方は「[入力欄を空にする（clear）](http-api.md#入力欄を空にするclear)」にあります。
 
 標準入力では、末尾の改行 1 つ（`\n` か `\r\n`）だけを除き、それ以外はそのまま入力します。`echo` が付ける改行もこの対象です。
 `--key` と併用でき、標準入力が空でも `--key` があればキーだけを送ります。
@@ -299,7 +308,7 @@ URL がアプリの中に届いたかは、設定アプリが開いたこと以�
 | `swipe` | `--duration` と `--hold` の時間 |
 | `launch` / `terminate` | 120 秒 |
 | `open` | 120 秒（通常は前面を待つ 5 秒までで応答します） |
-| `type` | 1 文字（Unicode スカラー）につき 0.1 秒と、キー 1 つにつき 1 秒 |
+| `type` | 1 文字（Unicode スカラー）につき 0.1 秒と、キー 1 つにつき 1 秒。`--clear` ではさらに 33 秒（空にする分の 23 秒と、ランナーが諦めるまでの猶予 10 秒） |
 | `key` | 1 秒 |
 
 アプリの起動・終了を XCTest が待つ時間は 120 秒です。ランナーは 60 秒に戻しますが、戻せないランナーでは 120 秒のままです（「[アプリの状態の待ち時間](private-api.md#アプリの状態の待ち時間)」）。
@@ -378,7 +387,7 @@ relay 自身は次の `code` を出します。ランナーは返しません。
 | `runner_unavailable` | `3` | runner.json がない、接続できない、接続が OS に拒否された |
 | `runner_timeout` | `3` | 時間内に応答がない（ランナーは操作を続けていて、終わるまで busy） |
 | `runner_info_invalid` | `1` | runner.json が読めない、url が不正、`host` を解決できない |
-| `runner_bad_response` | ランナーのステータスによる（`8` など） | JSON でない本文のエラー（古いランナー、別のサーバー）で、`status` に HTTP ステータスが入ります。 |
+| `runner_bad_response` | ランナーのステータスによる（`8` など） | JSON でない本文のエラー（古いランナー、別のサーバー）で、`status` に HTTP ステータスが入ります。`find --gone` への応答に `gone` がない（`gone` を知らない古いランナー）ときも、この code で終了コード 8 です。 |
 | `screenshot_save_failed` | `1` | 画像を受け取ったが、ファイルに保存できない |
 | `app_not_installed` | `6` | `launch` と `open --bundle-id` で、アプリが端末に入っていない（ランナーには送らない）。`uninstall` では何も消していない |
 | `app_bundle_invalid` | `1` | `install` のパスがない、`.app`・`.ipa` でない、Info.plist が読めない |
@@ -387,6 +396,7 @@ relay 自身は次の `code` を出します。ランナーは返しません。
 | `app_uninstall_failed` | `1` | `simctl uninstall`・`devicectl device uninstall app` が失敗した・時間切れ |
 | `app_uninstall_refused` | `1` | `uninstall` で、relay のランナーのアプリを指定した（送らない） |
 | `element_not_found` | `6` | `find --require` で一致なし（ランナーの `code` と同じで、`count`・`elements` も付く） |
+| `element_still_present` | `6` | `find --gone --require` で、時間内に一致する要素がなくならなかった（`count`・`elements`・`gone` も付く） |
 | `device_unavailable` | `1` | `logs`・`crashes` で、UDID の端末がない、シミュレータが boot していない（logs）、実機が接続していない |
 | `logs_unavailable` | `1` | `log` が失敗した・時間切れ・読めない行を出した、出す JSON が 64 MiB を超えた |
 | `logs_permission_denied` | `1` | 実機のログの収集に管理者の権限が要る（`hint` に自分で実行するコマンド） |
@@ -417,11 +427,13 @@ code を返さない古いランナーでは、`401`・`409` のヒントだけ�
 | --- | --- |
 | `no_keyboard_focus` | 入力欄を先にタップしてから送り直す |
 | `typing_failed` | 入った文字を `relay find` の `value` で確かめ、必要なら消してから送り直す |
+| `clear_failed` | `relay find` の `value` で確かめ、短くなっていれば `relay type --clear` を送り直す。変わらなければ、アプリが文字を戻している |
 | `element_not_found` | `relay find --type …` / `relay source` で画面を確かめるか、`--timeout <秒>` で待つ |
 | `element_ambiguous` | `--type`・`--label`・`--id` を足すか、候補から `--index <n>` で選ぶ |
 | `touch_mode_unavailable` | `--mode` を外すか、エラーが示す経路で送り直す |
 | `element_point_covered` | `relay screenshot` / `relay source` で対象を確かめ、覆いを閉じるか、スクリーンショットで確認した座標を指定する |
 | `covered_by_other_app` | `relay screenshot` か `relay find --type alert --bundle-id com.apple.springboard` で覆っている画面を確かめ、閉じてから送り直す |
+| `element_still_present` | もっと待つ（`find --gone --timeout <秒>` を繰り返す）か、`relay screenshot` で画面を確かめる |
 | `remote_view_position_unknown` | `relay screenshot` で位置を確かめ、`relay tap <x> <y>` で座標を指定する |
 | `open_failed` | URL のスキームと、それを扱うアプリが入っているかを確かめる。`--bundle-id <id>` でそのアプリに渡せる |
 | `not_found` | ランナーが relay より古いかもしれない（`relay start --rebuild` でビルドし直す） |
@@ -571,6 +583,7 @@ relay: step 4/7 (line 5) failed: find --label About --type button --timeout 5 --
 画面が変わる操作の後は、次の画面の要素が現れるまで待てます。
 `find <セレクタ> --timeout <秒>`、または `tap` / `press` の `--timeout` を使います。
 要素が現れた時点で次に進むので、固定の `sleep` より速く、遅い環境でも崩れにくくなります。
+読み込みの表示やアラートが消えるのを待つときは、`find <セレクタ> --gone --timeout <秒> --require` を使います。
 `sleep` は、要素で表せない待ち（アニメーションの終わりなど）のための最後の手段です。
 
 確認には `find --require` を使います。単独のコマンドと同じく、`find` は一致がなくても成功（`"count":0`）し、シナリオは先に進みます。
@@ -592,7 +605,7 @@ relay: step 4/7 (line 5) failed: find --label About --type button --timeout 5 --
 `relay run` は、AXe の `axe batch` と同じく、1 行 1 手順を順に実行し、最初の失敗で止まります。
 `--step` の並び・ファイル・標準入力から読めることと、`sleep` の手順があることも同じです。
 
-- 要素を待つのは、AXe の `--wait-timeout` ではなく、手順ごとの `find --timeout` / `tap --timeout` / `press --timeout`（最大 10 秒）です。
+- 要素を待つのは、AXe の `--wait-timeout` ではなく、手順ごとの `find --timeout` / `tap --timeout` / `press --timeout`（最大 10 秒）です。消えるのを待つ `find --gone --timeout` もあります。
 - 途中に確認の手順を書けます。`find --timeout <秒> --require` は待ちと確認を兼ね、見つからなければそこで止まります。
 - `source` / `screenshot` / `health` / `foreground` などの観察も手順にでき、結果は stdout に出ます。
 - 実行の前に全手順を確かめ、不正な行があれば何も実行しません。

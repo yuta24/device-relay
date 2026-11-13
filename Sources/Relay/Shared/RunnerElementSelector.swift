@@ -156,6 +156,18 @@ enum RunnerElementSelectorError: Error, Equatable, CustomStringConvertible {
   }
 }
 
+enum RunnerFindGoneError: Error, Equatable, CustomStringConvertible {
+  case notABoolean
+  case withIndex
+
+  var description: String {
+    switch self {
+    case .notABoolean: return "gone: expected true or false"
+    case .withIndex: return "gone: cannot be combined with element.index (it waits for every match to go)"
+    }
+  }
+}
+
 struct RunnerElementMatch: Sendable {
   /// The position among all matches in document order, the value to pass as `index`.
   var index: Int
@@ -287,14 +299,37 @@ enum RunnerElementLookup {
     return Int(limit)
   }
 
-  /// The `/find` body: `count` (every match, ignoring `index`) and at most `limit` of `matches`.
-  static func findJSON(_ matches: [RunnerElementMatch], count: Int, limit: Int, bundleID: String) -> [String: Any] {
-    [
+  /// The `/find` body: `count` (every match, ignoring `index`) and at most `limit` of `matches`. A `gone`
+  /// lookup adds `gone`: whether nothing matched in the end. A client that sent `gone` and finds no `gone` in
+  /// the answer is talking to a runner that predates it, which waited for an element to appear instead.
+  static func findJSON(_ matches: [RunnerElementMatch], count: Int, limit: Int, bundleID: String, gone: Bool = false) -> [String: Any] {
+    var object: [String: Any] = [
       "ok": true,
       "bundleId": bundleID,
       "count": count,
       "elements": matches.prefix(limit).map(\.json),
       "truncated": matches.count > limit
     ]
+    if gone {
+      object["gone"] = matches.isEmpty
+    }
+    return object
+  }
+
+  /// The optional `gone` of `/find`: false when absent, nil unless a JSON boolean. It waits for no element to
+  /// match, so it can't be combined with `index`, whose element would change as the others go.
+  static func gone(_ value: Any?, selector: RunnerElementSelector) -> Result<Bool, RunnerFindGoneError> {
+    guard let value else { return .success(false) }
+    guard let gone = RunnerRequestValues.bool(value) else { return .failure(.notABoolean) }
+    if gone, selector.index != nil {
+      return .failure(.withIndex)
+    }
+    return .success(gone)
+  }
+
+  /// Whether a `/find` that looked at `matches` (picked by `index`) is done: when something matches, or with
+  /// `gone` when nothing does, or on the last attempt whatever it found.
+  static func findIsDone(matchCount: Int, gone: Bool, isLastAttempt: Bool) -> Bool {
+    isLastAttempt || (gone ? matchCount == 0 : matchCount > 0)
   }
 }

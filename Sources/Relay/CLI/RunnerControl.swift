@@ -41,7 +41,8 @@ struct RunnerControlOptions: Equatable {
   var runnerPath: String?
   /// `--session <name>` (see `RelaySession`); nil uses `$RELAY_SESSION`, else `~/.relay/runner.json`.
   var session: String?
-  /// `relay find --require`: no element is a failure (exit 6), not `"count":0` with exit 0.
+  /// `relay find --require`: no element is a failure (exit 6), not `"count":0` with exit 0. With
+  /// `find --gone`, an element still there is the failure.
   var requireMatch = false
 }
 
@@ -169,7 +170,23 @@ enum RunnerControl {
       return code.rawValue
     }
 
-    if requireMatch, !hasElements(response.body) {
+    if case .type(_, _, _, clear: true) = resolved, !answerSays("cleared", response.body) {
+      // A runner from before `clear` ignored it: the text went in after what the field held.
+      return fail(.runnerBadResponse, "the runner's /type answer has no cleared; it predates type --clear and typed without "
+        + "clearing the field (relay start --rebuild builds a current one)", exit: .runnerError, to: failureOutput)
+    }
+    if case .find(_, _, _, _, gone: true) = resolved {
+      guard let gone = goneAnswer(response.body) else {
+        // A runner from before `gone` ignored it and waited for an element to appear instead.
+        return fail(.runnerBadResponse, "the runner's /find answer has no gone; it predates find --gone (relay start --rebuild "
+          + "builds a current one)", exit: .runnerError, to: failureOutput)
+      }
+      if requireMatch, !gone {
+        CLIOutput.writeLine(stillPresentBody(response.body), to: failureOutput)
+        CLIOutput.note("an element still matches; wait longer (repeat find --gone --timeout <s>) or check the screen with relay screenshot")
+        return RunnerExitCode.actionFailed.rawValue
+      }
+    } else if requireMatch, !hasElements(response.body) {
       CLIOutput.writeLine(noMatchBody(response.body), to: failureOutput)
       return RunnerExitCode.actionFailed.rawValue
     }
@@ -211,6 +228,30 @@ enum RunnerControl {
     return CLIOutput.json(object, fallback: body)
   }
 
+  /// `find --gone --require` with an element left: the `/find` answer (its `count`, `elements`, `gone`) as an
+  /// `element_still_present` failure.
+  static func stillPresentBody(_ body: Data) -> Data {
+    var object = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] ?? [:]
+    object["ok"] = false
+    object["code"] = RelayErrorCode.elementStillPresent.rawValue
+    object["error"] = "an element still matched when the timeout ran out"
+    return CLIOutput.json(object, fallback: body)
+  }
+
+  /// Whether an answer has `key` set to true.
+  static func answerSays(_ key: String, _ body: Data) -> Bool {
+    guard let object = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+          let value = object[key] as? NSNumber, CFGetTypeID(value) == CFBooleanGetTypeID() else { return false }
+    return value.boolValue
+  }
+
+  /// The `gone` of a `/find` answer, nil when there is none (a runner from before `gone`).
+  static func goneAnswer(_ body: Data) -> Bool? {
+    guard let object = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+          let gone = object["gone"] as? NSNumber, CFGetTypeID(gone) == CFBooleanGetTypeID() else { return nil }
+    return gone.boolValue
+  }
+
   /// What follows "cannot reach the runner" when a request timed out. The runner is fine but still at the
   /// operation, and every other command gets 409 until it ends. XCTest can't be interrupted, and after a
   /// `/launch` it may hold on for minutes more (298 s in all for an app that isn't installed).
@@ -247,6 +288,10 @@ enum RunnerControl {
     case .typingFailed:
       return "some of the text may have been typed: check the field's value with relay find, clear it if needed, "
         + "then send it again"
+    case .clearFailed:
+      return "the field kept some text and nothing was typed: check its value with relay find. If it got shorter, "
+        + "send relay type --clear again (it deletes up to \(RunnerClearing.maxDeletes) characters when select all does not work); "
+        + "if not, the app keeps or refills it"
     case .elementNotFound:
       return "check the screen with relay find --type … or relay source, or wait for the element with --timeout <s>"
     case .elementAmbiguous:

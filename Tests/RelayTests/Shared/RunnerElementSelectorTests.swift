@@ -301,6 +301,40 @@ struct RunnerElementSelectorTests {
     #expect(try target.verified(hitPath: [1], in: control).get().point == target.point)
   }
 
+  @Test func parsesGone() throws {
+    let selector = RunnerElementSelector(identifier: "spinner")
+    #expect(try RunnerElementLookup.gone(nil, selector: selector).get() == false)
+    #expect(try RunnerElementLookup.gone(NSNumber(value: true), selector: selector).get() == true)
+    #expect(try RunnerElementLookup.gone(NSNumber(value: false), selector: selector).get() == false)
+    for invalid: Any in [NSNumber(value: 1), "true", NSNull()] {
+      #expect(throws: RunnerFindGoneError.notABoolean, "\(invalid)") { try RunnerElementLookup.gone(invalid, selector: selector).get() }
+    }
+    // An index picks a different element as the others go, so it can't be waited out.
+    let indexed = RunnerElementSelector(type: "cell", index: 1)
+    #expect(throws: RunnerFindGoneError.withIndex) { try RunnerElementLookup.gone(NSNumber(value: true), selector: indexed).get() }
+    #expect(try RunnerElementLookup.gone(NSNumber(value: false), selector: indexed).get() == false)
+    #expect(RunnerFindGoneError.withIndex.description.contains("element.index"))
+  }
+
+  @Test func findStopsWhenWhatItWaitsForHappens() {
+    // Waiting for an element: done once one matches.
+    #expect(RunnerElementLookup.findIsDone(matchCount: 0, gone: false, isLastAttempt: false) == false)
+    #expect(RunnerElementLookup.findIsDone(matchCount: 2, gone: false, isLastAttempt: false))
+    // Waiting for it to go: done once none does.
+    #expect(RunnerElementLookup.findIsDone(matchCount: 0, gone: true, isLastAttempt: false))
+    #expect(RunnerElementLookup.findIsDone(matchCount: 1, gone: true, isLastAttempt: false) == false)
+    // The last attempt answers with what it found either way.
+    #expect(RunnerElementLookup.findIsDone(matchCount: 0, gone: false, isLastAttempt: true))
+    #expect(RunnerElementLookup.findIsDone(matchCount: 1, gone: true, isLastAttempt: true))
+  }
+
+  @Test func saysWhetherTheElementWentOnlyWhenAsked() throws {
+    let all = RunnerElementSelector(label: "History").allMatches(in: tree)
+    #expect(RunnerElementLookup.findJSON(all, count: 2, limit: 20, bundleID: "app")["gone"] == nil)
+    #expect(RunnerElementLookup.findJSON(all, count: 2, limit: 20, bundleID: "app", gone: true)["gone"] as? Bool == false)
+    #expect(RunnerElementLookup.findJSON([], count: 0, limit: 20, bundleID: "app", gone: true)["gone"] as? Bool == true)
+  }
+
   @Test func parsesTimeoutAndLimit() {
     #expect(RunnerElementLookup.timeout(nil) == 0)
     #expect(RunnerElementLookup.timeout(NSNumber(value: 2.5)) == 2.5)

@@ -117,7 +117,7 @@ enum Arguments {
   static let valuelessOptions: Set<String> = [
     "--json", "--simulator", "--rebuild", "--verbose", "--allow-wifi", "--background", "--all", "--stdin",
     "--require", "--quiet", "--check", "--force", "--build", "--remove", "--link", "--global", "--help", "--version",
-    "--follow"
+    "--follow", "--gone", "--clear"
   ]
 
   /// Rewrites `--opt=value` as `--opt value`, the one form the parsers read, before any of them looks at the

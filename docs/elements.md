@@ -128,6 +128,7 @@ searchField label="Search" placeholder="Search" frame=28,808,346,28
 | `bundleId` | 対象アプリ。省略時は前面アプリ（`/source` と同じ） |
 | `timeout` | 要素が現れるまで待つ秒数（0–10、既定 0 = 1 回だけ探す）。0.25 秒ごとにスナップショットを取り直します |
 | `limit`（`/find` のみ） | 返す要素の上限（1–100、既定 20）。`count` は常に一致した総数で、上限で切った場合は `truncated: true` |
+| `gone`（`/find` のみ） | `true` で、一致する要素がなくなるまで `timeout` の間待ちます（「[消えるのを待つ（gone）](#消えるのを待つgone)」）。`index` とは組み合わせられません |
 
 - 条件（`identifier`・`label`・`type`・`value`）は AND で組み合わせ、少なくとも 1 つ必要です。空文字列・文字列以外・未知のキー（`id` など）は `400` です。打ち間違いで条件が黙って消え、意図より広く一致するのを防ぐためです。
 - 部分一致・正規表現は入れていません。完全一致なら同じセレクタが常に同じ要素を指し、一致の理由が説明しやすいためです。部分一致は複数一致が増え、`index` の意味が画面の内容で変わりやすくなります。曖昧な名前で探したいときは、`/find` を `type` などで絞って一覧から選び、その `identifier` や `index` を使ってください。
@@ -280,6 +281,45 @@ iPhone で、上の止めるもので止まり、止めないものとダイア�
 - RelayRunnerHost: `relay.input` / `relay.input2` を identifier 指定・`{"type":"textField","index":1}` でタップすると、`/source` の `hasKeyboardFocus` がその欄に移りました（`private`・`xcui`、`/press` も同じ）。
 - 横向き（landscapeLeft / landscapeRight）でも、identifier 指定のタップでフォーカスが移りました（`point` は 874×402 の座標で `{"x":437,"y":87}` など）。
 - 設定: `{"label":"General","type":"button"}` → `{"label":"About","type":"button"}` と順にタップして「情報」画面に移りました。
+
+### 消えるのを待つ（gone）
+
+`/find` に `"gone": true` を付けると、セレクタに一致する要素がなくなるまで待ちます。読み込みの表示が消える、シートやアラートが閉じる、を待つためのものです。CLI では `relay find <セレクタ> --gone --timeout <秒>` です。
+
+```sh
+relay tap --label OK --type button
+relay find --type alert --gone --timeout 5 --require
+```
+
+- **消えたとみなす条件**: 要素ツリーに一致する要素が 1 つもないことです。`gone` のない `/find` の `count: 0` と同じ判定で、frame は見ません。
+- 画面の外にある要素、frame が空の要素も「ある」と数えます。ハードウェアキーボードをつないだシミュレータのキーボード（`keyboard`）は、画面の下（y = 891 など）でツリーに残るので、消えません。
+- 見た目で判断したいときは、`gone` のない `/find` の `frame` を読んで確かめてください。
+- **応答**: `/find` と同じ形に `gone`（`true` / `false`）が付きます。待つ時間（`timeout`、0–10 秒）や busy の扱いは、上の「[待機（timeout）](#待機timeout)」と同じです。
+- `timeout` の間に消えなくても `200` で、`gone: false` と、残っている要素（`count`・`elements`）を返します。
+- `relay find --gone --require` は、そのとき終了コード 6 で、`code` は `element_still_present` です（relay が判定します。ランナーは返しません）。
+- 最初から一致しない要素は、待たずにすぐ `gone: true` です。
+- **組み合わせ**: `index` とは組み合わせられません（`400`、CLI は終了コード 2）。ほかの要素が消えると、同じ番号が別の要素を指すためです。`limit` は残っている要素の一覧に効きます。
+- **対象アプリ**: `bundleId` を省略したときは、`timeout` と同じく最初に前面アプリから 1 回だけ決めます。システムの許可ダイアログは `bundleId: com.apple.springboard` で待ちます。
+- 待っている間に対象アプリの要素ツリーが取れないと（アプリが終了したなど）、取れるまで待ち、期限を過ぎると `422`、`xcui_failed` です。
+- `gone` を知らない古いランナーは、`gone` を無視して要素が現れるのを待ちます。応答に `gone` がないとき、`relay find --gone` は `runner_bad_response`（終了コード 8）で失敗します。
+
+アラートなどを閉じるタップの後に `--gone --require` を置くと、タップが無視されて閉じなかったことにも気づけます（「[別のアプリに覆われているとき](#別のアプリに覆われているとき)」）。シミュレータで、表示の直後に押した OK が無視されたとき、`gone: false` で終了コード 6 になりました。
+
+確かめた結果（iPhone 18 Pro シミュレータ、RelayRunnerHost）:
+
+| 場面 | 結果 |
+| --- | --- |
+| `relay.showToast` で出した `relay.toast`（1.5 秒後にビューから外す） | タップの直後から待って約 1.4 秒で `gone: true` |
+| 消えない要素（`relay.input`、`--timeout 2 --require`） | 約 2.1 秒で `gone: false`、終了コード 6、`element_still_present` |
+| 最初からない要素（`--timeout 5`） | 約 60 ms で `gone: true` |
+| アプリ内のアラート（`relay.inAppAlert`）の OK を押した後 | 約 60 ms で `gone: true`（タップの応答の時点でツリーから消えていた） |
+| 位置情報の許可ダイアログ（`--bundle-id com.apple.springboard`）の「Allow Once」を押した後 | 約 70 ms で `gone: true`。その直後の `relay foreground` はまだ `com.apple.springboard` |
+| 入力欄のフォーカス中に `relay.overlay` で全画面の画面を出したときのキーボード（ハードウェアキーボードをつないでいて、画面の外にあった） | 約 70 ms で `gone: true` |
+| `relay terminate host` の後に `--bundle-id host` で待つ（`--timeout 2` / なし） | 約 2.1 秒 / 約 40 ms で `422`、`xcui_failed`（`… is not running`） |
+
+アラートを閉じた直後に `gone: true` になっても、前面アプリが元のアプリに戻るまで約 230 ms かかることがあります。続く要素指定の `tap` は、その間を待ってから送ります（「[別のアプリに覆われているとき](#別のアプリに覆われているとき)」）。
+
+確かめた環境: iPhone 18 Pro シミュレータ（iOS 27.2、Xcode 27.2）。実機では確かめていません。
 
 ### システムの許可ダイアログ
 

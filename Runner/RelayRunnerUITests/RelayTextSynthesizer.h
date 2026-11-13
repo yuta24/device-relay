@@ -26,6 +26,18 @@ NS_ASSUME_NONNULL_BEGIN
             completion:(void (^)(NSError *_Nullable error))completion
                  error:(NSError **)error;
 
+/// YES when `synthesizeKey:modifiers:completion:error:` can be used too: `isAvailable` and the private
+/// key event of the same path.
+@property (class, nonatomic, readonly) BOOL isKeyAvailable;
+
+/// Sends one hardware key event, `key` (a character such as @"a", or an `XCUIKeyboardKey` value) with
+/// `modifiers` (`XCUIKeyModifierFlags`), as `XCUIElement.typeKey(_:modifierFlags:)` does inside, without its
+/// waits for the app to idle. Returns NO with `error` when nothing was sent.
++ (BOOL)synthesizeKey:(NSString *)key
+            modifiers:(NSUInteger)modifiers
+           completion:(void (^)(NSError *_Nullable error))completion
+                error:(NSError **)error;
+
 @end
 
 NS_ASSUME_NONNULL_END
