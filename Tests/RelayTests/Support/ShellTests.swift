@@ -3,7 +3,8 @@ import Testing
 @testable import Relay
 
 /// `Shell.run` with real processes. Each test ends in about a second or less, far below the 30 s its sleep
-/// would take if `run` waited for it.
+/// would take if `run` waited for it. Only `killsAProcessThatIgnoresSIGTERM` may take longer: when a loaded machine
+/// does not get sh to its trap in time, it tries again with a limit of up to about 10 s.
 struct ShellTests {
   private static let bound: TimeInterval = 15
 
