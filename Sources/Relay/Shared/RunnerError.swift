@@ -54,6 +54,12 @@ enum RunnerErrorCode: String, CaseIterable {
   case clearFailed = "clear_failed"
   /// 422: `/open` was refused: no installed app handles the URL, or the app named could not open it.
   case openFailed = "open_failed"
+  /// 422: `/adjust` selected an element that is not a slider (for `position`) or a picker wheel (for `pickerValue`);
+  /// nothing was adjusted.
+  case elementNotAdjustable = "element_not_adjustable"
+  /// 422: after `/adjust`, the slider or picker wheel is not at what was asked for (XCUI failed, or the value read
+  /// again differs); the answer has the value it shows.
+  case adjustFailed = "adjust_failed"
   /// 422: XCUI reported a failure (a recorded test issue, a snapshot that failed).
   case xcuiFailed = "xcui_failed"
   /// 500: anything else that went wrong in the runner.
@@ -108,6 +114,10 @@ enum RunnerError: Error, CustomStringConvertible {
   case clearFailed(RunnerClearing.NotCleared)
   /// A selector that didn't lead to one touchable element; answered with the failure's JSON.
   case elementNotResolved(RunnerElementLookupFailure)
+  /// `/adjust` selected an element of another type (422); nothing was adjusted.
+  case notAdjustable(String, element: RunnerElementMatch)
+  /// `/adjust` did not reach its target (422); answered with what the element shows now.
+  case adjustFailed(String, RunnerAdjusting.Outcome)
 
   var description: String {
     switch self {
@@ -124,6 +134,7 @@ enum RunnerError: Error, CustomStringConvertible {
     case .coveredByOtherApp(let covered): return covered.message
     case .elementNotResolved(let failure): return failure.message
     case .clearFailed(let failure): return failure.message
+    case .notAdjustable(let message, _), .adjustFailed(let message, _): return message
     }
   }
 
@@ -135,7 +146,7 @@ enum RunnerError: Error, CustomStringConvertible {
     case .internalError, .touchSynthesisError: return 500
     case .typingFailed(_, let status): return status
     case .touchFailed, .actionFailed, .touchUnreachable, .noKeyboardFocus, .displayUnknown, .windowPositionUnknown,
-         .coveredByOtherApp, .elementNotResolved, .openFailed, .clearFailed: return 422
+         .coveredByOtherApp, .elementNotResolved, .openFailed, .clearFailed, .notAdjustable, .adjustFailed: return 422
     }
   }
 
@@ -157,12 +168,15 @@ enum RunnerError: Error, CustomStringConvertible {
     case .openFailed: return .openFailed
     case .clearFailed: return .clearFailed
     case .elementNotResolved(let failure): return failure.code
+    case .notAdjustable: return .elementNotAdjustable
+    case .adjustFailed: return .adjustFailed
     }
   }
 
   /// The response body: `code` and `error`, plus `reason`, `count`, and `candidates` for an element lookup, and
   /// `bundleId`, `foreground`, and `alert` for a covered app, and `remaining` (a count of characters, never the
-  /// text: it may be a password) for a field `clear` left.
+  /// text: it may be a password) for a field `clear` left, `element` for an element `/adjust` does not take, and
+  /// `bundleId`, `element`, `value` (and `position`) for an adjust that missed.
   var json: [String: Any] {
     switch self {
     case .elementNotResolved(let failure): return failure.json
@@ -171,6 +185,12 @@ enum RunnerError: Error, CustomStringConvertible {
       var body = code.body(description)
       body["remaining"] = failure.remaining
       return body
+    case .notAdjustable(_, let element):
+      var body = code.body(description)
+      body["element"] = element.json
+      return body
+    case .adjustFailed(_, let outcome):
+      return code.body(description).merging(outcome.json) { current, _ in current }
     default: return code.body(description)
     }
   }

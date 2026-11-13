@@ -115,6 +115,8 @@ extension RunnerOperation {
     case .press(var touch):
       touch.bundleID = try resolve(touch.bundleID)
       return .press(touch)
+    case .adjust(let selector, let target, let timeout, let bundleID):
+      return .adjust(selector, target, timeout: timeout, bundleID: try resolve(bundleID))
     case .type(let text, let keys, let bundleID, let clear):
       return .type(text: text, keys: keys, bundleID: try resolve(bundleID), clear: clear)
     case .key(let key, let bundleID):

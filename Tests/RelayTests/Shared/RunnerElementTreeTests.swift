@@ -28,6 +28,15 @@ struct RunnerElementTreeTests {
     )
   }
 
+  /// Two snapshots of one picker wheel gave 215 and 215.00000000000006 for its height.
+  @Test func sameFrameAllowsAHundredthOfAPoint() {
+    let frame = CGRect(x: 25, y: 484.833, width: 173, height: 215)
+    #expect(RunnerElementTree.sameFrame(frame, CGRect(x: 25, y: 484.833, width: 173, height: 215.00000000000006)))
+    #expect(RunnerElementTree.sameFrame(frame, CGRect(x: 25.005, y: 484.83, width: 173, height: 215)))
+    #expect(!RunnerElementTree.sameFrame(frame, CGRect(x: 25, y: 484.833, width: 173, height: 215.5)))
+    #expect(!RunnerElementTree.sameFrame(frame, CGRect(x: 68, y: 290.833, width: 133, height: 235)))
+  }
+
   @Test func namesElementTypesByRawValue() {
     #expect(RunnerElementTree.typeName(rawValue: 0) == "any")
     #expect(RunnerElementTree.typeName(rawValue: 2) == "application")

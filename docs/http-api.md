@@ -17,6 +17,7 @@
 | `POST /press` | `{"x":200,"y":120,"duration":1.0}`、または `{"element":{…},"duration":1.0}` | 長押し。`taps` は受け付けません（`400`） |
 | `POST /find` | `{"element":{"type":"button"},"limit":20,"bundleId":"…","timeout":0,"gone":false}`（`limit`・`bundleId`・`timeout`・`gone` は省略可） | セレクタに一致する要素の一覧（type / identifier / label / value / frame / enabled）。ツリー全体を読まずに要素を探せます（「[要素セレクタ](elements.md#要素セレクタ)」）。`gone: true` で、一致する要素がなくなるのを待ちます（「[消えるのを待つ（gone）](elements.md#消えるのを待つgone)」） |
 | `POST /swipe` | `{"from":{"x":200,"y":700},"to":{"x":200,"y":200},"duration":0.3,"hold":0.05}` | スワイプ（ドラッグ）。`from`・`to` のどちらかが画面の外なら `400` |
+| `POST /adjust` | `{"element":{"identifier":"volume"},"position":0.5}`、または `{"element":{"type":"pickerWheel","index":0},"pickerValue":"June"}`（`timeout`・`bundleId` は省略可） | スライダーの位置（0〜1）か、ピッカーのホイールの値を設定し、設定した後の値を返します。詳しくは下の「スライダーとピッカー（/adjust）」 |
 | `POST /type` | `{"text":"hello","keys":["return"],"bundleId":"com.apple.Preferences","clear":false}`（`keys`・`bundleId`・`clear` は省略可。`keys` か `clear: true` があれば `text` は省略・空文字でも可。`text` が文字列以外なら `keys` があっても 400） | キーボードのフォーカスがある要素への文字入力。`clear: true` なら先に入力欄を空にし（下の「入力欄を空にする（clear）」）、`text` の後に `keys` を順に送ります。対象の既定は前面アプリ |
 | `POST /key` | `{"key":"return","bundleId":"…"}`（bundleId は省略可） | 特殊キー（`return` / `delete` / `space`）を 1 つ送ります。それ以外のキー名は 400。詳しくは「文字入力と特殊キー」 |
 | `POST /button` | `{"name":"home"}`（`volumeUp` / `volumeDown` は実機のみ） | ハードウェアボタン。`home` は実機では画面下端からのスワイプで代用します（「[ホームと音量ボタン](device.md#ホームと音量ボタン)」を参照） |
@@ -169,13 +170,68 @@ curl -s -H "$AUTH" -X POST $R/shutdown
 | `display_unknown` | 422 | 表示が複数ある端末で、前面アプリの表示を判定できない（どの表示も暗いなど）。何も送っていない | 画面の状態を利用者に確かめる |
 | `window_position_unknown` | 422 | iPad で、アプリのウィンドウが画面のどこにあるかわからない（同じアプリのウィンドウが複数あるなど）。何も送っていない | ウィンドウを 1 つにするか、スクリーンショットから座標で指定する |
 | `remote_view_position_unknown` | 422 | 要素を指定した `/tap`・`/press` で、選んだ要素が共有シート（別のプロセスが描くビュー）の中にあり、画面上の位置が決まらない（`reason: positionUnknown`）。何も送っていない（「[共有シートの中の要素](elements.md#共有シートの中の要素)」） | スクリーンショットで位置を確かめ、座標で指定する |
-| `covered_by_other_app` | 422 | 要素を指定した `/tap`・`/press` で、対象アプリが前面のアプリの一覧になく、先頭が SpringBoard（システムの許可ダイアログ、コントロールセンターなどに覆われている）。何も送っていない。`bundleId`・`foreground`・`alert`（SpringBoard の alert の label か `null`）が付く（「[別のアプリに覆われているとき](elements.md#別のアプリに覆われているとき)」） | スクリーンショットか `/find`（`bundleId: com.apple.springboard`、`type: alert`）で確かめ、ダイアログなどを閉じてから送り直す |
+| `covered_by_other_app` | 422 | 要素を指定した `/tap`・`/press` と `/adjust` で、対象アプリが前面のアプリの一覧になく、先頭が SpringBoard（システムの許可ダイアログ、コントロールセンターなどに覆われている）。何も送っていない。`bundleId`・`foreground`・`alert`（SpringBoard の alert の label か `null`）が付く（「[別のアプリに覆われているとき](elements.md#別のアプリに覆われているとき)」） | スクリーンショットか `/find`（`bundleId: com.apple.springboard`、`type: alert`）で確かめ、ダイアログなどを閉じてから送り直す |
 | `touch_failed` | 422 / 500 | 合成したタッチが失敗した、時間内に終わらなかった、合成を始められなかった（500） | 1 回だけ再試行する。続くならランナーのログを見る |
 | `typing_failed` | 422 / 500 | `/type`・`/key` で合成した入力が失敗した、時間内に終わらなかった（422）、合成を始められなかった（500） | `/find` の `value` で入った文字を確かめ、必要なら消してから送り直す |
+| `element_not_adjustable` | 422 | `/adjust` で選んだ要素が、`position` ならスライダー、`pickerValue` ならピッカーのホイール（`pickerWheel`）でない。何も変えていない。`element` が付く | `/find` で型を確かめる。ピッカーは `type: pickerWheel` で列を選ぶ |
+| `adjust_failed` | 422 | `/adjust` の後、スライダーやホイールが狙いの値にない（ホイールにない値、段階のあるスライダー、6 月 31 日など）。`value`（スライダーは `position` も）に今の値が入る。要素は動いていることがある | `value` を読み、ホイールなら `error` の候補から選び直す。スライダーなら段階に合う値を送る |
 | `clear_failed` | 422 | `/type` の `clear` で、入力欄が空にならなかった。何も入力していない。残りの文字数が `remaining` に入る（文字そのものは入れない） | `/find` の `value` で確かめる。短くなっていれば `clear` を送り直す。変わらなければ、アプリが文字を戻している |
 | `open_failed` | 422 | `/open` で URL を開けなかった: スキームを扱うアプリが入っていない、`bundleId` のアプリで開けない、システムが時間内に答えない | URL のスキームと、扱うアプリが入っているかを確かめる。`bundleId` を指定すると、スキームにかかわらずそのアプリに渡せる |
 | `xcui_failed` | 422 | XCUI が失敗を報告した（XCTest の issue、要素ツリーの取得の失敗など）。`error` に XCUI の文 | `error` を読み、前面アプリと画面を観察し直す |
 | `internal_error` | 500 | ランナーの内部エラー（JPEG エンコードの失敗、終了処理中など） | 1 回だけ再試行する。続くならランナーのログを見る |
+
+## スライダーとピッカー（/adjust）
+
+`/adjust` は、スライダーを `position`（0 が左端、1 が右端）に、ピッカーのホイールを `pickerValue`（ホイールが表示する文字列）に合わせます。CLI では `relay adjust <セレクタ> --position <0-1>`、`relay adjust <セレクタ> --picker-value <値>` です。
+
+```sh
+relay adjust --id volume --position 0.5
+relay adjust --type pickerWheel --value June --picker-value March   # 今 June を表示している列
+relay adjust --type pickerWheel --index 2 --picker-value 2030       # 3 つ目のホイール
+```
+
+- **要素**: `element` は `/tap` と同じセレクタで、`timeout`・`bundleId`、覆われているときの `covered_by_other_app` も同じです。タッチの点は使わないので、`element_point_covered` の確認はしません。
+- **ホイールの選び方**: ピッカー（`picker`・`datePicker`）には identifier がありますが、値を持つのは中のホイール（`pickerWheel`）です。日付のピッカーのホイールは identifier を持たないので、`type: pickerWheel` と今の `value`、または `index` で選びます。`index` は画面のすべてのホイールの通し番号です。
+- **型の確認**: `position` はスライダー（`slider`）だけ、`pickerValue` はホイールだけが受け付けます。ほかの型なら、XCUI に送らずに `422`、`element_not_adjustable` です。
+- **操作**: XCUI の `adjust(toNormalizedSliderPosition:)` と `adjust(toPickerWheelValue:)` で設定し、要素を読み直します。XCUI の要素は、同じ型の要素から、スナップショットと同じ frame のものを選びます。XCUI のクエリの順序はスナップショットの順序と違うことがあるためです（ピッカーのホイールが、上にある日付のピッカーのホイールより先に並びました）。
+- **スライダーの補正**: XCUI の adjust だけでは、スライダーは最大 0.09 ずれました。同じ adjust を繰り返しても近づきません。そこでランナーは、ずれが 0.02 を超えていれば、つまみをずれの分だけドラッグして直します（最大 4 回）。
+  - ドラッグは、タップと同じ経路（使えれば非公開 API の合成、なければ XCUI のドラッグ）で送ります。
+  - UISlider は、指が動き始めてからの約 10 pt ではつまみが動きません。1 回目の補正で動かなかった分を測り、次の補正に足します。
+  - 補正は adjust を始めてから 10 秒を過ぎると始めません。縦向きのスライダー（高さが幅より大きい）は補正しません。
+- **応答**: `{"ok":true,"bundleId":…,"element":{…},"value":"50%","position":0.503}`。`element` は設定する前の要素、`value` と `position`（スライダーだけ）は設定した後に読み直した値です。読めなければ `null` です。
+- **狙いと違うとき**: `422`、`adjust_failed`（CLI では終了コード 6）で、`value`（スライダーは `position` も）に今の値が入ります。
+  - スライダーは、狙いから 0.02 より離れていれば失敗です。値を段階に丸めるスライダーで、段階にない値を指定したときなどです。
+  - ホイールは、`value` が `pickerValue` と一致しなければ失敗です。
+  - ホイールにない値は、XCUI がすぐに失敗し、候補の一覧を `error` に入れます（`Requested adjust to value 'Mango' which is not one of the possible values Apple, Banana, …`）。待ち続けることはありませんでした（約 140 ms）。
+  - 6 月の日に `31` を指定すると、ホイールは `30` で止まり、`adjust_failed` です。日付はその日に変わっています。
+- **待ち時間**: スライダーは 1.8〜3.8 秒（そのうち XCUI の adjust がアプリのアイドルを待つ約 2 秒）、ホイールは 0.1〜1.1 秒でした。その間ランナーは busy です（ほかのコマンドは `409`）。
+  - XCUI の adjust は、前後でアプリのアイドルを待ちます。この待ちは中断できません。アニメーションを繰り返す画面（`relay.animate`）では、XCUI は前後の待ちをそれぞれ約 60 秒で諦めて続けました。ランナーが答えるまで、ホイールは 120.2 秒（設定はできた）、スライダーは 121.0 秒（補正を始めない 10 秒を過ぎていたので補正せず、`adjust_failed`）かかりました。同じ画面で `relay tap --mode xcui` は 60.5 秒かかりました。
+  - ランナーは、要素を見つけてから最長 140.25 秒で答えます。XCUI のアイドル待ちの 120 秒（`/launch` と同じ考え方）、補正を始めない 10 秒、最後の補正 1 回にかかりうる 10.25 秒（ドラッグ 0.25 秒と、合成の完了を待つ 10 秒）です。
+  - `relay adjust` は 30 秒に `--timeout` と 140.25 秒を足して待つので、ランナーが答えるより 20 秒以上長く待ちます。アイドルにならない画面でも、`runner_timeout` にならずに結果を受け取ります。
+  - 非公開 API が使えず補正が XCUI のドラッグになる端末で、アイドルにならないアプリでは、補正のドラッグもアイドルを待つので、これより長くなることがあります。
+- **使えないとき**: `/adjust` を知らない古いランナーは `404`、`not_found` です（`relay start --rebuild`）。XCUI の adjust は公開 API で、実機でも同じものを使います。補正のドラッグは、非公開 API が使えなければ XCUI のドラッグになります（`RELAY_DISABLE_PRIVATE_TOUCH=1` で 2.4〜5.1 秒、0.02 以内）。
+
+RelayRunnerHost の `relay.gestures` の画面で確かめた結果（時間は `relay adjust` の呼び出しから戻るまで）:
+
+| 操作 | 結果 | 時間 |
+| --- | --- | --- |
+| `relay.slider` を 0、0.01、0.05、0.1 … 0.95、0.99、1 の 20 回 | すべて成功。狙いとの差は最大 0.015 | 1.8–3.8 秒 |
+| `relay.slider` を 0.02 / 0.98 | `position` 0.0197 / 0.979 | 2.4 秒 |
+| `relay.steppedSlider`（0.25 刻み）を 0.75 | 成功、`position` 0.75 | 2.8 秒 |
+| `relay.steppedSlider` を 0.6 | `adjust_failed`、`position` 0.5 | 4.0 秒 |
+| 日付のピッカー: 月 `June` → `March`、日 → `28`、年 → `2031`、`1901`、`2100` | 成功（ラベル `relay.dateValue` も同じ日付） | 0.13–1.0 秒 |
+| 日付のピッカー: 2 月に日 `30` | `adjust_failed`、`value` は `28` | 0.13 秒 |
+| ふつうのピッカー: `Banana` → `Fig`、`3` → `17` | 成功 | 0.13–0.18 秒 |
+| ふつうのピッカー: 列にない値 `Mango`、`99` | `adjust_failed`、XCUI の候補の一覧 | 0.14 秒 |
+| ピッカー（`relay.picker`）そのもの、ボタン、スライダーに `pickerValue` | `element_not_adjustable` | 0.05 秒 |
+| ない要素（`--timeout 1`） | `element_not_found` | 1.1 秒 |
+| コントロールセンターを開いた状態で `--bundle-id host` | `covered_by_other_app`。何も変わらない | 0.1 秒 |
+| `relay run` の手順（`adjust` 3 つと `tap --count 2`） | すべて成功 | 4.6 秒 |
+| `TEST_RUNNER_RELAY_DISABLE_PRIVATE_TOUCH=1` で 0.2、0.5、0.9、0.4 | すべて 0.02 以内 | 2.4–5.1 秒 |
+| アニメーションを繰り返す画面で、ホイール（`June` → `April`） | 成功（`runner_timeout` にならない） | 120.4 秒 |
+| アニメーションを繰り返す画面で、スライダーを 0.7 | `adjust_failed`、`position` 0.755（補正の前に 10 秒を過ぎた） | 121.1 秒 |
+
+確かめた環境: iPhone 18 Pro シミュレータ（iOS 27.2、Xcode 27.2）。実機では確かめていません。
 
 ## 認証
 
@@ -207,7 +263,7 @@ curl -s -H "$AUTH" -X POST $R/shutdown
 
 ## 前面アプリ
 
-`/type`・`/key`・`/source`・`/find` と、要素を指定した `/tap`・`/press` は、`bundleId` を省略すると前面アプリを対象にします。`/launch` を経由せずに手で切り替えたアプリ（ホーム画面のアイコン、ステータスバーの「◀ 戻る」、他アプリからの起動など）にも追従します。`GET /foreground` と `/health` の `foreground` で確認できます。
+`/type`・`/key`・`/source`・`/find`・`/adjust` と、要素を指定した `/tap`・`/press` は、`bundleId` を省略すると前面アプリを対象にします。`/launch` を経由せずに手で切り替えたアプリ（ホーム画面のアイコン、ステータスバーの「◀ 戻る」、他アプリからの起動など）にも追従します。`GET /foreground` と `/health` の `foreground` で確認できます。
 
 ```json
 {"bundleId":"com.apple.springboard","ok":true,"pid":35,"source":"private"}
@@ -233,7 +289,7 @@ curl -s -H "$AUTH" -X POST $R/shutdown
 
 `/health` は前面アプリの取得のぶん遅くなります（「[`/health` の応答](#health-の応答)」）。
 
-要素を指定した `/tap`・`/press` は、タッチを送る直前にも一覧を読み直し、対象アプリが一覧になく先頭が SpringBoard なら何も送らずに `422`（`covered_by_other_app`）を返します（「[別のアプリに覆われているとき](elements.md#別のアプリに覆われているとき)」）。システムの許可ダイアログ・コントロールセンター・通知センターの表示中は、一覧が SpringBoard だけになります（シミュレータ iOS 27、実機 iOS 26.7.1）。
+要素を指定した `/tap`・`/press` と `/adjust` は、タッチを送る（値を設定する）直前にも一覧を読み直し、対象アプリが一覧になく先頭が SpringBoard なら何も送らずに `422`（`covered_by_other_app`）を返します（「[別のアプリに覆われているとき](elements.md#別のアプリに覆われているとき)」）。システムの許可ダイアログ・コントロールセンター・通知センターの表示中は、一覧が SpringBoard だけになります（シミュレータ iOS 27、実機 iOS 26.7.1）。
 
 ## 文字入力と特殊キー
 

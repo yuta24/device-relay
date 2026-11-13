@@ -109,6 +109,8 @@ struct RunnerBundleIDTests {
     #expect(throws: SetupError.self) { try RunnerBundleID.resolve("host", host: nil) }
 
     #expect(try RunnerOperation.launch(bundleID: "host").resolvingHostAlias(host) == .launch(bundleID: host))
+    #expect(try RunnerOperation.adjust(RunnerElementSelector(identifier: "a"), .position(0.5), timeout: nil, bundleID: "host")
+      .resolvingHostAlias(host) == .adjust(RunnerElementSelector(identifier: "a"), .position(0.5), timeout: nil, bundleID: host))
     #expect(try RunnerOperation.terminate(bundleID: "host").resolvingHostAlias(host) == .terminate(bundleID: host))
     #expect(try RunnerOperation.open(url: "a://b", bundleID: "host").resolvingHostAlias(host) == .open(url: "a://b", bundleID: host))
     #expect(try RunnerOperation.open(url: "a://b", bundleID: nil).resolvingHostAlias(host) == .open(url: "a://b", bundleID: nil))

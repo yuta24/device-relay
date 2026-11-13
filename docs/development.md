@@ -308,7 +308,7 @@ xcodebuild の出力に `RELAY_RUNNER_READY port=8100 addresses=en0=…,utun3=�
 | `relay.overlay.status` | 許可の状態と直近の出来事 |
 | `relay.behind1` … `relay.behind8` | ダイアログが出る画面の中ほどから下を埋める横いっぱいのボタン。押された回数を label に出す（`behind3: 2`）。value は空で、`relay.askLocation` / `relay.askNotifications` の 3 秒後（ダイアログの 1 秒後）に `late` になる |
 
-`relay.gestures` で開く画面（`GestureViewController`）は、1 回のタップ以外の操作がアプリにどう届くかを確かめるためのものです。
+`relay.gestures` で開く画面（`GestureViewController`）は、1 回のタップ以外の操作（ダブルタップ、スライダーとピッカーの値の設定）がアプリにどう届くかを確かめるためのものです。
 
 | accessibilityIdentifier | 内容 |
 | --- | --- |
@@ -316,6 +316,13 @@ xcodebuild の出力に `RELAY_RUNNER_READY port=8100 addresses=en0=…,utun3=�
 | `relay.tapTarget` | 1 回のタップと 2 回のタップ（`numberOfTapsRequired` が 1 と 2）の `UITapGestureRecognizer` を付けたビュー。1 回の方は 2 回の方が失敗するのを待つので、ダブルタップと 2 回のタップを見分けられる |
 | `relay.tapCounts` | それぞれが発火した回数（`single: 2, double: 1`） |
 | `relay.tapReset` | 回数を 0 に戻す |
+| `relay.animate` | 押すたびに、このボタンを薄くしたり戻したりし続けるアニメーションを始める・止める（label が `Animate: on` / `Animate: off`）。動いている間、アプリは XCUI にとってアイドルにならない（`--mode xcui` や `relay adjust` のアイドル待ちを試す） |
+| `relay.slider` / `relay.steppedSlider` | スライダー。`relay.slider` は連続（0〜1、最初は 0.3）、`relay.steppedSlider` は 0.25 刻みに丸める（最初は 0.5） |
+| `relay.sliderValue` | 2 つのスライダーの値（`slider: 0.30, stepped: 0.50`） |
+| `relay.datePicker` | 日付のピッカー（ホイールの形。en_US、UTC、最初は 2026-06-15）。月・日・年のホイールに identifier はない |
+| `relay.dateValue` | 日付のピッカーの日付（`date: 2026-06-15`） |
+| `relay.picker` | 2 列のピッカー（果物 8 つと 1〜20。最初は `Banana`、`3`） |
+| `relay.pickerValue` | ピッカーの選択（`picker: Banana, 3`） |
 
 許可を求めた直後に `relay tap --id relay.behind3 --value late --timeout 5` を送ると、ランナーはダイアログが出る前に対象アプリを決め、ダイアログが出た後で要素を見つけてタップします。シミュレータでは `xcrun simctl privacy <UDID> reset location <ホストのバンドル ID>` で位置情報の許可を戻せます。実機では「Allow Once」を選べば、アプリを終了したときに未決定に戻ります。
 

@@ -187,6 +187,8 @@ final class RelayRunnerUITests: XCTestCase {
       return try touch(body, duration: body.positiveDouble("duration", default: 1.0), taps: 1)
     case ("POST", "/find"):
       return try find(RunnerJSON(request.body))
+    case ("POST", "/adjust"):
+      return try adjust(RunnerJSON(request.body))
     case ("POST", "/swipe"):
       let body = try RunnerJSON(request.body)
       return ok(mode: try swipe(body, mode: touchMode(body)))
@@ -235,7 +237,7 @@ final class RelayRunnerUITests: XCTestCase {
       }
       return ok()
     case (_, "/health"), (_, "/foreground"), (_, "/screenshot"), (_, "/source"), (_, "/tap"), (_, "/press"),
-         (_, "/find"), (_, "/swipe"), (_, "/type"), (_, "/key"), (_, "/button"), (_, "/orientation"), (_, "/launch"),
+         (_, "/find"), (_, "/adjust"), (_, "/swipe"), (_, "/type"), (_, "/key"), (_, "/button"), (_, "/orientation"), (_, "/launch"),
          (_, "/open"), (_, "/terminate"), (_, "/shutdown"):
       throw RunnerError.methodNotAllowed
     default:
@@ -870,6 +872,116 @@ final class RelayRunnerUITests: XCTestCase {
     return mode
   }
 
+  /// `/adjust`: sets the slider (`position`, 0...1) or the picker wheel (`pickerValue`) that `element` selects with
+  /// XCUI's `adjust(toNormalizedSliderPosition:)` or `adjust(toPickerWheelValue:)`, then reads its value again.
+  /// The element is found as `/tap` finds it, but its type is checked first: XCUI's adjust on another type fails.
+  private func adjust(_ body: RunnerJSON) throws -> RunnerHTTPResponse {
+    let selector = try body.elementSelector(body.object["element"] ?? NSNull())
+    let timeout = try body.elementTimeout()
+    let target = try body.adjustTarget()
+    let bundleID = body.optionalString("bundleId") ?? foregroundApplication().bundleID
+    let match = try waitForElements(bundleID: bundleID, timeout: timeout) { root, isLastAttempt -> RunnerElementMatch? in
+      if case .unknown(let message)? = self.commandWindow {
+        guard isLastAttempt else { return nil }
+        throw RunnerError.windowPositionUnknown(RunnerWindows.touchError(message))
+      }
+      let screen = CGRect(origin: .zero, size: self.screen(in: self.interfaceOrientation()).size)
+      switch selector.resolve(in: root, screen: screen) {
+      case .success(let resolved):
+        if let mismatch = RunnerAdjusting.typeMismatch(target, element: resolved.match.node) {
+          throw RunnerError.notAdjustable(mismatch, element: resolved.match)
+        }
+        try self.requireUncovered(bundleID)
+        return resolved.match
+      case .failure(let failure):
+        guard isLastAttempt || !failure.isRetryable else { return nil }
+        throw RunnerError.elementNotResolved(failure)
+      }
+    }
+    let element = try xcuiElement(for: match, in: XCUIApplication(bundleIdentifier: bundleID))
+    let deadline = Date(timeIntervalSinceNow: RunnerAdjusting.correctionStop)
+    let ((), issues) = capturingIssues {
+      switch target {
+      case .position(let position): element.adjust(toNormalizedSliderPosition: CGFloat(position))
+      case .pickerValue(let value): element.adjust(toPickerWheelValue: value)
+      }
+    }
+    if case .position(let wanted) = target, issues.isEmpty {
+      try correctSlider(element, to: wanted, frame: match.node.frame, until: deadline)
+    }
+    let (after, readFailed) = ignoringIssues { () -> (value: String?, position: Double?) in
+      let value = element.value.map { String(describing: $0) }
+      guard case .position = target else { return (value, nil) }
+      return (value, Double(element.normalizedSliderPosition))
+    }
+    let outcome = RunnerAdjusting.Outcome(bundleID: bundleID, element: match, value: readFailed ? nil : after.value,
+                                          position: readFailed ? nil : after.position, target: target)
+    if let failure = RunnerAdjusting.failure(target, value: outcome.value, position: outcome.position, issues: issues) {
+      throw RunnerError.adjustFailed(failure, outcome)
+    }
+    var answer = outcome.json
+    answer["ok"] = true
+    return annotated(answer)
+  }
+
+  /// Drags the slider's thumb by what XCUI's adjust missed, up to `RunnerAdjusting.maxCorrections` times and not after
+  /// `deadline`, reading the position again after each. `frame` is the slider's in the displayed orientation, where
+  /// touches go. XCUI's adjust alone ended up to 0.09 off and did not get closer when called again.
+  private func correctSlider(_ element: XCUIElement, to wanted: Double, frame: CGRect, until deadline: Date) throws {
+    let mode: TouchMode = privateTouchIsDefault ? .private : .xcui
+    var slack: CGFloat = 0
+    let read = { () -> Double? in
+      let (position, failed) = self.ignoringIssues { Double(element.normalizedSliderPosition) }
+      return failed ? nil : position
+    }
+    guard var position = read() else { return }
+    for _ in 0 ..< RunnerAdjusting.maxCorrections {
+      guard Date() < deadline, !RunnerAdjusting.isClose(position, wanted),
+            let drag = RunnerAdjusting.correction(from: position, to: wanted, frame: frame, slack: slack) else { return }
+      let from = (x: Double(drag.from.x), y: Double(drag.from.y)), to = (x: Double(drag.to.x), y: Double(drag.to.y))
+      if mode == .private {
+        let hold = RunnerAdjusting.correctionHold, end = hold + RunnerAdjusting.correctionDuration
+        try synthesizeTouch(points: [from, from, to], offsets: [hold, end], liftOffset: end)
+      } else {
+        try coordinate(x: from.x, y: from.y).press(forDuration: RunnerAdjusting.correctionHold, thenDragTo: coordinate(x: to.x, y: to.y))
+      }
+      guard let after = read() else { return }
+      slack = RunnerAdjusting.slack(fingerMoved: drag.to.x - drag.from.x, before: position, after: after, frame: frame)
+      position = after
+    }
+  }
+
+  /// The XCUI element of `match`: among the elements of its type, the one with its frame in the command's snapshot
+  /// (to a hundredth of a point: a picker view's wheel was 215.00000000000006 high in one and 215 in the other).
+  /// Not the one at its place in the snapshot's order: a query lists them in another order (the wheels of a picker
+  /// view came before those of a date picker above it).
+  private func xcuiElement(for match: RunnerElementMatch, in application: XCUIApplication) throws -> XCUIElement {
+    guard let snapshot = commandSnapshot, let path = match.node.snapshotPath,
+          let found = Self.snapshot(at: path, in: snapshot) else {
+      throw RunnerError.actionFailed("cannot find the element in the snapshot; nothing was adjusted")
+    }
+    let (elements, failed) = ignoringIssues { () -> [XCUIElement] in
+      application.descendants(matching: found.elementType).allElementsBoundByIndex.filter {
+        RunnerElementTree.sameFrame($0.frame, found.frame)
+      }
+    }
+    guard !failed, elements.count == 1 else {
+      throw RunnerError.actionFailed("the element moved or changed before it could be adjusted "
+        + "(\(failed ? "XCUI could not list the elements" : "\(elements.count) elements of its type have its frame")); nothing was adjusted")
+    }
+    return elements[0]
+  }
+
+  private static func snapshot(at path: [Int], in root: XCUIElementSnapshot) -> XCUIElementSnapshot? {
+    var node = root
+    for index in path {
+      let children = node.children
+      guard children.indices.contains(index) else { return nil }
+      node = children[index]
+    }
+    return node
+  }
+
   /// `/find`: the elements `element` matches, in document order, waiting up to `timeout` for the first, or
   /// with `gone` for none to match.
   private func find(_ body: RunnerJSON) throws -> RunnerHTTPResponse {
@@ -1460,6 +1572,17 @@ final class RelayRunnerUITests: XCTestCase {
     CGSize(width: min(size.width, size.height), height: max(size.width, size.height))
   }
 
+  /// Runs `body` and takes the XCUI issues it records out of the command's, returning their messages.
+  private func capturingIssues<T>(_ body: () -> T) -> (T, [String]) {
+    let issueCount = capturedIssues?.count ?? 0
+    let result = body()
+    let issues = Array((capturedIssues ?? []).dropFirst(issueCount))
+    if !issues.isEmpty {
+      capturedIssues?.removeSubrange(issueCount...)
+    }
+    return (result, issues)
+  }
+
   /// Runs `body` and drops the XCUI issues it records, reporting only whether any were recorded.
   private func ignoringIssues<T>(_ body: () -> T) -> (T, failed: Bool) {
     let issueCount = capturedIssues?.count ?? 0
@@ -1653,6 +1776,14 @@ struct RunnerJSON {
       return try RunnerElementSelector(json: value)
     } catch let error as RunnerElementSelectorError {
       throw RunnerError.invalidField(error.description)
+    }
+  }
+
+  /// `position` or `pickerValue` of `/adjust`; see `RunnerAdjusting.target(position:pickerValue:)`.
+  func adjustTarget() throws -> RunnerAdjusting.Target {
+    switch RunnerAdjusting.target(position: object["position"], pickerValue: object["pickerValue"]) {
+    case .success(let target): return target
+    case .failure(let error): throw RunnerError.invalidField(error.description)
     }
   }
 

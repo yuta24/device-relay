@@ -146,6 +146,32 @@ struct RunnerClientTests {
     }
   }
 
+  /// An adjust that missed exits 6 and keeps what the element shows; a runner from before `/adjust` answers 404.
+  @Test func anAdjustThatMissedExits6WithTheValue() throws {
+    let adjust = RunnerOperation.adjust(RunnerElementSelector(type: "pickerWheel", index: 1), .pickerValue("31"), timeout: nil, bundleID: nil)
+    let missed = #"{"ok":false,"code":"adjust_failed","error":"the picker wheel shows \"30\", not \"31\"","value":"30"}"#
+    let (status, failure) = try perform(adjust, transport: Self.answer(422, missed))
+    #expect(status == RunnerExitCode.actionFailed.rawValue)
+    #expect(failure?["code"] as? String == RunnerErrorCode.adjustFailed.rawValue)
+    #expect(failure?["value"] as? String == "30")
+
+    let refused = #"{"ok":false,"code":"element_not_adjustable","error":"the element is a button, not a slider"}"#
+    #expect(try perform(adjust, transport: Self.answer(422, refused)).status == RunnerExitCode.actionFailed.rawValue)
+
+    let old = try perform(adjust, transport: Self.answer(404, #"{"ok":false,"code":"not_found","error":"not found"}"#))
+    #expect(old.status == RunnerExitCode.badRequest.rawValue)
+    #expect(old.failure?["code"] as? String == RunnerErrorCode.notFound.rawValue)
+
+    // The slider's wait: 30 s, and what the runner may take.
+    let timeouts = Locked<[TimeInterval]>([])
+    let slider = RunnerOperation.adjust(RunnerElementSelector(identifier: "volume"), .position(0.5), timeout: 3, bundleID: nil)
+    _ = try perform(slider) { request in
+      timeouts.withLock { $0.append(request.timeoutInterval) }
+      return RunnerResponse(status: 200, body: Data(#"{"ok":true,"value":"50%","position":0.5}"#.utf8))
+    }
+    #expect(timeouts.value == [RunnerControl.baseTimeout + 3 + RunnerAdjusting.longestAnswer])
+  }
+
   /// A runner from before `taps` ignores it and taps once: its answer has no `taps`, which relay refuses.
   @Test func aDoubleTapAnsweredWithoutTapsIsABadResponse() throws {
     let double = RunnerOperation.tap(RunnerTouch(target: .point(RunnerPoint(x: 10, y: 20)), taps: 2))

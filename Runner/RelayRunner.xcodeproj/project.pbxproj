@@ -20,6 +20,7 @@
 		111111111111111111111123 /* RelayTextSynthesizer.m in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222238 /* RelayTextSynthesizer.m */; };
 		111111111111111111111124 /* RelayURLOpener.m in Sources */ = {isa = PBXBuildFile; fileRef = 22222222222222222222223A /* RelayURLOpener.m */; };
 		111111111111111111111125 /* RunnerOpen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22222222222222222222223C /* RunnerOpen.swift */; };
+		111111111111111111111127 /* RunnerAdjusting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22222222222222222222223E /* RunnerAdjusting.swift */; };
 		111111111111111111111118 /* RunnerKeyboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22222222222222222222222D /* RunnerKeyboard.swift */; };
 		111111111111111111111119 /* RunnerElementTree.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22222222222222222222222E /* RunnerElementTree.swift */; };
 		11111111111111111111111B /* RunnerCommandGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222230 /* RunnerCommandGate.swift */; };
@@ -61,6 +62,7 @@
 		22222222222222222222223B /* RelayURLOpener.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = RelayRunnerUITests/RelayURLOpener.h; sourceTree = "<group>"; };
 		22222222222222222222222D /* RunnerKeyboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/Relay/Shared/RunnerKeyboard.swift; sourceTree = "<group>"; };
 		22222222222222222222223C /* RunnerOpen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/Relay/Shared/RunnerOpen.swift; sourceTree = "<group>"; };
+		22222222222222222222223E /* RunnerAdjusting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/Relay/Shared/RunnerAdjusting.swift; sourceTree = "<group>"; };
 		22222222222222222222222E /* RunnerElementTree.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/Relay/Shared/RunnerElementTree.swift; sourceTree = "<group>"; };
 		222222222222222222222230 /* RunnerCommandGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/Relay/Shared/RunnerCommandGate.swift; sourceTree = "<group>"; };
 		222222222222222222222231 /* RunnerElementSelector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/Relay/Shared/RunnerElementSelector.swift; sourceTree = "<group>"; };
@@ -113,6 +115,7 @@
 				22222222222222222222222B /* RunnerRequestValues.swift */,
 				22222222222222222222222D /* RunnerKeyboard.swift */,
 				22222222222222222222223C /* RunnerOpen.swift */,
+				22222222222222222222223E /* RunnerAdjusting.swift */,
 				22222222222222222222222E /* RunnerElementTree.swift */,
 				222222222222222222222230 /* RunnerCommandGate.swift */,
 				222222222222222222222231 /* RunnerElementSelector.swift */,
@@ -234,6 +237,7 @@
 				111111111111111111111124 /* RelayURLOpener.m in Sources */,
 				111111111111111111111118 /* RunnerKeyboard.swift in Sources */,
 				111111111111111111111125 /* RunnerOpen.swift in Sources */,
+				111111111111111111111127 /* RunnerAdjusting.swift in Sources */,
 				111111111111111111111119 /* RunnerElementTree.swift in Sources */,
 				11111111111111111111111B /* RunnerCommandGate.swift in Sources */,
 				11111111111111111111111C /* RunnerElementSelector.swift in Sources */,

@@ -326,3 +326,13 @@ extension RunnerElementTree {
     return data.map { String(decoding: $0, as: UTF8.self) } ?? "\"\""
   }
 }
+
+extension RunnerElementTree {
+  /// Whether two frames of one element, read by two snapshots, are the same: within a hundredth of a point, as
+  /// reading the same layout twice can differ in the last bits.
+  static func sameFrame(_ a: CGRect, _ b: CGRect) -> Bool {
+    let tolerance: CGFloat = 0.01
+    return abs(a.minX - b.minX) <= tolerance && abs(a.minY - b.minY) <= tolerance
+      && abs(a.width - b.width) <= tolerance && abs(a.height - b.height) <= tolerance
+  }
+}

@@ -319,6 +319,12 @@ enum RunnerControl {
     case .remoteViewPositionUnknown:
       return "the element is in a view another process draws (the share sheet) and its frame is not on the screen: "
         + "find it in relay screenshot and tap it by coordinates (relay tap <x> <y>)"
+    case .elementNotAdjustable:
+      return "adjust sets a slider (--position) or a picker wheel (--picker-value): check the element's type with relay find, "
+        + "and pick a wheel of a picker with --type pickerWheel"
+    case .adjustFailed:
+      return "the element shows value (and position) in the response, which may have changed: check it with relay find. "
+        + "A picker wheel takes only the values it lists; a slider of steps stops only at its steps"
     case .openFailed:
       return "check the URL's scheme and that the app that handles it is installed; relay open <url> --bundle-id <id> "
         + "sends it to that app"

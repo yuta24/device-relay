@@ -39,6 +39,30 @@ struct RunnerOperationTests {
       == #"{"bundleId":"com.apple.Preferences","duration":1,"element":{"index":0,"label":"General","type":"button"},"timeout":3}"#)
   }
 
+  @Test func buildsAdjustBodies() throws {
+    let slider = RunnerOperation.adjust(RunnerElementSelector(identifier: "volume"), .position(0.5), timeout: 2, bundleID: nil).request
+    #expect(slider.method == "POST")
+    #expect(slider.path == "/adjust")
+    #expect(try body(slider) == #"{"element":{"identifier":"volume"},"position":0.5,"timeout":2}"#)
+    let wheel = RunnerOperation.adjust(RunnerElementSelector(type: "pickerWheel", index: 0), .pickerValue("June"), timeout: nil,
+                                       bundleID: "com.example").request
+    #expect(try body(wheel) == #"{"bundleId":"com.example","element":{"index":0,"type":"pickerWheel"},"pickerValue":"June"}"#)
+    #expect(RunnerOperation.adjust(RunnerElementSelector(identifier: "a"), .position(0), timeout: nil, bundleID: nil).commandName == "adjust")
+  }
+
+  /// The runner answers an adjust within `--timeout`, XCUI's idle waits (120 s), and `RunnerAdjusting.giveUp`; relay
+  /// waits at least 20 s more. On a screen that never idles the runner answered after 120.2-121.0 s.
+  @Test func adjustWaitsTwentySecondsPastTheRunner() {
+    for timeout in [nil, 0, 4, 10] as [TimeInterval?] {
+      let adjust = RunnerOperation.adjust(RunnerElementSelector(identifier: "a"), .position(0.5), timeout: timeout, bundleID: nil)
+      let relayWaits = RunnerControl.baseTimeout + adjust.waitTime
+      let runnerAnswersBy = (timeout ?? 0) + RunnerAdjusting.idleWait + RunnerAdjusting.giveUp
+      #expect(relayWaits - runnerAnswersBy >= 20, "\(String(describing: timeout))")
+      #expect(relayWaits - (timeout ?? 0) - 121.0 >= 20, "the longest answer measured")
+      #expect(relayWaits - runnerAnswersBy >= 20, "\(String(describing: timeout))")
+    }
+  }
+
   @Test func buildsOtherBodies() throws {
     #expect(try body(RunnerOperation.find(RunnerElementSelector(type: "cell"), limit: 5, timeout: nil, bundleID: nil).request)
       == #"{"element":{"type":"cell"},"limit":5}"#)

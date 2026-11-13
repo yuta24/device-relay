@@ -119,6 +119,33 @@ struct RunnerArgumentsTests {
     #expect(flattened(Arguments.usage(for: "tap")).contains("--count 2 double-taps"))
   }
 
+  @Test func parsesAdjust() throws {
+    #expect(try operation(["adjust", "--id", "volume", "--position", "0.5"])
+      == .adjust(RunnerElementSelector(identifier: "volume"), .position(0.5), timeout: nil, bundleID: nil))
+    #expect(try operation(["adjust", "--type", "pickerWheel", "--value", "June", "--picker-value", "March", "--timeout", "3",
+                           "--bundle-id", "host"])
+        == .adjust(RunnerElementSelector(type: "pickerWheel", value: "June"), .pickerValue("March"), timeout: 3, bundleID: "host"))
+    #expect(try operation(["adjust", "--type=slider", "--index=1", "--position=1"])
+      == .adjust(RunnerElementSelector(type: "slider", index: 1), .position(1), timeout: nil, bundleID: nil))
+    // Text after -- is not the value of an option; a wheel's value that starts with - goes with =.
+    #expect(try operation(["adjust", "--type", "pickerWheel", "--picker-value=-5"])
+      == .adjust(RunnerElementSelector(type: "pickerWheel"), .pickerValue("-5"), timeout: nil, bundleID: nil))
+    let wrong: [([String], String)] = [
+      (["adjust", "--id", "a"], "adjust requires --position <0-1> (a slider) or --picker-value <value> (a picker wheel)"),
+      (["adjust", "--id", "a", "--position", "0.5", "--picker-value", "x"], "adjust takes either --position or --picker-value, not both"),
+      (["adjust", "--id", "a", "--position", "1.5"], "--position requires a number in 0...1 (0 is the left end)"),
+      (["adjust", "--id", "a", "--position", "-0.1"], "--position requires a number in 0...1 (0 is the left end)"),
+      (["adjust", "--position", "0.5"], "adjust requires an element selector (--id, --label, --type, --value)"),
+      (["adjust", "100", "200", "--position", "0.5"], "adjust takes an element selector, not arguments"),
+      (["adjust", "--id", "a", "--position", "0.5", "--timeout", "11"], "--timeout requires seconds in 0...10"),
+      (["adjust", "--id", "a", "--position", "0.5", "--mode", "xcui"], "unknown option for adjust: --mode")
+    ]
+    for (arguments, message) in wrong {
+      let error = #expect(throws: ArgumentError.self, "\(arguments)") { try Arguments.parse(arguments) }
+      #expect(error?.description == message, "\(arguments)")
+    }
+  }
+
   @Test func parsesPressDuration() throws {
     #expect(try operation(["press", "1", "2", "--duration", "1.5"])
       == .press(RunnerTouch(target: .point(RunnerPoint(x: 1, y: 2)), duration: 1.5)))
