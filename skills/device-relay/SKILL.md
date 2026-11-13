@@ -17,16 +17,16 @@ Details are in topic files in `references/` (index: [reference.md](reference.md)
 ## Flow
 
 ```sh
-relay status                                 # 0: a runner answers, use it. 3: none. 4: token rejected
-relay devices                                # NAME, UDID, KIND, OS, STATE
-relay start --background --device "<name>"   # or --udid; --os narrows. Note the pid: it prints
-relay launch <bundle-id>                     # not installed? relay install <path>
-relay screenshot --scale 1                   # prints a path; read it as an image
-relay source --format compact --filter interactive   # operable elements
-relay find --type button                     # elements matching a selector (JSON)
+relay status  # 0: a runner answers, use it. 3: none. 4: token rejected
+relay devices  # NAME, UDID, KIND, OS, STATE
+relay start --background --device "<name>"  # or --udid; --os narrows. Note the pid: it prints
+relay launch <bundle-id>  # not installed? relay install <path>
+relay screenshot --scale 1  # prints a path; read it as an image
+relay source --format compact --filter interactive  # operable elements
+relay find --type button  # elements matching a selector (JSON)
 relay tap --id <identifier>
-relay find --id <next-screen element> --timeout 5 --require   # wait; exit 6 if it never appears
-relay stop                                   # when done, if you started it
+relay find --id <next-screen element> --timeout 5 --require  # wait; exit 6 if it never appears
+relay stop  # when done, if you started it
 ```
 
 - The first start builds the runner for minutes: give it a long timeout (up to 30 min).
@@ -50,6 +50,7 @@ relay stop                                   # when done, if you started it
 - Pick selectors from `relay source --format compact --filter interactive` or `relay find`: a line's `type`, `label`, `id`, `value` are selectors. Use the whole tree only when needed ([formats](references/element-tree.md)).
 - Prefer selectors (`--id`, else `--label` + `--type`) over coordinates.
 - Coordinates are points from the top left (`relay tap x y`; `relay swipe x1 y1 x2 y2` to scroll).
+- Double-tap: `tap --count 2`, not two taps. Sliders, pickers: `adjust`, not `swipe`.
 - Text: tap the field, `relay type "text"` (`--key return` submits); to replace text, `relay type --clear "text"`, not repeated `delete`; `relay key return|delete|space`.
 - Wait with `relay find <selector> --timeout <s>` (≤ 10 s, repeat for longer) or `tap --timeout`; for it to go, `find <selector> --gone --timeout <s> --require`; never `sleep`, except to let a swipe's scroll stop ([scrolling](references/scrolling.md)).
 - After the screen changes, observe again: don't reuse selectors, indexes, or coordinates.
@@ -82,7 +83,7 @@ Device asking for its passcode during automation mode (`Failed to initialize for
 - [start-status-stop](references/start-status-stop.md): their output and exit codes
 - [sessions](references/sessions.md): parallel sessions, runner.json lookup
 - [sandbox](references/sandbox.md): `Operation not permitted`
-- [commands](references/commands.md): options, timeouts, `open`, `install`; [clear-and-gone](references/clear-and-gone.md)
+- [commands](references/commands.md): options, timeouts, `open`, `install`; [clear-and-gone](references/clear-and-gone.md); [gestures-and-controls](references/gestures-and-controls.md)
 - [element-tree](references/element-tree.md): `source` formats, selectors
 - [failures](references/failures.md): all exit codes, `code`s, `reason`s
 - [coordinates](references/coordinates.md): orientation, iPad windows, iPhone Duo
