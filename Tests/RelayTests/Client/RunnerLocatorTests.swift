@@ -297,7 +297,8 @@ struct SessionlessWarningTests {
     // What an ended session leaves: its directory, and a lock nobody holds.
     lock.release()
     #expect(RelaySession.names(home: home) == ["a"])
-    #expect(try locate(in: home).warnings.isEmpty)
+    // Retried for a moment, as the lock may linger: see onceReleased.
+    #expect(becomesTrue { (try? locate(in: home).warnings.isEmpty) == true })
   }
 
   @Test func aSelectedRunnerDoesNotWarn() throws {

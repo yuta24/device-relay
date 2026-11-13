@@ -3,7 +3,8 @@ import Testing
 @testable import Relay
 
 /// `Shell.run` with real processes. Each test ends in about a second or less, far below the 30 s its sleep
-/// would take if `run` waited for it.
+/// would take if `run` waited for it. Only `killsAProcessThatIgnoresSIGTERM` may take longer: when a loaded machine
+/// does not get sh to its trap in time, it tries again with a limit of up to about 10 s.
 struct ShellTests {
   private static let bound: TimeInterval = 15
 
@@ -76,21 +77,39 @@ struct ShellTests {
   }
 
   @Test func killsAProcessThatIgnoresSIGTERM() {
-    // A loop and not one long sleep, which would inherit the ignored signal and stay behind.
-    let script = #"trap "" TERM; echo started; while :; do /bin/sleep 0.1; done"#
-    let start = Date()
-    do {
-      try Shell.run("/bin/sh", ["-c", script], timeout: 0.2)
-      Issue.record("should time out")
-    } catch let error as ShellError {
-      #expect(error.timedOutAfter == 0.2)
-      #expect(error.status == SIGKILL)
-      #expect(error.output.hasPrefix("started\n"))
-      #expect(error.description.contains("timed out after 0.2 s"))
-    } catch {
-      Issue.record("\(error)")
+    // A loop and not one long sleep, which would inherit the ignored signal and stay behind. sh prints its pid
+    // once it ignores SIGTERM: the test then sees that it is gone, and not only that run reports SIGKILL.
+    let script = #"trap "" TERM; echo $$; while :; do /bin/sleep 0.1; done"#
+    // A loaded machine (CI) may not get sh to its trap within 0.2 s; the SIGTERM then ends it, which is not what
+    // this test is about. Then it tries again with more time, timed afresh; once sh has printed its pid, every
+    // check below holds as it is.
+    for timeout: TimeInterval in [0.2, 2, 10] {
+      let start = Date()
+      do {
+        try Shell.run("/bin/sh", ["-c", script], timeout: timeout)
+        Issue.record("should time out")
+        return
+      } catch let error as ShellError {
+        guard let pid = error.output.split(separator: "\n").first.flatMap({ pid_t($0) }) else {
+          continue
+        }
+        let elapsed = Date().timeIntervalSince(start)
+        defer { kill(pid, SIGKILL) }
+        #expect(error.timedOutAfter == timeout)
+        #expect(error.status == SIGKILL)
+        #expect(error.description.contains("timed out after \(String(format: "%g", timeout)) s"))
+        // Past its limit, run takes up to killDelay (1 s) before SIGKILL and drainDelay (1 s) for the pipe; the
+        // bound leaves room for a loaded machine on top, measured from this try, whose limit may be the longer one.
+        #expect(elapsed < timeout + Self.bound)
+        // Gone, once Process has reaped it, which a loaded machine may do a moment after run returned.
+        #expect(becomesTrue { kill(pid, 0) != 0 && errno == ESRCH })
+        return
+      } catch {
+        Issue.record("\(error)")
+        return
+      }
     }
-    #expect(Date().timeIntervalSince(start) < Self.bound)
+    Issue.record("sh did not get to ignore SIGTERM even with 10 s")
   }
 
   /// It answered SIGTERM with status 0, but the output may be cut short: what it printed is no answer.

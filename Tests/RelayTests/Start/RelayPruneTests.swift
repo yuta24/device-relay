@@ -618,7 +618,8 @@ struct PruneBuildDirectoryTests {
     let build = try builds.addBuild(root: try builds.addRoot(), age: 100 * day)
     try StartLock.acquire(port: 8101, home: builds.home.url).release()
     try StartBuildClaim(pid: getpid(), buildDirectory: build.lastPathComponent).write(port: 8101, home: builds.home.url)
-    #expect(builds.run().removedBuildDirectories == 1)
+    // Retried for a moment, as the lock may linger: see onceReleased. A run that finds it held removes nothing.
+    #expect(becomesTrue { builds.run().removedBuildDirectories == 1 })
   }
 
   @Test func aRunnerInfoKeepsTheDirectoryItNames() throws {
@@ -671,7 +672,8 @@ struct PruneBuildDirectoryTests {
     #expect(builds.run() == RelayPrune.Outcome())
     #expect(builds.exists(build))
     lock.release()
-    #expect(builds.run().removedBuildDirectories == 1)
+    // Retried for a moment, as the lock may linger: see onceReleased. A run that finds it held removes nothing.
+    #expect(becomesTrue { builds.run().removedBuildDirectories == 1 })
   }
 
   /// The lock `relay start` waits for is free again once the directory has been moved.
@@ -685,7 +687,8 @@ struct PruneBuildDirectoryTests {
     let lock = try BuildLock(derivedData: build.appendingPathComponent("DerivedData-sim", isDirectory: true),
                              relayDirectory: builds.home.url.appendingPathComponent(".relay", isDirectory: true))
     defer { lock.release() }
-    #expect(lock.tryExclusive())
+    // Retried for a moment, as the descriptor prune checked the lock with may linger: see onceReleased.
+    #expect(becomesTrue { lock.tryExclusive() })
   }
 
   // MARK: Directories without the record

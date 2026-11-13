@@ -34,7 +34,8 @@ struct DeviceLockTests {
     let other = try StartLock.acquire(device: sessionSimulator("iPhone 17 Pro", "sim-b"), session: "b", home: home)
     other.release()
     lock.release()
-    try StartLock.acquire(device: phone, session: "b", home: home).release()
+    // Retried for a moment: see onceReleased.
+    try onceReleased { try StartLock.acquire(device: phone, session: "b", home: home) }.release()
   }
 
   @Test func holderReadsPidAndSession() throws {
@@ -48,9 +49,10 @@ struct DeviceLockTests {
     #expect(StartLock.holder(of: url) == StartLock.Holder(pid: getpid(), session: "a"))
     #expect(StartLock.devicesInUse([phone, sessionSimulator("iPhone 17 Pro", "SIM-B")], home: home) == ["SIM-A": "session a, relay start pid \(getpid())"])
 
+    // Each check retried for a moment, as the descriptor of the one before may linger like the lock's: see onceReleased.
     lock.release()
-    #expect(StartLock.holder(of: url) == nil)
-    #expect(StartLock.devicesInUse([phone], home: home).isEmpty)
+    #expect(becomesTrue { StartLock.holder(of: url) == nil })
+    #expect(becomesTrue { StartLock.devicesInUse([phone], home: home).isEmpty })
   }
 
   @Test func stopHintNamesTheSessionOrAnyStop() {
@@ -508,7 +510,8 @@ struct StartLockTests {
     other.release()
 
     lock.release()
-    try StartLock.acquire(port: 8100, home: home).release()
+    // Retried for a moment: see onceReleased.
+    try onceReleased { try StartLock.acquire(port: 8100, home: home) }.release()
   }
 
   @Test func aLeftoverLockFileDoesNotBlock() throws {
