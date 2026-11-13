@@ -24,8 +24,13 @@ struct RunnerSessionsListTests {
     let starting = try StartLock.acquire(session: "starting", home: home)
     defer { starting.release() }
 
-    let rows = RunnerSessions.rows(home: home, ping: { $0.url.contains("8102") ? .unreachable("refused") : .alive(busy: $0.url.contains("8101"), busyForMs: nil) },
-                                   processRunning: { $0.url.contains("8102") ? nil : 42 })
+    // Read again for a moment until the ended session's lock reads as free, as it may linger: see onceReleased.
+    var rows: [RunnerSessions.Row] = []
+    #expect(becomesTrue {
+      rows = RunnerSessions.rows(home: home, ping: { $0.url.contains("8102") ? .unreachable("refused") : .alive(busy: $0.url.contains("8101"), busyForMs: nil) },
+                                 processRunning: { $0.url.contains("8102") ? nil : 42 })
+      return rows.map(\.label) == ["(default)", "a", "b", "starting"]
+    })
     #expect(rows.map(\.label) == ["(default)", "a", "b", "starting"])
     #expect(rows.map(\.state) == [.running, .busy, .noAnswer, .starting])
     #expect(rows.map(\.processRunning) == [true, true, false, true])
