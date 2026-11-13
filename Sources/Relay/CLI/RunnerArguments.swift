@@ -18,7 +18,7 @@ extension Arguments {
   static let selectorOptions: Set<String> = ["--id", "--label", "--type", "--value", "--index"]
   /// Options without a value.
   static let runnerFlags: [String: Set<String>] = [
-    "type": ["--stdin"],
+    "type": ["--stdin", "--clear"],
     "find": ["--require", "--gone"]
   ]
 
@@ -75,6 +75,7 @@ extension Arguments {
       parser.standardInputText = try text(fromStandardInput: standardInput())
     }
     parser.gone = givenFlags.contains("--gone")
+    parser.clear = givenFlags.contains("--clear")
     let operation = try parser.operation()
     let runnerPath = try parser.string("--runner")
     let session = try parser.string("--session")
@@ -249,9 +250,12 @@ extension Arguments {
       """
     ),
     "type": (
-      "relay type [<text> | --stdin] [--key return|delete|space]... [--bundle-id <id>]",
+      "relay type [--clear] [<text> | --stdin] [--key return|delete|space]... [--bundle-id <id>]",
       """
       Types text into the element with keyboard focus (tap it first), then sends each --key in order.
+      --clear empties that field first (select all and delete, else deletes from the end; wherever the
+      cursor is), reads it again, and fails with exit 6 (code clear_failed) without typing when it is
+      not empty; alone, it only empties the field. It may take \(Int(RunnerTyping.clearWait)) seconds more.
       --stdin reads the text from standard input without one trailing newline, which keeps passwords out
       of ps and the shell history (printf 'secret' | relay type --stdin). Put -- before text that starts
       with -.
@@ -538,9 +542,9 @@ extension Arguments {
     '_', and '-', starting with a letter or digit.
   relay waits 30 seconds for the answer, plus what the command itself may wait: --timeout (find, tap,
     press), --duration and --hold (press, swipe), 120 s (launch, open, terminate: 150 s in all), 0.1 s
-    a character and 1 s a key (type, key). Past that it fails with runner_timeout (exit 3), but the
-    runner keeps at the command and stays busy (exit 5 for others) until it ends: wait until relay
-    ping shows "busy":false.
+    a character and 1 s a key (type, key), \(Int(RunnerTyping.clearWait)) s more for type --clear. Past that it fails with
+    runner_timeout (exit 3), but the runner keeps at the command and stays busy (exit 5 for others)
+    until it ends: wait until relay ping shows "busy":false.
   Output is always JSON (a screenshot prints the saved file's path); --json is accepted, not needed.
   A failure is JSON on stdout too: the runner's {"ok":false,"code":...,"error":...}, or relay's own in
     that shape when it fails before the runner answers (code runner_unavailable, runner_timeout,
@@ -564,6 +568,8 @@ private struct RunnerArgumentValues {
   var standardInputText: String?
   /// `relay find --gone`.
   var gone = false
+  /// `relay type --clear`.
+  var clear = false
 
   func operation() throws -> RunnerOperation {
     switch command {
@@ -638,10 +644,10 @@ private struct RunnerArgumentValues {
       }
       let keys = try values["--key", default: []].map(key)
       let text = (standardInputText ?? positionals.first).flatMap { $0.isEmpty ? nil : $0 }
-      guard text != nil || !keys.isEmpty else {
-        throw ArgumentError(description: "type requires <text>, --stdin with text, or --key")
+      guard text != nil || !keys.isEmpty || clear else {
+        throw ArgumentError(description: "type requires <text>, --stdin with text, --key, or --clear")
       }
-      return .type(text: text, keys: keys, bundleID: try string("--bundle-id"))
+      return .type(text: text, keys: keys, bundleID: try string("--bundle-id"), clear: clear)
     case "key":
       return .key(try key(try positional(1, "a key name (\(RunnerKey.supportedNames))")[0]), bundleID: try string("--bundle-id"))
     case "button":

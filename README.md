@@ -152,7 +152,7 @@ A physical device needs the following before `relay start`. For details, see [хо
 | `relay source` | Get the element tree (`--format compact --filter interactive` for only the elements you can operate) |
 | `relay find` | Find elements matching a selector (`--timeout` to wait, `--require` to fail if there is none, `--gone` to wait for them to go) |
 | `relay tap` / `relay press` / `relay swipe` | Touch by coordinates or by element selector (`--id`, `--label`, `--type`) |
-| `relay type` / `relay key` | Send text or special keys to the element with keyboard focus |
+| `relay type` / `relay key` | Send text or special keys to the element with keyboard focus (`type --clear` empties the field first) |
 | `relay launch` / `relay terminate` | Launch an app (or bring it to the foreground) / terminate it |
 | `relay open` | Open a URL or deep link (`https://` in Safari, `myapp://` in its app, `--bundle-id` to pick the app) |
 | `relay button` / `relay orientation` | Press a hardware button / change the device orientation |

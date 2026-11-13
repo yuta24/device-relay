@@ -26,12 +26,14 @@ relay health                                   # curl -s -H "$AUTH" $R/health
 relay launch host                              # RelayRunnerHost（host はそのバンドル ID の別名）
 relay find --type textField                    # POST /find {"element":{"type":"textField"}}
 relay find --id home.title --timeout 5 --require   # 現れるまで待ち、現れなければ終了コード 6
+relay find --id spinner --gone --timeout 5 --require   # 消えるまで待ち、消えなければ終了コード 6
 relay tap --id relay.input                     # POST /tap {"element":{"identifier":"relay.input"}}
 relay tap 200 120 --mode xcui                  # POST /tap {"x":200,"y":120,"mode":"xcui"}
 relay press --label General --type button --duration 1.0
 relay swipe 200 700 200 200 --duration 0.3
 relay type "hello" --key return                # POST /type {"text":"hello","keys":["return"]}
 printf '%s' "$PASSWORD" | relay type --stdin   # 文字列を標準入力から読む（ps やシェルの履歴に残さない）
+relay type --clear "new text"                  # POST /type {"clear":true,"text":"new text"}（空にしてから入力）
 relay key delete
 relay screenshot                               # 保存先の絶対パスを出力（既定は $TMPDIR/relay/screenshot-<時刻>.png）
 relay screenshot -o shot.jpg --quality 0.5     # 拡張子 .jpg / --quality で jpeg
@@ -64,7 +66,7 @@ relay crashes                                  # 直近 24 時間のクラッシ
 | `find` | `POST /find` | セレクタ、`--limit <n>`、`--timeout <s>`、`--gone`、`--require`、`--bundle-id <id>` |
 | `tap` / `press` | `POST /tap` / `/press` | `<x> <y>` かセレクタ、`--mode private\|xcui`、`--timeout`・`--bundle-id`（セレクタのみ）、`--duration`（press のみ） |
 | `swipe` | `POST /swipe` | `<x1> <y1> <x2> <y2>`、`--duration`、`--hold`、`--mode` |
-| `type` | `POST /type` | `<text>` か `--stdin`、`--key <name>`（複数可、順に送る）、`--bundle-id` |
+| `type` | `POST /type` | `<text>` か `--stdin`、`--key <name>`（複数可、順に送る）、`--clear`、`--bundle-id` |
 | `key` / `button` / `orientation` | `POST /key` / `/button` / `/orientation` | 名前（`key` は `--bundle-id` も可、`orientation` は `landscape` を `landscapeLeft` として送る） |
 | `launch` / `terminate` | `POST /launch` / `/terminate` | `<bundle-id>`（`host` も可） |
 | `open` | `POST /open` | `<url>`、`--bundle-id <id>`（`host` も可） |
@@ -121,6 +123,9 @@ relay: image 471x1024 px, screen 402x874 pt, 1.172 px/pt (tap in points: px / 1.
 
 `-` で始まる文字列を入力するときは `relay type -- --text` のように `--` を挟みます。
 パスワードなど、`ps` やシェルの履歴に残したくない文字列は `relay type --stdin` で標準入力から渡します。
+
+`relay type --clear` は、フォーカスがある入力欄を空にしてから入力します。文字列を省くと、空にするだけです。
+空にならなければ、何も入力せずに終了コード 6（`clear_failed`）です。消し方と確かめ方は「[入力欄を空にする（clear）](http-api.md#入力欄を空にするclear)」にあります。
 
 標準入力では、末尾の改行 1 つ（`\n` か `\r\n`）だけを除き、それ以外はそのまま入力します。`echo` が付ける改行もこの対象です。
 `--key` と併用でき、標準入力が空でも `--key` があればキーだけを送ります。
@@ -303,7 +308,7 @@ URL がアプリの中に届いたかは、設定アプリが開いたこと以�
 | `swipe` | `--duration` と `--hold` の時間 |
 | `launch` / `terminate` | 120 秒 |
 | `open` | 120 秒（通常は前面を待つ 5 秒までで応答します） |
-| `type` | 1 文字（Unicode スカラー）につき 0.1 秒と、キー 1 つにつき 1 秒 |
+| `type` | 1 文字（Unicode スカラー）につき 0.1 秒と、キー 1 つにつき 1 秒。`--clear` ではさらに 23 秒 |
 | `key` | 1 秒 |
 
 アプリの起動・終了を XCTest が待つ時間は 120 秒です。ランナーは 60 秒に戻しますが、戻せないランナーでは 120 秒のままです（「[アプリの状態の待ち時間](private-api.md#アプリの状態の待ち時間)」）。
@@ -422,6 +427,7 @@ code を返さない古いランナーでは、`401`・`409` のヒントだけ�
 | --- | --- |
 | `no_keyboard_focus` | 入力欄を先にタップしてから送り直す |
 | `typing_failed` | 入った文字を `relay find` の `value` で確かめ、必要なら消してから送り直す |
+| `clear_failed` | `relay find` の `value` で確かめ、短くなっていれば `relay type --clear` を送り直す。変わらなければ、アプリが文字を戻している |
 | `element_not_found` | `relay find --type …` / `relay source` で画面を確かめるか、`--timeout <秒>` で待つ |
 | `element_ambiguous` | `--type`・`--label`・`--id` を足すか、候補から `--index <n>` で選ぶ |
 | `touch_mode_unavailable` | `--mode` を外すか、エラーが示す経路で送り直す |

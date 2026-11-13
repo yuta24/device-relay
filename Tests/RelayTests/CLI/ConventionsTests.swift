@@ -77,7 +77,7 @@ struct OptionEqualsTests {
 
   @Test func aFlagWithAValueIsAnError() {
     for argument in ["--json=true", "--rebuild=1", "--verbose=", "--stdin=x", "--require=1", "--all=1", "--help=x", "--background=no",
-                     "--gone=true"] {
+                     "--gone=true", "--clear=yes"] {
       let error = #expect(throws: ArgumentError.self, "\(argument)") { try Arguments.splittingEquals(["x", argument]) }
       #expect(error?.description.contains("does not take a value") == true, "\(argument)")
     }
@@ -291,6 +291,14 @@ struct FailureJSONTests {
     // A runner from before gone answers without it, and 1 is not a boolean.
     #expect(RunnerControl.goneAnswer(Data(#"{"count":0,"elements":[]}"#.utf8)) == nil)
     #expect(RunnerControl.goneAnswer(Data(#"{"gone":1}"#.utf8)) == nil)
+  }
+
+  /// A runner from before clear answers /type without cleared, having typed after what the field held.
+  @Test func typeClearNeedsTheRunnerToSayCleared() {
+    #expect(RunnerControl.answerSays("cleared", Data(#"{"bundleId":"b","cleared":true,"ok":true}"#.utf8)))
+    #expect(RunnerControl.answerSays("cleared", Data(#"{"bundleId":"b","ok":true}"#.utf8)) == false)
+    #expect(RunnerControl.answerSays("cleared", Data(#"{"cleared":1}"#.utf8)) == false)
+    #expect(RunnerControl.answerSays("cleared", Data("not json".utf8)) == false)
   }
 
   @Test func anUnreadableScenarioIsALocalFailureAndABadStepIsUsage() {

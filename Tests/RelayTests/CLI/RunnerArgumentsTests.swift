@@ -116,6 +116,16 @@ struct RunnerArgumentsTests {
     #expect(throws: ArgumentError.self) { try Arguments.parse(["swipe", "1", "2", "3"]) }
   }
 
+  @Test func parsesTypeClear() throws {
+    #expect(try operation(["type", "--clear"]) == .type(text: nil, keys: [], bundleID: nil, clear: true))
+    #expect(try operation(["type", "--clear", "new", "--key", "return"]) == .type(text: "new", keys: ["return"], bundleID: nil, clear: true))
+    #expect(try operation(["type", "new", "--clear"]) == .type(text: "new", keys: [], bundleID: nil, clear: true))
+    #expect(throws: ArgumentError.self) { try Arguments.parse(["type", "--clear=yes"]) }
+    #expect(throws: ArgumentError.self) { try Arguments.parse(["key", "delete", "--clear"]) }
+    // Without --clear, there must still be something to type.
+    #expect(throws: ArgumentError.self) { try Arguments.parse(["type"]) }
+  }
+
   @Test func parsesTypeTextAndKeys() throws {
     #expect(try operation(["type", "hello world"]) == .type(text: "hello world", keys: [], bundleID: nil))
     #expect(try operation(["type", "example.com", "--key", "return", "--key", "Enter", "--bundle-id", "b"])

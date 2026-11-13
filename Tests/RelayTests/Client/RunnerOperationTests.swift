@@ -45,6 +45,8 @@ struct RunnerOperationTests {
       == #"{"from":{"x":1,"y":2},"to":{"x":3,"y":4}}"#)
     #expect(try body(RunnerOperation.type(text: "hi", keys: ["return"], bundleID: nil).request) == #"{"keys":["return"],"text":"hi"}"#)
     #expect(try body(RunnerOperation.type(text: nil, keys: ["delete"], bundleID: "b").request) == #"{"bundleId":"b","keys":["delete"]}"#)
+    #expect(try body(RunnerOperation.type(text: nil, keys: [], bundleID: nil, clear: true).request) == #"{"clear":true}"#)
+    #expect(try body(RunnerOperation.type(text: "new", keys: [], bundleID: nil, clear: true).request) == #"{"clear":true,"text":"new"}"#)
     #expect(try body(RunnerOperation.key("space", bundleID: nil).request) == #"{"key":"space"}"#)
     #expect(try body(RunnerOperation.button("home").request) == #"{"name":"home"}"#)
     #expect(try body(RunnerOperation.orientation("portrait").request) == #"{"orientation":"portrait"}"#)
@@ -60,6 +62,8 @@ struct RunnerOperationTests {
     #expect(RunnerOperation.health.waitTime == 0)
     #expect(RunnerOperation.find(RunnerElementSelector(type: "cell"), limit: nil, timeout: 5, bundleID: nil).waitTime == 5)
     #expect(RunnerOperation.find(RunnerElementSelector(type: "cell"), limit: nil, timeout: 7, bundleID: nil, gone: true).waitTime == 7)
+    let typed = RunnerOperation.type(text: "ab", keys: [], bundleID: nil).waitTime
+    #expect(RunnerOperation.type(text: "ab", keys: [], bundleID: nil, clear: true).waitTime == typed + RunnerTyping.clearWait)
     #expect(RunnerOperation.press(RunnerTouch(target: .point(RunnerPoint(x: 0, y: 0)), duration: 4, timeout: 2)).waitTime == 6)
   }
 

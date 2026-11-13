@@ -4,6 +4,13 @@
 
 ## 次の版（0.7.0 から）
 
+### 入力欄を空にする type --clear（0.7.0 から）
+
+`relay type --clear [<text>]` で、フォーカスがある入力欄を空にしてから入力できるようになりました（HTTP API では `/type` の `"clear": true`）。
+これまでは文字数を数えて `--key delete` を並べるしかなく、カーソルが途中にあると消え残りました。
+空にならなければ何も入力せず、終了コード 6 で、`code` は新しい `clear_failed` です。
+`code` で分岐しているスクリプトは、この値を足してください。消し方は「[入力欄を空にする（clear）](docs/http-api.md#入力欄を空にするclear)」にあります。
+
 ### 要素が消えるのを待つ find --gone（0.7.0 から）
 
 `relay find <セレクタ> --gone --timeout <秒>` で、一致する要素がなくなるまで待てるようになりました（HTTP API では `/find` の `"gone": true`）。

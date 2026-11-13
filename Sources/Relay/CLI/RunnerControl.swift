@@ -170,6 +170,11 @@ enum RunnerControl {
       return code.rawValue
     }
 
+    if case .type(_, _, _, clear: true) = resolved, !answerSays("cleared", response.body) {
+      // A runner from before `clear` ignored it: the text went in after what the field held.
+      return fail(.runnerBadResponse, "the runner's /type answer has no cleared; it predates type --clear and typed without "
+        + "clearing the field (relay start --rebuild builds a current one)", exit: .runnerError, to: failureOutput)
+    }
     if case .find(_, _, _, _, gone: true) = resolved {
       guard let gone = goneAnswer(response.body) else {
         // A runner from before `gone` ignored it and waited for an element to appear instead.
@@ -233,6 +238,13 @@ enum RunnerControl {
     return CLIOutput.json(object, fallback: body)
   }
 
+  /// Whether an answer has `key` set to true.
+  static func answerSays(_ key: String, _ body: Data) -> Bool {
+    guard let object = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+          let value = object[key] as? NSNumber, CFGetTypeID(value) == CFBooleanGetTypeID() else { return false }
+    return value.boolValue
+  }
+
   /// The `gone` of a `/find` answer, nil when there is none (a runner from before `gone`).
   static func goneAnswer(_ body: Data) -> Bool? {
     guard let object = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
@@ -276,6 +288,10 @@ enum RunnerControl {
     case .typingFailed:
       return "some of the text may have been typed: check the field's value with relay find, clear it if needed, "
         + "then send it again"
+    case .clearFailed:
+      return "the field kept some text and nothing was typed: check its value with relay find. If it got shorter, "
+        + "send relay type --clear again (it deletes up to \(RunnerClearing.maxDeletes) characters when select all does not work); "
+        + "if not, the app keeps or refills it"
     case .elementNotFound:
       return "check the screen with relay find --type … or relay source, or wait for the element with --timeout <s>"
     case .elementAmbiguous:

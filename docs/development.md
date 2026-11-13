@@ -285,8 +285,9 @@ xcodebuild の出力に `RELAY_RUNNER_READY port=8100 addresses=en0=…,utun3=�
 
 | accessibilityIdentifier | 内容 |
 | --- | --- |
-| `relay.input` / `relay.input2` | 入力欄 |
+| `relay.input` / `relay.input2` | 入力欄。`relay.input2` は全選択（Cmd-A）を受け付けません（`relay type --clear` の 2 段目を試す） |
 | `relay.password` | パスワード欄（`isSecureTextEntry`） |
+| `relay.notes` | 複数行の入力欄（`UITextView`。Return で改行が入ります） |
 | `relay.text` | `relay.input` の現在の文字列（`text: …`） |
 | `relay.passwordLength` | `relay.password` の文字数だけ（`password: 5 chars`）。文字列そのものは表示しません |
 | `relay.submitted` | Return で確定したときの文字列と回数（`submitted #2: …`） |

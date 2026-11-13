@@ -15,7 +15,8 @@ enum RunnerOperation: Equatable {
   case tap(RunnerTouch)
   case press(RunnerTouch)
   case swipe(from: RunnerPoint, to: RunnerPoint, duration: TimeInterval?, hold: TimeInterval?, mode: String?)
-  case type(text: String?, keys: [String], bundleID: String?)
+  /// `clear`: empty the field first (`relay type --clear`).
+  case type(text: String?, keys: [String], bundleID: String?, clear: Bool = false)
   case key(String, bundleID: String?)
   case button(String)
   case orientation(String)
@@ -79,11 +80,12 @@ enum RunnerOperation: Equatable {
       body["hold"] = hold
       body["mode"] = mode
       return .post("/swipe", body)
-    case .type(let text, let keys, let bundleID):
+    case .type(let text, let keys, let bundleID, let clear):
       var body: [String: Any] = [:]
       body["text"] = text
       body["keys"] = keys.isEmpty ? nil : keys
       body["bundleId"] = bundleID
+      body["clear"] = clear ? true : nil
       return .post("/type", body)
     case .key(let key, let bundleID):
       var body: [String: Any] = ["key": key]
@@ -113,7 +115,8 @@ enum RunnerOperation: Equatable {
     case .launch, .open, .terminate: return Self.applicationStateWait
     // The runner gives up on synthesized text `RunnerTyping.synthesisGrace` after this, so it answers within
     // the 30 s on top.
-    case .type(let text, let keys, _): return RunnerTyping.wait(text: text ?? "", keyCount: keys.count)
+    case .type(let text, let keys, _, let clear):
+      return RunnerTyping.wait(text: text ?? "", keyCount: keys.count) + (clear ? RunnerTyping.clearWait : 0)
     case .key: return RunnerTyping.wait(text: "", keyCount: 1)
     default: return 0
     }

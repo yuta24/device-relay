@@ -69,8 +69,9 @@
 ### 文字入力の合成
 
 - **API**: `XCPointerEventPath`（`-initForTextInput`、`-typeText:atOffset:typingSpeed:shouldRedact:`）と、タッチ合成と同じ `XCSynthesizedEventRecord`・`-[XCUIDevice eventSynthesizer]`。実装は `RelayTextSynthesizer.m` です。
+- **キーの合成**: `/type` の `clear` の Cmd-A と Cmd-↓ は、同じ経路の `-typeKey:modifiers:atOffset:` で送ります。`XCUIElement.typeKey(_:modifierFlags:)` が中で使うもので、アイドルを待ちません。このメソッドがなければ `typeKey` で送ります。
 - **フォーカスの確認**: 合成した入力はフォーカスを確かめないので、送る前に述語 `hasKeyboardFocus == 1` で要素を探します（`typeText` と同じ問い合わせ）。属性は `-[XCElementSnapshot hasKeyboardFocus]` です。
-- **機能**: 表示が 1 つの端末の `/type`・`/key`。速さは `typeText` の既定と同じ 1 秒 60 文字です。
+- **機能**: 表示が 1 つの端末の `/type`・`/key`、`/type` の `clear`。速さは `typeText` の既定と同じ 1 秒 60 文字です。
 - **公開 API では足りない理由**: `typeText` は入力の前後で対象アプリがアイドルになるのを待ちます。アイドルにならないアプリでは、この待ちで `/type` が 3 分ほど busy になりました（「[文字入力の経路](design.md#文字入力の経路)」）。
 - **同じ方式のツール**: WebDriverAgent。
 

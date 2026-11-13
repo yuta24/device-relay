@@ -299,6 +299,8 @@ struct ScenarioDisplayTests {
     #expect(try shown("type 'hunter 2' --key return") == "type *** --key return")
     #expect(try shown("type --bundle-id com.example \"p@ss\"") == "type --bundle-id com.example ***")
     #expect(try shown("type -- --secret") == "type -- ***")
+    #expect(try shown("type --clear 'hunter 2'") == "type --clear ***")
+    #expect(try shown("type --clear") == "type --clear")
     #expect(try shown("type --key delete") == "type --key delete")
     // Negative numbers are text, as relay type reads them.
     #expect(try shown("type -42") == "type ***")

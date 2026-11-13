@@ -17,7 +17,7 @@
 | `POST /press` | `{"x":200,"y":120,"duration":1.0}`、または `{"element":{…},"duration":1.0}` | 長押し |
 | `POST /find` | `{"element":{"type":"button"},"limit":20,"bundleId":"…","timeout":0,"gone":false}`（`limit`・`bundleId`・`timeout`・`gone` は省略可） | セレクタに一致する要素の一覧（type / identifier / label / value / frame / enabled）。ツリー全体を読まずに要素を探せます（「[要素セレクタ](elements.md#要素セレクタ)」）。`gone: true` で、一致する要素がなくなるのを待ちます（「[消えるのを待つ（gone）](elements.md#消えるのを待つgone)」） |
 | `POST /swipe` | `{"from":{"x":200,"y":700},"to":{"x":200,"y":200},"duration":0.3,"hold":0.05}` | スワイプ（ドラッグ）。`from`・`to` のどちらかが画面の外なら `400` |
-| `POST /type` | `{"text":"hello","keys":["return"],"bundleId":"com.apple.Preferences"}`（`keys` と `bundleId` は省略可。`keys` があれば `text` は省略・空文字でも可。`text` が文字列以外なら `keys` があっても 400） | キーボードのフォーカスがある要素への文字入力。`text` の後に `keys` を順に送ります。対象の既定は前面アプリ |
+| `POST /type` | `{"text":"hello","keys":["return"],"bundleId":"com.apple.Preferences","clear":false}`（`keys`・`bundleId`・`clear` は省略可。`keys` か `clear: true` があれば `text` は省略・空文字でも可。`text` が文字列以外なら `keys` があっても 400） | キーボードのフォーカスがある要素への文字入力。`clear: true` なら先に入力欄を空にし（下の「入力欄を空にする（clear）」）、`text` の後に `keys` を順に送ります。対象の既定は前面アプリ |
 | `POST /key` | `{"key":"return","bundleId":"…"}`（bundleId は省略可） | 特殊キー（`return` / `delete` / `space`）を 1 つ送ります。それ以外のキー名は 400。詳しくは「文字入力と特殊キー」 |
 | `POST /button` | `{"name":"home"}`（`volumeUp` / `volumeDown` は実機のみ） | ハードウェアボタン。`home` は実機では画面下端からのスワイプで代用します（「[ホームと音量ボタン](device.md#ホームと音量ボタン)」を参照） |
 | `POST /orientation` | `{"orientation":"portrait\|portraitUpsideDown\|landscapeLeft\|landscapeRight"}` | 端末の向き（`UIDeviceOrientation`）を設定 |
@@ -116,6 +116,7 @@ curl -s -H "$AUTH" -X POST $R/find        -H 'Content-Type: application/json' -d
 curl -s -H "$AUTH" -X POST $R/swipe       -H 'Content-Type: application/json' -d '{"from":{"x":200,"y":700},"to":{"x":200,"y":200}}'
 curl -s -H "$AUTH" -X POST $R/type        -H 'Content-Type: application/json' -d '{"text":"hello"}'
 curl -s -H "$AUTH" -X POST $R/type        -H 'Content-Type: application/json' -d '{"text":"example.com","keys":["return"]}'
+curl -s -H "$AUTH" -X POST $R/type        -H 'Content-Type: application/json' -d '{"clear":true,"text":"new"}'
 curl -s -H "$AUTH" -X POST $R/key         -H 'Content-Type: application/json' -d '{"key":"delete"}'
 curl -s -H "$AUTH" -X POST $R/button      -H 'Content-Type: application/json' -d '{"name":"home"}'
 curl -s -H "$AUTH" -X POST $R/orientation -H 'Content-Type: application/json' -d '{"orientation":"landscapeLeft"}'
@@ -160,6 +161,7 @@ curl -s -H "$AUTH" -X POST $R/shutdown
 | `covered_by_other_app` | 422 | 要素を指定した `/tap`・`/press` で、対象アプリが前面のアプリの一覧になく、先頭が SpringBoard（システムの許可ダイアログ、コントロールセンターなどに覆われている）。何も送っていない。`bundleId`・`foreground`・`alert`（SpringBoard の alert の label か `null`）が付く（「[別のアプリに覆われているとき](elements.md#別のアプリに覆われているとき)」） | スクリーンショットか `/find`（`bundleId: com.apple.springboard`、`type: alert`）で確かめ、ダイアログなどを閉じてから送り直す |
 | `touch_failed` | 422 / 500 | 合成したタッチが失敗した、時間内に終わらなかった、合成を始められなかった（500） | 1 回だけ再試行する。続くならランナーのログを見る |
 | `typing_failed` | 422 / 500 | `/type`・`/key` で合成した入力が失敗した、時間内に終わらなかった（422）、合成を始められなかった（500） | `/find` の `value` で入った文字を確かめ、必要なら消してから送り直す |
+| `clear_failed` | 422 | `/type` の `clear` で、入力欄が空にならなかった。何も入力していない。残りの文字数が `remaining` に入る（文字そのものは入れない） | `/find` の `value` で確かめる。短くなっていれば `clear` を送り直す。変わらなければ、アプリが文字を戻している |
 | `open_failed` | 422 | `/open` で URL を開けなかった: スキームを扱うアプリが入っていない、`bundleId` のアプリで開けない、システムが時間内に答えない | URL のスキームと、扱うアプリが入っているかを確かめる。`bundleId` を指定すると、スキームにかかわらずそのアプリに渡せる |
 | `xcui_failed` | 422 | XCUI が失敗を報告した（XCTest の issue、要素ツリーの取得の失敗など）。`error` に XCUI の文 | `error` を読み、前面アプリと画面を観察し直す |
 | `internal_error` | 500 | ランナーの内部エラー（JPEG エンコードの失敗、終了処理中など） | 1 回だけ再試行する。続くならランナーのログを見る |
@@ -257,3 +259,44 @@ RelayRunnerHost の入力欄（`relay.input`）で確認した結果（シミュ
 確かめた環境（`private`）: iPhone 17 シミュレータ（iOS 27.2、Xcode 27.2）と iPhone 14 Pro（iOS 26.7.1）。
 シミュレータでは、ネイティブの入力欄、WKWebView と Safari のページの入力欄で、文字・`--stdin`・`return`・`delete`・`space` を確かめました。
 実機では、設定アプリの検索欄と Safari のページの入力欄で、同じものと日本語を確かめました。
+
+### 入力欄を空にする（clear）
+
+`/type` に `"clear": true` を付けると、キーボードのフォーカスがある入力欄を空にしてから `text` と `keys` を送ります。`text` も `keys` もなければ、空にするだけです。CLI では `relay type --clear [<text>]` です。
+
+```sh
+relay tap --id relay.input
+relay type --clear "new text"
+```
+
+- **消し方**: まず全選択（ハードウェアキーの Cmd-A）と delete を送ります。カーソルの位置や文字の種類によらず、1 回で消えます。
+- 全選択が効かない入力欄では、Cmd-↓ で末尾に移り、残りの文字数だけ delete を送ります。1 回の delete で消えるのは、絵文字や結合文字を含めて見た目の 1 文字です。
+- **確かめ方**: 送る前と、各段の後に、フォーカスがある要素の `value` を読みます。キーを送った直後は、空になるまで最大 0.5 秒読み直します。
+- 空と判定するのは、`value` が `null`・空文字、または `placeholder` と同じときです。`placeholder` と同じ文字が入っているときも、先に全選択と delete を送ってから判定します。
+- 最初から空なら、何も送りません。
+- **空にならないとき**: 何も入力せずに `422`、`clear_failed` を返します。`remaining` に残りの文字数が入ります。パスワード欄のこともあるので、文字そのものは返しません。
+- 2 段目の delete は 1 回 200 文字までです。全選択が効かず 200 文字より長い欄は、`clear_failed` になります。もう一度送ると続きを消します。
+- **フォーカス**: `/type` と同じく、フォーカスがなければ `no_keyboard_focus` で何も送りません。
+- **応答**: 成功すると `{"ok":true,"bundleId":"…","cleared":true}` です。`clear` を知らない古いランナーは `clear` を無視して、元の文字の後に入力します。`cleared` がない応答に、`relay type --clear` は `runner_bad_response`（終了コード 8）で失敗します。
+- **経路**: キーは `/type` と同じく XCTest の非公開 API で合成し、アイドルを待ちません（「[文字入力の合成](private-api.md#文字入力の合成)」）。`typeSynthesis` が `xcui` の端末では、`typeKey` と `typeText` で送り、前後でアイドルを待ちます。
+- **待ち時間**: 空にする分として最大 23 秒かかることがあります（キー 3 つに 1 秒ずつと、delete 200 回に 0.1 秒ずつ）。`relay type --clear` は、その分だけ長く応答を待ちます。
+
+RelayRunnerHost で確かめた結果（時間は `relay type --clear` の呼び出しから戻るまで。範囲のある行は 3 回、「約」の行は 1 回）:
+
+| 入力欄と状態 | 結果 | 時間 |
+| --- | --- | --- |
+| `relay.input`、ASCII 11 文字、カーソルは末尾 | 空 | 983–1144 ms |
+| `relay.input`、ASCII 10 文字、カーソルは途中（長押しで移動） | 空 | 707–776 ms |
+| `relay.input`、ZWJ の絵文字・国旗・結合文字・日本語、カーソルは途中 | 空 | 660–700 ms |
+| `relay.input`、ASCII 300 文字 | 空 | 664–703 ms |
+| `relay.password`（`value` は `••••••••`） | 空（`relay.passwordLength` も 0） | 647–706 ms |
+| `relay.notes`（`UITextView`、3 行）、カーソルは 1 行目の途中 | 空 | 682–732 ms |
+| `relay.input2`（全選択なし）、カーソルは途中 | 空（2 段目で消えた） | 1995–2122 ms |
+| `relay.input2`（全選択なし）、250 文字 | `clear_failed`、`remaining: 49`。続けてもう一度送ると空 | 約 6.0 秒 |
+| `relay.input`、`placeholder` と同じ `Type here` | 空 | 約 0.7 秒 |
+| 空の `relay.input` | 何も送らない | 52–83 ms |
+| フォーカスがない | `no_keyboard_focus` | 約 1.1 秒 |
+
+`relay.input` の `relay.events` には、全選択の Cmd-A のキーと、選んだ全体の delete（`delete 3` など）が記録されました。`relay.input2` では 1 文字ずつの delete でした。`TEST_RUNNER_RELAY_DISABLE_PRIVATE_TYPING=1`（`typeSynthesis: xcui`）でも、カーソルが途中の欄と全選択のない欄が空になりました（約 2.2–2.8 秒）。
+
+確かめた環境: iPhone 18 Pro シミュレータ（iOS 27.2、Xcode 27.2）。シミュレータはハードウェアキーボードをつないだ状態（ソフトウェアキーボードを出さない状態）です。実機とソフトウェアキーボードを出した状態では確かめていません。

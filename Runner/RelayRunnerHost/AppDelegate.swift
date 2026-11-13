@@ -31,18 +31,21 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
 /// Text fields and labels that echo what reached them.
 ///
-/// Accessibility identifiers: `relay.input` and `relay.input2` (the fields), `relay.password` (a
+/// Accessibility identifiers: `relay.input` and `relay.input2` (the fields; the second one has no Select
+/// All), `relay.password` (a
 /// secure field), `relay.text` (the current text of `relay.input`), `relay.passwordLength` (only the
 /// number of characters in `relay.password`, never the text), `relay.submitted` (the text when Return
 /// was pressed, with a count), and `relay.events` (the latest edits and hardware key presses, newest
 /// first; edits to the password field show only their length). `relay.overlay` opens
 /// `OverlayViewController`, the screen for checking alerts and sheets drawn by other processes.
+/// `relay.notes` is a multi-line text view, to try `relay type --clear` on more than one line.
 /// `relay.showToast` shows the label `relay.toast` and takes it out of the view hierarchy 1.5 seconds later,
 /// something to wait for to go (`relay find --gone`).
 final class InputViewController: UIViewController, UITextFieldDelegate {
   private let input = KeyRecordingTextField()
-  private let secondInput = KeyRecordingTextField()
+  private let secondInput = NoSelectAllTextField()
   private let passwordInput = KeyRecordingTextField()
+  private let notes = UITextView()
   private let textLabel = UILabel()
   private let passwordLengthLabel = UILabel()
   private let submittedLabel = UILabel()
@@ -65,6 +68,15 @@ final class InputViewController: UIViewController, UITextFieldDelegate {
     eventsLabel.numberOfLines = 0
     input.addTarget(self, action: #selector(textChanged), for: .editingChanged)
     passwordInput.addTarget(self, action: #selector(passwordChanged), for: .editingChanged)
+    notes.accessibilityIdentifier = "relay.notes"
+    notes.font = .preferredFont(forTextStyle: .body)
+    notes.autocorrectionType = .no
+    notes.autocapitalizationType = .none
+    notes.spellCheckingType = .no
+    notes.layer.borderColor = UIColor.separator.cgColor
+    notes.layer.borderWidth = 1
+    notes.layer.cornerRadius = 5
+    notes.heightAnchor.constraint(equalToConstant: 72).isActive = true
 
     let overlayButton = UIButton(configuration: .bordered())
     overlayButton.configuration?.title = "Overlay checks"
@@ -77,7 +89,7 @@ final class InputViewController: UIViewController, UITextFieldDelegate {
     toastButton.addTarget(self, action: #selector(showToast), for: .touchUpInside)
 
     let stack = UIStackView(arrangedSubviews: [
-      input, secondInput, passwordInput, textLabel, passwordLengthLabel, submittedLabel, eventsLabel, overlayButton, toastButton
+      input, secondInput, passwordInput, notes, textLabel, passwordLengthLabel, submittedLabel, eventsLabel, overlayButton, toastButton
     ])
     stack.axis = .vertical
     stack.spacing = 12
@@ -168,7 +180,7 @@ final class InputViewController: UIViewController, UITextFieldDelegate {
 }
 
 /// Reports hardware key presses (`UIPress`), so keys sent as key events can be told apart from text.
-final class KeyRecordingTextField: UITextField {
+class KeyRecordingTextField: UITextField {
   var onKeyPress: ((String) -> Void)?
 
   override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
@@ -188,5 +200,13 @@ final class KeyRecordingTextField: UITextField {
     case .keyboardSpacebar: return "Space"
     default: return key.characters.isEmpty ? "keyCode \(key.keyCode.rawValue)" : key.characters.debugDescription
     }
+  }
+}
+
+/// A field without Select All (command-A does nothing), as some apps make theirs: `relay type --clear` falls
+/// back to deletes from the end there.
+final class NoSelectAllTextField: KeyRecordingTextField {
+  override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
+    action == #selector(selectAll(_:)) ? false : super.canPerformAction(action, withSender: sender)
   }
 }

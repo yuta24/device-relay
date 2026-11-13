@@ -50,6 +50,8 @@ enum RunnerErrorCode: String, CaseIterable {
   case touchFailed = "touch_failed"
   /// 422 or 500: synthesized text failed or was not typed in time (some of it may have been typed).
   case typingFailed = "typing_failed"
+  /// 422: `/type`'s `clear` left characters in the field with keyboard focus; nothing was typed.
+  case clearFailed = "clear_failed"
   /// 422: `/open` was refused: no installed app handles the URL, or the app named could not open it.
   case openFailed = "open_failed"
   /// 422: XCUI reported a failure (a recorded test issue, a snapshot that failed).
@@ -102,6 +104,8 @@ enum RunnerError: Error, CustomStringConvertible {
   case coveredByOtherApp(RunnerCoverage.Covered)
   /// `/open` was refused (422).
   case openFailed(String)
+  /// `/type`'s `clear` did not empty the field (422); nothing was typed.
+  case clearFailed(RunnerClearing.NotCleared)
   /// A selector that didn't lead to one touchable element; answered with the failure's JSON.
   case elementNotResolved(RunnerElementLookupFailure)
 
@@ -119,6 +123,7 @@ enum RunnerError: Error, CustomStringConvertible {
     case .noKeyboardFocus(let bundleID): return RunnerTyping.missingKeyboardFocusMessage(bundleID: bundleID)
     case .coveredByOtherApp(let covered): return covered.message
     case .elementNotResolved(let failure): return failure.message
+    case .clearFailed(let failure): return failure.message
     }
   }
 
@@ -130,7 +135,7 @@ enum RunnerError: Error, CustomStringConvertible {
     case .internalError, .touchSynthesisError: return 500
     case .typingFailed(_, let status): return status
     case .touchFailed, .actionFailed, .touchUnreachable, .noKeyboardFocus, .displayUnknown, .windowPositionUnknown,
-         .coveredByOtherApp, .elementNotResolved, .openFailed: return 422
+         .coveredByOtherApp, .elementNotResolved, .openFailed, .clearFailed: return 422
     }
   }
 
@@ -150,16 +155,22 @@ enum RunnerError: Error, CustomStringConvertible {
     case .windowPositionUnknown: return .windowPositionUnknown
     case .coveredByOtherApp: return .coveredByOtherApp
     case .openFailed: return .openFailed
+    case .clearFailed: return .clearFailed
     case .elementNotResolved(let failure): return failure.code
     }
   }
 
   /// The response body: `code` and `error`, plus `reason`, `count`, and `candidates` for an element lookup, and
-  /// `bundleId`, `foreground`, and `alert` for a covered app.
+  /// `bundleId`, `foreground`, and `alert` for a covered app, and `remaining` (a count of characters, never the
+  /// text: it may be a password) for a field `clear` left.
   var json: [String: Any] {
     switch self {
     case .elementNotResolved(let failure): return failure.json
     case .coveredByOtherApp(let covered): return covered.json
+    case .clearFailed(let failure):
+      var body = code.body(description)
+      body["remaining"] = failure.remaining
+      return body
     default: return code.body(description)
     }
   }

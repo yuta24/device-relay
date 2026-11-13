@@ -10,6 +10,7 @@
 @protocol RelayXCTextEventPath <NSObject>
 - (instancetype)initForTextInput;
 - (void)typeText:(NSString *)text atOffset:(double)offset typingSpeed:(NSUInteger)typingSpeed shouldRedact:(BOOL)shouldRedact;
+- (void)typeKey:(NSString *)key modifiers:(unsigned long long)modifiers atOffset:(double)offset;
 @end
 
 @protocol RelayXCTextEventRecord <NSObject>
@@ -79,6 +80,55 @@ static NSString *const RelayTextSynthesizerErrorDomain = @"RelayTextSynthesizer"
     return nil;
 }
 
++ (BOOL)isKeyAvailable {
+    static BOOL available;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        available = self.isAvailable
+            && [NSClassFromString(@"XCPointerEventPath") instancesRespondToSelector:@selector(typeKey:modifiers:atOffset:)];
+    });
+    return available;
+}
+
++ (BOOL)synthesizeKey:(NSString *)key
+            modifiers:(NSUInteger)modifiers
+           completion:(void (^)(NSError *_Nullable))completion
+                error:(NSError **)error {
+    if (!self.isKeyAvailable || key.length == 0) {
+        if (error != NULL) {
+            NSString *reason = self.isKeyAvailable ? @"key must not be empty"
+                : (self.unavailableReason ?: @"XCPointerEventPath does not respond to typeKey:modifiers:atOffset:");
+            *error = [NSError errorWithDomain:RelayTextSynthesizerErrorDomain
+                                         code:1
+                                     userInfo:@{NSLocalizedDescriptionKey: reason}];
+        }
+        return NO;
+    }
+    id<RelayXCTextEventPath> path = [(id<RelayXCTextEventPath>)[NSClassFromString(@"XCPointerEventPath") alloc] initForTextInput];
+    [path typeKey:key modifiers:modifiers atOffset:0];
+    [self synthesizePath:path name:@"relay key" completion:completion];
+    return YES;
+}
+
++ (void)synthesizePath:(id<RelayXCTextEventPath>)path
+                  name:(NSString *)name
+            completion:(void (^)(NSError *_Nullable))completion {
+    id<RelayXCTextEventRecord> record = [(id<RelayXCTextEventRecord>)[NSClassFromString(@"XCSynthesizedEventRecord") alloc]
+        initWithName:name
+        interfaceOrientation:UIInterfaceOrientationPortrait];
+    [record addPointerEventPath:path];
+
+    id<RelayXCTextEventSynthesizing> synthesizer = [(id<RelayXCTextDeviceEventSynthesizer>)XCUIDevice.sharedDevice eventSynthesizer];
+    [synthesizer synthesizeEvent:record completion:^(BOOL result, NSError *_Nullable invokeError) {
+        if (!result && invokeError == nil) {
+            invokeError = [NSError errorWithDomain:RelayTextSynthesizerErrorDomain
+                                              code:2
+                                          userInfo:@{NSLocalizedDescriptionKey: @"event synthesis reported failure"}];
+        }
+        completion(result ? nil : invokeError);
+    }];
+}
+
 + (BOOL)synthesizeText:(NSString *)text
            typingSpeed:(NSUInteger)typingSpeed
             completion:(void (^)(NSError *_Nullable))completion
@@ -98,21 +148,7 @@ static NSString *const RelayTextSynthesizerErrorDomain = @"RelayTextSynthesizer"
 
     id<RelayXCTextEventPath> path = [(id<RelayXCTextEventPath>)[NSClassFromString(@"XCPointerEventPath") alloc] initForTextInput];
     [path typeText:text atOffset:0 typingSpeed:typingSpeed shouldRedact:NO];
-
-    id<RelayXCTextEventRecord> record = [(id<RelayXCTextEventRecord>)[NSClassFromString(@"XCSynthesizedEventRecord") alloc]
-        initWithName:@"relay type"
-        interfaceOrientation:UIInterfaceOrientationPortrait];
-    [record addPointerEventPath:path];
-
-    id<RelayXCTextEventSynthesizing> synthesizer = [(id<RelayXCTextDeviceEventSynthesizer>)XCUIDevice.sharedDevice eventSynthesizer];
-    [synthesizer synthesizeEvent:record completion:^(BOOL result, NSError *_Nullable invokeError) {
-        if (!result && invokeError == nil) {
-            invokeError = [NSError errorWithDomain:RelayTextSynthesizerErrorDomain
-                                              code:2
-                                          userInfo:@{NSLocalizedDescriptionKey: @"event synthesis reported failure"}];
-        }
-        completion(result ? nil : invokeError);
-    }];
+    [self synthesizePath:path name:@"relay type" completion:completion];
     return YES;
 }
 
