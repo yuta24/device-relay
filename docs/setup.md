@@ -216,11 +216,11 @@ relay はソースのハッシュでビルドを見分け、`git pull` や `rela
 #### ランナーが返す版と照合
 
 ランナーは、ビルドした版を `/ping` と `/health` の `runner` で返します。
-形は `{"version":"0.7.0","sourceHash":"<64 桁>"}` です。Xcode から直接ビルドしたランナーでは値が `null` です。
+形は `{"version":"0.8.0","sourceHash":"<64 桁>"}` です。Xcode から直接ビルドしたランナーでは値が `null` です。
 埋め込み方は「[ランナーの版の埋め込み](development.md#ランナーの版の埋め込み)」にあります。
 
 `relay start` は ready の時点で `/health` の `runner` を確かめます。
-一致すれば `relay: runner 0.7.0 (sources <12 桁>)` と表示します。
+一致すれば `relay: runner 0.8.0 (sources <12 桁>)` と表示します。
 違う場合や、版を名乗らない場合は `warning:` を出しますが、止めません。
 ソースは relay が今ビルドまたは確認したものなので、ずれているのは名乗る値だけです。
 
@@ -429,7 +429,7 @@ OS に `Operation not permitted` で拒否されたら、エージェントな�
 キーは辞書順で、人向けの ✓ / ✗ / ! の行は出しません。終了コードは同じで、✗ があれば `1`、なければ `0` です。
 
 ```json
-{"checks":[{"detail":"0.7.0","fix":null,"name":"relay","section":"Host","status":"ok"},{"detail":"no booted iOS simulator (--simulator); pass --device <name> to boot one","fix":"relay devices lists the simulators; …","name":"target","section":"Devices","status":"warning"}],"ok":true,"problems":0,"warnings":1}
+{"checks":[{"detail":"0.8.0","fix":null,"name":"relay","section":"Host","status":"ok"},{"detail":"no booted iOS simulator (--simulator); pass --device <name> to boot one","fix":"relay devices lists the simulators; …","name":"target","section":"Devices","status":"warning"}],"ok":true,"problems":0,"warnings":1}
 ```
 
 | キー | 内容 |
@@ -478,7 +478,7 @@ relay start --device "iPhone 17 Pro"   # 停止中なら boot し、終了時に
 #        （使い回すときは relay: reusing RelayRunner_iphonesimulator27.2-….xctestrun (runner sources <ハッシュ 12 桁>)）
 # relay: launching runner on <SIM_UDID> (log: ~/.relay/logs/runner-<時刻>-8100.log)
 # relay: runner listening; device addresses: 127.0.0.1   ← シミュレータのランナーは 127.0.0.1 だけで待ち受けます
-# relay: runner 0.7.0 (sources <ハッシュ 12 桁>)   ← ランナーが名乗る版（「ランナーの版」）
+# relay: runner 0.8.0 (sources <ハッシュ 12 桁>)   ← ランナーが名乗る版（「ランナーの版」）
 # ready: http://127.0.0.1:8100/
 # token: ~/.relay/runner.json
 ```
