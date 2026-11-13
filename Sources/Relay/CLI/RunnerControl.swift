@@ -115,13 +115,14 @@ enum RunnerControl {
   /// Sends one operation and prints the result; returns the exit status.
   /// `requireMatch` (`find --require`): a `/find` that returns no element fails with exit 6, as a tap of a
   /// missing element does, so `find --timeout` checks the screen as well as waits for it.
-  /// `failureOutput` replaces where the JSON of a failure goes (`failureHandle(for:)`), for tests.
+  /// `failureOutput` replaces where the JSON of a failure goes (`failureHandle(for:)`), and `transport` how the
+  /// request is sent (`RunnerClient.Transport`), for tests.
   static func perform(_ operation: RunnerOperation, on connection: RunnerConnection, requireMatch: Bool = false,
-                      failureOutput: FileHandle? = nil) -> Int32 {
+                      failureOutput: FileHandle? = nil, transport: @escaping RunnerClient.Transport = RunnerClient.urlSession) -> Int32 {
     let infoURL = connection.infoURL
     let info = connection.info
     let failureOutput = failureOutput ?? failureHandle(for: operation)
-    var client = RunnerClient(baseURL: connection.baseURL, token: info.token)
+    var client = RunnerClient(baseURL: connection.baseURL, token: info.token, transport: transport)
     client.timeout = baseTimeout + operation.waitTime
     let resolved: RunnerOperation
     do {

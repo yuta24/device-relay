@@ -26,14 +26,17 @@ enum RunnerPing: Equatable {
   /// This Mac refused the connection (EPERM), as a sandbox that blocks localhost does; the runner may be fine.
   case refusedByOS(String)
 
-  static func check(_ info: RunnerInfo, timeout: TimeInterval = 3) -> RunnerPing {
-    checkWithBuild(info, timeout: timeout).ping
+  static func check(_ info: RunnerInfo, timeout: TimeInterval = 3, transport: @escaping RunnerClient.Transport = RunnerClient.urlSession)
+    -> RunnerPing {
+    checkWithBuild(info, timeout: timeout, transport: transport).ping
   }
 
   /// Also the build the runner reports in the `/ping` body (nil when it does not, or did not answer 200).
-  static func checkWithBuild(_ info: RunnerInfo, timeout: TimeInterval = 3) -> (ping: RunnerPing, runner: RunnerBuildVersion?) {
+  /// `transport` sends the request (`RunnerClient.Transport`), for tests.
+  static func checkWithBuild(_ info: RunnerInfo, timeout: TimeInterval = 3, transport: @escaping RunnerClient.Transport = RunnerClient.urlSession)
+    -> (ping: RunnerPing, runner: RunnerBuildVersion?) {
     guard let url = URL(string: info.url) else { return (.unreachable("invalid url: \(info.url)"), nil) }
-    var client = RunnerClient(baseURL: url, token: info.token)
+    var client = RunnerClient(baseURL: url, token: info.token, transport: transport)
     client.timeout = timeout
     do {
       let response = try client.get("/ping")
