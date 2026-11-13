@@ -194,6 +194,8 @@ relay adjust --type pickerWheel --index 2 --picker-value 2030       # 3 つ目�
 - **ホイールの選び方**: ピッカー（`picker`・`datePicker`）には identifier がありますが、値を持つのは中のホイール（`pickerWheel`）です。日付のピッカーのホイールは identifier を持たないので、`type: pickerWheel` と今の `value`、または `index` で選びます。`index` は画面のすべてのホイールの通し番号です。
 - **型の確認**: `position` はスライダー（`slider`）だけ、`pickerValue` はホイールだけが受け付けます。ほかの型なら、XCUI に送らずに `422`、`element_not_adjustable` です。
 - **操作**: XCUI の `adjust(toNormalizedSliderPosition:)` と `adjust(toPickerWheelValue:)` で設定し、要素を読み直します。XCUI の要素は、同じ型の要素から、スナップショットと同じ frame のものを選びます。XCUI のクエリの順序はスナップショットの順序と違うことがあるためです（ピッカーのホイールが、上にある日付のピッカーのホイールより先に並びました）。
+- **iPad のウィンドウ表示**: スナップショットの frame はウィンドウの中の座標ですが、XCUI の要素の `frame` は画面の座標です。ウィンドウが画面の一部にあるとき（`window` が付くとき）は、画面の座標に直した frame と比べます。XCUI の倍率は relay の変換とわずかに違う（0.64 倍のウィンドウで x と幅が最大約 0.7 pt）ので、2 pt までの差を同じとみなします。2 つ以上が当てはまる・1 つも当てはまらないときは、何も変えずに `422`、`xcui_failed` です。全画面と iPhone では、これまでどおりスナップショットの frame と比べます。以前はウィンドウ表示で必ず `the element moved or changed before it could be adjusted` になり、何も変わりませんでした。
+  - ウィンドウの左右の縁から約 30 pt 以内にあるスライダーのつまみ（位置 0 や 1 のとき）は、システムのウィンドウの操作にタッチを取られて掴めません。XCUI の adjust も補正のドラッグも効かず、`adjust_failed`（今の `position` 付き）になります。ウィンドウを動かすか広げて、つまみを縁から離してください。
 - **スライダーの補正**: XCUI の adjust だけでは、スライダーは最大 0.09 ずれました。同じ adjust を繰り返しても近づきません。そこでランナーは、ずれが 0.02 を超えていれば、つまみをずれの分だけドラッグして直します（最大 4 回）。
   - ドラッグは、タップと同じ経路（使えれば非公開 API の合成、なければ XCUI のドラッグ）で送ります。
   - UISlider は、指が動き始めてからの約 10 pt ではつまみが動きません。1 回目の補正で動かなかった分を測り、次の補正に足します。
@@ -242,7 +244,17 @@ RelayRunnerHost の `relay.gestures` の画面で確かめた結果（時間は 
 | ふつうのピッカー: 列にない値 `Mango` | `adjust_failed`、`value` は `Fig` | 0.44 秒 |
 | ピッカー（`relay.picker`）そのもの | `element_not_adjustable` | 0.14 秒 |
 
-確かめた環境: iPhone 18 Pro シミュレータ（iOS 27.2、Xcode 27.2）と iPhone 14 Pro（iOS 26.7.1、Xcode 27.2）。アイドルにならない画面と、合成タッチを無効にした場合は、シミュレータだけで確かめました。
+iPad Pro 11-inch (M5) シミュレータ（iPadOS 26.2、「Windowed Apps」のモード）でも確かめました。ホストアプリは `UIRequiresFullScreen` なので、ウィンドウは縮小表示です。
+
+| 状況 | 修正前 | 修正後 |
+| --- | --- | --- |
+| ウィンドウ (30, 281, 774×533)、0.64 倍 | スライダー・日付のピッカー・ふつうのピッカーとも `xcui_failed`（the element moved or changed）。何も変わらない | スライダー 0.05〜1 の 7 回は 0.02 以内（1.8–3.2 秒）、ホイールは成功（0.17–1.2 秒）、列にない値は `adjust_failed` |
+| 同じウィンドウで、つまみが左の縁から約 22 pt（位置 0） | – | `adjust_failed`、`position` 0 のまま（縁の操作に取られる） |
+| ウィンドウ (40, 0, 754×1095)、0.904 倍 | – | スライダー 0、0.2、0.5、0.8、1 とホイールが成功 |
+| 全画面（縦） | スライダー 0.5、ホイール 2 つが成功 | – |
+| 全画面（横、1210×834） | – | スライダー 0、0.3、0.5、1 とホイール 2 つが成功、列にない値は `adjust_failed` |
+
+確かめた環境: iPhone 18 Pro シミュレータ（iOS 27.2、Xcode 27.2）、iPad Pro 11-inch (M5) シミュレータ（iPadOS 26.2、Xcode 27.2）、iPhone 14 Pro（iOS 26.7.1、Xcode 27.2）。アイドルにならない画面と、合成タッチを無効にした場合は、iPhone のシミュレータだけで確かめました。Stage Manager と Slide Over は確かめていません。
 
 ## 認証
 

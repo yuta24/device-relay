@@ -952,7 +952,9 @@ final class RelayRunnerUITests: XCTestCase {
   }
 
   /// The XCUI element of `match`: among the elements of its type, the one with its frame in the command's snapshot
-  /// (to a hundredth of a point: a picker view's wheel was 215.00000000000006 high in one and 215 in the other).
+  /// (to a hundredth of a point: a picker view's wheel was 215.00000000000006 high in one and 215 in the other). In an
+  /// iPad window placed on part of the screen, the snapshot's frames are in the window, but `XCUIElement.frame` is on
+  /// the screen, so it is compared with the element's frame on the screen (`RunnerElementTree.xcuiFrame`).
   /// Not the one at its place in the snapshot's order: a query lists them in another order (the wheels of a picker
   /// view came before those of a date picker above it).
   private func xcuiElement(for match: RunnerElementMatch, in application: XCUIApplication) throws -> XCUIElement {
@@ -960,9 +962,10 @@ final class RelayRunnerUITests: XCTestCase {
           let found = Self.snapshot(at: path, in: snapshot) else {
       throw RunnerError.actionFailed("cannot find the element in the snapshot; nothing was adjusted")
     }
+    let wanted = RunnerElementTree.xcuiFrame(snapshot: found.frame, onScreen: match.node.frame, window: commandWindow)
     let (elements, failed) = ignoringIssues { () -> [XCUIElement] in
       application.descendants(matching: found.elementType).allElementsBoundByIndex.filter {
-        RunnerElementTree.sameFrame($0.frame, found.frame)
+        RunnerElementTree.sameFrame($0.frame, wanted.frame, tolerance: wanted.tolerance)
       }
     }
     guard !failed, elements.count == 1 else {

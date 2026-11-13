@@ -59,7 +59,6 @@ struct RunnerOperationTests {
       let runnerAnswersBy = (timeout ?? 0) + RunnerAdjusting.idleWait + RunnerAdjusting.giveUp
       #expect(relayWaits - runnerAnswersBy >= 20, "\(String(describing: timeout))")
       #expect(relayWaits - (timeout ?? 0) - 121.0 >= 20, "the longest answer measured")
-      #expect(relayWaits - runnerAnswersBy >= 20, "\(String(describing: timeout))")
     }
   }
 
