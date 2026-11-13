@@ -53,11 +53,16 @@ struct LogProcessTests {
   @Test func runStopsAtTheTimeLimit() async throws {
     let directory = try temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
-    let started = Date()
-    let exit = try await offThePool { try LogProcess.run("/bin/sh", ["-c", "sleep 30"], stdout: directory.appendingPathComponent("out"), timeout: 0.3) }
+    // Timed on the thread that runs it, from just before the call: awaiting offThePool also waits for a
+    // free thread of the cooperative pool, which a loaded machine (CI) may not have for seconds.
+    let (exit, elapsed) = try await offThePool {
+      let started = Date()
+      let exit = try LogProcess.run("/bin/sh", ["-c", "sleep 30"], stdout: directory.appendingPathComponent("out"), timeout: 0.3)
+      return (exit, Date().timeIntervalSince(started))
+    }
     #expect(exit.timedOut)
     #expect(exit.stopped == nil)
-    #expect(Date().timeIntervalSince(started) < 10)
+    #expect(elapsed < 10)
   }
 
   @Test func runStopsWhenAsked() async throws {
@@ -147,19 +152,31 @@ struct LogProcessTests {
     let unread = Pipe()
     let unreadFD = unread.fileHandleForWriting.fileDescriptor
     let calls = Locked(0)
+    let stuck = Locked<Date?>(nil)
     let stop = LogStop()
-    request(.signal(SIGTERM), of: stop, after: 0.3)
-    let started = Date()
-    let exit = try await offThePool {
-      try LogProcess.stream("/bin/sh", ["-c", "while :; do echo x; done"], maxLineBytes: 100, stop: stop) { _ in
-        calls.withLock { $0 += 1 }
+    // The stop is requested once a line is stuck, not at a fixed time from the start: a loaded machine
+    // (CI) may take longer than that to start sh. Timed on the thread that ran stream: awaiting offThePool
+    // also waits for a free thread of the cooperative pool, which a loaded machine may not have for seconds.
+    // Should no line come, a later stop of another reason ends stream, and the test fails on it.
+    request(.consumer, of: stop, after: 30)
+    let (exit, elapsed) = try await offThePool {
+      let exit = try LogProcess.stream("/bin/sh", ["-c", "while :; do echo x; done"], maxLineBytes: 100, stop: stop) { _ in
+        if calls.withLock({ $0 += 1; return $0 == 1 }) {
+          stuck.withLock { $0 = Date() }
+          request(.signal(SIGTERM), of: stop, after: 0.3)
+        }
         return LogOutput.write(Data(count: 1 << 20), to: unreadFD)
       }
+      return (exit, stuck.value.map { Date().timeIntervalSince($0) })
     }
-    let elapsed = Date().timeIntervalSince(started)
     #expect(exit.stopped == .signal(SIGTERM))
+    // Ended by the SIGTERM sent: a tool that was never signaled is reported as SIGKILL.
+    #expect(exit.status == SIGTERM)
     #expect(exit.deliveryAbandoned)
-    #expect(elapsed < 0.3 + LogProcess.killDelay + 2 * LogProcess.drainDelay + 1)
+    // sh ends on SIGTERM within killDelay; LineReader then waits drainDelay for the end of stdout and
+    // drainDelay for the stuck onLine (both run out here). A tool that SIGTERM does not end takes
+    // killDelay more, and a wait without a limit never ends.
+    #expect(try #require(elapsed) < 0.3 + LogProcess.killDelay + 2 * LogProcess.drainDelay + 1)
     // The stuck write ends once the pipe closes; no line is handed over after stream returned.
     try unread.fileHandleForReading.close()
     try await Task.sleep(nanoseconds: 300_000_000)
@@ -177,7 +194,17 @@ struct LogProcessTests {
     #expect(LogOutput.write(Data("x".utf8), to: pipe.fileHandleForWriting.fileDescriptor))
     #expect(LogOutput.write(Data(), to: pipe.fileHandleForWriting.fileDescriptor))
     try pipe.fileHandleForReading.close()
-    #expect(!LogOutput.write(Data("x".utf8), to: pipe.fileHandleForWriting.fileDescriptor))
+    // A process another test starts at this moment holds every descriptor of this process for a few ms
+    // while it starts (close-on-exec ones too, until its exec), so the pipe can still have a reader and a
+    // write succeed. Retry until the write fails; a write that never reports the closed pipe still fails
+    // here. Each try writes 1 byte, far below what the pipe holds, so a try never blocks.
+    let deadline = Date().addingTimeInterval(5)
+    var failed = false
+    while !failed, Date() < deadline {
+      failed = !LogOutput.write(Data("x".utf8), to: pipe.fileHandleForWriting.fileDescriptor)
+      if !failed { Thread.sleep(forTimeInterval: 0.01) }
+    }
+    #expect(failed)
   }
 }
 
@@ -199,12 +226,23 @@ struct LogProcessTests {
     defer { LogSignals.uninstall(sources) }
     for number in [SIGTERM, SIGINT] {
       let stop = LogStop()
-      request(.signal(number), of: stop, after: 0.3)
-      let started = Date()
-      let exit = try await offThePool { try LogProcess.stream("/bin/sleep", ["30"], maxLineBytes: 100, stop: stop) { _ in true } }
+      let ready = Locked<Date?>(nil)
+      // The signal is requested once the tool runs (its first line), and timed from there on the thread
+      // that ran stream: a loaded machine (CI) may start it, or give offThePool a thread, seconds later.
+      // sh execs sleep, which keeps what sh inherited. Should no line come, a later stop of another reason
+      // ends stream, and the test fails on it.
+      request(.consumer, of: stop, after: 30)
+      let (exit, elapsed) = try await offThePool {
+        let exit = try LogProcess.stream("/bin/sh", ["-c", "echo ready; exec /bin/sleep 30"], maxLineBytes: 100, stop: stop) { _ in
+          ready.withLock { $0 = Date() }
+          request(.signal(number), of: stop, after: 0.3)
+          return true
+        }
+        return (exit, ready.value.map { Date().timeIntervalSince($0) })
+      }
       #expect(exit.stopped == .signal(number))
       #expect(exit.status == number, "ended by \(exit.status), not by the signal sent")
-      #expect(Date().timeIntervalSince(started) < 0.3 + LogProcess.killDelay)
+      #expect(try #require(elapsed) < 0.3 + LogProcess.killDelay)
     }
   }
 }
