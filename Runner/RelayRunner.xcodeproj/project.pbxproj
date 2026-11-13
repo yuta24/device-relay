@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		111111111111111111111111 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222221 /* AppDelegate.swift */; };
 		111111111111111111111120 /* OverlayViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222235 /* OverlayViewController.swift */; };
+		111111111111111111111126 /* GestureViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22222222222222222222223D /* GestureViewController.swift */; };
 		111111111111111111111112 /* RunnerHTTPServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222222 /* RunnerHTTPServer.swift */; };
 		111111111111111111111113 /* RelayRunnerUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222223 /* RelayRunnerUITests.swift */; };
 		111111111111111111111114 /* RelayTouchSynthesizer.m in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222226 /* RelayTouchSynthesizer.m */; };
@@ -43,6 +44,7 @@
 /* Begin PBXFileReference section */
 		222222222222222222222221 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayRunnerHost/AppDelegate.swift; sourceTree = "<group>"; };
 		222222222222222222222235 /* OverlayViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayRunnerHost/OverlayViewController.swift; sourceTree = "<group>"; };
+		22222222222222222222223D /* GestureViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayRunnerHost/GestureViewController.swift; sourceTree = "<group>"; };
 		222222222222222222222222 /* RunnerHTTPServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayRunnerUITests/RunnerHTTPServer.swift; sourceTree = "<group>"; };
 		222222222222222222222223 /* RelayRunnerUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayRunnerUITests/RelayRunnerUITests.swift; sourceTree = "<group>"; };
 		222222222222222222222226 /* RelayTouchSynthesizer.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = RelayRunnerUITests/RelayTouchSynthesizer.m; sourceTree = "<group>"; };
@@ -94,6 +96,7 @@
 			children = (
 				222222222222222222222221 /* AppDelegate.swift */,
 				222222222222222222222235 /* OverlayViewController.swift */,
+				22222222222222222222223D /* GestureViewController.swift */,
 				222222222222222222222222 /* RunnerHTTPServer.swift */,
 				222222222222222222222223 /* RelayRunnerUITests.swift */,
 				222222222222222222222227 /* RelayTouchSynthesizer.h */,
@@ -212,6 +215,7 @@
 			files = (
 				111111111111111111111111 /* AppDelegate.swift in Sources */,
 				111111111111111111111120 /* OverlayViewController.swift in Sources */,
+				111111111111111111111126 /* GestureViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

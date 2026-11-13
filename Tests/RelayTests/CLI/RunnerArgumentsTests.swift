@@ -102,6 +102,23 @@ struct RunnerArgumentsTests {
     #expect(throws: ArgumentError.self) { try Arguments.parse(["tap", "1", "2", "--duration", "1"]) }
   }
 
+  @Test func parsesTapCount() throws {
+    #expect(try operation(["tap", "200", "120", "--count", "2"])
+      == .tap(RunnerTouch(target: .point(RunnerPoint(x: 200, y: 120)), taps: 2)))
+    #expect(try operation(["tap", "--id", "map", "--count=2", "--mode", "xcui", "--timeout", "3"])
+      == .tap(RunnerTouch(target: .element(RunnerElementSelector(identifier: "map")), taps: 2, mode: "xcui", timeout: 3)))
+    #expect(try operation(["tap", "1", "2", "--count", "1"]) == .tap(RunnerTouch(target: .point(RunnerPoint(x: 1, y: 2)), taps: 1)))
+    for count in ["0", "3", "1.5", "-1", "two"] {
+      let error = #expect(throws: ArgumentError.self, "\(count)") { try Arguments.parse(["tap", "1", "2", "--count", count]) }
+      #expect(error?.description == "--count requires 1 or 2 (2 is a double tap)", "\(count)")
+    }
+    #expect(throws: ArgumentError.self) { try Arguments.parse(["tap", "1", "2", "--count", "2", "--count", "2"]) }
+    // A long press is one touch.
+    let press = #expect(throws: ArgumentError.self) { try Arguments.parse(["press", "1", "2", "--count", "2"]) }
+    #expect(press?.description == "unknown option for press: --count")
+    #expect(flattened(Arguments.usage(for: "tap")).contains("--count 2 double-taps"))
+  }
+
   @Test func parsesPressDuration() throws {
     #expect(try operation(["press", "1", "2", "--duration", "1.5"])
       == .press(RunnerTouch(target: .point(RunnerPoint(x: 1, y: 2)), duration: 1.5)))

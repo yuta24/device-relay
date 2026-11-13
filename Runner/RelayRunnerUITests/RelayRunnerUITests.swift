@@ -178,10 +178,13 @@ final class RelayRunnerUITests: XCTestCase {
       return try source(query: request.query)
     case ("POST", "/tap"):
       let body = try RunnerJSON(request.body)
-      return try touch(body, duration: nil)
+      return try touch(body, duration: nil, taps: body.taps())
     case ("POST", "/press"):
       let body = try RunnerJSON(request.body)
-      return try touch(body, duration: body.positiveDouble("duration", default: 1.0))
+      guard body.object["taps"] == nil else {
+        throw RunnerError.invalidField("taps: /press is one long press; send taps to /tap")
+      }
+      return try touch(body, duration: body.positiveDouble("duration", default: 1.0), taps: 1)
     case ("POST", "/find"):
       return try find(RunnerJSON(request.body))
     case ("POST", "/swipe"):
@@ -736,12 +739,15 @@ final class RelayRunnerUITests: XCTestCase {
 
   // MARK: - Elements
 
-  /// `/tap` (duration nil) and `/press` at `x`/`y`, or at the element that `element` selects.
-  private func touch(_ body: RunnerJSON, duration: TimeInterval?) throws -> RunnerHTTPResponse {
+  /// `/tap` (duration nil) and `/press` at `x`/`y`, or at the element that `element` selects. A `/tap` of more than
+  /// one tap answers with `taps`, so a client can tell it from a runner that predates `taps` and tapped once.
+  private func touch(_ body: RunnerJSON, duration: TimeInterval?, taps: Int) throws -> RunnerHTTPResponse {
+    let tapsAnswer: [String: Any] = taps > 1 ? ["taps": taps] : [:]
     guard let element = body.object["element"] else {
       let x = try body.double("x"), y = try body.double("y")
       try requireOnScreen([("x, y", x, y)])
-      return .json(["ok": true, "mode": try touch(x: x, y: y, duration: duration, mode: touchMode(body)).rawValue])
+      let mode = try touch(x: x, y: y, duration: duration, taps: taps, mode: touchMode(body))
+      return .json(["ok": true, "mode": mode.rawValue].merging(tapsAnswer) { $1 })
     }
     guard body.object["x"] == nil, body.object["y"] == nil else {
       throw RunnerError.invalidField("element: pass either x and y or element, not both")
@@ -776,11 +782,11 @@ final class RelayRunnerUITests: XCTestCase {
     let x = Double(target.point.x), y = Double(target.point.y)
     return annotated([
       "ok": true,
-      "mode": try touch(x: x, y: y, duration: duration, mode: mode).rawValue,
+      "mode": try touch(x: x, y: y, duration: duration, taps: taps, mode: mode).rawValue,
       "bundleId": bundleID,
       "element": target.match.json,
       "point": RunnerElementTree.json(target.point)
-    ])
+    ].merging(tapsAnswer) { $1 })
   }
 
   private var canVerifyCommandHit: Bool {
@@ -842,13 +848,21 @@ final class RelayRunnerUITests: XCTestCase {
     }
   }
 
-  private func touch(x: Double, y: Double, duration: TimeInterval?, mode: TouchMode) throws -> TouchMode {
+  /// `taps` (1 or 2) applies to a tap (`duration` nil) only.
+  private func touch(x: Double, y: Double, duration: TimeInterval?, taps: Int, mode: TouchMode) throws -> TouchMode {
     switch mode {
     case .private:
-      try synthesizeTouch(points: [(x, y)], offsets: [], liftOffset: duration ?? Self.tapDuration)
+      if let duration {
+        try synthesizeTouch(points: [(x, y)], offsets: [], liftOffset: duration)
+      } else {
+        // All taps in one event record: sent one record each, the round trip between them would decide the interval.
+        try synthesizeTaps(at: (x, y), count: taps)
+      }
     case .xcui:
       if let duration {
         try coordinate(x: x, y: y).press(forDuration: duration)
+      } else if taps == 2 {
+        try coordinate(x: x, y: y).doubleTap()
       } else {
         try coordinate(x: x, y: y).tap()
       }
@@ -1256,9 +1270,6 @@ final class RelayRunnerUITests: XCTestCase {
     RelayTouchSynthesizer.isAvailable && (displays().count <= 1 || RelayTouchSynthesizer.supportsDisplayID)
   }
 
-  /// How long a synthesized tap keeps the finger down.
-  private static let tapDuration: TimeInterval = 0.05
-
   /// `"mode"` in the body forces a path; when omitted, the private path is used if available.
   private func touchMode(_ body: RunnerJSON) throws -> TouchMode {
     switch body.optionalString("mode") {
@@ -1289,6 +1300,41 @@ final class RelayRunnerUITests: XCTestCase {
     offsets: [TimeInterval],
     liftOffset: TimeInterval
   ) throws {
+    try synthesize(lasting: liftOffset) { portraitPoint, displayID, completion in
+      try RelayTouchSynthesizer.synthesizeTouch(
+        withPoints: points.map { NSValue(cgPoint: portraitPoint($0)) },
+        offsets: offsets.map { NSNumber(value: $0) },
+        liftOffset: liftOffset,
+        interfaceOrientation: .portrait,
+        displayID: displayID,
+        completion: completion
+      )
+    }
+  }
+
+  /// `count` synthesized taps at one point, in one event record (`RunnerRequestValues.tapPeriod` apart).
+  private func synthesizeTaps(at point: (x: Double, y: Double), count: Int) throws {
+    let duration = RunnerRequestValues.tapDuration, period = RunnerRequestValues.tapPeriod
+    try synthesize(lasting: Double(count - 1) * period + duration) { portraitPoint, displayID, completion in
+      try RelayTouchSynthesizer.synthesizeTaps(
+        at: portraitPoint(point),
+        count: UInt(count),
+        duration: duration,
+        period: period,
+        interfaceOrientation: .portrait,
+        displayID: displayID,
+        completion: completion
+      )
+    }
+  }
+
+  /// Sends what `send` builds, given the function from displayed points to the synthesizer's, the display, and the
+  /// completion, and waits for it up to 10 seconds past `lasting` (the gesture's length).
+  private func synthesize(
+    lasting: TimeInterval,
+    _ send: (_ portraitPoint: ((x: Double, y: Double)) -> CGPoint, _ displayID: NSNumber?,
+             _ completion: @escaping (Error?) -> Void) throws -> Void
+  ) throws {
     let orientation = Self.runnerOrientation(interfaceOrientation())
     // On a device with more than one display, every touch names its display, the main one too: on iPhone Duo,
     // a touch without one stopped reaching the cover display after the device was unfolded and folded again.
@@ -1302,20 +1348,13 @@ final class RelayRunnerUITests: XCTestCase {
     let portraitSize = display?.size ?? portraitScreen().size
     let completion = TouchCompletion()
     do {
-      try RelayTouchSynthesizer.synthesizeTouch(
-        withPoints: points.map {
-          NSValue(cgPoint: RunnerDisplays.portraitPoint(CGPoint(x: $0.x, y: $0.y), from: orientation, portraitSize: portraitSize))
-        },
-        offsets: offsets.map { NSNumber(value: $0) },
-        liftOffset: liftOffset,
-        interfaceOrientation: .portrait,
-        displayID: displayID,
-        completion: { completion.finish($0) }
-      )
+      try send({ RunnerDisplays.portraitPoint(CGPoint(x: $0.x, y: $0.y), from: orientation, portraitSize: portraitSize) },
+               displayID, { completion.finish($0) })
     } catch {
       throw RunnerError.touchSynthesisError("touch synthesis failed: \(error.localizedDescription)")
     }
 
+    let liftOffset = lasting
     let deadline = Date(timeIntervalSinceNow: liftOffset + 10)
     while !completion.isFinished {
       guard Date() < deadline else {
@@ -1615,6 +1654,14 @@ struct RunnerJSON {
     } catch let error as RunnerElementSelectorError {
       throw RunnerError.invalidField(error.description)
     }
+  }
+
+  /// The optional `taps` of `/tap`; see `RunnerRequestValues.taps(_:)`.
+  func taps() throws -> Int {
+    guard let taps = RunnerRequestValues.taps(object["taps"]) else {
+      throw RunnerError.invalidField("taps: expected 1 or \(RunnerRequestValues.maxTaps)")
+    }
+    return taps
   }
 
   /// The optional `timeout` (seconds) to wait for an element; see `RunnerElementLookup.timeout(_:)`.

@@ -176,6 +176,11 @@ enum RunnerControl {
       return fail(.runnerBadResponse, "the runner's /type answer has no cleared; it predates type --clear and typed without "
         + "clearing the field (relay start --rebuild builds a current one)", exit: .runnerError, to: failureOutput)
     }
+    if case .tap(let touch) = resolved, let taps = touch.taps, taps > 1, tapsAnswer(response.body) != taps {
+      // A runner from before `taps` ignored it and tapped once.
+      return fail(.runnerBadResponse, "the runner's /tap answer has no taps; it predates tap --count and tapped once "
+        + "(relay start --rebuild builds a current one)", exit: .runnerError, to: failureOutput)
+    }
     if case .find(_, _, _, _, gone: true) = resolved {
       guard let gone = goneAnswer(response.body) else {
         // A runner from before `gone` ignored it and waited for an element to appear instead.
@@ -244,6 +249,13 @@ enum RunnerControl {
     guard let object = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
           let value = object[key] as? NSNumber, CFGetTypeID(value) == CFBooleanGetTypeID() else { return false }
     return value.boolValue
+  }
+
+  /// The `taps` of a `/tap` answer, nil when there is none (one tap, or a runner from before `taps`).
+  static func tapsAnswer(_ body: Data) -> Int? {
+    guard let object = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+          let taps = object["taps"] as? NSNumber, CFGetTypeID(taps) != CFBooleanGetTypeID() else { return nil }
+    return taps.intValue
   }
 
   /// The `gone` of a `/find` answer, nil when there is none (a runner from before `gone`).

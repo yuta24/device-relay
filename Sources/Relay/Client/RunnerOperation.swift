@@ -109,7 +109,7 @@ enum RunnerOperation: Equatable {
   var waitTime: TimeInterval {
     switch self {
     case .find(_, _, let timeout, _, _): return timeout ?? 0
-    case .tap(let touch): return touch.timeout ?? 0
+    case .tap(let touch): return (touch.timeout ?? 0) + Double((touch.taps ?? 1) - 1) * RunnerRequestValues.tapPeriod
     case .press(let touch): return (touch.timeout ?? 0) + (touch.duration ?? 1)
     case .swipe(_, _, let duration, let hold, _): return (duration ?? 0.3) + (hold ?? 0.05)
     case .launch, .open, .terminate: return Self.applicationStateWait
@@ -156,6 +156,8 @@ struct RunnerTouch: Equatable {
   var target: Target
   /// `/press` only.
   var duration: TimeInterval?
+  /// `/tap` only: how many taps (2 is a double tap); nil is one.
+  var taps: Int?
   /// `private` or `xcui`; nil lets the runner choose.
   var mode: String?
   /// Element targets only: seconds to wait for the element, and the app to look in.
@@ -169,6 +171,7 @@ struct RunnerTouch: Equatable {
     case .element(let selector): body = ["element": selector.json]
     }
     body["duration"] = duration
+    body["taps"] = taps
     body["mode"] = mode
     body["timeout"] = timeout
     body["bundleId"] = bundleID

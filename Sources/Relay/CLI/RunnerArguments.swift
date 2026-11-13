@@ -8,7 +8,7 @@ extension Arguments {
     "screenshot": ["--output", "--format", "--quality", "--max-size", "--scale"],
     "source": ["--format", "--max-depth", "--filter", "--bundle-id"],
     "find": selectorOptions.union(["--limit", "--timeout", "--bundle-id"]),
-    "tap": selectorOptions.union(["--mode", "--timeout", "--bundle-id"]),
+    "tap": selectorOptions.union(["--count", "--mode", "--timeout", "--bundle-id"]),
     "press": selectorOptions.union(["--duration", "--mode", "--timeout", "--bundle-id"]),
     "swipe": ["--duration", "--hold", "--mode"],
     "type": ["--key", "--bundle-id"],
@@ -229,9 +229,11 @@ extension Arguments {
       """
     ),
     "tap": (
-      "relay tap (<x> <y> | <selector>) [--mode private|xcui] [--timeout <s>] [--bundle-id <id>]",
+      "relay tap (<x> <y> | <selector>) [--count 2] [--mode private|xcui] [--timeout <s>]\n      [--bundle-id <id>]",
       """
       Taps a point (points in the displayed orientation) or the center of the element the selector picks.
+      --count 2 double-taps (zooms a map or a photo, selects a word): both taps go as one gesture, which
+      two relay tap commands are not, and the answer has "taps":2.
       --timeout (up to 10 seconds) and --bundle-id apply to a selector only. A point outside the screen (0
       <= x < width, 0 <= y < height as relay health reports it) is rejected with exit 7; nothing is sent.
       --mode xcui (public XCUI, which waits for the app to be idle before and after) is slower than the
@@ -626,7 +628,10 @@ private struct RunnerArgumentValues {
       }
       return .find(selector, limit: limit, timeout: try timeout(), bundleID: try string("--bundle-id"), gone: gone)
     case "tap":
-      return .tap(try touch(duration: nil))
+      var touch = try touch(duration: nil)
+      let maxTaps = RunnerRequestValues.maxTaps
+      touch.taps = try integer("--count", "1 or \(maxTaps) (\(maxTaps) is a double tap)") { (1 ... maxTaps).contains($0) }
+      return .tap(touch)
     case "press":
       return .press(try touch(duration: try number("--duration", "seconds greater than zero") { $0 > 0 }))
     case "swipe":

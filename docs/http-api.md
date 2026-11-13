@@ -13,8 +13,8 @@
 | `GET /foreground` | – | 前面アプリの `bundleId` と `pid`、取得経路 `source`（`private` / `fallback`）。詳しくは「前面アプリ」 |
 | `GET /screenshot` | `?format=png\|jpeg&quality=0.05–1.0&maxSize=<px>&scale=<px/pt>`（既定は png、jpeg の既定 quality は 0.7。範囲外・数値以外の quality と、png への quality の指定は 400。`maxSize`・`scale` は省略時は縮小なし） | 画面全体のスクリーンショット（表示の向きに正規化済み）。`maxSize`・`scale` で端末側で縮小します。画像と座標の関係を `X-Relay-*` ヘッダーで返します。詳しくは「[スクリーンショットの縮小](screen.md#スクリーンショットの縮小)」 |
 | `GET /source` | `?format=json\|text\|compact&filter=interactive&maxDepth=<n>&bundleId=`（既定は json、bundleId の既定は前面アプリ） | XCUI の要素ツリー。json は要素ごとの属性と frame、text は `debugDescription`、compact は 1 行 1 要素。`filter=interactive` で操作できる要素だけに絞ります。詳しくは「[要素ツリー（/source）](elements.md#要素ツリーsource)」 |
-| `POST /tap` | `{"x":200,"y":120}`、または `{"element":{"identifier":"relay.input"}}` | タップ。`element` で要素を指定すると、その frame の中心をタップします（「[要素セレクタ](elements.md#要素セレクタ)」）。座標が画面の外なら `400`（下の「画面の外の座標」） |
-| `POST /press` | `{"x":200,"y":120,"duration":1.0}`、または `{"element":{…},"duration":1.0}` | 長押し |
+| `POST /tap` | `{"x":200,"y":120}`、または `{"element":{"identifier":"relay.input"}}`（`"taps":2` でダブルタップ。省略は 1） | タップ。`element` で要素を指定すると、その frame の中心をタップします（「[要素セレクタ](elements.md#要素セレクタ)」）。座標が画面の外なら `400`（下の「画面の外の座標」）。`taps` は下の「ダブルタップ（taps）」 |
+| `POST /press` | `{"x":200,"y":120,"duration":1.0}`、または `{"element":{…},"duration":1.0}` | 長押し。`taps` は受け付けません（`400`） |
 | `POST /find` | `{"element":{"type":"button"},"limit":20,"bundleId":"…","timeout":0,"gone":false}`（`limit`・`bundleId`・`timeout`・`gone` は省略可） | セレクタに一致する要素の一覧（type / identifier / label / value / frame / enabled）。ツリー全体を読まずに要素を探せます（「[要素セレクタ](elements.md#要素セレクタ)」）。`gone: true` で、一致する要素がなくなるのを待ちます（「[消えるのを待つ（gone）](elements.md#消えるのを待つgone)」） |
 | `POST /swipe` | `{"from":{"x":200,"y":700},"to":{"x":200,"y":200},"duration":0.3,"hold":0.05}` | スワイプ（ドラッグ）。`from`・`to` のどちらかが画面の外なら `400` |
 | `POST /type` | `{"text":"hello","keys":["return"],"bundleId":"com.apple.Preferences","clear":false}`（`keys`・`bundleId`・`clear` は省略可。`keys` か `clear: true` があれば `text` は省略・空文字でも可。`text` が文字列以外なら `keys` があっても 400） | キーボードのフォーカスがある要素への文字入力。`clear: true` なら先に入力欄を空にし（下の「入力欄を空にする（clear）」）、`text` の後に `keys` を順に送ります。対象の既定は前面アプリ |
@@ -39,6 +39,17 @@
 確かめた環境: iPhone 17 シミュレータ（iOS 27.2、Xcode 27.2）、iPhone 14 Pro（iOS 26.7.1、Xcode 27.2）。
 
 **画面の外の座標**: `/tap`・`/press` の `x`・`y` と `/swipe` の `from`・`to` は、前面アプリの表示の向きでの画面（`/health` の `screen`）の中、つまり `0 ≤ x < screen.width` かつ `0 ≤ y < screen.height` でなければなりません（小数も可。`x = screen.width` は画面の外です）。外なら何も送らずに `400` と `{"ok":false,"code":"point_offscreen","error":"invalid field: x, y: (500, 100) is outside the screen, which is 402x874 points in portrait (0 <= x < 402, 0 <= y < 874; relay health shows the screen)"}` のように返します（`/swipe` では `from:` / `to:`）。以前は画面の外のタッチも `200` を返し、何も起きませんでした。`422`（XCUI で操作に失敗）ではなく `400` にしたのは、操作を試す前に値の範囲で判定でき、ほかの範囲外の値と同じ扱い（CLI では終了コード `7`）にするためです。画面は向きを変えると縦横が入れ替わるので、`relay orientation` の後は `/health` を読み直します。要素を指定したタップ（`element`）は、要素の frame の画面内の部分の中心に当たるので、この判定はありません（画面の外の要素は `422` の `offscreen`）。画面の大きさを SpringBoard から取れず `UIScreen` の値で代用している間（実機では 320×480 の互換モードの値になります）は、正しい座標を拒否しないよう判定を省きます。
+
+**ダブルタップ（taps）**: `/tap` の `"taps": 2` で、同じ点を続けて 2 回タップします（地図や写真の拡大、単語の選択など）。`taps` は整数の `1` か `2` で、それ以外（`3`、`1.5`、文字列、真偽値）は `400`、`invalid_request` です。座標・要素の指定、覆われているときの `covered_by_other_app`、別のコントロールに当たるときの `element_point_covered`、`timeout` は 1 回のタップと同じです。2 回とも、要素を 1 回解決した同じ点に送ります。応答には `"taps": 2` が付きます（1 回のときは付きません）。
+
+- `private` の経路は、1 つのイベント記録に、指の上げ下げを 2 本の経路として入れて送ります。指は 0.05 秒押して離し、最初に押してから 0.15 秒後にもう一度押します（離してから 0.1 秒後）。
+- `xcui` の経路は `XCUICoordinate.doubleTap()` です。
+- `UITapGestureRecognizer`（`numberOfTapsRequired = 2`）が、どちらの経路でもダブルタップとして認識しました。
+- `/tap` を 2 回送る代わりにはなりません。2 回の間隔がランナーとの往復の時間で決まり、ダブルタップと認識される間隔の上限に近いためです。シミュレータでは、続けて送った 2 回の `/tap`（1 回 約 300 ms）はダブルタップと認識されましたが、間に 0.1 秒待つと 2 回の単発のタップになりました。往復が長い実機や、負荷のある Mac では、続けて送っても間に合わないことがあります。
+- 3 回以上は受け付けません。`XCUICoordinate` には `tap()` と `doubleTap()` しかなく、2 つの経路で同じ回数を送れないためです。
+- `taps` を知らない古いランナーは、`taps` を無視して 1 回だけタップし、`taps` のない応答を返します。`relay tap --count 2` はこの応答を `runner_bad_response`（終了コード `8`）にします。`relay start --rebuild` で今のランナーを作り直してください。
+
+確かめた環境: iPhone 18 Pro シミュレータ（iOS 27.2、Xcode 27.2）。
 
 `/tap` `/press` `/swipe` は `"mode": "private" | "xcui" | "auto"` を受け付けます（`auto` は省略と同じで、使えれば `private`。`relay` の `--mode` は `private` と `xcui` だけで、省略すると `auto` と同じになります）。応答の `mode` に実際に使った経路が入り、`/health` の `touchSynthesis` で端末側の既定経路がわかります。詳しくは「[タッチ合成の経路](design.md#タッチ合成の経路)」を参照してください。
 

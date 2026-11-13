@@ -2,6 +2,16 @@
 
 以前の版から更新するときに、スクリプトや設定を直す必要がある変更を書きます。すべての変更の一覧は GitHub の [Releases](https://github.com/yuta24/device-relay/releases) にあります。全体の入口は [README](README.ja.md) です。
 
+## 次の版（0.8.0 から）
+
+### ダブルタップ tap --count 2（0.8.0 から）
+
+`relay tap <x> <y> --count 2`、`relay tap <セレクタ> --count 2` で、同じ点をダブルタップできるようになりました（HTTP API では `/tap` の `"taps": 2`）。
+これまでは `relay tap` を 2 回送るしかなく、2 回の間隔が往復の時間で決まるので、ダブルタップと認識されないことがありました。
+応答には `"taps": 2` が付きます。
+`taps` を知らない以前のランナーは 1 回だけタップするので、`relay tap --count 2` は終了コード 8（`runner_bad_response`）で失敗します。
+`relay start --rebuild` でランナーを作り直してください。扱いは「[ダブルタップ（taps）](docs/http-api.md#エンドポイント)」にあります。
+
 ## 0.8.0
 
 ### 入力欄を空にする type --clear（0.7.0 から）

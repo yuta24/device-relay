@@ -145,4 +145,27 @@ struct RunnerClientTests {
       Issue.record("a timeout is not unreachable")
     }
   }
+
+  /// A runner from before `taps` ignores it and taps once: its answer has no `taps`, which relay refuses.
+  @Test func aDoubleTapAnsweredWithoutTapsIsABadResponse() throws {
+    let double = RunnerOperation.tap(RunnerTouch(target: .point(RunnerPoint(x: 10, y: 20)), taps: 2))
+    let (status, failure) = try perform(double, transport: Self.answer(200, #"{"ok":true,"mode":"private"}"#))
+    #expect(status == RunnerExitCode.runnerError.rawValue)
+    #expect(failure?["code"] as? String == RelayErrorCode.runnerBadResponse.rawValue)
+    #expect((failure?["error"] as? String)?.contains("predates tap --count and tapped once") == true)
+
+    let sent = Locked<[URLRequest]>([])
+    let (doubled, none) = try perform(double) { request in
+      sent.withLock { $0.append(request) }
+      return RunnerResponse(status: 200, body: Data(#"{"ok":true,"mode":"private","taps":2}"#.utf8))
+    }
+    #expect(doubled == RunnerExitCode.success.rawValue)
+    #expect(none == nil)
+    let body = try JSONSerialization.jsonObject(with: try #require(sent.value.first?.httpBody)) as? [String: Any]
+    #expect(body?["taps"] as? Int == 2)
+
+    // One tap needs no taps in the answer, from any runner.
+    let single = RunnerOperation.tap(RunnerTouch(target: .point(RunnerPoint(x: 10, y: 20)), taps: 1))
+    #expect(try perform(single, transport: Self.answer(200, #"{"ok":true,"mode":"private"}"#)).status == RunnerExitCode.success.rawValue)
+  }
 }

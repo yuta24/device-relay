@@ -29,6 +29,7 @@ relay find --id home.title --timeout 5 --require   # 現れるまで待ち、現
 relay find --id spinner --gone --timeout 5 --require   # 消えるまで待ち、消えなければ終了コード 6
 relay tap --id relay.input                     # POST /tap {"element":{"identifier":"relay.input"}}
 relay tap 200 120 --mode xcui                  # POST /tap {"x":200,"y":120,"mode":"xcui"}
+relay tap --id map --count 2                   # POST /tap {"element":{"identifier":"map"},"taps":2}（ダブルタップ）
 relay press --label General --type button --duration 1.0
 relay swipe 200 700 200 200 --duration 0.3
 relay type "hello" --key return                # POST /type {"text":"hello","keys":["return"]}
@@ -64,7 +65,7 @@ relay crashes                                  # 直近 24 時間のクラッシ
 | `screenshot` | `GET /screenshot` | `-o <file>`（`-` で stdout）、`--format png\|jpeg`、`--quality 0.05–1.0`、`--max-size <px>`、`--scale <px/pt>` |
 | `source` | `GET /source` | `--format json\|text\|compact`、`--filter interactive`、`--max-depth <n>`、`--bundle-id <id>` |
 | `find` | `POST /find` | セレクタ、`--limit <n>`、`--timeout <s>`、`--gone`、`--require`、`--bundle-id <id>` |
-| `tap` / `press` | `POST /tap` / `/press` | `<x> <y>` かセレクタ、`--mode private\|xcui`、`--timeout`・`--bundle-id`（セレクタのみ）、`--duration`（press のみ） |
+| `tap` / `press` | `POST /tap` / `/press` | `<x> <y>` かセレクタ、`--mode private\|xcui`、`--timeout`・`--bundle-id`（セレクタのみ）、`--count 2`（tap のみ。ダブルタップ）、`--duration`（press のみ） |
 | `swipe` | `POST /swipe` | `<x1> <y1> <x2> <y2>`、`--duration`、`--hold`、`--mode` |
 | `type` | `POST /type` | `<text>` か `--stdin`、`--key <name>`（複数可、順に送る）、`--clear`、`--bundle-id` |
 | `key` / `button` / `orientation` | `POST /key` / `/button` / `/orientation` | 名前（`key` は `--bundle-id` も可、`orientation` は `landscape` を `landscapeLeft` として送る） |
@@ -120,6 +121,10 @@ relay: image 471x1024 px, screen 402x874 pt, 1.172 px/pt (tap in points: px / 1.
 「[要素セレクタ](elements.md#要素セレクタ)」と同じ完全一致・AND です。
 
 `--type` の名前、キー名、ボタン名、向きの名前、数値の範囲は送る前に確認し、間違っていれば終了コード 2 で何も送りません。
+
+`relay tap --count 2` は、同じ点をダブルタップします（`1` か `2`。それ以外は終了コード 2）。`relay tap` を 2 回続けて送る代わりにはなりません。
+2 回の間隔が往復の時間で決まり、ダブルタップと認識されないことがあるためです（「[ダブルタップ（taps）](http-api.md#エンドポイント)」）。
+`relay run` の手順にも書けます（`tap --id map --count 2`）。`press` は `--count` を受け付けません。
 
 `-` で始まる文字列を入力するときは `relay type -- --text` のように `--` を挟みます。
 パスワードなど、`ps` やシェルの履歴に残したくない文字列は `relay type --stdin` で標準入力から渡します。
@@ -303,7 +308,7 @@ URL がアプリの中に届いたかは、設定アプリが開いたこと以�
 
 | 操作 | 30 秒に足す時間 |
 | --- | --- |
-| `find` / `tap` | `--timeout` の時間 |
+| `find` / `tap` | `--timeout` の時間（`tap --count 2` は、さらに 0.15 秒） |
 | `press` | `--timeout` と `--duration` の時間（`--duration` の既定は 1 秒） |
 | `swipe` | `--duration` と `--hold` の時間 |
 | `launch` / `terminate` | 120 秒 |

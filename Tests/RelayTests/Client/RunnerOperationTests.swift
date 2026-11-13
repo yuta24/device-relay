@@ -27,6 +27,9 @@ struct RunnerOperationTests {
     #expect(point.path == "/tap")
     #expect(try body(point) == #"{"mode":"xcui","x":200,"y":120.5}"#)
 
+    let double = RunnerOperation.tap(RunnerTouch(target: .element(RunnerElementSelector(identifier: "map")), taps: 2)).request
+    #expect(try body(double) == #"{"element":{"identifier":"map"},"taps":2}"#)
+
     let element = RunnerOperation.press(RunnerTouch(
       target: .element(RunnerElementSelector(label: "General", type: "button", index: 0)),
       duration: 1, timeout: 3, bundleID: "com.apple.Preferences"
@@ -78,6 +81,9 @@ struct RunnerOperationTests {
     let typed = RunnerOperation.type(text: "ab", keys: [], bundleID: nil).waitTime
     #expect(RunnerOperation.type(text: "ab", keys: [], bundleID: nil, clear: true).waitTime == typed + RunnerTyping.clearGiveUp)
     #expect(RunnerOperation.press(RunnerTouch(target: .point(RunnerPoint(x: 0, y: 0)), duration: 4, timeout: 2)).waitTime == 6)
+    #expect(RunnerOperation.tap(RunnerTouch(target: .point(RunnerPoint(x: 0, y: 0)), timeout: 2)).waitTime == 2)
+    #expect(RunnerOperation.tap(RunnerTouch(target: .point(RunnerPoint(x: 0, y: 0)), taps: 2, timeout: 2)).waitTime
+      == 2 + RunnerRequestValues.tapPeriod)
   }
 
   /// The runner waits up to XCTest's application state timeout, 120 s when it cannot set it back to 60 s.

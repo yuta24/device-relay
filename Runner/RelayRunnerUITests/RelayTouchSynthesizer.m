@@ -94,19 +94,11 @@ static NSString *const RelayTouchSynthesizerErrorDomain = @"RelayTouchSynthesize
                         displayID:(nullable NSNumber *)displayID
                        completion:(void (^)(NSError *_Nullable))completion
                             error:(NSError **)error {
-    NSString *reason = self.unavailableReason;
-    if (reason == nil && (points.count == 0 || offsets.count != points.count - 1)) {
+    NSString *reason = nil;
+    if (points.count == 0 || offsets.count != points.count - 1) {
         reason = @"points must be non-empty and offsets must have one entry per move";
     }
-    if (reason == nil && displayID != nil && !self.supportsDisplayID) {
-        reason = @"XCSynthesizedEventRecord does not respond to initWithName:displayID:interfaceOrientation:";
-    }
-    if (reason != nil) {
-        if (error != NULL) {
-            *error = [NSError errorWithDomain:RelayTouchSynthesizerErrorDomain
-                                         code:1
-                                     userInfo:@{NSLocalizedDescriptionKey: reason}];
-        }
+    if (![self canSendToDisplay:displayID reason:reason error:error]) {
         return NO;
     }
 
@@ -117,12 +109,72 @@ static NSString *const RelayTouchSynthesizerErrorDomain = @"RelayTouchSynthesize
         [path moveToPoint:points[index].CGPointValue atOffset:offsets[index - 1].doubleValue];
     }
     [path liftUpAtOffset:liftOffset];
+    [self synthesizePaths:@[path] interfaceOrientation:orientation displayID:displayID completion:completion];
+    return YES;
+}
 
++ (BOOL)synthesizeTapsAtPoint:(CGPoint)point
+                        count:(NSUInteger)count
+                     duration:(NSTimeInterval)duration
+                       period:(NSTimeInterval)period
+         interfaceOrientation:(UIInterfaceOrientation)orientation
+                    displayID:(nullable NSNumber *)displayID
+                   completion:(void (^)(NSError *_Nullable))completion
+                        error:(NSError **)error {
+    NSString *reason = nil;
+    if (count == 0 || duration <= 0 || (count > 1 && period <= duration)) {
+        reason = @"taps need a count of at least 1, a positive duration, and a period longer than the duration";
+    }
+    if (![self canSendToDisplay:displayID reason:reason error:error]) {
+        return NO;
+    }
+
+    // One path per tap, each its own finger down and up, in one record: the app gets them as one sequence,
+    // `period` apart, with nothing in between.
+    NSMutableArray<id<RelayXCPointerEventPath>> *paths = [NSMutableArray arrayWithCapacity:count];
+    for (NSUInteger index = 0; index < count; index++) {
+        NSTimeInterval down = index * period;
+        id<RelayXCPointerEventPath> path = [(id<RelayXCPointerEventPath>)[NSClassFromString(@"XCPointerEventPath") alloc]
+            initForTouchAtPoint:point
+                         offset:down];
+        [path liftUpAtOffset:down + duration];
+        [paths addObject:path];
+    }
+    [self synthesizePaths:paths interfaceOrientation:orientation displayID:displayID completion:completion];
+    return YES;
+}
+
+/// NO, with `error` set, when the private path is unavailable (said first, as before), `reason` (a bad argument)
+/// is set, or `displayID` can't be named.
++ (BOOL)canSendToDisplay:(nullable NSNumber *)displayID reason:(nullable NSString *)reason error:(NSError **)error {
+    if (self.unavailableReason != nil) {
+        reason = self.unavailableReason;
+    }
+    if (reason == nil && displayID != nil && !self.supportsDisplayID) {
+        reason = @"XCSynthesizedEventRecord does not respond to initWithName:displayID:interfaceOrientation:";
+    }
+    if (reason == nil) {
+        return YES;
+    }
+    if (error != NULL) {
+        *error = [NSError errorWithDomain:RelayTouchSynthesizerErrorDomain
+                                     code:1
+                                 userInfo:@{NSLocalizedDescriptionKey: reason}];
+    }
+    return NO;
+}
+
++ (void)synthesizePaths:(NSArray<id<RelayXCPointerEventPath>> *)paths
+    interfaceOrientation:(UIInterfaceOrientation)orientation
+               displayID:(nullable NSNumber *)displayID
+              completion:(void (^)(NSError *_Nullable))completion {
     id<RelayXCSynthesizedEventRecord> record = [NSClassFromString(@"XCSynthesizedEventRecord") alloc];
     record = displayID != nil
         ? [record initWithName:@"relay touch" displayID:displayID.unsignedLongLongValue interfaceOrientation:orientation]
         : [record initWithName:@"relay touch" interfaceOrientation:orientation];
-    [record addPointerEventPath:path];
+    for (id<RelayXCPointerEventPath> path in paths) {
+        [record addPointerEventPath:path];
+    }
 
     id<RelayXCUIEventSynthesizing> synthesizer = [(id<RelayXCUIDeviceEventSynthesizer>)XCUIDevice.sharedDevice eventSynthesizer];
     [synthesizer synthesizeEvent:record completion:^(BOOL result, NSError *_Nullable invokeError) {
@@ -133,7 +185,6 @@ static NSString *const RelayTouchSynthesizerErrorDomain = @"RelayTouchSynthesize
         }
         completion(result ? nil : invokeError);
     }];
-    return YES;
 }
 
 @end
