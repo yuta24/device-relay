@@ -475,8 +475,12 @@ final class RelayRunnerUITests: XCTestCase {
     try requireKeyboardFocus(application, bundleID: bundleID)
     let focused = application.descendants(matching: .any).matching(NSPredicate(format: "hasKeyboardFocus == 1")).firstMatch
     let synthesize = privateTypingIsDefault && RelayTextSynthesizer.isKeyAvailable
-    let deadline = Date(timeIntervalSinceNow: RunnerTyping.clearWait + RunnerTyping.synthesisGrace)
+    let deadline = Date(timeIntervalSinceNow: RunnerTyping.clearGiveUp)
     let read = { () throws -> RunnerClearing.Field in
+      // A read can't be interrupted, but none starts past the deadline, so relay's wait stays ahead.
+      guard Date() < deadline else {
+        throw RunnerError.typingFailed("clearing the field did not complete in time; nothing was typed", status: 422)
+      }
       let (snapshot, failed) = self.ignoringIssues { try? focused.snapshot() }
       guard !failed, let snapshot else {
         throw RunnerError.actionFailed("failed to read the field with keyboard focus in \(bundleID); nothing was typed")

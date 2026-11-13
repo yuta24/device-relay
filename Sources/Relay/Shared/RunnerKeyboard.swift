@@ -118,8 +118,20 @@ enum RunnerTyping {
   static let synthesisGrace: TimeInterval = 10
 
   /// How long `/type`'s `clear` may take at most: the keys of both steps (command-A, a delete, command-down)
-  /// and `RunnerClearing.maxDeletes` deletes. `relay type --clear` waits this much longer for the answer.
+  /// and `RunnerClearing.maxDeletes` deletes. The runner gives up `synthesisGrace` after it (`clearGiveUp`), which
+  /// is what `relay type --clear` adds to its answer wait.
   static let clearWait: TimeInterval = 3 * waitPerKey + Double(RunnerClearing.maxDeletes) * waitPerCharacter
+
+  /// When the runner gives up on `clear`: `clearWait` plus `synthesisGrace`, as for typed text. The reads
+  /// between the steps count against it too. `relay type --clear` adds all of it to its wait, so its answer
+  /// wait stays as far past the runner's as for text alone.
+  static let clearGiveUp: TimeInterval = clearWait + synthesisGrace
+
+  /// How long the runner may take for `/type` before it answers: the clearing, then the text and keys, each
+  /// with its own grace.
+  static func runnerGiveUp(text: String, keyCount: Int, clear: Bool) -> TimeInterval {
+    wait(text: text, keyCount: keyCount) + synthesisGrace + (clear ? clearGiveUp : 0)
+  }
 
   static func synthesisTimeoutMessage(seconds: TimeInterval) -> String {
     "typing did not complete within \(Int(seconds.rounded(.up)))s; some of the text may have been typed"

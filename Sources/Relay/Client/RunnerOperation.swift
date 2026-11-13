@@ -114,9 +114,10 @@ enum RunnerOperation: Equatable {
     case .swipe(_, _, let duration, let hold, _): return (duration ?? 0.3) + (hold ?? 0.05)
     case .launch, .open, .terminate: return Self.applicationStateWait
     // The runner gives up on synthesized text `RunnerTyping.synthesisGrace` after this, so it answers within
-    // the 30 s on top.
+    // the 30 s on top. Clearing comes first with a grace of its own, which is added whole (`clearGiveUp`), so
+    // the answer wait stays as far past the runner's give-up with --clear as without.
     case .type(let text, let keys, _, let clear):
-      return RunnerTyping.wait(text: text ?? "", keyCount: keys.count) + (clear ? RunnerTyping.clearWait : 0)
+      return RunnerTyping.wait(text: text ?? "", keyCount: keys.count) + (clear ? RunnerTyping.clearGiveUp : 0)
     case .key: return RunnerTyping.wait(text: "", keyCount: 1)
     default: return 0
     }

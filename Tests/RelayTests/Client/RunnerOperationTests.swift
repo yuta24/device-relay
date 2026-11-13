@@ -58,12 +58,25 @@ struct RunnerOperationTests {
     #expect(RunnerOperation.shutdown.request.method == "POST")
   }
 
+  /// relay must wait past the runner's give-up, or it reports runner_timeout while the runner is about to answer.
+  /// The margin with --clear is the same 20 s as for text alone.
+  @Test func typeWaitsTwentySecondsPastTheRunner() {
+    for (text, keys) in [("", ["return"]), ("hello", []), (String(repeating: "x", count: 300), ["delete", "return"])] {
+      for clear in [false, true] {
+        let operation = RunnerOperation.type(text: text, keys: keys, bundleID: nil, clear: clear)
+        let runner = RunnerTyping.runnerGiveUp(text: text, keyCount: keys.count, clear: clear)
+        let margin = RunnerControl.baseTimeout + operation.waitTime - runner
+        #expect(abs(margin - 20) < 1e-9, "\(text.count) characters, clear: \(clear)")
+      }
+    }
+  }
+
   @Test func allowsForWaitsInTheTimeout() {
     #expect(RunnerOperation.health.waitTime == 0)
     #expect(RunnerOperation.find(RunnerElementSelector(type: "cell"), limit: nil, timeout: 5, bundleID: nil).waitTime == 5)
     #expect(RunnerOperation.find(RunnerElementSelector(type: "cell"), limit: nil, timeout: 7, bundleID: nil, gone: true).waitTime == 7)
     let typed = RunnerOperation.type(text: "ab", keys: [], bundleID: nil).waitTime
-    #expect(RunnerOperation.type(text: "ab", keys: [], bundleID: nil, clear: true).waitTime == typed + RunnerTyping.clearWait)
+    #expect(RunnerOperation.type(text: "ab", keys: [], bundleID: nil, clear: true).waitTime == typed + RunnerTyping.clearGiveUp)
     #expect(RunnerOperation.press(RunnerTouch(target: .point(RunnerPoint(x: 0, y: 0)), duration: 4, timeout: 2)).waitTime == 6)
   }
 

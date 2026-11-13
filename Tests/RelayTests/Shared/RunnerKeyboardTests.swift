@@ -201,6 +201,6 @@ struct RunnerClearingTests {
   /// relay waits this much longer for `type --clear`; the runner gives up on the clearing within it (plus the grace).
   @Test func theWaitCoversEveryKeyAndTheMostDeletes() {
     #expect(RunnerTyping.clearWait == 3 * RunnerTyping.waitPerKey + Double(RunnerClearing.maxDeletes) * RunnerTyping.waitPerCharacter)
-    #expect(RunnerTyping.clearWait + RunnerTyping.synthesisGrace < 60)
+    #expect(RunnerTyping.clearGiveUp == RunnerTyping.clearWait + RunnerTyping.synthesisGrace)
   }
 }
