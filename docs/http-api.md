@@ -279,6 +279,8 @@ relay type --clear "new text"
 - **フォーカス**: `/type` と同じく、フォーカスがなければ `no_keyboard_focus` で何も送りません。
 - **応答**: 成功すると `{"ok":true,"bundleId":"…","cleared":true}` です。`clear` を知らない古いランナーは `clear` を無視して、元の文字の後に入力します。`cleared` がない応答に、`relay type --clear` は `runner_bad_response`（終了コード 8）で失敗します。
 - **経路**: キーは `/type` と同じく XCTest の非公開 API で合成し、アイドルを待ちません（「[文字入力の合成](private-api.md#文字入力の合成)」）。`typeSynthesis` が `xcui` の端末では、`typeKey` と `typeText` で送り、前後でアイドルを待ちます。
+- **実機**: 確かめていません。以前 `typeKey` を試したとき、実機ではハードウェアキーのうち space と tab しか届きませんでした（上の「文字入力と特殊キー」）。
+- 実機で Cmd-A も Cmd-↓ も届かなければ、カーソルが末尾にある欄は 2 段目の delete で空になります。カーソルが途中にある欄は、`clear_failed` になる見込みです。
 - **待ち時間**: 空にする分として最大 23 秒かかることがあります（キー 3 つに 1 秒ずつと、delete 200 回に 0.1 秒ずつ）。`relay type --clear` は、その分だけ長く応答を待ちます。
 
 RelayRunnerHost で確かめた結果（時間は `relay type --clear` の呼び出しから戻るまで。範囲のある行は 3 回、「約」の行は 1 回）:
