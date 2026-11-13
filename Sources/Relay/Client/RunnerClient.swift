@@ -38,10 +38,15 @@ enum RunnerConnectionError {
 
 /// Small synchronous HTTP client for the on-device runner.
 struct RunnerClient {
+  /// Sends a request and waits for the answer, or throws what URLSession throws (`URLError(.timedOut)` once
+  /// the request's `timeoutInterval` runs out). Tests put a fake here to answer without a socket.
+  typealias Transport = @Sendable (URLRequest) throws -> RunnerResponse
+
   let baseURL: URL
   /// Sent as `Authorization: Bearer <token>`; the runner answers 401 without it.
   var token: String?
   var timeout: TimeInterval = 30
+  var transport: Transport = RunnerClient.urlSession
 
   private static let session: URLSession = {
     let configuration = URLSessionConfiguration.ephemeral
@@ -71,10 +76,14 @@ struct RunnerClient {
       request.httpBody = body
       request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     }
+    return try transport(request)
+  }
 
+  /// The transport relay uses: the shared URLSession, waited for with a semaphore.
+  static let urlSession: Transport = { request in
     let semaphore = DispatchSemaphore(value: 0)
     let result = Locked<Result<RunnerResponse, Error>>(.failure(URLError(.unknown)))
-    Self.session.dataTask(with: request) { data, response, error in
+    RunnerClient.session.dataTask(with: request) { data, response, error in
       if let error {
         result.set(.failure(error))
       } else {
