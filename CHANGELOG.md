@@ -20,6 +20,11 @@
 `code` で分岐しているスクリプトは、この値を足してください。扱いは「[スライダーとピッカー（/adjust）](docs/http-api.md#スライダーとピッカーadjust)」にあります。
 以前のランナーは `/adjust` を知らないので、`not_found`（終了コード 7）になります。`relay start --rebuild` でランナーを作り直してください。
 
+### 更新の後にすること
+
+- ランナーは、次の `relay start` で自動でビルドし直します。
+- エージェントのスキルを入れている場合は、`relay skill install`（または `--global`）で入れ直してください。`tap --count 2` と `relay adjust` を説明する新しい `references/gestures-and-controls.md` が入り、コマンドと失敗の扱い、検証用のアプリ、`relay run` を説明する references が更新されます。
+
 ## 0.8.0
 
 ### 入力欄を空にする type --clear（0.7.0 から）
