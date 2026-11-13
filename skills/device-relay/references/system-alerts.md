@@ -7,7 +7,8 @@ Location and notification permission dialogs were checked in Maps on an iPhone 1
 1. Wait for the dialog with `relay find --type alert --bundle-id com.apple.springboard --timeout 5`. Use a timeout up to 10 seconds; repeat short waits if needed. Confirm that the result has a match (`count` is not zero) and read the question before choosing a response. Without `--require`, no match still exits 0.
 2. Read the buttons with `relay source --format compact --filter interactive`, without the underlying app's `--bundle-id`.
 3. Copy the chosen button's label exactly and dismiss the dialog with `relay tap --label …`. For example, `relay tap --label "Allow While Using App"` succeeded in about 0.5 seconds and the foreground app returned to Maps.
-4. Observe again before continuing in the app.
+4. To confirm it closed, `relay find --type alert --bundle-id com.apple.springboard --gone --timeout 5 --require`. Exit 6 (`element_still_present`) means it is still open: the tap may have been ignored (see the 0.2 s note below), so observe and tap again. Right after `gone:true`, `relay foreground` can stay `com.apple.springboard` for about 230 ms; an element `tap` waits for the app by itself.
+5. Observe again before continuing in the app.
 
 Labels are exact matches. `Don’t Allow` contains `’` (U+2019); `relay tap --label "Don't Allow"` with ASCII `'` matched nothing. Use the values from `find` / `source` as they are, rather than retyping or normalizing punctuation.
 

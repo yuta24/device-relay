@@ -9,6 +9,7 @@ Each file in `references/` stands alone; read only the one you need.
 - [sessions](references/sessions.md): runner.json lookup, parallel sessions
 - [sandbox](references/sandbox.md): `Operation not permitted`
 - [commands](references/commands.md): runner commands' options, timeouts, opening URLs and deep links, installing apps (`relay install`)
+- [clear-and-gone](references/clear-and-gone.md): clearing a field (`type --clear`), waiting for an element to go (`find --gone`)
 - [element-tree](references/element-tree.md): `source` formats, `--filter interactive`, selectors
 - [system-alerts](references/system-alerts.md): permission dialogs, SpringBoard targeting, exact labels
 - [failures](references/failures.md): all exit codes, `code`s, `reason`s
