@@ -2,7 +2,7 @@
 
 以前の版から更新するときに、スクリプトや設定を直す必要がある変更を書きます。すべての変更の一覧は GitHub の [Releases](https://github.com/yuta24/device-relay/releases) にあります。全体の入口は [README](README.ja.md) です。
 
-## 次の版（0.7.0 から）
+## 0.8.0
 
 ### 入力欄を空にする type --clear（0.7.0 から）
 
@@ -46,8 +46,8 @@ Runner プロジェクトを `~/.relay/runner` にコピーする・消すコマ
 | `relay install [--project <path>] [--build [--verbose]]` | `relay runner install` に同じオプション |
 | `relay install --remove`、`relay uninstall` | `relay runner uninstall` |
 
-古い書き方は、次の版まで同じように動きます。そのときは stderr に `relay:` で始まる注意を 1 行出し、終了コードは変わりません。
-次の版で外すので、スクリプトは `relay runner install` に書き換えてください。
+古い書き方は、0.8.0 では同じように動きます。そのときは stderr に `relay:` で始まる注意を 1 行出し、終了コードは変わりません。
+0.8.0 の次の版で外すので、スクリプトは `relay runner install` に書き換えてください。
 
 アプリを渡した `relay install <path>` と `relay uninstall <bundle-id>` は新しいコマンドです（「[アプリを入れる・消す](docs/cli.md#アプリを入れる消すrelay-install--relay-uninstall)」）。
 アプリと、`--project`・`--build`・`--verbose`・`--remove` を一緒に渡すと、書き方の誤りで終了コード 2 です。
@@ -57,7 +57,7 @@ Runner プロジェクトを `~/.relay/runner` にコピーする・消すコマ
 ### 更新の後にすること
 
 - ランナーは、次の `relay start` で自動でビルドし直します。
-- エージェントのスキルを入れている場合は、`relay skill install`（または `--global`）で入れ直してください。要素のタッチと失敗の扱いを説明する references が更新されます。
+- エージェントのスキルを入れている場合は、`relay skill install`（または `--global`）で入れ直してください。要素のタッチ、失敗の扱い、画面の録画を説明する references が更新され、`type --clear` と `find --gone` を説明する新しい `references/clear-and-gone.md` が入ります。
 
 ## 0.7.0
 

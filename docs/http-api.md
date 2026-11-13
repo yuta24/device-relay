@@ -55,7 +55,7 @@
 ```json
 {"coordinateSpace":"points","device":{"model":"iPhone","simulator":true,"systemVersion":"27.0"},
  "foreground":{"bundleId":"com.apple.mobilesafari","pid":42390,"source":"private"},"ok":true,
- "orientation":"landscapeLeft","runner":{"sourceHash":"<64 桁>","version":"0.7.0"},
+ "orientation":"landscapeLeft","runner":{"sourceHash":"<64 桁>","version":"0.8.0"},
  "screen":{"height":402,"scale":3,"width":874},"touchSynthesis":"private"}
 ```
 
