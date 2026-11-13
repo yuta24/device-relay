@@ -73,6 +73,8 @@ struct ScenarioParseTests {
     type 'hello world' --key return
     type -- -dash
     swipe 200 700 200 200 --duration 0.3
+    tap --id map --count 2
+    adjust --type pickerWheel --index 0 --picker-value 'June'
     screenshot -o step.jpg --scale 1
     source --format compact --filter interactive
     """)
@@ -81,6 +83,9 @@ struct ScenarioParseTests {
       .runner(.type(text: "hello world", keys: ["return"], bundleID: nil)),
       .runner(.type(text: "-dash", keys: [], bundleID: nil)),
       .runner(.swipe(from: RunnerPoint(x: 200, y: 700), to: RunnerPoint(x: 200, y: 200), duration: 0.3, hold: nil, mode: nil)),
+      .runner(.tap(RunnerTouch(target: .element(try RunnerElementSelector(json: ["identifier": "map"])), taps: 2))),
+      .runner(.adjust(try RunnerElementSelector(json: ["type": "pickerWheel", "index": 0]), .pickerValue("June"), timeout: nil,
+                      bundleID: nil)),
       .runner(.screenshot(RunnerScreenshot(format: "jpeg", scale: 1, output: "step.jpg"))),
       .runner(.source(format: "compact", maxDepth: nil, filter: "interactive", bundleID: nil))
     ])

@@ -2,6 +2,24 @@
 
 以前の版から更新するときに、スクリプトや設定を直す必要がある変更を書きます。すべての変更の一覧は GitHub の [Releases](https://github.com/yuta24/device-relay/releases) にあります。全体の入口は [README](README.ja.md) です。
 
+## 次の版（0.8.0 から）
+
+### ダブルタップ tap --count 2（0.8.0 から）
+
+`relay tap <x> <y> --count 2`、`relay tap <セレクタ> --count 2` で、同じ点をダブルタップできるようになりました（HTTP API では `/tap` の `"taps": 2`）。
+これまでは `relay tap` を 2 回送るしかなく、2 回の間隔が往復の時間で決まるので、ダブルタップと認識されないことがありました。
+応答には `"taps": 2` が付きます。
+`taps` を知らない以前のランナーは 1 回だけタップするので、`relay tap --count 2` は終了コード 8（`runner_bad_response`）で失敗します。
+`relay start --rebuild` でランナーを作り直してください。扱いは「[ダブルタップ（taps）](docs/http-api.md#エンドポイント)」にあります。
+
+### スライダーとピッカーの値を設定する relay adjust（0.8.0 から）
+
+`relay adjust <セレクタ> --position <0-1>` でスライダーを、`relay adjust <セレクタ> --picker-value <値>` でピッカーのホイール（日付のピッカーの列を含む）を設定できるようになりました（HTTP API では `/adjust`）。
+これまでは、位置を計算して `relay swipe` するしかありませんでした。設定した後の値を応答の `value`（スライダーは `position` も）で返します。
+`code` には新しい `element_not_adjustable`（スライダーでもホイールでもない要素）と `adjust_failed`（狙いの値にならなかった）があり、どちらも終了コード 6 です。
+`code` で分岐しているスクリプトは、この値を足してください。扱いは「[スライダーとピッカー（/adjust）](docs/http-api.md#スライダーとピッカーadjust)」にあります。
+以前のランナーは `/adjust` を知らないので、`not_found`（終了コード 7）になります。`relay start --rebuild` でランナーを作り直してください。
+
 ## 0.8.0
 
 ### 入力欄を空にする type --clear（0.7.0 から）

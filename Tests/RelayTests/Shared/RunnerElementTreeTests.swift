@@ -28,6 +28,35 @@ struct RunnerElementTreeTests {
     )
   }
 
+  /// Two snapshots of one picker wheel gave 215 and 215.00000000000006 for its height.
+  @Test func sameFrameAllowsAHundredthOfAPoint() {
+    let frame = CGRect(x: 25, y: 484.833, width: 173, height: 215)
+    #expect(RunnerElementTree.sameFrame(frame, CGRect(x: 25, y: 484.833, width: 173, height: 215.00000000000006)))
+    #expect(RunnerElementTree.sameFrame(frame, CGRect(x: 25.005, y: 484.83, width: 173, height: 215)))
+    #expect(!RunnerElementTree.sameFrame(frame, CGRect(x: 25, y: 484.833, width: 173, height: 215.5)))
+    #expect(!RunnerElementTree.sameFrame(frame, CGRect(x: 68, y: 290.833, width: 133, height: 235)))
+  }
+
+  /// In a placed iPad window, the snapshot's frames are in the window and XCUI's on the screen, scaled a little
+  /// differently; elsewhere both are the snapshot's.
+  @Test func findsTheXCUIElementByTheFrameInItsSpace() {
+    let raw = CGRect(x: 16, y: 188.5, width: 1178, height: 34)
+    let onScreen = CGRect(x: 40.235, y: 401.468, width: 753.531, height: 21.729)
+    let xcui = CGRect(x: 40.577, y: 401.468, width: 752.847, height: 21.729)
+    let placement = RunnerWindowPlacement(frame: CGRect(x: 30, y: 281, width: 774, height: 533), scaleX: 0.64, scaleY: 0.64,
+                                          appOrigin: .zero)
+    let placed = RunnerElementTree.xcuiFrame(snapshot: raw, onScreen: onScreen, window: .placed(placement))
+    #expect(placed.frame == onScreen)
+    #expect(RunnerElementTree.sameFrame(xcui, placed.frame, tolerance: placed.tolerance))
+    // The other slider, 27 points lower, is not taken for it.
+    #expect(!RunnerElementTree.sameFrame(xcui.offsetBy(dx: 0, dy: 26.842), placed.frame, tolerance: placed.tolerance))
+    // Full screen, an iPhone, or no lookup: the snapshot's frame, exactly as before.
+    for window in [nil, .fullScreen, .unknown("two windows")] as [RunnerWindowLookup?] {
+      let other = RunnerElementTree.xcuiFrame(snapshot: raw, onScreen: onScreen, window: window)
+      #expect(other.frame == raw && other.tolerance == 0.01, "\(String(describing: window))")
+    }
+  }
+
   @Test func namesElementTypesByRawValue() {
     #expect(RunnerElementTree.typeName(rawValue: 0) == "any")
     #expect(RunnerElementTree.typeName(rawValue: 2) == "application")

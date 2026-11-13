@@ -69,6 +69,8 @@ struct RunnerControlHintTests {
   @Test func hintsByCode() {
     #expect(RunnerControl.hint(for: .actionFailed, errorCode: .openFailed, infoURL: infoURL)?.contains("--bundle-id") == true)
     #expect(RunnerControl.hint(for: .actionFailed, errorCode: .noKeyboardFocus, infoURL: infoURL)?.contains("tap the text field first") == true)
+    #expect(RunnerControl.hint(for: .actionFailed, errorCode: .elementNotAdjustable, infoURL: infoURL)?.contains("--type pickerWheel") == true)
+    #expect(RunnerControl.hint(for: .actionFailed, errorCode: .adjustFailed, infoURL: infoURL)?.contains("only the values it lists") == true)
     #expect(RunnerControl.hint(for: .actionFailed, errorCode: .typingFailed, infoURL: infoURL)?.contains("relay find") == true)
     #expect(RunnerControl.hint(for: .actionFailed, errorCode: .clearFailed, infoURL: infoURL)?.contains("relay type --clear again") == true)
     #expect(RunnerControl.hint(for: .actionFailed, errorCode: .elementNotFound, infoURL: infoURL)?.contains("--timeout") == true)

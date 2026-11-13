@@ -42,6 +42,23 @@ enum RunnerRequestValues {
       + "(0 <= x < \(decimal(screen.width)), 0 <= y < \(decimal(screen.height)); relay health shows the screen)"
   }
 
+  /// The most taps one `/tap` sends: a double tap. XCUI's coordinate gestures have `tap()` and `doubleTap()`
+  /// only, so both touch paths do the same counts.
+  static let maxTaps = 2
+
+  /// The optional `taps` of `/tap`: 1 when absent, nil unless an integer in 1...maxTaps.
+  static func taps(_ value: Any?) -> Int? {
+    guard let value else { return 1 }
+    guard let taps = number(value), taps.rounded() == taps, (1 ... Double(maxTaps)).contains(taps) else { return nil }
+    return Int(taps)
+  }
+
+  /// The finger of a synthesized tap is down this long, and goes down again `tapPeriod` after the last time,
+  /// so a double tap's taps are 0.1 s apart, with no idle wait or round trip in between. Two `/tap`s sent back to
+  /// back on the simulator were taken as a double tap, but 0.1 s more between them made two single taps.
+  static let tapDuration: TimeInterval = 0.05
+  static let tapPeriod: TimeInterval = 0.15
+
   /// The smallest `maxSize`; anything smaller is too blurry to read.
   static let minScreenshotMaxSize = 16
   static let screenshotScaleRange = 0.1 ... 10.0

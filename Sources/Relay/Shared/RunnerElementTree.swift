@@ -326,3 +326,26 @@ extension RunnerElementTree {
     return data.map { String(decoding: $0, as: UTF8.self) } ?? "\"\""
   }
 }
+
+extension RunnerElementTree {
+  /// Whether two frames of one element, read by two snapshots, are the same: by default within a hundredth of a
+  /// point, as reading the same layout twice can differ in the last bits.
+  static func sameFrame(_ a: CGRect, _ b: CGRect, tolerance: CGFloat = 0.01) -> Bool {
+    abs(a.minX - b.minX) <= tolerance && abs(a.minY - b.minY) <= tolerance
+      && abs(a.width - b.width) <= tolerance && abs(a.height - b.height) <= tolerance
+  }
+
+  /// How close an `XCUIElement`'s frame must be to the screen frame of an element of a placed iPad window. Its
+  /// snapshot frame is in the window's coordinates, but `XCUIElement.frame` is on the screen, scaled by XCUI a little
+  /// differently from `RunnerWindowPlacement`: a slider of a window at 0.64 was at x 40.577, 752.847 wide for XCUI and
+  /// 40.235, 753.531 wide here (some 0.7 point at most across an 11-inch iPad).
+  static let placedWindowFrameTolerance: CGFloat = 2
+
+  /// The frame to find an element's `XCUIElement` by, and how close its frame must be: the snapshot's frame, exactly,
+  /// except in a placed iPad window (`window` is `.placed`), where it is the frame on the screen (`onScreen`), within
+  /// `placedWindowFrameTolerance`.
+  static func xcuiFrame(snapshot: CGRect, onScreen: CGRect, window: RunnerWindowLookup?) -> (frame: CGRect, tolerance: CGFloat) {
+    guard case .placed? = window else { return (snapshot, 0.01) }
+    return (onScreen, placedWindowFrameTolerance)
+  }
+}

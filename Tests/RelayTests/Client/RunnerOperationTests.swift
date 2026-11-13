@@ -27,6 +27,9 @@ struct RunnerOperationTests {
     #expect(point.path == "/tap")
     #expect(try body(point) == #"{"mode":"xcui","x":200,"y":120.5}"#)
 
+    let double = RunnerOperation.tap(RunnerTouch(target: .element(RunnerElementSelector(identifier: "map")), taps: 2)).request
+    #expect(try body(double) == #"{"element":{"identifier":"map"},"taps":2}"#)
+
     let element = RunnerOperation.press(RunnerTouch(
       target: .element(RunnerElementSelector(label: "General", type: "button", index: 0)),
       duration: 1, timeout: 3, bundleID: "com.apple.Preferences"
@@ -34,6 +37,29 @@ struct RunnerOperationTests {
     #expect(element.path == "/press")
     #expect(try body(element)
       == #"{"bundleId":"com.apple.Preferences","duration":1,"element":{"index":0,"label":"General","type":"button"},"timeout":3}"#)
+  }
+
+  @Test func buildsAdjustBodies() throws {
+    let slider = RunnerOperation.adjust(RunnerElementSelector(identifier: "volume"), .position(0.5), timeout: 2, bundleID: nil).request
+    #expect(slider.method == "POST")
+    #expect(slider.path == "/adjust")
+    #expect(try body(slider) == #"{"element":{"identifier":"volume"},"position":0.5,"timeout":2}"#)
+    let wheel = RunnerOperation.adjust(RunnerElementSelector(type: "pickerWheel", index: 0), .pickerValue("June"), timeout: nil,
+                                       bundleID: "com.example").request
+    #expect(try body(wheel) == #"{"bundleId":"com.example","element":{"index":0,"type":"pickerWheel"},"pickerValue":"June"}"#)
+    #expect(RunnerOperation.adjust(RunnerElementSelector(identifier: "a"), .position(0), timeout: nil, bundleID: nil).commandName == "adjust")
+  }
+
+  /// The runner answers an adjust within `--timeout`, XCUI's idle waits (120 s), and `RunnerAdjusting.giveUp`; relay
+  /// waits at least 20 s more. On a screen that never idles the runner answered after 120.2-121.0 s.
+  @Test func adjustWaitsTwentySecondsPastTheRunner() {
+    for timeout in [nil, 0, 4, 10] as [TimeInterval?] {
+      let adjust = RunnerOperation.adjust(RunnerElementSelector(identifier: "a"), .position(0.5), timeout: timeout, bundleID: nil)
+      let relayWaits = RunnerControl.baseTimeout + adjust.waitTime
+      let runnerAnswersBy = (timeout ?? 0) + RunnerAdjusting.idleWait + RunnerAdjusting.giveUp
+      #expect(relayWaits - runnerAnswersBy >= 20, "\(String(describing: timeout))")
+      #expect(relayWaits - (timeout ?? 0) - 121.0 >= 20, "the longest answer measured")
+    }
   }
 
   @Test func buildsOtherBodies() throws {
@@ -78,6 +104,9 @@ struct RunnerOperationTests {
     let typed = RunnerOperation.type(text: "ab", keys: [], bundleID: nil).waitTime
     #expect(RunnerOperation.type(text: "ab", keys: [], bundleID: nil, clear: true).waitTime == typed + RunnerTyping.clearGiveUp)
     #expect(RunnerOperation.press(RunnerTouch(target: .point(RunnerPoint(x: 0, y: 0)), duration: 4, timeout: 2)).waitTime == 6)
+    #expect(RunnerOperation.tap(RunnerTouch(target: .point(RunnerPoint(x: 0, y: 0)), timeout: 2)).waitTime == 2)
+    #expect(RunnerOperation.tap(RunnerTouch(target: .point(RunnerPoint(x: 0, y: 0)), taps: 2, timeout: 2)).waitTime
+      == 2 + RunnerRequestValues.tapPeriod)
   }
 
   /// The runner waits up to XCTest's application state timeout, 120 s when it cannot set it back to 60 s.

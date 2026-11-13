@@ -34,6 +34,17 @@ NS_ASSUME_NONNULL_BEGIN
                        completion:(void (^)(NSError *_Nullable error))completion
                             error:(NSError **)error;
 
+/// `count` taps at `point` in one event record, as one gesture: finger `i` goes down at `i * period` seconds
+/// and lifts `duration` later. Points, `orientation`, `displayID`, and the completion are as above.
++ (BOOL)synthesizeTapsAtPoint:(CGPoint)point
+                        count:(NSUInteger)count
+                     duration:(NSTimeInterval)duration
+                       period:(NSTimeInterval)period
+         interfaceOrientation:(UIInterfaceOrientation)orientation
+                    displayID:(nullable NSNumber *)displayID
+                   completion:(void (^)(NSError *_Nullable error))completion
+                        error:(NSError **)error;
+
 @end
 
 NS_ASSUME_NONNULL_END

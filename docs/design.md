@@ -57,13 +57,13 @@ skills/device-relay/               コーディングエージェント向けの
 | 経路 | 仕組み | 特徴 |
 | --- | --- | --- |
 | `private`（既定） | XCTest の非公開 API でタッチを直接合成（WebDriverAgent と同じ方式） | アプリのアイドル待ちをしない。完了 callback を待ってから応答する |
-| `xcui` | 公開 API の `XCUICoordinate.tap()` / `press(forDuration:)` / `press(forDuration:thenDragTo:…)` | イベントを送る前後に対象アプリがアイドルになる（quiescence）のを待つため遅い |
+| `xcui` | 公開 API の `XCUICoordinate.tap()` / `doubleTap()` / `press(forDuration:)` / `press(forDuration:thenDragTo:…)` | イベントを送る前後に対象アプリがアイドルになる（quiescence）のを待つため遅い |
 
 `private` で使う非公開 API は「[タッチ合成](private-api.md#タッチ合成)」にまとめています。クラスとセレクタはすべて実行時に `NSClassFromString` / `respondsToSelector:` で確認します（`Runner/RelayRunnerUITests/RelayTouchSynthesizer.m`）。1 つでも欠けていれば自動で `xcui` に落ち、`/health` は `"touchSynthesis":"xcui"` になります。`mode: "private"` を明示して使えない場合は 400 を返します。
 
 `xcui` のタップの計測値は「[計測したレイテンシ](#計測したレイテンシ)」を参照してください。
 
-ジェスチャーの組み立て: tap は 0.05 秒押して離す、press は `duration` 秒後に離す、swipe は `from` で `hold` 秒止まってから `duration` 秒かけて `to` へ移動し、すぐ離します。座標は前面アプリの表示の向きから縦向きの画面座標に変換して送ります（「[座標系と画面の向き](screen.md#座標系と画面の向き)」を参照）。
+ジェスチャーの組み立て: tap は 0.05 秒押して離す（`taps: 2` では、同じ記録の中で 0.15 秒後にもう一度。「[ダブルタップ（taps）](http-api.md#エンドポイント)」）、press は `duration` 秒後に離す、swipe は `from` で `hold` 秒止まってから `duration` 秒かけて `to` へ移動し、すぐ離します。座標は前面アプリの表示の向きから縦向きの画面座標に変換して送ります（「[座標系と画面の向き](screen.md#座標系と画面の向き)」を参照）。
 
 ランナー側で測った処理時間（実機）: press 0.5 s → 743 ms / 1.0 s → 1230 ms、swipe（hold 0.05 + 0.3 s）→ 592–606 ms。xcui では同じ操作がそれぞれ 2059 / 2030 ms、1632–2097 ms でした。private でも、指定時間に対して約 0.25 秒の固定オーバーヘッドがあります（合成イベントの完了通知までの時間）。
 

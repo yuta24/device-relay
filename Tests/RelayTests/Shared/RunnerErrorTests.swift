@@ -28,6 +28,8 @@ struct RunnerErrorCodeTests {
       .typingFailed: "typing_failed",
       .openFailed: "open_failed",
       .clearFailed: "clear_failed",
+      .elementNotAdjustable: "element_not_adjustable",
+      .adjustFailed: "adjust_failed",
       .xcuiFailed: "xcui_failed",
       .internalError: "internal_error"
     ]
@@ -37,6 +39,10 @@ struct RunnerErrorCodeTests {
       #expect(code.rawValue.allSatisfy { $0.isLowercase || $0 == "_" }, "\(code.rawValue) is snake_case")
     }
   }
+
+  private let adjustNode = RunnerElementNode(type: "slider", identifier: "volume", label: "", value: "75%", placeholder: nil,
+                                             frame: CGRect(x: 16, y: 200, width: 370, height: 34), enabled: true,
+                                             selected: false, hasFocus: false, hasKeyboardFocus: nil, children: [])
 
   @Test func mapsEveryRunnerErrorToItsStatusAndCode() {
     let lookup = RunnerElementLookupFailure(reason: .ambiguous, count: 2, candidates: [])
@@ -57,6 +63,11 @@ struct RunnerErrorCodeTests {
       (.actionFailed("failed to snapshot com.example"), 422, .xcuiFailed),
       (.openFailed("could not open x://y: no installed app handles the scheme x:"), 422, .openFailed),
       (.clearFailed(RunnerClearing.NotCleared(remaining: 3, steps: [.selectAllAndDelete])), 422, .clearFailed),
+      (.notAdjustable("the element is a button, not a slider", element: RunnerElementMatch(index: 0, node: adjustNode)), 422,
+       .elementNotAdjustable),
+      (.adjustFailed("the slider ended at 0.75, not 0.6", RunnerAdjusting.Outcome(
+        bundleID: "com.example", element: RunnerElementMatch(index: 0, node: adjustNode), value: "75%", position: 0.75,
+        target: .position(0.6))), 422, .adjustFailed),
       (.noKeyboardFocus(bundleID: "com.example"), 422, .noKeyboardFocus),
       (.displayUnknown("cannot tell which display com.example is on"), 422, .displayUnknown),
       (.windowPositionUnknown("cannot tell where the window of com.example is"), 422, .windowPositionUnknown),

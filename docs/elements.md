@@ -1,6 +1,6 @@
 # 要素ツリーと要素セレクタ
 
-`/source` の要素ツリーと、`/tap`・`/press`・`/find` の要素セレクタ、要素の待機について説明します。全体の入口は [README](../README.ja.md) です。
+`/source` の要素ツリーと、`/tap`・`/press`・`/find`・`/adjust` の要素セレクタ、要素の待機について説明します。全体の入口は [README](../README.ja.md) です。
 
 ## 要素ツリー（/source）
 
@@ -112,7 +112,7 @@ searchField label="Search" placeholder="Search" frame=28,808,346,28
 
 ## 要素セレクタ
 
-`/tap` と `/press` は、`x`・`y` の代わりに `element` で要素を指定できます。`/find` は同じセレクタで一致した要素の一覧を返します。
+`/tap` と `/press` は、`x`・`y` の代わりに `element` で要素を指定できます。`/find` は同じセレクタで一致した要素の一覧を返します。`/adjust` も同じセレクタでスライダーやピッカーのホイールを選びます（「[スライダーとピッカー（/adjust）](http-api.md#スライダーとピッカーadjust)」）。
 
 ```json
 {"element":{"identifier":"relay.input"}}
@@ -161,7 +161,7 @@ iPad のウィンドウでは、応答（`/tap`・`/press`・`/find`・`/source`
  "window":{"height":486,"scale":1,"width":375,"x":379,"y":72}}
 ```
 
-ウィンドウの位置が決まらないときは、`/tap`・`/press` は何も送らずに `422`、`window_position_unknown` です。`/find`・`/source` は成功のままで、`window: null` と `warning` が付き、frame はウィンドウの中の座標です（「[iPad のウィンドウ表示](screen.md#ipad-のウィンドウ表示)」）。
+ウィンドウの位置が決まらないときは、`/tap`・`/press`・`/adjust` は何も送らずに `422`、`window_position_unknown` です。`/find`・`/source` は成功のままで、`window: null` と `warning` が付き、frame はウィンドウの中の座標です（「[iPad のウィンドウ表示](screen.md#ipad-のウィンドウ表示)」）。
 
 要素が 1 つに決まらない・触れない場合は `422` で、`code`、`reason`、一致した総数 `count`、候補（最大 5 件）`candidates` を返します。`code`（「[エラーの形式と code](http-api.md#エラーの形式と-code)」）は次の行動ごとに `reason` をまとめたもので、`reason` はその詳細です。
 
@@ -237,7 +237,7 @@ iPhone の縦・横で、変換した frame がスクリーンショットの位
 
 ### 別のアプリに覆われているとき
 
-要素を指定した `/tap`・`/press` は、タッチを送る直前に前面アプリの一覧（「[前面アプリ](http-api.md#前面アプリ)」の `private`）を読み直します。対象アプリ（`bundleId`。省略したときはリクエストの最初に決めた前面アプリ）が一覧になく、一覧の先頭が SpringBoard なら、何も送らずに `422`、`covered_by_other_app` を返します。システムの許可ダイアログ・コントロールセンター・通知センターは SpringBoard が描くので、表示中の一覧は SpringBoard だけになります。一方、アプリのスナップショットには後ろの要素が frame つきで残るので、以前はその座標にタッチを送り、`ok: true` のまま何も起きないか、同じ位置にあるダイアログのボタン（「Allow While Using App」「Don’t Allow」など）を押していました。
+要素を指定した `/tap`・`/press` と `/adjust` は、タッチを送る（値を設定する）直前に前面アプリの一覧（「[前面アプリ](http-api.md#前面アプリ)」の `private`）を読み直します。対象アプリ（`bundleId`。省略したときはリクエストの最初に決めた前面アプリ）が一覧になく、一覧の先頭が SpringBoard なら、何も送らずに `422`、`covered_by_other_app` を返します。システムの許可ダイアログ・コントロールセンター・通知センターは SpringBoard が描くので、表示中の一覧は SpringBoard だけになります。一方、アプリのスナップショットには後ろの要素が frame つきで残るので、以前はその座標にタッチを送り、`ok: true` のまま何も起きないか、同じ位置にあるダイアログのボタン（「Allow While Using App」「Don’t Allow」など）を押していました。
 
 ```json
 {"alert":"Allow “RelayRunner” to use your location?","bundleId":"dev.devicerelay.local.RelayRunnerHost",
@@ -266,7 +266,7 @@ iPhone で、上の止めるもので止まり、止めないものとダイア�
 
 ### 待機（timeout）
 
-- `timeout` を付けると、`/tap`・`/press` は要素が触れる状態（`notFound`・`indexOutOfRange`・`emptyFrame`・`offscreen`・`disabled` 以外）になるまで、`/find` は 1 件以上一致するまで待ちます。期限を過ぎると最後の結果を返します（`/tap` は `422`、`/find` は `count: 0`）。`ambiguous` は待っても解消しにくいので、待たずにすぐ `422` を返します。
+- `timeout` を付けると、`/tap`・`/press`・`/adjust` は要素が触れる状態（`notFound`・`indexOutOfRange`・`emptyFrame`・`offscreen`・`disabled` 以外）になるまで、`/find` は 1 件以上一致するまで待ちます。期限を過ぎると最後の結果を返します（`/tap` は `422`、`/find` は `count: 0`）。`ambiguous` は待っても解消しにくいので、待たずにすぐ `422` を返します。
 - 待っている間もスナップショットの失敗（アプリがまだ起動していないなど）は再試行します。
 - `bundleId` を省略したときの対象アプリは、リクエストの最初に前面アプリから 1 回だけ決まり、待っている間は判定し直しません。アプリが前面のときに `relay find --type alert --timeout 5` を送っても、待機中に出たシステムの許可ダイアログは見つかりません。これから出るダイアログは `relay find --type alert --bundle-id com.apple.springboard --timeout 5` で待ちます（「[システムの許可ダイアログ](#システムの許可ダイアログ)」）。`/tap`・`/press` も、待っている間にダイアログが出ると、ダイアログの後ろの要素を見つけてしまいます。ただし送る直前の確認（「[別のアプリに覆われているとき](#別のアプリに覆われているとき)」）で、何も送らずに `422` になります。
 - 上限は 10 秒です。待っている間はコマンドが busy ゲートを持ち続けるので、ほかのリクエスト（`/health` を含む）は `409` になります（`/ping` は `busy: true` を返します）。長く待つ必要がある場合は、短い `timeout` で繰り返してください。

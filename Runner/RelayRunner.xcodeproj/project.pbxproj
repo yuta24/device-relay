@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		111111111111111111111111 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222221 /* AppDelegate.swift */; };
 		111111111111111111111120 /* OverlayViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222235 /* OverlayViewController.swift */; };
+		111111111111111111111126 /* GestureViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22222222222222222222223D /* GestureViewController.swift */; };
 		111111111111111111111112 /* RunnerHTTPServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222222 /* RunnerHTTPServer.swift */; };
 		111111111111111111111113 /* RelayRunnerUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222223 /* RelayRunnerUITests.swift */; };
 		111111111111111111111114 /* RelayTouchSynthesizer.m in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222226 /* RelayTouchSynthesizer.m */; };
@@ -19,6 +20,7 @@
 		111111111111111111111123 /* RelayTextSynthesizer.m in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222238 /* RelayTextSynthesizer.m */; };
 		111111111111111111111124 /* RelayURLOpener.m in Sources */ = {isa = PBXBuildFile; fileRef = 22222222222222222222223A /* RelayURLOpener.m */; };
 		111111111111111111111125 /* RunnerOpen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22222222222222222222223C /* RunnerOpen.swift */; };
+		111111111111111111111127 /* RunnerAdjusting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22222222222222222222223E /* RunnerAdjusting.swift */; };
 		111111111111111111111118 /* RunnerKeyboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22222222222222222222222D /* RunnerKeyboard.swift */; };
 		111111111111111111111119 /* RunnerElementTree.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22222222222222222222222E /* RunnerElementTree.swift */; };
 		11111111111111111111111B /* RunnerCommandGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222230 /* RunnerCommandGate.swift */; };
@@ -43,6 +45,7 @@
 /* Begin PBXFileReference section */
 		222222222222222222222221 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayRunnerHost/AppDelegate.swift; sourceTree = "<group>"; };
 		222222222222222222222235 /* OverlayViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayRunnerHost/OverlayViewController.swift; sourceTree = "<group>"; };
+		22222222222222222222223D /* GestureViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayRunnerHost/GestureViewController.swift; sourceTree = "<group>"; };
 		222222222222222222222222 /* RunnerHTTPServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayRunnerUITests/RunnerHTTPServer.swift; sourceTree = "<group>"; };
 		222222222222222222222223 /* RelayRunnerUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayRunnerUITests/RelayRunnerUITests.swift; sourceTree = "<group>"; };
 		222222222222222222222226 /* RelayTouchSynthesizer.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = RelayRunnerUITests/RelayTouchSynthesizer.m; sourceTree = "<group>"; };
@@ -59,6 +62,7 @@
 		22222222222222222222223B /* RelayURLOpener.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = RelayRunnerUITests/RelayURLOpener.h; sourceTree = "<group>"; };
 		22222222222222222222222D /* RunnerKeyboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/Relay/Shared/RunnerKeyboard.swift; sourceTree = "<group>"; };
 		22222222222222222222223C /* RunnerOpen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/Relay/Shared/RunnerOpen.swift; sourceTree = "<group>"; };
+		22222222222222222222223E /* RunnerAdjusting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/Relay/Shared/RunnerAdjusting.swift; sourceTree = "<group>"; };
 		22222222222222222222222E /* RunnerElementTree.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/Relay/Shared/RunnerElementTree.swift; sourceTree = "<group>"; };
 		222222222222222222222230 /* RunnerCommandGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/Relay/Shared/RunnerCommandGate.swift; sourceTree = "<group>"; };
 		222222222222222222222231 /* RunnerElementSelector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/Relay/Shared/RunnerElementSelector.swift; sourceTree = "<group>"; };
@@ -94,6 +98,7 @@
 			children = (
 				222222222222222222222221 /* AppDelegate.swift */,
 				222222222222222222222235 /* OverlayViewController.swift */,
+				22222222222222222222223D /* GestureViewController.swift */,
 				222222222222222222222222 /* RunnerHTTPServer.swift */,
 				222222222222222222222223 /* RelayRunnerUITests.swift */,
 				222222222222222222222227 /* RelayTouchSynthesizer.h */,
@@ -110,6 +115,7 @@
 				22222222222222222222222B /* RunnerRequestValues.swift */,
 				22222222222222222222222D /* RunnerKeyboard.swift */,
 				22222222222222222222223C /* RunnerOpen.swift */,
+				22222222222222222222223E /* RunnerAdjusting.swift */,
 				22222222222222222222222E /* RunnerElementTree.swift */,
 				222222222222222222222230 /* RunnerCommandGate.swift */,
 				222222222222222222222231 /* RunnerElementSelector.swift */,
@@ -212,6 +218,7 @@
 			files = (
 				111111111111111111111111 /* AppDelegate.swift in Sources */,
 				111111111111111111111120 /* OverlayViewController.swift in Sources */,
+				111111111111111111111126 /* GestureViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -230,6 +237,7 @@
 				111111111111111111111124 /* RelayURLOpener.m in Sources */,
 				111111111111111111111118 /* RunnerKeyboard.swift in Sources */,
 				111111111111111111111125 /* RunnerOpen.swift in Sources */,
+				111111111111111111111127 /* RunnerAdjusting.swift in Sources */,
 				111111111111111111111119 /* RunnerElementTree.swift in Sources */,
 				11111111111111111111111B /* RunnerCommandGate.swift in Sources */,
 				11111111111111111111111C /* RunnerElementSelector.swift in Sources */,

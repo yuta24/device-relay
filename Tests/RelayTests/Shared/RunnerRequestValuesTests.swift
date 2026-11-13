@@ -63,6 +63,25 @@ struct RunnerRequestValuesTests {
     #expect(try number(fromJSON: "[1]") == nil)
   }
 
+  /// `taps` of `/tap`: one when absent, else 1 or 2 as a JSON integer.
+  @Test func tapsAreOneOrTwo() throws {
+    func taps(fromJSON text: String) throws -> Int? {
+      let object = try JSONSerialization.jsonObject(with: Data("{\"v\":\(text)}".utf8)) as? [String: Any]
+      return RunnerRequestValues.taps(try #require(object?["v"]))
+    }
+    #expect(RunnerRequestValues.taps(nil) == 1)
+    #expect(try taps(fromJSON: "1") == 1)
+    #expect(try taps(fromJSON: "2") == 2)
+    #expect(try taps(fromJSON: "2.0") == 2)
+    for bad in ["0", "3", "1.5", "-1", "true", "\"2\"", "null"] {
+      #expect(try taps(fromJSON: bad) == nil, "\(bad)")
+    }
+    // A double tap's second finger goes down after the first lifts, 0.1 s later: two /tap requests back to back,
+    // which UIKit still took as a double tap, are further apart.
+    #expect(RunnerRequestValues.tapPeriod > RunnerRequestValues.tapDuration)
+    #expect(RunnerRequestValues.tapPeriod - RunnerRequestValues.tapDuration <= 0.1)
+  }
+
   @Test func jpegQualityDefaultsWhenAbsent() {
     #expect(RunnerRequestValues.jpegQuality(nil) == RunnerRequestValues.defaultJPEGQuality)
   }

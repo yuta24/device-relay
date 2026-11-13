@@ -29,8 +29,11 @@ relay find --id home.title --timeout 5 --require   # 現れるまで待ち、現
 relay find --id spinner --gone --timeout 5 --require   # 消えるまで待ち、消えなければ終了コード 6
 relay tap --id relay.input                     # POST /tap {"element":{"identifier":"relay.input"}}
 relay tap 200 120 --mode xcui                  # POST /tap {"x":200,"y":120,"mode":"xcui"}
+relay tap --id map --count 2                   # POST /tap {"element":{"identifier":"map"},"taps":2}（ダブルタップ）
 relay press --label General --type button --duration 1.0
 relay swipe 200 700 200 200 --duration 0.3
+relay adjust --id volume --position 0.5        # POST /adjust {"element":{"identifier":"volume"},"position":0.5}
+relay adjust --type pickerWheel --value June --picker-value March   # ピッカーのホイール
 relay type "hello" --key return                # POST /type {"text":"hello","keys":["return"]}
 printf '%s' "$PASSWORD" | relay type --stdin   # 文字列を標準入力から読む（ps やシェルの履歴に残さない）
 relay type --clear "new text"                  # POST /type {"clear":true,"text":"new text"}（空にしてから入力）
@@ -64,8 +67,9 @@ relay crashes                                  # 直近 24 時間のクラッシ
 | `screenshot` | `GET /screenshot` | `-o <file>`（`-` で stdout）、`--format png\|jpeg`、`--quality 0.05–1.0`、`--max-size <px>`、`--scale <px/pt>` |
 | `source` | `GET /source` | `--format json\|text\|compact`、`--filter interactive`、`--max-depth <n>`、`--bundle-id <id>` |
 | `find` | `POST /find` | セレクタ、`--limit <n>`、`--timeout <s>`、`--gone`、`--require`、`--bundle-id <id>` |
-| `tap` / `press` | `POST /tap` / `/press` | `<x> <y>` かセレクタ、`--mode private\|xcui`、`--timeout`・`--bundle-id`（セレクタのみ）、`--duration`（press のみ） |
+| `tap` / `press` | `POST /tap` / `/press` | `<x> <y>` かセレクタ、`--mode private\|xcui`、`--timeout`・`--bundle-id`（セレクタのみ）、`--count 2`（tap のみ。ダブルタップ）、`--duration`（press のみ） |
 | `swipe` | `POST /swipe` | `<x1> <y1> <x2> <y2>`、`--duration`、`--hold`、`--mode` |
+| `adjust` | `POST /adjust` | セレクタ、`--position <0-1>`（スライダー）か `--picker-value <値>`（ピッカーのホイール）、`--timeout <s>`、`--bundle-id <id>` |
 | `type` | `POST /type` | `<text>` か `--stdin`、`--key <name>`（複数可、順に送る）、`--clear`、`--bundle-id` |
 | `key` / `button` / `orientation` | `POST /key` / `/button` / `/orientation` | 名前（`key` は `--bundle-id` も可、`orientation` は `landscape` を `landscapeLeft` として送る） |
 | `launch` / `terminate` | `POST /launch` / `/terminate` | `<bundle-id>`（`host` も可） |
@@ -120,6 +124,15 @@ relay: image 471x1024 px, screen 402x874 pt, 1.172 px/pt (tap in points: px / 1.
 「[要素セレクタ](elements.md#要素セレクタ)」と同じ完全一致・AND です。
 
 `--type` の名前、キー名、ボタン名、向きの名前、数値の範囲は送る前に確認し、間違っていれば終了コード 2 で何も送りません。
+
+`relay tap --count 2` は、同じ点をダブルタップします（`1` か `2`。それ以外は終了コード 2）。`relay tap` を 2 回続けて送る代わりにはなりません。
+2 回の間隔が往復の時間で決まり、ダブルタップと認識されないことがあるためです（「[ダブルタップ（taps）](http-api.md#エンドポイント)」）。
+`relay run` の手順にも書けます（`tap --id map --count 2`）。`press` は `--count` を受け付けません。
+
+`relay adjust` は、スライダーを `--position`（0〜1）に、ピッカーのホイールを `--picker-value` に合わせ、設定した後の値を出します。
+日付のピッカーは、列ごとのホイールを `--type pickerWheel --value <今の値>` か `--index <n>` で選びます。
+スライダーでもホイールでもない要素は終了コード 6（`element_not_adjustable`）、狙いの値にならなければ終了コード 6（`adjust_failed`）です。
+`relay run` の手順にも書けます。扱いは「[スライダーとピッカー（/adjust）](http-api.md#スライダーとピッカーadjust)」にあります。
 
 `-` で始まる文字列を入力するときは `relay type -- --text` のように `--` を挟みます。
 パスワードなど、`ps` やシェルの履歴に残したくない文字列は `relay type --stdin` で標準入力から渡します。
@@ -303,9 +316,10 @@ URL がアプリの中に届いたかは、設定アプリが開いたこと以�
 
 | 操作 | 30 秒に足す時間 |
 | --- | --- |
-| `find` / `tap` | `--timeout` の時間 |
+| `find` / `tap` | `--timeout` の時間（`tap --count 2` は、さらに 0.15 秒） |
 | `press` | `--timeout` と `--duration` の時間（`--duration` の既定は 1 秒） |
 | `swipe` | `--duration` と `--hold` の時間 |
+| `adjust` | `--timeout` の時間と 140.25 秒（XCUI の前後のアイドル待ち 120 秒と、ランナーが補正をやめて答えるまでの 20.25 秒） |
 | `launch` / `terminate` | 120 秒 |
 | `open` | 120 秒（通常は前面を待つ 5 秒までで応答します） |
 | `type` | 1 文字（Unicode スカラー）につき 0.1 秒と、キー 1 つにつき 1 秒。`--clear` ではさらに 33 秒（空にする分の 23 秒と、ランナーが諦めるまでの猶予 10 秒） |
@@ -436,6 +450,8 @@ code を返さない古いランナーでは、`401`・`409` のヒントだけ�
 | `element_still_present` | もっと待つ（`find --gone --timeout <秒>` を繰り返す）か、`relay screenshot` で画面を確かめる |
 | `remote_view_position_unknown` | `relay screenshot` で位置を確かめ、`relay tap <x> <y>` で座標を指定する |
 | `open_failed` | URL のスキームと、それを扱うアプリが入っているかを確かめる。`--bundle-id <id>` でそのアプリに渡せる |
+| `element_not_adjustable` | `relay find` で要素の型を確かめる。ピッカーは `--type pickerWheel` で列を選ぶ |
+| `adjust_failed` | 応答の `value`（と `position`）が今の値で、変わっていることがある。`relay find` で確かめる。ホイールは一覧にある値だけ、段階のあるスライダーは段階の値だけを受け付ける |
 | `not_found` | ランナーが relay より古いかもしれない（`relay start --rebuild` でビルドし直す） |
 
 `covered_by_other_app` は、システムのダイアログやコントロールセンターなどがアプリを覆っている場合です。

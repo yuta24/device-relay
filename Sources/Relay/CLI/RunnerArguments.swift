@@ -8,9 +8,10 @@ extension Arguments {
     "screenshot": ["--output", "--format", "--quality", "--max-size", "--scale"],
     "source": ["--format", "--max-depth", "--filter", "--bundle-id"],
     "find": selectorOptions.union(["--limit", "--timeout", "--bundle-id"]),
-    "tap": selectorOptions.union(["--mode", "--timeout", "--bundle-id"]),
+    "tap": selectorOptions.union(["--count", "--mode", "--timeout", "--bundle-id"]),
     "press": selectorOptions.union(["--duration", "--mode", "--timeout", "--bundle-id"]),
     "swipe": ["--duration", "--hold", "--mode"],
+    "adjust": selectorOptions.union(["--position", "--picker-value", "--timeout", "--bundle-id"]),
     "type": ["--key", "--bundle-id"],
     "key": ["--bundle-id"],
     "open": ["--bundle-id"]
@@ -218,7 +219,8 @@ extension Arguments {
       "type","identifier","label","value","frame":{"x","y","width","height"},"enabled"}],
       "truncated":bool}:
       count is every match, elements the first --limit, truncated whether more were left out. index
-      counts from 0 in screen order (the tree's order), and works as --index of find, tap, and press.
+      counts from 0 in screen order (the tree's order), and works as --index of find, tap, press,
+      and adjust.
       No match is exit 0 ("count":0); with --require it is exit 6, the answer (count, elements) coming
       back as {"ok":false,"code":"element_not_found",...} on stdout (also when --index is out of range),
       so find --timeout <s> --require waits for an element and fails if it does not appear.
@@ -229,9 +231,11 @@ extension Arguments {
       """
     ),
     "tap": (
-      "relay tap (<x> <y> | <selector>) [--mode private|xcui] [--timeout <s>] [--bundle-id <id>]",
+      "relay tap (<x> <y> | <selector>) [--count 2] [--mode private|xcui] [--timeout <s>]\n      [--bundle-id <id>]",
       """
       Taps a point (points in the displayed orientation) or the center of the element the selector picks.
+      --count 2 double-taps (zooms a map or a photo, selects a word): both taps go as one gesture, which
+      two relay tap commands are not, and the answer has "taps":2.
       --timeout (up to 10 seconds) and --bundle-id apply to a selector only. A point outside the screen (0
       <= x < width, 0 <= y < height as relay health reports it) is rejected with exit 7; nothing is sent.
       --mode xcui (public XCUI, which waits for the app to be idle before and after) is slower than the
@@ -241,6 +245,24 @@ extension Arguments {
     "press": (
       "relay press (<x> <y> | <selector>) [--duration 1.0] [--mode private|xcui] [--timeout <s>]\n      [--bundle-id <id>]",
       "Long-presses like tap does, for --duration seconds."
+    ),
+    "adjust": (
+      "relay adjust <selector> (--position <0-1> | --picker-value <value>) [--timeout <s>]\n      [--bundle-id <id>]",
+      """
+      Sets the slider the selector picks to --position (0 is the left end, 1 the right) or the picker
+      wheel to --picker-value (the text it shows: June, 15, 2026 for a date picker's wheels) with XCUI's
+      adjust, reads the element again, and prints {"ok":true,"bundleId":..,"element":{..},"value":..}
+      (a slider adds "position"; element is as it was found). XCUI leaves a slider up to 0.09 off, so
+      the runner then drags it by what is missing until it is within \(RunnerRequestValues.decimal(CGFloat(RunnerAdjusting.positionTolerance))) of --position.
+      Pick one wheel of a picker with --type pickerWheel and --value (what it shows now) or --index.
+      --timeout (up to 10 seconds) waits for the element, as for tap.
+      Another type of element is exit 6 (code element_not_adjustable), and nothing is adjusted. A value
+      the wheel does not have, or a slider or wheel that ends elsewhere (a slider of steps, June 31), is
+      exit 6 (code adjust_failed) with what it shows now in value (and position): it may have moved.
+      A slider takes about 2-4 seconds, a wheel under 1; no correction starts \(Int(RunnerAdjusting.correctionStop)) seconds after
+      the adjust did. XCUI waits for the app to be idle before and after (about 60 s each when it never
+      is), so relay waits \(Int(RunnerAdjusting.longestAnswer)) s more than other commands for the answer.
+      """
     ),
     "swipe": (
       "relay swipe <x1> <y1> <x2> <y2> [--duration 0.3] [--hold 0.05] [--mode private|xcui]",
@@ -521,7 +543,7 @@ extension Arguments {
   ]
 
   static let runnerCommandOrder = [
-    "ping", "health", "foreground", "screenshot", "source", "find", "tap", "press", "swipe",
+    "ping", "health", "foreground", "screenshot", "source", "find", "tap", "press", "swipe", "adjust",
     "type", "key", "button", "orientation", "launch", "open", "terminate", "shutdown"
   ]
 
@@ -541,10 +563,10 @@ extension Arguments {
     directory is not read: pass it with --runner. A session name is up to 64 letters, digits, '.',
     '_', and '-', starting with a letter or digit.
   relay waits 30 seconds for the answer, plus what the command itself may wait: --timeout (find, tap,
-    press), --duration and --hold (press, swipe), 120 s (launch, open, terminate: 150 s in all), 0.1 s
-    a character and 1 s a key (type, key), \(Int(RunnerTyping.clearGiveUp)) s more for type --clear. Past that it fails with
-    runner_timeout (exit 3), but the runner keeps at the command and stays busy (exit 5 for others)
-    until it ends: wait until relay ping shows "busy":false.
+    press, adjust), --duration and --hold (press, swipe), \(Int(RunnerAdjusting.longestAnswer)) s (adjust), 120 s (launch, open,
+    terminate: 150 s in all), 0.1 s a character and 1 s a key (type, key), \(Int(RunnerTyping.clearGiveUp)) s more for type
+    --clear. Past that it fails with runner_timeout (exit 3), but the runner keeps at the command and
+    stays busy (exit 5 for others) until it ends: wait until relay ping shows "busy":false.
   Output is always JSON (a screenshot prints the saved file's path); --json is accepted, not needed.
   A failure is JSON on stdout too: the runner's {"ok":false,"code":...,"error":...}, or relay's own in
     that shape when it fails before the runner answers (code runner_unavailable, runner_timeout,
@@ -626,9 +648,26 @@ private struct RunnerArgumentValues {
       }
       return .find(selector, limit: limit, timeout: try timeout(), bundleID: try string("--bundle-id"), gone: gone)
     case "tap":
-      return .tap(try touch(duration: nil))
+      var touch = try touch(duration: nil)
+      let maxTaps = RunnerRequestValues.maxTaps
+      touch.taps = try integer("--count", "1 or \(maxTaps) (\(maxTaps) is a double tap)") { (1 ... maxTaps).contains($0) }
+      return .tap(touch)
     case "press":
       return .press(try touch(duration: try number("--duration", "seconds greater than zero") { $0 > 0 }))
+    case "adjust":
+      _ = try positional(0, "an element selector, not arguments")
+      guard let selector = try selector() else {
+        throw ArgumentError(description: "adjust requires an element selector (--id, --label, --type, --value)")
+      }
+      let target: RunnerAdjusting.Target
+      switch (try number("--position", "a number in 0...1 (0 is the left end)") { (0 ... 1).contains($0) },
+              try string("--picker-value")) {
+      case (let position?, nil): target = .position(position)
+      case (nil, let value?): target = .pickerValue(value)
+      case (nil, nil): throw ArgumentError(description: "adjust requires --position <0-1> (a slider) or --picker-value <value> (a picker wheel)")
+      case (_?, _?): throw ArgumentError(description: "adjust takes either --position or --picker-value, not both")
+      }
+      return .adjust(selector, target, timeout: try timeout(), bundleID: try string("--bundle-id"))
     case "swipe":
       let xy = try coordinates(try positional(4, "<x1> <y1> <x2> <y2>"))
       return .swipe(

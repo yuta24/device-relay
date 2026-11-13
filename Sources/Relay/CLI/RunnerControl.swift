@@ -176,6 +176,11 @@ enum RunnerControl {
       return fail(.runnerBadResponse, "the runner's /type answer has no cleared; it predates type --clear and typed without "
         + "clearing the field (relay start --rebuild builds a current one)", exit: .runnerError, to: failureOutput)
     }
+    if case .tap(let touch) = resolved, let taps = touch.taps, taps > 1, tapsAnswer(response.body) != taps {
+      // A runner from before `taps` ignored it and tapped once.
+      return fail(.runnerBadResponse, "the runner's /tap answer has no taps; it predates tap --count and tapped once "
+        + "(relay start --rebuild builds a current one)", exit: .runnerError, to: failureOutput)
+    }
     if case .find(_, _, _, _, gone: true) = resolved {
       guard let gone = goneAnswer(response.body) else {
         // A runner from before `gone` ignored it and waited for an element to appear instead.
@@ -246,6 +251,13 @@ enum RunnerControl {
     return value.boolValue
   }
 
+  /// The `taps` of a `/tap` answer, nil when there is none (one tap, or a runner from before `taps`).
+  static func tapsAnswer(_ body: Data) -> Int? {
+    guard let object = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+          let taps = object["taps"] as? NSNumber, CFGetTypeID(taps) != CFBooleanGetTypeID() else { return nil }
+    return taps.intValue
+  }
+
   /// The `gone` of a `/find` answer, nil when there is none (a runner from before `gone`).
   static func goneAnswer(_ body: Data) -> Bool? {
     guard let object = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
@@ -307,6 +319,12 @@ enum RunnerControl {
     case .remoteViewPositionUnknown:
       return "the element is in a view another process draws (the share sheet) and its frame is not on the screen: "
         + "find it in relay screenshot and tap it by coordinates (relay tap <x> <y>)"
+    case .elementNotAdjustable:
+      return "adjust sets a slider (--position) or a picker wheel (--picker-value): check the element's type with relay find, "
+        + "and pick a wheel of a picker with --type pickerWheel"
+    case .adjustFailed:
+      return "the element shows value (and position) in the response, which may have changed: check it with relay find. "
+        + "A picker wheel takes only the values it lists; a slider of steps stops only at its steps"
     case .openFailed:
       return "check the URL's scheme and that the app that handles it is installed; relay open <url> --bundle-id <id> "
         + "sends it to that app"

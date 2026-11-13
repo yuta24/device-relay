@@ -44,7 +44,7 @@
 ### タッチ合成
 
 - **API**: `XCPointerEventPath`（`-initForTouchAtPoint:offset:`、`-moveToPoint:atOffset:`、`-liftUpAtOffset:`）、`XCSynthesizedEventRecord`（`-initWithName:interfaceOrientation:`、`-addPointerEventPath:`）、`-[XCUIDevice eventSynthesizer]` が返すオブジェクトの `-synthesizeEvent:completion:`（completion は `^(BOOL, NSError *)`）。実装は `RelayTouchSynthesizer.m` です。
-- **機能**: `/tap`・`/press`・`/swipe` の `private` 経路（既定）と、実機などの `/button home` のスワイプ。
+- **機能**: `/tap`・`/press`・`/swipe` の `private` 経路（既定）と、実機などの `/button home` のスワイプ。`/tap` の `taps: 2` は、1 つの `XCSynthesizedEventRecord` に、開始の offset をずらした `XCPointerEventPath` を 2 本入れます。`/adjust` のスライダーの補正のドラッグもこの経路です（使えなければ XCUI のドラッグ）。
 - **公開 API では足りない理由**: `XCUICoordinate` のジェスチャーは、前後で対象アプリがアイドルになるのを待つので、タップ 1 回に 1–2 秒かかります（「[タッチ合成の経路](design.md#タッチ合成の経路)」）。
 - **同じ方式のツール**: WebDriverAgent。
 
@@ -108,7 +108,7 @@
 
 - **API**: `-[XCUIDevice accessibilityInterface]` の `-activeApplications`（返る要素は `XCAccessibilityElement`。`-processIdentifier` で PID を得ます）、`-[XCUIDevice applicationMonitor]` の `-monitoredApplicationWithProcessIdentifier:`、`-[XCUIApplication bundleID]`。`accessibilityInterface` が返すのは `XCAXClient_iOS` ですが、ランナーが確かめるのはセレクタで、このクラス名は見ません。実装は `RelayActiveApplication.m` です。
 - **選び方**: 一覧の先頭を使います。iPad のウィンドウ表示では、画面にあるアプリと SpringBoard が並びます（`["com.apple.mobilesafari","com.apple.springboard"]`）。Dock のフォルダのサービス `com.apple.DocumentManager.DockFolderViewService` は画面の大きさの window を持ち、先頭に来ることがある（ホーム画面や、アプリの操作の直後）ので、このバンドル ID だけを除きます。`com.apple.SafariViewService` のように見えているビューサービスは除きません。
-- **機能**: `/foreground`、`/health` の `foreground`。`bundleId` を省略した `/type`・`/key`・`/source`・`/find`、要素を指定した `/tap`・`/press` の対象も、これで決めます。要素を指定した `/tap`・`/press` は、送る直前に、対象アプリが一覧になく先頭が SpringBoard でないかも確かめます（判定は `Sources/Relay/Shared/RunnerCoverage.swift`。「[別のアプリに覆われているとき](elements.md#別のアプリに覆われているとき)」）。
+- **機能**: `/foreground`、`/health` の `foreground`。`bundleId` を省略した `/type`・`/key`・`/source`・`/find`、要素を指定した `/tap`・`/press` と `/adjust` の対象も、これで決めます。要素を指定した `/tap`・`/press` と `/adjust` は、送る直前に、対象アプリが一覧になく先頭が SpringBoard でないかも確かめます（判定は `Sources/Relay/Shared/RunnerCoverage.swift`。「[別のアプリに覆われているとき](elements.md#別のアプリに覆われているとき)」）。
 - **公開 API では足りない理由**: 公開 API の `XCUIApplication.state` は、バンドル ID がわかっているアプリの状態しか返しません。手で切り替えたアプリを知るには、アクティブなアプリの一覧が要ります。
 - **使えないとき**: API が欠けているとき、アプリを 1 つも取得できないとき、取得で XCUI の失敗が記録されたときは、エラーにせず `source: fallback`、`pid: null` を返します。対象は、最後に `/launch` したアプリが `runningForeground` ならそのアプリ、そうでなければ SpringBoard です（「[前面アプリ](http-api.md#前面アプリ)」）。手で切り替えたアプリは判別できないので、`bundleId` を指定してください。要素を指定した `/tap`・`/press` の、覆われているかの確認もしません（以前と同じく送ります）。
 - **同じ方式のツール**: WebDriverAgent の `fb_activeApplication`。

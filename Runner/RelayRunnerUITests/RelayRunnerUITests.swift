@@ -178,12 +178,17 @@ final class RelayRunnerUITests: XCTestCase {
       return try source(query: request.query)
     case ("POST", "/tap"):
       let body = try RunnerJSON(request.body)
-      return try touch(body, duration: nil)
+      return try touch(body, duration: nil, taps: body.taps())
     case ("POST", "/press"):
       let body = try RunnerJSON(request.body)
-      return try touch(body, duration: body.positiveDouble("duration", default: 1.0))
+      guard body.object["taps"] == nil else {
+        throw RunnerError.invalidField("taps: /press is one long press; send taps to /tap")
+      }
+      return try touch(body, duration: body.positiveDouble("duration", default: 1.0), taps: 1)
     case ("POST", "/find"):
       return try find(RunnerJSON(request.body))
+    case ("POST", "/adjust"):
+      return try adjust(RunnerJSON(request.body))
     case ("POST", "/swipe"):
       let body = try RunnerJSON(request.body)
       return ok(mode: try swipe(body, mode: touchMode(body)))
@@ -232,7 +237,7 @@ final class RelayRunnerUITests: XCTestCase {
       }
       return ok()
     case (_, "/health"), (_, "/foreground"), (_, "/screenshot"), (_, "/source"), (_, "/tap"), (_, "/press"),
-         (_, "/find"), (_, "/swipe"), (_, "/type"), (_, "/key"), (_, "/button"), (_, "/orientation"), (_, "/launch"),
+         (_, "/find"), (_, "/adjust"), (_, "/swipe"), (_, "/type"), (_, "/key"), (_, "/button"), (_, "/orientation"), (_, "/launch"),
          (_, "/open"), (_, "/terminate"), (_, "/shutdown"):
       throw RunnerError.methodNotAllowed
     default:
@@ -736,12 +741,15 @@ final class RelayRunnerUITests: XCTestCase {
 
   // MARK: - Elements
 
-  /// `/tap` (duration nil) and `/press` at `x`/`y`, or at the element that `element` selects.
-  private func touch(_ body: RunnerJSON, duration: TimeInterval?) throws -> RunnerHTTPResponse {
+  /// `/tap` (duration nil) and `/press` at `x`/`y`, or at the element that `element` selects. A `/tap` of more than
+  /// one tap answers with `taps`, so a client can tell it from a runner that predates `taps` and tapped once.
+  private func touch(_ body: RunnerJSON, duration: TimeInterval?, taps: Int) throws -> RunnerHTTPResponse {
+    let tapsAnswer: [String: Any] = taps > 1 ? ["taps": taps] : [:]
     guard let element = body.object["element"] else {
       let x = try body.double("x"), y = try body.double("y")
       try requireOnScreen([("x, y", x, y)])
-      return .json(["ok": true, "mode": try touch(x: x, y: y, duration: duration, mode: touchMode(body)).rawValue])
+      let mode = try touch(x: x, y: y, duration: duration, taps: taps, mode: touchMode(body))
+      return .json(["ok": true, "mode": mode.rawValue].merging(tapsAnswer) { $1 })
     }
     guard body.object["x"] == nil, body.object["y"] == nil else {
       throw RunnerError.invalidField("element: pass either x and y or element, not both")
@@ -776,11 +784,11 @@ final class RelayRunnerUITests: XCTestCase {
     let x = Double(target.point.x), y = Double(target.point.y)
     return annotated([
       "ok": true,
-      "mode": try touch(x: x, y: y, duration: duration, mode: mode).rawValue,
+      "mode": try touch(x: x, y: y, duration: duration, taps: taps, mode: mode).rawValue,
       "bundleId": bundleID,
       "element": target.match.json,
       "point": RunnerElementTree.json(target.point)
-    ])
+    ].merging(tapsAnswer) { $1 })
   }
 
   private var canVerifyCommandHit: Bool {
@@ -842,18 +850,139 @@ final class RelayRunnerUITests: XCTestCase {
     }
   }
 
-  private func touch(x: Double, y: Double, duration: TimeInterval?, mode: TouchMode) throws -> TouchMode {
+  /// `taps` (1 or 2) applies to a tap (`duration` nil) only.
+  private func touch(x: Double, y: Double, duration: TimeInterval?, taps: Int, mode: TouchMode) throws -> TouchMode {
     switch mode {
     case .private:
-      try synthesizeTouch(points: [(x, y)], offsets: [], liftOffset: duration ?? Self.tapDuration)
+      if let duration {
+        try synthesizeTouch(points: [(x, y)], offsets: [], liftOffset: duration)
+      } else {
+        // All taps in one event record: sent one record each, the round trip between them would decide the interval.
+        try synthesizeTaps(at: (x, y), count: taps)
+      }
     case .xcui:
       if let duration {
         try coordinate(x: x, y: y).press(forDuration: duration)
+      } else if taps == 2 {
+        try coordinate(x: x, y: y).doubleTap()
       } else {
         try coordinate(x: x, y: y).tap()
       }
     }
     return mode
+  }
+
+  /// `/adjust`: sets the slider (`position`, 0...1) or the picker wheel (`pickerValue`) that `element` selects with
+  /// XCUI's `adjust(toNormalizedSliderPosition:)` or `adjust(toPickerWheelValue:)`, then reads its value again.
+  /// The element is found as `/tap` finds it, but its type is checked first: XCUI's adjust on another type fails.
+  private func adjust(_ body: RunnerJSON) throws -> RunnerHTTPResponse {
+    let selector = try body.elementSelector(body.object["element"] ?? NSNull())
+    let timeout = try body.elementTimeout()
+    let target = try body.adjustTarget()
+    let bundleID = body.optionalString("bundleId") ?? foregroundApplication().bundleID
+    let match = try waitForElements(bundleID: bundleID, timeout: timeout) { root, isLastAttempt -> RunnerElementMatch? in
+      if case .unknown(let message)? = self.commandWindow {
+        guard isLastAttempt else { return nil }
+        throw RunnerError.windowPositionUnknown(RunnerWindows.touchError(message))
+      }
+      let screen = CGRect(origin: .zero, size: self.screen(in: self.interfaceOrientation()).size)
+      switch selector.resolve(in: root, screen: screen) {
+      case .success(let resolved):
+        if let mismatch = RunnerAdjusting.typeMismatch(target, element: resolved.match.node) {
+          throw RunnerError.notAdjustable(mismatch, element: resolved.match)
+        }
+        try self.requireUncovered(bundleID)
+        return resolved.match
+      case .failure(let failure):
+        guard isLastAttempt || !failure.isRetryable else { return nil }
+        throw RunnerError.elementNotResolved(failure)
+      }
+    }
+    let element = try xcuiElement(for: match, in: XCUIApplication(bundleIdentifier: bundleID))
+    let deadline = Date(timeIntervalSinceNow: RunnerAdjusting.correctionStop)
+    let ((), issues) = capturingIssues {
+      switch target {
+      case .position(let position): element.adjust(toNormalizedSliderPosition: CGFloat(position))
+      case .pickerValue(let value): element.adjust(toPickerWheelValue: value)
+      }
+    }
+    if case .position(let wanted) = target, issues.isEmpty {
+      try correctSlider(element, to: wanted, frame: match.node.frame, until: deadline)
+    }
+    let (after, readFailed) = ignoringIssues { () -> (value: String?, position: Double?) in
+      let value = element.value.map { String(describing: $0) }
+      guard case .position = target else { return (value, nil) }
+      return (value, Double(element.normalizedSliderPosition))
+    }
+    let outcome = RunnerAdjusting.Outcome(bundleID: bundleID, element: match, value: readFailed ? nil : after.value,
+                                          position: readFailed ? nil : after.position, target: target)
+    if let failure = RunnerAdjusting.failure(target, value: outcome.value, position: outcome.position, issues: issues) {
+      throw RunnerError.adjustFailed(failure, outcome)
+    }
+    var answer = outcome.json
+    answer["ok"] = true
+    return annotated(answer)
+  }
+
+  /// Drags the slider's thumb by what XCUI's adjust missed, up to `RunnerAdjusting.maxCorrections` times and not after
+  /// `deadline`, reading the position again after each. `frame` is the slider's in the displayed orientation, where
+  /// touches go. XCUI's adjust alone ended up to 0.09 off and did not get closer when called again.
+  private func correctSlider(_ element: XCUIElement, to wanted: Double, frame: CGRect, until deadline: Date) throws {
+    let mode: TouchMode = privateTouchIsDefault ? .private : .xcui
+    var slack: CGFloat = 0
+    let read = { () -> Double? in
+      let (position, failed) = self.ignoringIssues { Double(element.normalizedSliderPosition) }
+      return failed ? nil : position
+    }
+    guard var position = read() else { return }
+    for _ in 0 ..< RunnerAdjusting.maxCorrections {
+      guard Date() < deadline, !RunnerAdjusting.isClose(position, wanted),
+            let drag = RunnerAdjusting.correction(from: position, to: wanted, frame: frame, slack: slack) else { return }
+      let from = (x: Double(drag.from.x), y: Double(drag.from.y)), to = (x: Double(drag.to.x), y: Double(drag.to.y))
+      if mode == .private {
+        let hold = RunnerAdjusting.correctionHold, end = hold + RunnerAdjusting.correctionDuration
+        try synthesizeTouch(points: [from, from, to], offsets: [hold, end], liftOffset: end)
+      } else {
+        try coordinate(x: from.x, y: from.y).press(forDuration: RunnerAdjusting.correctionHold, thenDragTo: coordinate(x: to.x, y: to.y))
+      }
+      guard let after = read() else { return }
+      slack = RunnerAdjusting.slack(fingerMoved: drag.to.x - drag.from.x, before: position, after: after, frame: frame)
+      position = after
+    }
+  }
+
+  /// The XCUI element of `match`: among the elements of its type, the one with its frame in the command's snapshot
+  /// (to a hundredth of a point: a picker view's wheel was 215.00000000000006 high in one and 215 in the other). In an
+  /// iPad window placed on part of the screen, the snapshot's frames are in the window, but `XCUIElement.frame` is on
+  /// the screen, so it is compared with the element's frame on the screen (`RunnerElementTree.xcuiFrame`).
+  /// Not the one at its place in the snapshot's order: a query lists them in another order (the wheels of a picker
+  /// view came before those of a date picker above it).
+  private func xcuiElement(for match: RunnerElementMatch, in application: XCUIApplication) throws -> XCUIElement {
+    guard let snapshot = commandSnapshot, let path = match.node.snapshotPath,
+          let found = Self.snapshot(at: path, in: snapshot) else {
+      throw RunnerError.actionFailed("cannot find the element in the snapshot; nothing was adjusted")
+    }
+    let wanted = RunnerElementTree.xcuiFrame(snapshot: found.frame, onScreen: match.node.frame, window: commandWindow)
+    let (elements, failed) = ignoringIssues { () -> [XCUIElement] in
+      application.descendants(matching: found.elementType).allElementsBoundByIndex.filter {
+        RunnerElementTree.sameFrame($0.frame, wanted.frame, tolerance: wanted.tolerance)
+      }
+    }
+    guard !failed, elements.count == 1 else {
+      throw RunnerError.actionFailed("the element moved or changed before it could be adjusted "
+        + "(\(failed ? "XCUI could not list the elements" : "\(elements.count) elements of its type have its frame")); nothing was adjusted")
+    }
+    return elements[0]
+  }
+
+  private static func snapshot(at path: [Int], in root: XCUIElementSnapshot) -> XCUIElementSnapshot? {
+    var node = root
+    for index in path {
+      let children = node.children
+      guard children.indices.contains(index) else { return nil }
+      node = children[index]
+    }
+    return node
   }
 
   /// `/find`: the elements `element` matches, in document order, waiting up to `timeout` for the first, or
@@ -1256,9 +1385,6 @@ final class RelayRunnerUITests: XCTestCase {
     RelayTouchSynthesizer.isAvailable && (displays().count <= 1 || RelayTouchSynthesizer.supportsDisplayID)
   }
 
-  /// How long a synthesized tap keeps the finger down.
-  private static let tapDuration: TimeInterval = 0.05
-
   /// `"mode"` in the body forces a path; when omitted, the private path is used if available.
   private func touchMode(_ body: RunnerJSON) throws -> TouchMode {
     switch body.optionalString("mode") {
@@ -1289,6 +1415,41 @@ final class RelayRunnerUITests: XCTestCase {
     offsets: [TimeInterval],
     liftOffset: TimeInterval
   ) throws {
+    try synthesize(lasting: liftOffset) { portraitPoint, displayID, completion in
+      try RelayTouchSynthesizer.synthesizeTouch(
+        withPoints: points.map { NSValue(cgPoint: portraitPoint($0)) },
+        offsets: offsets.map { NSNumber(value: $0) },
+        liftOffset: liftOffset,
+        interfaceOrientation: .portrait,
+        displayID: displayID,
+        completion: completion
+      )
+    }
+  }
+
+  /// `count` synthesized taps at one point, in one event record (`RunnerRequestValues.tapPeriod` apart).
+  private func synthesizeTaps(at point: (x: Double, y: Double), count: Int) throws {
+    let duration = RunnerRequestValues.tapDuration, period = RunnerRequestValues.tapPeriod
+    try synthesize(lasting: Double(count - 1) * period + duration) { portraitPoint, displayID, completion in
+      try RelayTouchSynthesizer.synthesizeTaps(
+        at: portraitPoint(point),
+        count: UInt(count),
+        duration: duration,
+        period: period,
+        interfaceOrientation: .portrait,
+        displayID: displayID,
+        completion: completion
+      )
+    }
+  }
+
+  /// Sends what `send` builds, given the function from displayed points to the synthesizer's, the display, and the
+  /// completion, and waits for it up to 10 seconds past `lasting` (the gesture's length).
+  private func synthesize(
+    lasting: TimeInterval,
+    _ send: (_ portraitPoint: ((x: Double, y: Double)) -> CGPoint, _ displayID: NSNumber?,
+             _ completion: @escaping (Error?) -> Void) throws -> Void
+  ) throws {
     let orientation = Self.runnerOrientation(interfaceOrientation())
     // On a device with more than one display, every touch names its display, the main one too: on iPhone Duo,
     // a touch without one stopped reaching the cover display after the device was unfolded and folded again.
@@ -1302,20 +1463,13 @@ final class RelayRunnerUITests: XCTestCase {
     let portraitSize = display?.size ?? portraitScreen().size
     let completion = TouchCompletion()
     do {
-      try RelayTouchSynthesizer.synthesizeTouch(
-        withPoints: points.map {
-          NSValue(cgPoint: RunnerDisplays.portraitPoint(CGPoint(x: $0.x, y: $0.y), from: orientation, portraitSize: portraitSize))
-        },
-        offsets: offsets.map { NSNumber(value: $0) },
-        liftOffset: liftOffset,
-        interfaceOrientation: .portrait,
-        displayID: displayID,
-        completion: { completion.finish($0) }
-      )
+      try send({ RunnerDisplays.portraitPoint(CGPoint(x: $0.x, y: $0.y), from: orientation, portraitSize: portraitSize) },
+               displayID, { completion.finish($0) })
     } catch {
       throw RunnerError.touchSynthesisError("touch synthesis failed: \(error.localizedDescription)")
     }
 
+    let liftOffset = lasting
     let deadline = Date(timeIntervalSinceNow: liftOffset + 10)
     while !completion.isFinished {
       guard Date() < deadline else {
@@ -1419,6 +1573,17 @@ final class RelayRunnerUITests: XCTestCase {
 
   private static func portrait(_ size: CGSize) -> CGSize {
     CGSize(width: min(size.width, size.height), height: max(size.width, size.height))
+  }
+
+  /// Runs `body` and takes the XCUI issues it records out of the command's, returning their messages.
+  private func capturingIssues<T>(_ body: () -> T) -> (T, [String]) {
+    let issueCount = capturedIssues?.count ?? 0
+    let result = body()
+    let issues = Array((capturedIssues ?? []).dropFirst(issueCount))
+    if !issues.isEmpty {
+      capturedIssues?.removeSubrange(issueCount...)
+    }
+    return (result, issues)
   }
 
   /// Runs `body` and drops the XCUI issues it records, reporting only whether any were recorded.
@@ -1615,6 +1780,22 @@ struct RunnerJSON {
     } catch let error as RunnerElementSelectorError {
       throw RunnerError.invalidField(error.description)
     }
+  }
+
+  /// `position` or `pickerValue` of `/adjust`; see `RunnerAdjusting.target(position:pickerValue:)`.
+  func adjustTarget() throws -> RunnerAdjusting.Target {
+    switch RunnerAdjusting.target(position: object["position"], pickerValue: object["pickerValue"]) {
+    case .success(let target): return target
+    case .failure(let error): throw RunnerError.invalidField(error.description)
+    }
+  }
+
+  /// The optional `taps` of `/tap`; see `RunnerRequestValues.taps(_:)`.
+  func taps() throws -> Int {
+    guard let taps = RunnerRequestValues.taps(object["taps"]) else {
+      throw RunnerError.invalidField("taps: expected 1 or \(RunnerRequestValues.maxTaps)")
+    }
+    return taps
   }
 
   /// The optional `timeout` (seconds) to wait for an element; see `RunnerElementLookup.timeout(_:)`.
