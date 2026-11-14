@@ -361,12 +361,14 @@ runner.json がない、接続できない、アプリが入っていない、�
 そのコマンドに `--help` がなければ `relay --help` を案内し、使い方の全文は出しません。
 
 relay が自分で出す JSON は、すべて **1 行・キーを辞書順・`/` をエスケープしない** 形です。
-次が対象です。ランナーが返した JSON はそのままなので、ランナーの書式です。
+次が対象です。
 
 - `status --json`・`status --all --json`・`record status --json`・`devices --json`・`doctor --json`
 - `logs`・`crashes`（`logs --follow` の各行も同じ形）
 - `install`・`uninstall`
 - relay 側の失敗と、`find --require` の一致なし
+
+ランナーが返した JSON はそのまま出し、ランナーも `/` をエスケープしません。たとえば `relay source` のラベルは `"00:31 / 34:18"`、値は `"1/6"` のように出ます。
 
 #### 終了コードの一覧
 
