@@ -70,10 +70,43 @@ enum DeviceList {
       do {
         devices += try parseDevicectl(commands.devicectlJSON(["list", "devices"], CommandTimeout.devicectl))
       } catch {
-        warnings.append("cannot list devices with devicectl: \(error)")
+        warnings.append(devicectlWarning(error))
       }
     }
     return (sort(devices), warnings)
+  }
+
+  /// Put the incomplete-list warning and any actionable hint before devicectl's verbose details.
+  /// Permission failures suggest a sandbox; a timeout or an unrelated failure alone does not.
+  static func devicectlWarning(_ error: Error) -> String {
+    var warning = "cannot list physical devices with devicectl; showing simulators only"
+    if isAccessDenied(error) {
+      warning += "; relay may be running inside a sandbox (an AI agent's, for example) that blocks CoreDevice or file access. "
+        + "Run relay outside the sandbox; see the sandbox section of docs/setup.md in device-relay"
+    }
+    return warning + "\ndevicectl details: \(error)"
+  }
+
+  private static func isAccessDenied(_ error: Error) -> Bool {
+    let nsError = error as NSError
+    let posixCodes = [Int(EPERM), Int(EACCES), Int(EROFS)]
+    let cocoaCodes = [NSFileReadNoPermissionError, NSFileWriteNoPermissionError, NSFileWriteVolumeReadOnlyError]
+    if nsError.domain == NSPOSIXErrorDomain, posixCodes.contains(nsError.code) { return true }
+    if nsError.domain == NSCocoaErrorDomain, cocoaCodes.contains(nsError.code) { return true }
+    if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? Error, isAccessDenied(underlying) { return true }
+
+    // ShellError.description keeps only the last 20 lines; inspect the full output so a permission
+    // denial isn't lost behind a later CoreDevice timeout. NSError domains/codes survive localization.
+    let output = ((error as? ShellError)?.output ?? String(describing: error)).lowercased()
+      .replacingOccurrences(of: "’", with: "'")
+    if ["operation not permitted", "permission denied", "read-only file system", "don't have permission", "access denied"]
+      .contains(where: output.contains) { return true }
+    for (domain, codes) in [(NSPOSIXErrorDomain, posixCodes), (NSCocoaErrorDomain, cocoaCodes)] {
+      let alternatives = codes.map(String.init).joined(separator: "|")
+      let pattern = "\\b\(domain.lowercased())\\b[\\s,]+code\\s*=\\s*(\(alternatives))\\b"
+      if output.range(of: pattern, options: .regularExpression) != nil { return true }
+    }
+    return false
   }
 
   /// Why physical devices need not be listed for `DeviceSelector.select`, or nil when they must be:
