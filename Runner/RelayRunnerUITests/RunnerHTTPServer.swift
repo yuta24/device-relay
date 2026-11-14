@@ -17,7 +17,7 @@ struct RunnerHTTPResponse {
   var headers: [String: String] = [:]
 
   static func json(_ object: [String: Any], status: Int = 200) -> RunnerHTTPResponse {
-    let data = (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])) ?? Data("{}".utf8)
+    let data = (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])) ?? Data("{}".utf8)
     return RunnerHTTPResponse(status: status, contentType: "application/json; charset=utf-8", body: data)
   }
 
