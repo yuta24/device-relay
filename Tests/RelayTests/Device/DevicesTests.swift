@@ -61,6 +61,12 @@ struct DeviceListTests {
     let (devices, warnings) = try DeviceList.load(commands)
     #expect(devices.map(\.udid) == [simulatorUDID])
     #expect(warnings.count == 1)
+    #expect(warnings[0].hasPrefix("cannot list physical devices with devicectl; showing simulators only\n"))
+    #expect(warnings[0].contains("devicectl details: xcrun devicectl failed (1)"))
+    #expect(!warnings[0].contains("sandbox"))
+    let json = try #require(try JSONSerialization.jsonObject(with: DeviceList.json(devices)) as? [[String: Any]])
+    #expect(json.count == 1)
+    #expect(json[0]["kind"] as? String == "simulator")
   }
 
   @Test func aDevicectlThatTimesOutLeavesTheSimulatorsAndAWarning() throws {
@@ -69,7 +75,57 @@ struct DeviceListTests {
     let (devices, warnings) = try DeviceList.load(commands)
     #expect(devices.map(\.udid) == [simulatorUDID])
     #expect(warnings.count == 1)
-    #expect(warnings.first?.hasPrefix("cannot list devices with devicectl: xcrun devicectl list devices timed out after 60 s; ") == true)
+    #expect(warnings[0].hasPrefix("cannot list physical devices with devicectl; showing simulators only\n"))
+    #expect(warnings[0].contains("xcrun devicectl list devices timed out after 60 s; "))
+    #expect(!warnings[0].contains("sandbox"))
+  }
+
+  @Test func devicectlPermissionFailuresExplainTheSandboxBeforeTheDetails() throws {
+    let outputs = [
+      "Operation not permitted", "Permission denied", "Read-only file system",
+      "The file couldn’t be saved because you don’t have permission.", "Access denied",
+      "Error Domain=NSCocoaErrorDomain Code=513", "domain=NSPOSIXErrorDomain, code=13",
+      "Operation not permitted\n" + Array(repeating: "CoreDevice is waiting", count: 25).joined(separator: "\n")
+    ]
+    for output in outputs {
+      var commands = FakeHost().commands
+      commands.devicectlJSON = { _, _ in throw ShellError(args: ["devicectl"], status: 1, output: output) }
+      let (devices, warnings) = try DeviceList.load(commands)
+      #expect(devices.map(\.udid) == [simulatorUDID])
+      let warning = try #require(warnings.first)
+      let summary = try #require(warning.components(separatedBy: .newlines).first)
+      #expect(summary.contains("showing simulators only"))
+      #expect(summary.contains("relay may be running inside a sandbox"))
+      #expect(summary.contains("Run relay outside the sandbox"))
+      #expect(summary.contains("docs/setup.md"))
+      #expect(warning.contains("devicectl details:"))
+    }
+  }
+
+  @Test func devicectlFilePermissionErrorsAndUnderlyingErrorsGetTheHint() {
+    let errors = [
+      NSError(domain: NSPOSIXErrorDomain, code: Int(EPERM)),
+      NSError(domain: NSPOSIXErrorDomain, code: Int(EACCES)),
+      NSError(domain: NSPOSIXErrorDomain, code: Int(EROFS)),
+      NSError(domain: NSCocoaErrorDomain, code: NSFileReadNoPermissionError),
+      NSError(domain: NSCocoaErrorDomain, code: NSFileWriteNoPermissionError),
+      NSError(domain: NSCocoaErrorDomain, code: NSFileWriteVolumeReadOnlyError),
+      NSError(domain: "CoreDevice", code: 1, userInfo: [NSUnderlyingErrorKey: NSError(domain: NSPOSIXErrorDomain, code: Int(EPERM))])
+    ]
+    for error in errors {
+      #expect(DeviceList.devicectlWarning(error).contains("relay may be running inside a sandbox"))
+    }
+  }
+
+  @Test func unrelatedDevicectlFailuresDoNotSuggestASandbox() {
+    for output in ["Timed out waiting for CoreDeviceService", "failed to write the output file", "No space left on device",
+                   "Error Domain=NSPOSIXErrorDomain Code=130", "Error Domain=NSCocoaErrorDomain Code=5130"] {
+      #expect(!DeviceList.devicectlWarning(ShellError(args: ["devicectl"], status: 1, output: output)).contains("sandbox"))
+    }
+    #expect(!DeviceList.devicectlWarning(NSError(domain: NSPOSIXErrorDomain, code: Int(ENOSPC))).contains("sandbox"))
+    // A timeout plus an explicit permission denial is still actionable.
+    let denied = ShellError(args: ["devicectl"], status: 15, output: "Permission denied", timedOutAfter: 60)
+    #expect(DeviceList.devicectlWarning(denied).contains("relay may be running inside a sandbox"))
   }
 
   @Test func skipsDevicectlWhenOnlySimulatorsCanBePicked() throws {
