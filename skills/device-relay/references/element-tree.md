@@ -24,6 +24,11 @@ What `--filter interactive` keeps and leaves out:
 - Filtering checks a center overlapped by a later control with accessibility hit testing, dropping the candidate only when an unrelated control in the snapshot receives the hit. Unknown results keep it. It remains approximate for other overlays; element touches verify separately.
 - Selectors search the whole tree. With a `staticText` of the same label, `--label` alone becomes `ambiguous`, so also add the line's `type`, or use `--id`.
 
+## Hidden elements and frame reliability
+
+- `find` searches the whole accessibility tree in document order (parents before children), including elements behind a modal and on offscreen pages. Hidden elements can appear before the visible screen's elements and fill the default result limit. A match or its index does not prove visibility; compare with the current screenshot before choosing a target.
+- Some elements, including nested collection-view cells, may report incorrect or repeated `frame` values. Check frames against the screenshot rather than trusting them alone. After the screen changes, including scrolling or relaunching the app, take a fresh screenshot and fetch the elements again. If a frame disagrees with the screenshot, use a position confirmed in the current screenshot instead of calculating a tap from that frame.
+
 ## Element selectors
 
 - Conditions: `--id` (accessibilityIdentifier), `--label`, `--type`, `--value`. An exact match (including case) with the values of the same name in `relay source`, all ANDed. There are no partial matches or regular expressions.
