@@ -163,6 +163,11 @@ enum RunnerControl {
     }
 
     let code = RunnerExitCode(status: response.status)
+    if let visibility = resolved.selector?.visibility, predatesVisibility(response) {
+      // An older runner rejects the key as unknown (400), which reads as a mistake in the command line.
+      return fail(.runnerBadResponse, "the runner rejected \(visibility.rawValue) in the element: it predates --onscreen and "
+        + "--hittable (relay start --rebuild builds a current one)", exit: .runnerError, to: failureOutput)
+    }
     guard code == .success else {
       CLIOutput.writeLine(failureBody(of: response), to: failureOutput)
       if let hint = hint(for: code, errorCode: RunnerErrorCode.parse(body: response.body), infoURL: infoURL) {
@@ -251,6 +256,14 @@ enum RunnerControl {
     return value.boolValue
   }
 
+  /// Whether an answer is a runner from before `onscreen` and `hittable` rejecting them: a 400 whose error names one
+  /// of them as an unknown key of `element`.
+  static func predatesVisibility(_ response: RunnerResponse) -> Bool {
+    guard response.status == 400, let object = try? JSONSerialization.jsonObject(with: response.body) as? [String: Any],
+          let error = object["error"] as? String else { return false }
+    return ["onscreen", "hittable"].contains { error.contains("element: unknown key '\($0)'") }
+  }
+
   /// The `taps` of a `/tap` answer, nil when there is none (one tap, or a runner from before `taps`).
   static func tapsAnswer(_ body: Data) -> Int? {
     guard let object = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
@@ -314,6 +327,8 @@ enum RunnerControl {
     case .coveredByOtherApp:
       return "something covers the app (a system alert, Control Center, …): check with relay screenshot or "
         + "relay find --type alert --bundle-id com.apple.springboard, close it, then send it again"
+    case .hitTestUnavailable:
+      return "what a touch reaches cannot be checked here: use --onscreen instead, and check the screen with relay screenshot"
     case .elementPointCovered:
       return "another control covers the touch point: check hit in the response and relay screenshot; reveal the target or use screenshot coordinates"
     case .remoteViewPositionUnknown:

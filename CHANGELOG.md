@@ -4,6 +4,19 @@
 
 ## 次の版（0.8.0 から）
 
+### 画面の中・押せる要素だけを選ぶ --onscreen / --hittable（0.8.0 から）
+
+`relay find`・`tap`・`press`・`adjust` のセレクタに `--onscreen` と `--hittable` を付けられるようになりました（HTTP API では `element` の `"onscreen": true` / `"hittable": true`）。
+`--onscreen` は画面の中にある要素だけを、`--hittable` は中心を押したときにその要素に当たる要素だけを残します。
+ページ式の画面の外のページや、重ねて表示したプレイヤーの下に残った画面の要素を外せます。
+並び順は変わらず、`count`・`--index`・`--limit` は残った要素で数えます。`--gone` と組み合わせると、画面から外れる（`--hittable` では覆われる）まで待ちます。
+`--hittable` は hit test が使えない端末（iPad のウィンドウ表示、表示が複数ある端末）では、新しい `code` の `hit_test_unavailable`（終了コード 6）で失敗します。
+扱いは「[画面の中・押せる要素だけに絞る](docs/elements.md#画面の中押せる要素だけに絞るonscreen--hittable)」にあります。
+
+`find` の要素（`/tap`・`/press` の `element` と、失敗の `candidates` も）には、絞り込まなくても `onscreen`（`true` / `false`）が付きます。キーが増えただけです。
+キーの一覧を決め打ちで比べているスクリプトは、`onscreen` を足してください。
+以前のランナーは `onscreen`・`hittable` を知らないキーとして拒否するので、relay は `runner_bad_response`（終了コード 8）で失敗します。`relay start --rebuild` でランナーを作り直してください。
+
 ### 実機一覧の取得失敗を案内する（0.8.0 から）
 
 `relay devices` で devicectl が失敗したとき、実機の一覧を取得できずシミュレータだけを表示していることを、エラー詳細の前に知らせるようになりました。
@@ -34,7 +47,7 @@ JSON として読み取った値は変わりません。生の出力で `\/` を
 ### 更新の後にすること
 
 - ランナーは、次の `relay start` で自動でビルドし直します。
-- エージェントのスキルを入れている場合は、`relay skill install`（または `--global`）で入れ直してください。`tap --count 2` と `relay adjust` を説明する新しい `references/gestures-and-controls.md` が入り、コマンドと失敗の扱い、検証用のアプリ、`relay run` を説明する references が更新されます。
+- エージェントのスキルを入れている場合は、`relay skill install`（または `--global`）で入れ直してください。`tap --count 2` と `relay adjust` を説明する新しい `references/gestures-and-controls.md` が入り、コマンドと失敗の扱い、検証用のアプリ、`relay run` を説明する references が更新されます。`--onscreen` / `--hittable` は、スキルにはまだ書いていません。
 
 ## 0.8.0
 

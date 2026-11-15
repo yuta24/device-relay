@@ -57,7 +57,11 @@ struct RunnerElementSelectorTests {
       (#"{"type":"button","index":-1}"#, .invalidIndex),
       (#"{"type":"button","index":1.5}"#, .invalidIndex),
       (#"{"type":"button","index":true}"#, .invalidIndex),
-      (#"{"type":"button","index":"1"}"#, .invalidIndex)
+      (#"{"type":"button","index":"1"}"#, .invalidIndex),
+      (#"{"label":"Play","onscreen":1}"#, .notABoolean("onscreen")),
+      (#"{"label":"Play","hittable":"true"}"#, .notABoolean("hittable")),
+      (#"{"onscreen":true}"#, .empty),
+      (#"{"hittable":true,"index":0}"#, .empty)
     ]
     for (json, expected) in cases {
       #expect(throws: expected, "\(json)") { try selector(json) }
@@ -166,8 +170,8 @@ struct RunnerElementSelectorTests {
     let data = try JSONSerialization.data(withJSONObject: ambiguous.json, options: [.sortedKeys])
     #expect(String(decoding: data, as: UTF8.self) == """
     {"candidates":[{"enabled":true,"frame":{"height":40,"width":40,"x":20,"y":200},"identifier":"","index":0,\
-    "label":"History","type":"button","value":null},{"enabled":false,"frame":{"height":40,"width":40,"x":20,"y":300},\
-    "identifier":"","index":1,"label":"History","type":"button","value":null}],"code":"element_ambiguous","count":2,\
+    "label":"History","onscreen":true,"type":"button","value":null},{"enabled":false,"frame":{"height":40,"width":40,"x":20,"y":300},\
+    "identifier":"","index":1,"label":"History","onscreen":true,"type":"button","value":null}],"code":"element_ambiguous","count":2,\
     "error":"2 elements match the selector; add conditions or an index","ok":false,"reason":"ambiguous"}
     """)
   }
@@ -347,5 +351,193 @@ struct RunnerElementSelectorTests {
     for invalid: Any in [NSNumber(value: 0), NSNumber(value: 101), NSNumber(value: 1.5), NSNumber(value: true), "5"] {
       #expect(RunnerElementLookup.findLimit(invalid) == nil, "\(invalid)")
     }
+  }
+
+  // MARK: - onscreen and hittable
+
+  @Test func parsesVisibility() throws {
+    #expect(try selector(#"{"label":"Play","onscreen":true}"#) == RunnerElementSelector(label: "Play", visibility: .onscreen))
+    #expect(try selector(#"{"label":"Play","hittable":true}"#) == RunnerElementSelector(label: "Play", visibility: .hittable))
+    // hittable is on the screen too, so both together are hittable; false is the same as absent.
+    #expect(try selector(#"{"label":"Play","onscreen":true,"hittable":true}"#).visibility == .hittable)
+    #expect(try selector(#"{"label":"Play","onscreen":true,"hittable":false}"#).visibility == .onscreen)
+    #expect(try selector(#"{"label":"Play","onscreen":false}"#).visibility == nil)
+    // What relay sends parses back to the same selector, and a selector without them sends neither key.
+    let hittable = RunnerElementSelector(label: "Play", index: 1, visibility: .hittable)
+    #expect(try RunnerElementSelector(json: hittable.json) == hittable)
+    #expect(hittable.json["hittable"] as? Bool == true && hittable.json["onscreen"] == nil)
+    #expect(RunnerElementSelector(label: "Play", visibility: .onscreen).json["onscreen"] as? Bool == true)
+    #expect(RunnerElementSelector(label: "Play").json.keys.sorted() == ["label"])
+    // The unknown key error, which is how a runner from before them answers, names them now.
+    #expect(RunnerElementSelectorError.unknownKey("id").description.hasSuffix("index, onscreen, hittable)"))
+  }
+
+  /// application > window > three pages side by side, each with `Page title`; only the first is on the screen.
+  private var pages: RunnerElementNode {
+    node("application", frame: screen, children: [
+      node("window", frame: screen, children: (0 ..< 3).map { page in
+        node("other", frame: CGRect(x: CGFloat(page) * 402, y: 200, width: 402, height: 100), children: [
+          node("staticText", identifier: "page\(page + 1)", label: "Page title",
+               frame: CGRect(x: CGFloat(page) * 402 + 160, y: 230, width: 80, height: 30))
+        ])
+      })
+    ])
+  }
+
+  @Test func saysWhetherEachMatchIsOnTheScreen() throws {
+    let all = RunnerElementSelector(label: "Page title").allMatches(in: pages, screen: screen)
+    #expect(all.map(\.onscreen) == [true, false, false])
+    #expect(all.map(\.index) == [0, 1, 2])
+    #expect(all[1].json["onscreen"] as? Bool == false)
+    // Without the screen (frames that can't be placed on it), nothing is said, and the JSON has no key.
+    let unplaced = RunnerElementSelector(label: "Page title").allMatches(in: pages)
+    #expect(unplaced.allSatisfy { $0.onscreen == nil } && unplaced[0].json["onscreen"] == nil)
+    #expect(RunnerElementSelector(label: "Page title", visibility: .onscreen).allMatches(in: pages).isEmpty)
+  }
+
+  @Test func onscreenKeepsTheMatchesOnTheScreenAndNumbersThem() throws {
+    var root = pages
+    // Scrolled to the second page: the first is off to the left.
+    root.children[0].children = root.children[0].children.map { page in
+      var page = page
+      page.frame.origin.x -= 402
+      page.children[0].frame.origin.x -= 402
+      return page
+    }
+    let onscreen = RunnerElementSelector(label: "Page title", visibility: .onscreen)
+    let kept = onscreen.allMatches(in: root, screen: screen)
+    #expect(kept.map(\.node.identifier) == ["page2"])
+    #expect(kept.map(\.index) == [0])
+    #expect(kept[0].onscreen == true)
+    // index counts the kept matches only: 0 is the page on the screen, 1 is out of range.
+    #expect(RunnerElementSelector(label: "Page title", index: 0, visibility: .onscreen).matches(in: root, screen: screen)
+      .map(\.node.identifier) == ["page2"])
+    #expect(RunnerElementSelector(label: "Page title", index: 1, visibility: .onscreen).matches(in: root, screen: screen).isEmpty)
+    // A touch picks the only one on the screen, where without onscreen the selector is ambiguous.
+    #expect(try onscreen.resolve(in: root, screen: screen).get().match.node.identifier == "page2")
+    #expect(failure(RunnerElementSelector(label: "Page title").resolve(in: root, screen: screen))?.reason == .ambiguous)
+    let outOfRange = try #require(failure(
+      RunnerElementSelector(label: "Page title", index: 1, visibility: .onscreen).resolve(in: root, screen: screen)
+    ))
+    #expect(outOfRange.reason == .indexOutOfRange && outOfRange.count == 1)
+    // find reports the kept matches: count, limit, and truncated all after the filter.
+    let object = RunnerElementLookup.findJSON(kept, count: kept.count, limit: 20, bundleID: "app")
+    #expect(object["count"] as? Int == 1 && object["truncated"] as? Bool == false)
+  }
+
+  @Test func elementsThatCannotBePlacedAreNotOnTheScreen() throws {
+    var root = pages
+    root.children[0].children[0].children[0].positionUnknown = "the share sheet is laid out unexpectedly"
+    root.children[0].children[1].children[0].frame = CGRect(x: 100, y: 230, width: 0, height: 30)
+    let all = RunnerElementSelector(label: "Page title").allMatches(in: root, screen: screen)
+    #expect(all.map(\.onscreen) == [false, false, false])
+    #expect(RunnerElementSelector(label: "Page title", visibility: .onscreen).allMatches(in: root, screen: screen).isEmpty)
+  }
+
+  /// application > window > [screen: other > [button Play > staticText, staticText Now playing],
+  /// player: other > button Play > staticText] — the player covers the whole screen.
+  private var player: RunnerElementNode {
+    let play = CGRect(x: 16, y: 150, width: 370, height: 34)
+    return node("application", frame: screen, children: [
+      node("window", frame: screen, children: [
+        node("other", frame: screen, children: [
+          node("button", identifier: "screen.play", label: "Play", frame: play, children: [
+            node("staticText", label: "Play", frame: CGRect(x: 185, y: 157, width: 32, height: 20))
+          ]),
+          node("staticText", identifier: "screen.nowPlaying", label: "Now playing", frame: CGRect(x: 16, y: 120, width: 100, height: 20))
+        ]),
+        node("other", frame: screen, children: [
+          node("button", identifier: "player.play", label: "Play", frame: CGRect(x: 16, y: 300, width: 60, height: 34), children: [
+            node("staticText", label: "Play", frame: CGRect(x: 30, y: 307, width: 32, height: 20))
+          ])
+        ])
+      ])
+    ])
+  }
+
+  /// What the player's hit test answers, as measured on a simulator: a touch on the player's button reaches its text,
+  /// and one on anything of the screen under it reaches the player's container.
+  private final class Calls { var count = 0 }
+
+  private func playerHitTest(calls: Calls? = nil) -> RunnerElementSelector.HitTest {
+    { point in
+      calls?.count += 1
+      return CGRect(x: 16, y: 300, width: 60, height: 34).contains(point) ? [0, 1, 0, 0] : [0, 1]
+    }
+  }
+
+  @Test func hittableKeepsWhatATouchReaches() throws {
+    let hittable = RunnerElementSelector(label: "Play", visibility: .hittable)
+    let all = RunnerElementSelector(label: "Play").allMatches(in: player, screen: screen)
+    #expect(all.count == 4 && all.allSatisfy { $0.onscreen == true })
+    let kept = hittable.allMatches(in: player, screen: screen, hitTest: playerHitTest())
+    // The player's button (the hit is inside it) and its text (the hit), in document order, numbered from 0.
+    #expect(kept.map(\.path) == [[0, 1, 0], [0, 1, 0, 0]])
+    #expect(kept.map(\.index) == [0, 1])
+    #expect(RunnerElementSelector(label: "Now playing", visibility: .hittable)
+      .allMatches(in: player, screen: screen, hitTest: playerHitTest()).isEmpty)
+    // tap --label Play --type button --hittable touches the player's, which without hittable is ambiguous.
+    let button = RunnerElementSelector(label: "Play", type: "button", visibility: .hittable)
+    let target = try button.resolve(in: player, screen: screen, hitTest: playerHitTest()).get()
+    #expect(target.match.node.identifier == "player.play" && target.count == 1)
+    #expect(failure(RunnerElementSelector(label: "Play", type: "button").resolve(in: player, screen: screen))?.reason == .ambiguous)
+    // index n of find --hittable is the element tap --hittable --index n touches.
+    for match in kept {
+      let picked = RunnerElementSelector(label: "Play", index: match.index, visibility: .hittable)
+      #expect(try picked.resolve(in: player, screen: screen, hitTest: playerHitTest()).get().match.path == match.path)
+    }
+  }
+
+  @Test func hittableTestsOnlyMatchesOnTheScreenAndNeedsAHitTest() throws {
+    let calls = Calls()
+    let selector = RunnerElementSelector(label: "Page title", visibility: .hittable)
+    let kept = selector.allMatches(in: pages, screen: screen, hitTest: playerHitTest(calls: calls))
+    #expect(calls.count == 1 && kept.isEmpty)
+    // Without a hit test (the runner checks it can answer first), nothing can be shown to be reachable.
+    #expect(RunnerElementSelector(label: "Play", visibility: .hittable).allMatches(in: player, screen: screen).isEmpty)
+    // No answer at a point is not a reach either.
+    #expect(RunnerElementSelector(label: "Play", visibility: .hittable).allMatches(in: player, screen: screen) { _ in nil }.isEmpty)
+  }
+
+  @Test func reachesTheElementItsContentsOrAContainingControl() {
+    let root = node("application", frame: screen, children: [
+      node("window", frame: screen, children: [
+        node("cell", frame: CGRect(x: 0, y: 100, width: 402, height: 44), children: [
+          node("staticText", label: "General", frame: CGRect(x: 16, y: 110, width: 80, height: 20))
+        ]),
+        node("staticText", label: "Footer", frame: CGRect(x: 16, y: 300, width: 80, height: 20))
+      ])
+    ])
+    let point = CGPoint(x: 56, y: 120)
+    let text = [0, 0, 0]
+    #expect(RunnerElementTree.reaches(hitPath: text, target: text, at: point, in: root))
+    #expect(RunnerElementTree.reaches(hitPath: text, target: [0, 0], at: point, in: root))
+    // The cell around the text gets the touch.
+    #expect(RunnerElementTree.reaches(hitPath: [0, 0], target: text, at: point, in: root))
+    // A container that isn't a control (the window, an other over the screen) doesn't show the touch gets there.
+    #expect(!RunnerElementTree.reaches(hitPath: [0], target: text, at: point, in: root))
+    #expect(!RunnerElementTree.reaches(hitPath: [], target: text, at: point, in: root))
+    // Another branch, or no answer.
+    #expect(!RunnerElementTree.reaches(hitPath: [0, 1], target: text, at: point, in: root))
+    #expect(!RunnerElementTree.reaches(hitPath: nil, target: text, at: point, in: root))
+    // A containing control whose frame doesn't hold the point is no proof.
+    #expect(!RunnerElementTree.reaches(hitPath: [0, 0], target: text, at: CGPoint(x: 56, y: 300), in: root))
+  }
+
+  @Test func failsHittableWhereHitTestingCannotAnswer() throws {
+    let placed = RunnerWindowLookup.placed(RunnerWindowPlacement(
+      frame: CGRect(x: 120, y: 80, width: 600, height: 800), scaleX: 1, scaleY: 1
+    ))
+    #expect(RunnerElementTree.hitTestUnavailableMessage(window: nil, displayCount: 1, apiUnavailable: nil) == nil)
+    #expect(RunnerElementTree.hitTestUnavailableMessage(window: .fullScreen, displayCount: 0, apiUnavailable: nil) == nil)
+    let multiple = try #require(RunnerElementTree.hitTestUnavailableMessage(window: nil, displayCount: 2, apiUnavailable: nil))
+    #expect(multiple.contains("more than one display") && multiple.contains("Use onscreen instead"))
+    let windowed = try #require(RunnerElementTree.hitTestUnavailableMessage(window: placed, displayCount: 1, apiUnavailable: nil))
+    #expect(windowed.contains("not full screen"))
+    let disabled = try #require(RunnerElementTree.hitTestUnavailableMessage(window: nil, displayCount: 1, apiUnavailable: "turned off"))
+    #expect(disabled.contains("(turned off)"))
+    let error = RunnerError.hitTestUnavailable(disabled)
+    #expect(error.status == 422 && error.code == .hitTestUnavailable && error.json["code"] as? String == "hit_test_unavailable")
+    #expect(RunnerWindows.visibilityError("cannot tell").contains("onscreen and hittable cannot be checked"))
   }
 }

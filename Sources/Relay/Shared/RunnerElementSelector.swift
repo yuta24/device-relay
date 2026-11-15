@@ -14,9 +14,21 @@ struct RunnerElementSelector: Equatable {
   var type: String?
   var value: String?
   /// Which match to use, counted from 0 in document order; required when more than one element matches.
+  /// It counts only the matches `visibility` keeps.
   var index: Int?
+  /// Which matches count: all of them (nil), or only those `Visibility` describes. Applied before `index`.
+  var visibility: Visibility?
 
-  static let keys: Set<String> = ["identifier", "label", "type", "value", "index"]
+  /// `onscreen: true` and `hittable: true` of the `element` object. A runner from before them rejects them as
+  /// unknown keys, so a client never gets an unfiltered answer for a filtered question.
+  enum Visibility: String, Equatable {
+    /// Elements whose frame shows inside the screen (`RunnerElementNode.touchPoint(in:)`).
+    case onscreen
+    /// On the screen, and a touch at the center of that part reaches the element (`RunnerElementTree.reaches`).
+    case hittable
+  }
+
+  static let keys: Set<String> = ["identifier", "label", "type", "value", "index", "onscreen", "hittable"]
 
   /// Parses the `element` object. Unknown keys are rejected so a typo (`id`, `text`) isn't silently
   /// dropped and turned into a broader match.
@@ -44,17 +56,32 @@ struct RunnerElementSelector: Equatable {
       }
       index = Int(number)
     }
+    func flag(_ name: String) throws -> Bool {
+      guard let value = object[name] else { return false }
+      guard let flag = RunnerRequestValues.bool(value) else { throw RunnerElementSelectorError.notABoolean(name) }
+      return flag
+    }
+    // hittable implies onscreen, so both together are hittable.
+    if try flag("hittable") {
+      visibility = .hittable
+    } else if try flag("onscreen") {
+      visibility = .onscreen
+    }
     guard identifier != nil || label != nil || type != nil || value != nil else {
       throw RunnerElementSelectorError.empty
     }
   }
 
-  init(identifier: String? = nil, label: String? = nil, type: String? = nil, value: String? = nil, index: Int? = nil) {
+  init(
+    identifier: String? = nil, label: String? = nil, type: String? = nil, value: String? = nil, index: Int? = nil,
+    visibility: Visibility? = nil
+  ) {
     self.identifier = identifier
     self.label = label
     self.type = type
     self.value = value
     self.index = index
+    self.visibility = visibility
   }
 
   /// A known case name, or the `type<raw>` name `/source` uses for types newer than the table.
@@ -72,14 +99,27 @@ struct RunnerElementSelector: Equatable {
     return true
   }
 
-  /// Every matching element in document order (depth first, parents before children), ignoring `index`.
-  func allMatches(in root: RunnerElementNode) -> [RunnerElementMatch] {
+  /// The snapshot path of the element a touch at a point would reach, nil when the hit test has no answer there.
+  typealias HitTest = (CGPoint) -> [Int]?
+
+  /// Every matching element in document order (depth first, parents before children) that `visibility` keeps,
+  /// numbered in that order, ignoring `index`. With `screen` (points in the displayed orientation), each match
+  /// says whether it is `onscreen`; without it, as when the frames aren't on the screen (an iPad window that
+  /// can't be placed), it says nothing, and `visibility` keeps nothing. `hittable` asks `hitTest` about the
+  /// matches on the screen only; without `hitTest` none of them is kept, so check first that it can answer.
+  func allMatches(in root: RunnerElementNode, screen: CGRect? = nil, hitTest: HitTest? = nil) -> [RunnerElementMatch] {
     var matches: [RunnerElementMatch] = []
     func visit(_ node: RunnerElementNode, path: [Int]) {
       if self.matches(node) {
         var element = node
         element.children = []
-        matches.append(RunnerElementMatch(index: matches.count, node: element, path: node.snapshotPath ?? path))
+        let path = node.snapshotPath ?? path
+        let point = screen.flatMap(node.touchPoint(in:))
+        if keeps(path: path, point: point, screen: screen, in: root, hitTest: hitTest) {
+          var match = RunnerElementMatch(index: matches.count, node: element, path: path)
+          match.onscreen = screen.map { _ in point != nil }
+          matches.append(match)
+        }
       }
       for (index, child) in node.children.enumerated() { visit(child, path: path + [index]) }
     }
@@ -87,9 +127,20 @@ struct RunnerElementSelector: Equatable {
     return matches
   }
 
+  /// Whether `visibility` keeps the match at `path`, whose touch point on the screen is `point`.
+  private func keeps(path: [Int], point: CGPoint?, screen: CGRect?, in root: RunnerElementNode, hitTest: HitTest?) -> Bool {
+    switch visibility {
+    case nil: return true
+    case .onscreen?: return point != nil
+    case .hittable?:
+      guard let point, let hitTest else { return false }
+      return RunnerElementTree.reaches(hitPath: hitTest(point), target: path, at: point, in: root)
+    }
+  }
+
   /// The matches `/find` reports: all of them, or only the one `index` picks.
-  func matches(in root: RunnerElementNode) -> [RunnerElementMatch] {
-    picked(from: allMatches(in: root))
+  func matches(in root: RunnerElementNode, screen: CGRect? = nil, hitTest: HitTest? = nil) -> [RunnerElementMatch] {
+    picked(from: allMatches(in: root, screen: screen, hitTest: hitTest))
   }
 
   /// `matches` (from `allMatches`), or only the one `index` picks.
@@ -99,9 +150,12 @@ struct RunnerElementSelector: Equatable {
   }
 
   /// The element to touch and where. The point is the center of the part of the frame inside `screen`
-  /// (points in the displayed orientation), so a cell half under the screen edge is still hit.
-  func resolve(in root: RunnerElementNode, screen: CGRect) -> Result<RunnerElementTarget, RunnerElementLookupFailure> {
-    let matches = allMatches(in: root)
+  /// (points in the displayed orientation), so a cell half under the screen edge is still hit. `visibility`
+  /// leaves out matches first, so `index` and the ambiguity count only those kept.
+  func resolve(
+    in root: RunnerElementNode, screen: CGRect, hitTest: HitTest? = nil
+  ) -> Result<RunnerElementTarget, RunnerElementLookupFailure> {
+    let matches = allMatches(in: root, screen: screen, hitTest: hitTest)
     let match: RunnerElementMatch
     switch (matches.count, index) {
     case (0, _):
@@ -143,15 +197,18 @@ enum RunnerElementSelectorError: Error, Equatable, CustomStringConvertible {
   case notAString(String)
   case unknownType(String)
   case invalidIndex
+  case notABoolean(String)
 
   var description: String {
     switch self {
     case .notAnObject: return "element: expected an object"
     case .empty: return "element: expected at least one of identifier, label, type, value"
-    case .unknownKey(let key): return "element: unknown key '\(key)' (expected identifier, label, type, value, index)"
+    case .unknownKey(let key):
+      return "element: unknown key '\(key)' (expected identifier, label, type, value, index, onscreen, hittable)"
     case .notAString(let key): return "element.\(key): expected a non-empty string"
     case .unknownType(let type): return "element.type: unknown type '\(type)' (use the type names of /source)"
     case .invalidIndex: return "element.index: expected a non-negative integer"
+    case .notABoolean(let key): return "element.\(key): expected true or false"
     }
   }
 }
@@ -169,17 +226,20 @@ enum RunnerFindGoneError: Error, Equatable, CustomStringConvertible {
 }
 
 struct RunnerElementMatch: Sendable {
-  /// The position among all matches in document order, the value to pass as `index`.
+  /// The position among all matches in document order, the value to pass as `index`. With `visibility`, among
+  /// the matches it keeps.
   var index: Int
   /// The element without its children.
   var node: RunnerElementNode
+  /// Whether its frame shows inside the screen; nil when the frames can't be placed on the screen (not in the JSON then).
+  var onscreen: Bool?
 
   /// Identity within the snapshot; attributes and frames need not be unique. Not serialized.
   var path: [Int] = []
 
   /// The summary `/find`, `/tap`, and lookup errors return for an element.
   var json: [String: Any] {
-    [
+    var object: [String: Any] = [
       "index": index,
       "type": node.type,
       "identifier": node.identifier,
@@ -188,6 +248,8 @@ struct RunnerElementMatch: Sendable {
       "frame": RunnerElementTree.json(node.frame),
       "enabled": node.enabled
     ]
+    object["onscreen"] = onscreen
+    return object
   }
 }
 

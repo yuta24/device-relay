@@ -147,23 +147,31 @@ static NSString *const RelayActiveApplicationErrorDomain = @"RelayActiveApplicat
     return nil;
 }
 
-+ (nullable NSArray<NSNumber *> *)hitPathAtPoint:(CGPoint)point snapshot:(id)snapshot {
++ (nullable NSString *)hitTestUnavailableReasonForSnapshot:(id)snapshot {
     if ([NSProcessInfo.processInfo.environment[@"RELAY_DISABLE_PRIVATE_HITTEST"] isEqualToString:@"1"]) {
-        return nil;
+        return @"RELAY_DISABLE_PRIVATE_HITTEST=1 turns hit testing off";
     }
     XCUIDevice *device = XCUIDevice.sharedDevice;
     if (![device respondsToSelector:@selector(accessibilityInterface)]) {
-        return nil;
+        return @"XCTest has no accessibility interface";
     }
     id<RelayXCAXClient> client = [(id<RelayXCUIDeviceAccessibility>)device accessibilityInterface];
-    if (![client respondsToSelector:@selector(hitTestElement:withPoint:error:)] ||
-        ![snapshot respondsToSelector:@selector(accessibilityElement)]) {
+    if (![client respondsToSelector:@selector(hitTestElement:withPoint:error:)]) {
+        return @"XCTest's accessibility client has no hit test";
+    }
+    if (![snapshot respondsToSelector:@selector(accessibilityElement)] ||
+        [(id<RelayHitSnapshot>)snapshot accessibilityElement] == nil) {
+        return @"the snapshot has no accessibility element";
+    }
+    return nil;
+}
+
++ (nullable NSArray<NSNumber *> *)hitPathAtPoint:(CGPoint)point snapshot:(id)snapshot {
+    if ([self hitTestUnavailableReasonForSnapshot:snapshot] != nil) {
         return nil;
     }
+    id<RelayXCAXClient> client = [(id<RelayXCUIDeviceAccessibility>)XCUIDevice.sharedDevice accessibilityInterface];
     id applicationElement = [(id<RelayHitSnapshot>)snapshot accessibilityElement];
-    if (applicationElement == nil) {
-        return nil;
-    }
     NSError *error = nil;
     id hit = [client hitTestElement:applicationElement withPoint:point error:&error];
     if (hit == nil || error != nil) {

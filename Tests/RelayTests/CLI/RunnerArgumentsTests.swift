@@ -89,6 +89,38 @@ struct RunnerArgumentsTests {
     #expect(throws: ArgumentError.self) { try Arguments.parse(["find", "--id", "a", "--duration", "1"]) }
   }
 
+  @Test func parsesOnscreenAndHittable() throws {
+    #expect(try operation(["find", "--type", "staticText", "--hittable"])
+      == .find(RunnerElementSelector(type: "staticText", visibility: .hittable), limit: nil, timeout: nil, bundleID: nil))
+    #expect(try operation(["find", "--label", "Page title", "--onscreen", "--index", "0"])
+      == .find(RunnerElementSelector(label: "Page title", index: 0, visibility: .onscreen), limit: nil, timeout: nil, bundleID: nil))
+    // --hittable is on the screen too; with --gone it waits for none to be reachable.
+    #expect(try operation(["find", "--id", "a", "--onscreen", "--hittable", "--gone", "--timeout", "3"])
+      == .find(RunnerElementSelector(identifier: "a", visibility: .hittable), limit: nil, timeout: 3, bundleID: nil, gone: true))
+    #expect(try operation(["tap", "--label", "Play", "--hittable"])
+      == .tap(RunnerTouch(target: .element(RunnerElementSelector(label: "Play", visibility: .hittable)))))
+    #expect(try operation(["press", "--label", "Play", "--onscreen", "--duration", "1"])
+      == .press(RunnerTouch(target: .element(RunnerElementSelector(label: "Play", visibility: .onscreen)), duration: 1)))
+    #expect(try operation(["adjust", "--type", "slider", "--hittable", "--position", "0.5"])
+      == .adjust(RunnerElementSelector(type: "slider", visibility: .hittable), .position(0.5), timeout: nil, bundleID: nil))
+    let needsSelector = "--onscreen and --hittable narrow an element selector; give --id, --label, --type, or --value too"
+    let wrong: [([String], String)] = [
+      (["find", "--hittable"], needsSelector),
+      (["find", "--onscreen", "--index", "0"], needsSelector),
+      (["tap", "100", "200", "--hittable"], needsSelector),
+      (["find", "--id", "a", "--hittable=true"], "--hittable does not take a value (got --hittable=true)"),
+      (["swipe", "1", "2", "3", "4", "--onscreen"], "unknown option for swipe: --onscreen"),
+      (["source", "--onscreen"], "unknown option for source: --onscreen")
+    ]
+    for (arguments, message) in wrong {
+      let error = #expect(throws: ArgumentError.self, "\(arguments)") { try Arguments.parse(arguments) }
+      #expect(error?.description == message, "\(arguments)")
+    }
+    for command in ["find", "tap", "press", "adjust"] {
+      #expect(flattened(Arguments.usage(for: command)).contains("--hittable"), "\(command)")
+    }
+  }
+
   @Test func parsesTapByPointOrSelector() throws {
     #expect(try operation(["tap", "200", "120.5"]) == .tap(RunnerTouch(target: .point(RunnerPoint(x: 200, y: 120.5)))))
     #expect(try operation(["tap", "--id", "relay.input", "--mode", "xcui", "--timeout", "3"])

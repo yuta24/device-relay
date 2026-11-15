@@ -82,6 +82,7 @@ struct RunnerControlHintTests {
     #expect(covered?.contains("relay find --type alert --bundle-id com.apple.springboard") == true)
     let remote = RunnerControl.hint(for: .actionFailed, errorCode: .remoteViewPositionUnknown, infoURL: infoURL)
     #expect(remote?.contains("relay screenshot") == true && remote?.contains("relay tap <x> <y>") == true)
+    #expect(RunnerControl.hint(for: .actionFailed, errorCode: .hitTestUnavailable, infoURL: infoURL)?.contains("--onscreen") == true)
     // Codes whose message already says what to do get no hint.
     #expect(RunnerControl.hint(for: .actionFailed, errorCode: .elementPointCovered, infoURL: infoURL)?
       .contains("screenshot") == true)

@@ -31,6 +31,11 @@ NS_ASSUME_NONNULL_BEGIN
 /// outside the snapshot. Never sends input.
 + (nullable NSArray<NSNumber *> *)hitPathAtPoint:(CGPoint)point snapshot:(id)snapshot;
 
+/// Why `hitPathAtPoint:snapshot:` can give no answer at any point of the supplied snapshot (disabled,
+/// or the private API is absent), or nil when it can try. A nil from it at one point is something else:
+/// the hit test failed there, or hit an element outside the snapshot.
++ (nullable NSString *)hitTestUnavailableReasonForSnapshot:(id)snapshot;
+
 @end
 
 NS_ASSUME_NONNULL_END

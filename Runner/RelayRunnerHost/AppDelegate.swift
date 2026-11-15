@@ -38,7 +38,8 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 /// was pressed, with a count), and `relay.events` (the latest edits and hardware key presses, newest
 /// first; edits to the password field show only their length). `relay.overlay` opens
 /// `OverlayViewController`, the screen for checking alerts and sheets drawn by other processes, and
-/// `relay.gestures` opens `GestureViewController`, the screen for checking gestures such as a double tap.
+/// `relay.gestures` opens `GestureViewController`, the screen for checking gestures such as a double tap, and
+/// `relay.visibility` opens `VisibilityViewController`, the screen for checking `relay find --onscreen` and `--hittable`.
 /// `relay.notes` is a multi-line text view, to try `relay type --clear` on more than one line.
 /// `relay.showToast` shows the label `relay.toast` and takes it out of the view hierarchy 1.5 seconds later,
 /// something to wait for to go (`relay find --gone`).
@@ -89,6 +90,11 @@ final class InputViewController: UIViewController, UITextFieldDelegate {
     gesturesButton.accessibilityIdentifier = "relay.gestures"
     gesturesButton.addTarget(self, action: #selector(openGestures), for: .touchUpInside)
 
+    let visibilityButton = UIButton(configuration: .bordered())
+    visibilityButton.configuration?.title = "Visibility checks"
+    visibilityButton.accessibilityIdentifier = "relay.visibility"
+    visibilityButton.addTarget(self, action: #selector(openVisibility), for: .touchUpInside)
+
     let toastButton = UIButton(configuration: .bordered())
     toastButton.configuration?.title = "Show toast"
     toastButton.accessibilityIdentifier = "relay.showToast"
@@ -96,7 +102,7 @@ final class InputViewController: UIViewController, UITextFieldDelegate {
 
     let stack = UIStackView(arrangedSubviews: [
       input, secondInput, passwordInput, notes, textLabel, passwordLengthLabel, submittedLabel, eventsLabel, overlayButton, gesturesButton,
-      toastButton
+      visibilityButton, toastButton
     ])
     stack.axis = .vertical
     stack.spacing = 12
@@ -136,6 +142,10 @@ final class InputViewController: UIViewController, UITextFieldDelegate {
 
   @objc private func openGestures() {
     present(GestureViewController(), animated: false)
+  }
+
+  @objc private func openVisibility() {
+    present(VisibilityViewController(), animated: false)
   }
 
   /// A label at the bottom of the screen, removed from the view hierarchy (not hidden) after `toastDuration`.

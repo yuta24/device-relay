@@ -20,8 +20,13 @@ extension Arguments {
   /// Options without a value.
   static let runnerFlags: [String: Set<String>] = [
     "type": ["--stdin", "--clear"],
-    "find": ["--require", "--gone"]
+    "find": selectorFlags.union(["--require", "--gone"]),
+    "tap": selectorFlags,
+    "press": selectorFlags,
+    "adjust": selectorFlags
   ]
+  /// Selector options without a value: which matches count (`RunnerElementSelector.Visibility`).
+  static let selectorFlags: Set<String> = ["--onscreen", "--hittable"]
 
   static let buttons = ["home", "volumeUp", "volumeDown"]
   static let orientations = ["portrait", "portraitUpsideDown", "landscapeLeft", "landscapeRight"]
@@ -76,6 +81,8 @@ extension Arguments {
       parser.standardInputText = try text(fromStandardInput: standardInput())
     }
     parser.gone = givenFlags.contains("--gone")
+    parser.onscreen = givenFlags.contains("--onscreen")
+    parser.hittable = givenFlags.contains("--hittable")
     parser.clear = givenFlags.contains("--clear")
     let operation = try parser.operation()
     let runnerPath = try parser.string("--runner")
@@ -212,26 +219,29 @@ extension Arguments {
       """
     ),
     "find": (
-      "relay find <selector> [--limit 20] [--timeout <s>] [--gone] [--require] [--bundle-id <id>]",
+      "relay find <selector> [--onscreen | --hittable] [--limit 20] [--timeout <s>] [--gone] [--require]\n      [--bundle-id <id>]",
       """
       Lists the elements that match every given condition exactly (at most --limit, 1-100). --timeout
       waits up to 10 seconds for a match. Prints {"ok":true,"bundleId":..,"count":n,"elements":[{"index",
-      "type","identifier","label","value","frame":{"x","y","width","height"},"enabled"}],
+      "type","identifier","label","value","frame":{"x","y","width","height"},"enabled","onscreen"}],
       "truncated":bool}:
       count is every match, elements the first --limit, truncated whether more were left out. index
       counts from 0 in screen order (the tree's order), and works as --index of find, tap, press,
-      and adjust.
+      and adjust. onscreen is whether part of the frame is inside the screen (missing when an iPad
+      window cannot be placed). --onscreen and --hittable leave out the others first (see <selector>),
+      so count, index, and --limit count only those kept.
       No match is exit 0 ("count":0); with --require it is exit 6, the answer (count, elements) coming
       back as {"ok":false,"code":"element_not_found",...} on stdout (also when --index is out of range),
       so find --timeout <s> --require waits for an element and fails if it does not appear.
       --gone waits the other way, up to --timeout, for no element to match (an element counts while it
-      is in the tree, off the screen too) and adds "gone":true|false to the answer; --gone --require is
-      exit 6 when one is still there ({"ok":false,"code":"element_still_present",...}). --gone cannot
-      take --index. The app is the one in front when find starts, as with --timeout.
+      is in the tree, off the screen too; with --onscreen or --hittable, until none is on the screen or
+      reachable) and adds "gone":true|false to the answer; --gone --require is exit 6 when one is still
+      there ({"ok":false,"code":"element_still_present",...}). --gone cannot take --index. The app is
+      the one in front when find starts, as with --timeout.
       """
     ),
     "tap": (
-      "relay tap (<x> <y> | <selector>) [--count 2] [--mode private|xcui] [--timeout <s>]\n      [--bundle-id <id>]",
+      "relay tap (<x> <y> | <selector>) [--count 2] [--mode private|xcui] [--timeout <s>]\n      [--bundle-id <id>] [--onscreen | --hittable]",
       """
       Taps a point (points in the displayed orientation) or the center of the element the selector picks.
       --count 2 double-taps (zooms a map or a photo, selects a word): both taps go as one gesture, which
@@ -243,11 +253,11 @@ extension Arguments {
       """
     ),
     "press": (
-      "relay press (<x> <y> | <selector>) [--duration 1.0] [--mode private|xcui] [--timeout <s>]\n      [--bundle-id <id>]",
+      "relay press (<x> <y> | <selector>) [--duration 1.0] [--mode private|xcui] [--timeout <s>]\n      [--bundle-id <id>] [--onscreen | --hittable]",
       "Long-presses like tap does, for --duration seconds."
     ),
     "adjust": (
-      "relay adjust <selector> (--position <0-1> | --picker-value <value>) [--timeout <s>]\n      [--bundle-id <id>]",
+      "relay adjust <selector> (--position <0-1> | --picker-value <value>) [--timeout <s>]\n      [--bundle-id <id>] [--onscreen | --hittable]",
       """
       Sets the slider the selector picks to --position (0 is the left end, 1 the right) or the picker
       wheel to --picker-value (the text it shows: June, 15, 2026 for a date picker's wheels) with XCUI's
@@ -556,6 +566,11 @@ extension Arguments {
     must all match exactly (the attributes relay source reports), plus --index <n> to pick one of
     several matches (from 0, in the order relay find lists them). --type takes an element type name
     such as button, cell, staticText, textField, or switch (relay source --help lists them all).
+    --onscreen keeps only matches with part of the frame inside the screen (not the other pages of a
+    pager); --hittable only those a touch at that part's center reaches, checked by hit testing (not
+    what a player or an overlay covers). The order stays, and --index counts the kept ones. Where hit
+    testing cannot answer (an iPad window, more than one display), --hittable is exit 6 with code
+    hit_test_unavailable. A runner from before them is runner_bad_response (relay start --rebuild).
   Runner commands read the runner URL and token from runner.json, never from the command line:
     --runner <path> or --session <name>, else $RELAY_RUNNER or $RELAY_SESSION (both set is an error),
     else ~/.relay/runner.json (where relay start without a session writes it). A session is
@@ -590,6 +605,9 @@ private struct RunnerArgumentValues {
   var standardInputText: String?
   /// `relay find --gone`.
   var gone = false
+  /// `--onscreen` and `--hittable` of a selector.
+  var onscreen = false
+  var hittable = false
   /// `relay type --clear`.
   var clear = false
 
@@ -788,14 +806,19 @@ private struct RunnerArgumentValues {
     try oneOf("--mode", ["private", "xcui"])
   }
 
-  /// The `element` built from --id, --label, --type, --value, and --index; nil when none is given.
-  /// It is checked with the runner's own parser, so a bad type name fails before anything is sent.
+  /// The `element` built from --id, --label, --type, --value, --index, --onscreen, and --hittable; nil when none
+  /// is given. It is checked with the runner's own parser, so a bad type name fails before anything is sent.
   private func selector() throws -> RunnerElementSelector? {
     var object: [String: Any] = [:]
     for (option, key) in [("--id", "identifier"), ("--label", "label"), ("--type", "type"), ("--value", "value")] {
       object[key] = try string(option)
     }
+    if (onscreen || hittable) && object.isEmpty {
+      throw ArgumentError(description: "--onscreen and --hittable narrow an element selector; give --id, --label, --type, or --value too")
+    }
     object["index"] = try integer("--index", "a non-negative integer") { $0 >= 0 }
+    object["onscreen"] = onscreen ? true : nil
+    object["hittable"] = hittable ? true : nil
     guard !object.isEmpty else { return nil }
     do {
       return try RunnerElementSelector(json: object)

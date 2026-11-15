@@ -124,14 +124,15 @@ searchField label="Search" placeholder="Search" frame=28,808,346,28
 | --- | --- |
 | `element.identifier` / `element.label` / `element.value` | `/source` の同名の値との完全一致（大文字小文字も区別） |
 | `element.type` | `/source` の `type` と同じケース名（`button`、`textField`、`cell` など）。知らない名前は `400` |
-| `element.index` | 一致した要素のうち何番目を使うか（0 から。順序は `/source` の JSON と同じ文書順＝親が先の深さ優先） |
+| `element.index` | 一致した要素のうち何番目を使うか（0 から。順序は `/source` の JSON と同じ文書順＝親が先の深さ優先）。`onscreen`・`hittable` を付けたときは、残った要素の中で数えます |
+| `element.onscreen` / `element.hittable` | `true` で、画面の中にある要素だけ / 中心を押すとその要素に当たる要素だけを残します（「[画面の中・押せる要素だけに絞る（onscreen / hittable）](#画面の中押せる要素だけに絞るonscreen--hittable)」）。真偽値以外は `400` |
 | `bundleId` | 対象アプリ。省略時は前面アプリ（`/source` と同じ） |
 | `timeout` | 要素が現れるまで待つ秒数（0–10、既定 0 = 1 回だけ探す）。0.25 秒ごとにスナップショットを取り直します |
 | `limit`（`/find` のみ） | 返す要素の上限（1–100、既定 20）。`count` は常に一致した総数で、上限で切った場合は `truncated: true` |
 | `gone`（`/find` のみ） | `true` で、一致する要素がなくなるまで `timeout` の間待ちます（「[消えるのを待つ（gone）](#消えるのを待つgone)」）。`index` とは組み合わせられません |
 
-- 条件（`identifier`・`label`・`type`・`value`）は AND で組み合わせ、少なくとも 1 つ必要です。空文字列・文字列以外・未知のキー（`id` など）は `400` です。打ち間違いで条件が黙って消え、意図より広く一致するのを防ぐためです。
-- 部分一致・正規表現は入れていません。完全一致なら同じセレクタが常に同じ要素を指し、一致の理由が説明しやすいためです。部分一致は複数一致が増え、`index` の意味が画面の内容で変わりやすくなります。曖昧な名前で探したいときは、`/find` を `type` などで絞って一覧から選び、その `identifier` や `index` を使ってください。
+- 条件（`identifier`・`label`・`type`・`value`）は AND で組み合わせ、少なくとも 1 つ必要です（`onscreen`・`hittable` だけでは足りません）。空文字列・文字列以外・未知のキー（`id` など）は `400` です。打ち間違いで条件が黙って消え、意図より広く一致するのを防ぐためです。
+- 部分一致・正規表現は、まだ入れていません。完全一致なら同じセレクタが常に同じ要素を指し、一致の理由が説明しやすいためです。部分一致は複数一致が増え、`index` の意味が画面の内容で変わりやすくなります。曖昧な名前で探したいときは、`/find` を `type` などで絞って一覧から選び、その `identifier` や `index` を使ってください。
 - ラベルは `/find`・`/source` の値をそのままコピーしてください。システムの許可ダイアログの `Don’t Allow` はアポストロフィが `’`（U+2019）で、ASCII の `'` を使った `relay tap --label "Don't Allow"` は一致しません。
 - 解決には `/source` と同じ `snapshot()` を使い、frame は表示の向きのポイント（`/tap` と同じ座標系）なので、横向きでもそのまま使えます。タップ位置は「frame と画面の重なる部分」の中心です（画面端で一部が切れたセルも、見えている部分の中心を押します）。iPad のウィンドウでは、frame を画面の座標に変換したうえで、見えているウィンドウとの重なりの中心を押します。タッチは座標指定と同じ経路（`private`、だめなら `xcui`。`mode` も同じ）で送ります。
 - `x`・`y` と `element` を両方指定すると `400` です。
@@ -141,7 +142,7 @@ searchField label="Search" placeholder="Search" frame=28,808,346,28
 - iPad のウィンドウ表示と画面が複数ある端末では、hit test の座標を確かめていないため、この確認を省きます。`--filter interactive` では、hit test を加える前と同じく、後のコントロールの frame に中心が入る候補を frame だけで外します。
 - 拒否の対象は、ボタン・スイッチ・入力欄など、上の一覧で操作対象として挙げた型のコントロールです。`staticText`・`other`・`image`・`group` などの内容に当たる場合は送ります。ラベルの文字が、選んだチェックボックスやラジオへのクリックを受けることがあるためです。
 - `pointCovered` の応答には、当たる要素の要約が `hit`（`type`・`label`・画面上の `frame`）に入ります。覆いを閉じるか、スクリーンショットで対象の位置を確かめて座標を指定してください。
-- 隠れた要素を外す `/source?filter=interactive` の近似判定は「[操作できる要素だけに絞る](#操作できる要素だけに絞るfilterinteractive)」を参照してください。
+- 隠れた要素を外す `/source?filter=interactive` の近似判定は「[操作できる要素だけに絞る](#操作できる要素だけに絞るfilterinteractive)」を、セレクタで見える要素・押せる要素だけを選ぶ方法は「[画面の中・押せる要素だけに絞る](#画面の中押せる要素だけに絞るonscreen--hittable)」を参照してください。
 - `/launch` の直後は、前面アプリの取得が切り替え前のアプリを返すことがあります。確実に対象を決めたい場合は `bundleId` を指定してください。
 
 応答（`/tap`）には、実際に使った要素とタップ座標が入ります:
@@ -149,7 +150,7 @@ searchField label="Search" placeholder="Search" frame=28,808,346,28
 ```json
 {"bundleId":"dev.devicerelay.local.RelayRunnerHost","element":{"enabled":true,
  "frame":{"height":34,"width":370,"x":16,"y":132},"identifier":"relay.input2","index":0,"label":"",
- "type":"textField","value":null},"mode":"private","ok":true,"point":{"x":201,"y":149}}
+ "onscreen":true,"type":"textField","value":null},"mode":"private","ok":true,"point":{"x":201,"y":149}}
 ```
 
 iPad のウィンドウでは、応答（`/tap`・`/press`・`/find`・`/source` の JSON）に `window` が付きます。frame と `point` は変換した後の画面の座標です。
@@ -157,11 +158,11 @@ iPad のウィンドウでは、応答（`/tap`・`/press`・`/find`・`/source`
 ```json
 {"bundleId":"dev.devicerelay.local.RelayRunnerHost","element":{"enabled":true,
  "frame":{"height":34,"width":343,"x":395,"y":152},"identifier":"relay.input2","index":0,"label":"",
- "type":"textField","value":null},"mode":"private","ok":true,"point":{"x":566.5,"y":169},
+ "onscreen":true,"type":"textField","value":null},"mode":"private","ok":true,"point":{"x":566.5,"y":169},
  "window":{"height":486,"scale":1,"width":375,"x":379,"y":72}}
 ```
 
-ウィンドウの位置が決まらないときは、`/tap`・`/press`・`/adjust` は何も送らずに `422`、`window_position_unknown` です。`/find`・`/source` は成功のままで、`window: null` と `warning` が付き、frame はウィンドウの中の座標です（「[iPad のウィンドウ表示](screen.md#ipad-のウィンドウ表示)」）。
+ウィンドウの位置が決まらないときは、`/tap`・`/press`・`/adjust` は何も送らずに `422`、`window_position_unknown` です。`/find`・`/source` は成功のままで、`window: null` と `warning` が付き、frame はウィンドウの中の座標です（「[iPad のウィンドウ表示](screen.md#ipad-のウィンドウ表示)」）。このとき `/find` の要素には `onscreen` を付けず、`onscreen`・`hittable` を付けた `/find` は `timeout` の間待ってから `422`、`window_position_unknown` です。
 
 要素が 1 つに決まらない・触れない場合は `422` で、`code`、`reason`、一致した総数 `count`、候補（最大 5 件）`candidates` を返します。`code`（「[エラーの形式と code](http-api.md#エラーの形式と-code)」）は次の行動ごとに `reason` をまとめたもので、`reason` はその詳細です。
 
@@ -178,9 +179,9 @@ iPad のウィンドウでは、応答（`/tap`・`/press`・`/find`・`/source`
 
 ```json
 {"candidates":[{"enabled":true,"frame":{"height":52,"width":370,"x":16,"y":380.333},
-  "identifier":"com.apple.settings.general","index":0,"label":"General","type":"button","value":null},
+  "identifier":"com.apple.settings.general","index":0,"label":"General","onscreen":true,"type":"button","value":null},
  {"enabled":true,"frame":{"height":29,"width":101.667,"x":29.667,"y":392},"identifier":"","index":1,
-  "label":"General","type":"staticText","value":null}],
+  "label":"General","onscreen":true,"type":"staticText","value":null}],
  "code":"element_ambiguous","count":2,"error":"2 elements match the selector; add conditions or an index","ok":false,
  "reason":"ambiguous"}
 ```
@@ -191,12 +192,85 @@ iPad のウィンドウでは、応答（`/tap`・`/press`・`/find`・`/source`
 
 ```json
 {"bundleId":"dev.devicerelay.local.RelayRunnerHost","count":2,"elements":[
- {"enabled":true,"frame":{"height":34,"width":370,"x":16,"y":86},"identifier":"relay.input","index":0,"label":"","type":"textField","value":null},
- {"enabled":true,"frame":{"height":34,"width":370,"x":16,"y":132},"identifier":"relay.input2","index":1,"label":"","type":"textField","value":null}],
+ {"enabled":true,"frame":{"height":34,"width":370,"x":16,"y":86},"identifier":"relay.input","index":0,"label":"","onscreen":true,"type":"textField","value":null},
+ {"enabled":true,"frame":{"height":34,"width":370,"x":16,"y":132},"identifier":"relay.input2","index":1,"label":"","onscreen":true,"type":"textField","value":null}],
  "ok":true,"truncated":false}
 ```
 
-`/find` は一致がなくても `200`（`count: 0`）です。`elements[].index` はそのまま `/tap` の `index` に使えます。`/find` に `index` を付けると、その 1 件だけ（範囲外なら空）を返します（`count` は一致した総数のままです）。
+`/find` は一致がなくても `200`（`count: 0`）です。`elements[].index` はそのまま `/tap` の `index` に使えます（`onscreen`・`hittable` を付けたときは、同じものを付けた `/tap` の `index` です）。`/find` に `index` を付けると、その 1 件だけ（範囲外なら空）を返します（`count` は一致した総数のままです）。
+
+要素（`/find` の `elements`、`/tap`・`/press` の `element`、失敗の `candidates`）の `onscreen` は、frame の一部が画面の中にあるかどうか（`true` / `false`）です。判定は下の `onscreen` と同じです。キーが増えただけなので、以前のスクリプトはそのまま読めます。`onscreen` のない応答は、それを知らない古いランナーのものか、位置の決まらない iPad のウィンドウです。
+
+### 画面の中・押せる要素だけに絞る（onscreen / hittable）
+
+`/find` は、見えているかどうかに関係なく、ツリー全体から文書順に一致を返します。モーダルのプレイヤーの下に残った画面の要素や、ページ式の画面の外のページの要素も一致します。`element` に次のどちらかを付けると、一致した要素から残すものを絞ります。CLI では `--onscreen` / `--hittable` です。
+
+```sh
+relay find --type staticText --hittable          # プレイヤーの下に隠れた画面の文字を外す
+relay find --label "Page title" --onscreen       # 画面の外のページを外す
+relay tap --label Play --type button --hittable  # 見えているほうの Play を押す
+```
+
+| キー | 残す要素 | 判定 |
+| --- | --- | --- |
+| `onscreen: true` | 画面の中にある要素 | frame の幅と高さが 0 でなく、frame（iPad のウィンドウでは見えているウィンドウ）と画面の重なりがある。タップが押す点がある、ということで、`offscreen`・`emptyFrame` にならないのと同じです |
+| `hittable: true` | 画面の中にあり、押すと当たる要素 | `onscreen` に加えて、押す点（重なりの中心）の hit test が、その要素か子孫、またはその要素を含むコントロール（文字を含むセルやボタン）を返す |
+
+- **順序と番号**: 並び順は変えません。絞り込みは一致した要素に、`index`・`limit`・待機（`timeout`・`gone`）の判定より前にかけます。`count`・`truncated`・`index` は残った要素で数えます。`relay find --label Play --hittable` の `index` 1 は、`relay tap --label Play --hittable --index 1` で押す要素です。
+- **対象**: `/find`・`/tap`・`/press`・`/adjust` のセレクタ全体です。`/tap` で 2 つ一致して `ambiguous` になる場面でも、`hittable` で手前の 1 つだけが残れば押せます。
+- **`gone` と組み合わせたとき**: 「残る要素がなくなるまで待つ」になります。`onscreen` なら画面から外れるまで、`hittable` なら画面から外れるか、何かに覆われるまでです。ツリーから消えるまでではありません。
+- **両方を付けたとき**: `hittable` は画面の中にあることも含むので、`hittable` と同じです。`false` は付けないのと同じです。
+- **`enabled: false` の要素**: 外しません（押しても反応しない要素でも、見えていて当たれば残ります）。`/tap` は、これまでどおり `disabled` で止まります。
+- **位置の決まらない要素**: 共有シートの中で位置が決まらない要素（`positionUnknown`）は、`onscreen: false` で、どちらでも外れます。
+- **`onscreen` で残るもの**: 画面との重なりだけを見ます。画面より小さいスクロールビューの外にスクロールした行でも、frame が画面の中にあれば残ります。ほかの要素に覆われているかも見ません。そうした要素を外すには `hittable` を使います。
+- **`hittable` で残るもの**: 判定は対象アプリの要素ツリーの中だけで行います。システムの許可ダイアログなど、別のプロセスの画面に覆われた要素は残ることがあります（確かめていません）。その要素へのタッチは、送る前の確認（「[別のアプリに覆われているとき](#別のアプリに覆われているとき)」）で止まります。
+- **古いランナー**: `onscreen`・`hittable` を知らないランナーは、`element` の未知のキーとして `400` で拒否します（黙って無視はしません）。relay はこれを `runner_bad_response`（終了コード 8）にして、`relay start --rebuild` を案内します。
+
+`hittable` の判定には、要素のタッチで使う hit test（「[要素セレクタ](#要素セレクタ)」の `element_point_covered`）と同じ API を使います。ただし向きが逆です。タッチの確認は「別のコントロールに当たったとわかったときだけ止める」もので、わからなければ送ります。`hittable` は「その要素に当たったとわかったときだけ残す」もので、次の場合は外します。
+
+- hit test がその点で答えを返さない（エラー、ツリーにない要素を返す）。
+- 別の枝の要素に当たる。プレイヤーの下の要素は、プレイヤーの入れ物（`other`）に当たりました。
+- コントロールでない祖先（ウィンドウ、入れ物の `other`）に当たる。下の画面とプレイヤーを両方含む祖先に当たっても、下の要素が押せるとはいえないためです。
+
+hit test そのものが使えないときは、要素を残しも外しもせず、`hittable` を付けたリクエストを `422`、`hit_test_unavailable` で返します（何も送りません）。残すと覆われた要素を押し、外すと `gone: true` や `element_not_found` を誤って返すためです。`onscreen` は hit test を使わないので、そのまま使えます。
+
+| hit test が使えないとき | 理由 |
+| --- | --- |
+| iPad のウィンドウ表示（ウィンドウが画面の一部にある） | hit test の座標を確かめていない（タッチの確認も省いています） |
+| 表示が複数ある端末（iPhone Duo） | 同上 |
+| `RELAY_DISABLE_PRIVATE_HITTEST=1`、または非公開 API がない | hit test の結果がない |
+
+hit test は、画面の中にある一致した要素だけに、1 件ずつかけます。`timeout` で待つ間は、スナップショットを取り直すたびにかけ直します。点は、タッチの合成と同じく縦向きの座標に直してから渡します。横向きで表示の向きの点のまま渡すと、どの要素にも当たらず、すべて外れました。
+
+#### 確かめた結果
+
+Xcode 27.2、iPhone 18 Pro シミュレータ（iOS 27.2）の RelayRunnerHost の `relay.visibility` の画面（「[検証用のホストアプリ](development.md#検証用のホストアプリ)」）で確かめました。プレイヤーは、子のビューコントローラとして画面の上に重ねたものです。
+
+| 場面 | コマンド | 結果 |
+| --- | --- | --- |
+| プレイヤーの下の文字 | `find --type staticText --label "Now playing"` | 2 件（手前とプレイヤーの下）。どちらも `onscreen: true` |
+| 同上 | 上に `--hittable` | 1 件（手前の `relay.player.nowPlaying`） |
+| 同じラベルのボタン | `tap --label Play --type button` | `422`、`element_ambiguous`（2 件） |
+| 同上 | 上に `--hittable` | 手前の `relay.player.play` を押した |
+| 下の画面のボタンを待つ | `find --id relay.play --hittable --gone --timeout 2` | すぐ `gone: true`（ツリーには残っている） |
+| `--index` と `--limit` | `find --label Play --hittable --index 1` / `--limit 1` | `count: 2` のうち `index` 1（手前のボタンの中の文字）/ 先頭 1 件と `truncated: true` |
+| 画面の外のページ | `find --label "Page title"` | 3 件。`onscreen` は `true`・`false`・`false` |
+| 同上 | 上に `--onscreen` | 1 件。横にスワイプした後は 2 ページ目の 1 件 |
+| 見えているページのボタン | `tap --label Select --type button --onscreen` | 見えているページのボタンを押した。2 ページ目でも同じ |
+| hit test を無効にしたランナー | `find --label Play --hittable` | `422`、`hit_test_unavailable`（終了コード 6）。`--onscreen` は使えた |
+| 横向き（`landscapeLeft`・`landscapeRight`） | プレイヤーありの `find --label Play --hittable`、なしの `find --label Item --hittable` | 縦向きと同じく手前の 2 件 / 画面の中の 70 件すべて（プレイヤーありは 0 件） |
+| 設定アプリのトップ | `find --type cell --hittable` | 11 件のうち 10 件。外れた 1 件は、画面下の検索欄の下にある（`--filter interactive` でも外れる） |
+
+`--hittable` にかかる時間です（100 件の文字が一致する画面、5 回の中央値、CLI の往復を含む）。
+
+| 条件 | 絞り込みなし | `--onscreen` | `--hittable` |
+| --- | ---: | ---: | ---: |
+| プレイヤーなし（100 件残る） | 54 ms | 55 ms | 120 ms |
+| プレイヤーあり（0 件残る） | 58 ms | – | 99 ms |
+
+hit test は 1 件あたり約 0.5 ms でした。実機と iPad では確かめていません。
+
+確かめた範囲（iOS 27.2 シミュレータ）では、`.overFullScreen` で表示したモーダル（`relay.presentPlayer`）は下の画面がツリーから外れ、絞り込まなくても手前の要素だけが一致しました。下の要素が並んだのは、ビューを重ねて表示した画面です。ほかの表示のしかたや iOS の版では確かめていません。
 
 Safari の同じボタンを各 5 回押した CLI 応答の平均です。
 
@@ -293,7 +367,7 @@ relay find --type alert --gone --timeout 5 --require
 
 - **消えたとみなす条件**: 要素ツリーに一致する要素が 1 つもないことです。`gone` のない `/find` の `count: 0` と同じ判定で、frame は見ません。
 - 画面の外にある要素、frame が空の要素も「ある」と数えます。ハードウェアキーボードをつないだシミュレータのキーボード（`keyboard`）は、画面の下（y = 891 など）でツリーに残るので、消えません。
-- 見た目で判断したいときは、`gone` のない `/find` の `frame` を読んで確かめてください。
+- 見た目で判断したいときは、`onscreen`（画面から外れるまで）か `hittable`（画面から外れるか覆われるまで）を付けます（「[画面の中・押せる要素だけに絞る](#画面の中押せる要素だけに絞るonscreen--hittable)」）。
 - **応答**: `/find` と同じ形に `gone`（`true` / `false`）が付きます。待つ時間（`timeout`、0–10 秒）や busy の扱いは、上の「[待機（timeout）](#待機timeout)」と同じです。
 - `timeout` の間に消えなくても `200` で、`gone: false` と、残っている要素（`count`・`elements`）を返します。
 - `relay find --gone --require` は、そのとき終了コード 6 で、`code` は `element_still_present` です（relay が判定します。ランナーは返しません）。
