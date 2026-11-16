@@ -6,7 +6,7 @@
 
 - **予告なく変わります**: 非公開 API は、Xcode や iOS の更新で消えたり変わったりすることがあります。ランナーは Xcode や iOS の版では分岐せず、実行時にクラス・セレクタ・シンボルがあるかだけを確かめます。引数や戻り値の型だけが変わった場合は検出できず、そのときの挙動は決まっていません（Objective-C の例外も捕捉しません）。
 - **対象アプリには何も入りません**: 非公開 API を使うのは、XCTest の UI テストバンドルとして端末上で動くランナー（`Runner/RelayRunnerUITests`）だけです。Mac 側の `relay` CLI は使いません。`Runner/` のコードやバンドルを対象アプリのターゲットに埋め込まないでください。App Store に提出するアプリに含めるものではありません。
-- **動作を確認した版**: Xcode 27 と iOS 26.7.1 の実機、iOS 27.0 のシミュレータです。表示が複数ある端末の項目は、Xcode 27.2 と iOS 27.2 のシミュレータで確認しました。文字入力の合成は、Xcode 27.2 と iOS 27.2 のシミュレータ、iOS 26.7.1 の実機で確認しました。URL を開く項目は、Xcode 27.2 と iOS 27.2 のシミュレータ、iOS 26.7.1 の実機で確認しました。ほかの版は確認していません。下の API は、Xcode 27.2 の XCTest と XCUIAutomation の公開ヘッダに宣言がないことを確かめています（実体は `XCUIAutomation.framework` と `XCTAutomationSupport.framework` にあります）。
+- **動作を確認した版**: Xcode 27 と iOS 26.7.1 の実機、iOS 27.0 のシミュレータです。表示が複数ある端末の項目は、Xcode 27.2 と iOS 27.2 のシミュレータで確認しました。文字入力の合成は、Xcode 27.2 と iOS 27.2 のシミュレータ、iOS 26.7.1 の実機で確認しました。`clear` のキー合成は、Xcode 27.2 と iOS 26.7.3 の実機でも確認しました。URL を開く項目は、Xcode 27.2 と iOS 27.2 のシミュレータ、iOS 26.7.1 の実機で確認しました。ほかの版は確認していません。下の API は、Xcode 27.2 の XCTest と XCUIAutomation の公開ヘッダに宣言がないことを確かめています（実体は `XCUIAutomation.framework` と `XCTAutomationSupport.framework` にあります）。
 - **更新の後の確かめ方**: `/health` の `touchSynthesis` が `private`、`foreground.source` が `private` なら、タッチ合成と前面アプリの経路は使えています。文字入力の合成は、`/health` の `typeSynthesis` が `private` であることで確かめます。iPad のウィンドウの位置は、全画面でないウィンドウで `relay find --type window` の `window` が付くことで確かめます。要素のキーボードのフォーカスは、`/source` の `hasKeyboardFocus` が `null` でないことで確かめます。共有シートの入れ物は、iPhone で共有シートを開いて `relay find --label Copy --type cell` の frame がシートの中（縦向きなら画面の下のほう）にあることで確かめます。
 - **無効にして試す**: 次のランナーの環境変数で、代わりの経路を試せます。
 - xcodebuild と `relay start` には `TEST_RUNNER_` を前に付けて渡します（`TEST_RUNNER_RELAY_DISABLE_PRIVATE_HITTEST=1 relay start …` など）。ほかの項目に無効にするスイッチはありません。
@@ -70,7 +70,7 @@
 
 - **API**: `XCPointerEventPath`（`-initForTextInput`、`-typeText:atOffset:typingSpeed:shouldRedact:`）と、タッチ合成と同じ `XCSynthesizedEventRecord`・`-[XCUIDevice eventSynthesizer]`。実装は `RelayTextSynthesizer.m` です。
 - **キーの合成**: `/type` の `clear` の Cmd-A と Cmd-↓ は、同じ経路の `-typeKey:modifiers:atOffset:` で送ります。`XCUIElement.typeKey(_:modifierFlags:)` が中で使うもので、アイドルを待ちません。このメソッドがなければ `typeKey` で送ります。
-- キーの合成は、iPhone 18 Pro シミュレータ（iOS 27.2）でだけ確かめました。実機では確かめていません（上の「動作を確認した版」の実機は、文字の合成だけです）。
+- `clear` のキーの合成は、iPhone 18 Pro シミュレータ（iOS 27.2）と iPhone 14 Pro 実機（iOS 26.7.3、ソフトウェアキーボード表示中）で確かめました（Xcode 27.2）。実機でも Cmd-A が届き、全選択のない欄では Command と下矢印のキーイベント（`press keyCode 227`・`press "\u{1F}"`）と末尾からの削除を確認しました。以前の、修飾キーのない return・delete・space・tab・escape の比較とは別の結果です（「[実機での clear の結果](http-api.md#入力欄を空にするclear)」）。
 - **フォーカスの確認**: 合成した入力はフォーカスを確かめないので、送る前に述語 `hasKeyboardFocus == 1` で要素を探します（`typeText` と同じ問い合わせ）。属性は `-[XCElementSnapshot hasKeyboardFocus]` です。
 - **機能**: 表示が 1 つの端末の `/type`・`/key`、`/type` の `clear`。速さは `typeText` の既定と同じ 1 秒 60 文字です。
 - **公開 API では足りない理由**: `typeText` は入力の前後で対象アプリがアイドルになるのを待ちます。アイドルにならないアプリでは、この待ちで `/type` が 3 分ほど busy になりました（「[文字入力の経路](design.md#文字入力の経路)」）。
