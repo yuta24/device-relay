@@ -2,7 +2,7 @@
 
 以前の版から更新するときに、スクリプトや設定を直す必要がある変更を書きます。すべての変更の一覧は GitHub の [Releases](https://github.com/yuta24/device-relay/releases) にあります。全体の入口は [README](README.ja.md) です。
 
-## 次の版（0.8.0 から）
+## 0.9.0
 
 ### アプリを渡さない relay install / uninstall を外した（0.8.0 から）
 
@@ -23,7 +23,7 @@
 古いランナーの拒否・応答不足は `runner_bad_response`、終了コード 8 になります。`relay start --rebuild` で更新してください。
 値と制約は「[画面が落ち着くまで待つ](docs/screen.md#画面が落ち着くまで待つ)」にあります。
 
-### 要素を見つけるまでスクロールする --scroll
+### 要素を見つけるまでスクロールする --scroll（0.8.0 から）
 
 `find`・`tap`・`press`・`adjust` と `relay run` のセレクタに `--scroll <方向>` を付けられます。ランナー内で探索とスワイプを繰り返し、`swipes` と `scrollStop` を返します。`--in` で入れ物、`--max-swipes` で回数を指定できます。
 `--scroll` 付きの `--timeout` は探索全体の時間（既定 20 秒、0–60 秒）です。`--index`・`--gone`・座標・`--mode xcui` は併用できません。古いランナーは終了コード 8 で拒否するので `relay start --rebuild` で作り直してください（「[見えるまでスクロール](docs/elements.md#見えるまでスクロールscroll)」）。
@@ -86,7 +86,15 @@ JSON として読み取った値は変わりません。生の出力で `\/` を
 ### 更新の後にすること
 
 - ランナーは、次の `relay start` で自動でビルドし直します。
-- エージェントのスキルを入れている場合は、`relay skill install`（または `--global`）で入れ直してください。`tap --count 2` と `relay adjust` を説明する新しい `references/gestures-and-controls.md` が入り、コマンドと失敗の扱い、検証用のアプリ、`relay run` を説明する references が更新されます。`--onscreen` / `--hittable` は、スキルにはまだ書いていません。
+- ランナーが古いまま `--onscreen`・`--hittable`・`--label-match`・`--value-match`・`--scroll`・`tap --count 2`・`relay wait --stable` を使うと、終了コード 8（`runner_bad_response`）か 7（`relay adjust` の `not_found`）になります。そのときは `relay start --rebuild` で作り直してください。
+- エージェントのスキルを入れている場合は、`relay skill install`（または `--global`）で入れ直してください。次の references が新しく入ります。
+  - `references/gestures-and-controls.md`：`tap --count 2` と `relay adjust`
+  - `references/waiting-for-the-screen.md`：`relay wait --stable`
+- 次の references が更新されます。
+  - `references/scrolling.md`：`--scroll` を中心に書き直しました。
+  - `references/element-tree.md`：`--onscreen` / `--hittable`、`--label-match` / `--value-match`
+  - `references/clear-and-gone.md`：実機での確認
+  - コマンド・失敗の扱い・検証用のアプリ・`relay run` の references
 
 ## 0.8.0
 
