@@ -12,10 +12,10 @@
 - The second way deletes up to 200 characters a time: a longer field without select all gets `clear_failed`, and sending `--clear` again deletes the rest.
 - With no keyboard focus, it is `no_keyboard_focus` and nothing is sent, as for plain `type`.
 - relay waits 33 seconds more for the answer (23 for clearing, 10 for the runner to give up). Past its own limit the runner answers `typing_failed`.
-- Not checked on a physical device. If Cmd-A and Cmd-↓ don't arrive there, a field with the cursor in the middle may get `clear_failed`.
+- Cmd-A and Cmd-↓ also arrive on a physical device with the software keyboard shown, so a field with the cursor in the middle is emptied there too.
 - An old runner ignores `--clear` and types after the old text, then relay fails with `runner_bad_response` (exit 8). Don't retry: check the `value` with `relay find`, and if you started the runner, `relay stop`, then `relay start --rebuild`.
 
-Checked on an iPhone 18 Pro simulator (iOS 27.2) with a hardware keyboard connected: both ways emptied single-line, password, and multi-line fields in about 0.7–2.1 seconds.
+Checked on an iPhone 18 Pro simulator (iOS 27.2) with a hardware keyboard connected, and on an iPhone 14 Pro (iOS 26.7.3) with the software keyboard: both ways emptied single-line, password, and multi-line fields in about 0.7–2.3 seconds.
 
 ## Waiting for an element to go
 
@@ -30,4 +30,4 @@ Checked on an iPhone 18 Pro simulator (iOS 27.2) with a hardware keyboard connec
 - An old runner ignores `--gone` and waits for the element to appear; relay then fails with `runner_bad_response` (exit 8). If you started the runner, `relay stop`, then `relay start --rebuild`.
 - Right after an alert closes with `gone:true`, the foreground app can take about 230 ms to come back. An element `tap` waits for that by itself.
 
-Checked on an iPhone 18 Pro simulator (iOS 27.2): `relay.toast` in the host app ([test-app](test-app.md)) was gone about 1.4 seconds after the tap, and an element that stayed gave exit 6 after `--timeout 2`. Not checked on a physical device.
+Checked on an iPhone 18 Pro simulator (iOS 27.2): `relay.toast` in the host app ([test-app](test-app.md)) was gone about 1.4 seconds after the tap, and an element that stayed gave exit 6 after `--timeout 2`. The same on an iPhone 14 Pro (iOS 26.7.3); alerts, system permission dialogs, the keyboard going away, and waiting after the app quits were checked only on the simulator.
