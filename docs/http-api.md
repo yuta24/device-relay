@@ -323,7 +323,7 @@ iPad Pro 11-inch (M5) シミュレータ（iPadOS 26.2、「Windowed Apps」の�
 - `fallback`（非公開 API が使えない場合）では手で切り替えたアプリを判別できないので、`/type`・`/key` の `bundleId` を明示してください（「[前面アプリ](#前面アプリ)」）。
 - 特殊キーは `POST /key {"key":"return"}`、または `/type` の `keys` 配列（`{"text":"abc","keys":["delete","return"]}`。`text` の後に順に送ります）で送ります。キー名は大文字小文字を区別せず、別名 `enter`（= return）、`backspace`（= delete）も使えます。
 - 対応するキーは `return`・`delete`・`space` だけです。`tab` と `escape` は iPhone のソフトウェアキーボードにキーがなく、tab は `\t` の文字として入力され、escape は何も起きなかったため、外しました。対応していないキー名は、`/key` でも `keys` でも `400 {"ok":false,"code":"invalid_request","error":"invalid field: key: unsupported key 'tab' (expected return, delete, space)"}` を返し、何も入力しません。
-- キーは `XCUIKeyboardKey` の文字（return は `\r`、delete は U+007F、space は ` `）として、`text` に続けて同じ経路で送ります。`typeKey(_:modifierFlags:)`（ハードウェアキーのイベント）も試しましたが、iPhone ではシミュレータ・実機とも space と tab しか届かず、return・delete・escape は何も起きませんでした。
+- キーは `XCUIKeyboardKey` の文字（return は `\r`、delete は U+007F、space は ` `）として、`text` に続けて同じ経路で送ります。`typeKey(_:modifierFlags:)`（ハードウェアキーのイベント）も以前試しましたが、そのとき確認した return・delete・space・tab・escape のうち、シミュレータ・実機とも space と tab しか届かず、return・delete・escape は何も起きませんでした。`clear` が送る Cmd-A と Cmd-↓ は別に実機で確認しています（下の「[入力欄を空にする](#入力欄を空にするclear)」）。
 - フォーカスがない場合は、XCUI の長いエラー文の代わりに `422 {"ok":false,"code":"no_keyboard_focus","error":"no element has keyboard focus in <bundleId>"}` を返します。何も入力しません。
 - `private` では、タップした直後の入力欄がフォーカスを持つまで、最大 1 秒探してから `no_keyboard_focus` を返します（シミュレータで約 1.1–1.2 秒）。`xcui` では XCUI が待つため約 2–3 秒かかります。
 - `private` の入力が時間内に終わらなければ、`422 {"ok":false,"code":"typing_failed",…}` を返して busy を解きます。時間は、10 秒に 1 文字（Unicode スカラー）0.1 秒とキー 1 つ 1 秒を足した長さです。
@@ -370,8 +370,7 @@ relay type --clear "new text"
 - **フォーカス**: `/type` と同じく、フォーカスがなければ `no_keyboard_focus` で何も送りません。
 - **応答**: 成功すると `{"ok":true,"bundleId":"…","cleared":true}` です。`clear` を知らない古いランナーは `clear` を無視して、元の文字の後に入力します。`cleared` がない応答に、`relay type --clear` は `runner_bad_response`（終了コード 8）で失敗します。
 - **経路**: キーは `/type` と同じく XCTest の非公開 API で合成し、アイドルを待ちません（「[文字入力の合成](private-api.md#文字入力の合成)」）。`typeSynthesis` が `xcui` の端末では、`typeKey` と `typeText` で送り、前後でアイドルを待ちます。
-- **実機**: 確かめていません。以前 `typeKey` を試したとき、実機ではハードウェアキーのうち space と tab しか届きませんでした（上の「文字入力と特殊キー」）。
-- 実機で Cmd-A も Cmd-↓ も届かなければ、カーソルが末尾にある欄は 2 段目の delete で空になります。カーソルが途中にある欄は、`clear_failed` になる見込みです。
+- **実機**: iPhone 14 Pro（iOS 26.7.3、Xcode 27.2）で、ソフトウェアキーボードを出して確認しました。`typeSynthesis: private` の `clear` では Cmd-A と Cmd-↓ が届き、途中にカーソルがある欄も空になりました（下の実機の表）。以前確認した、修飾キーのない return・delete・space・tab・escape の結果とは分けて扱います（上の「文字入力と特殊キー」）。
 - **待ち時間**: 空にする分として最大 23 秒かかることがあります（キー 3 つに 1 秒ずつと、delete 200 回に 0.1 秒ずつ）。
 - ランナーは、空にするのを 23 秒に 10 秒の猶予を足した 33 秒で諦めます。読み直しの時間もここに含み、期限を過ぎたら次の読み直しもキーも送らずに `typing_failed` を返します（1 回の読み直しそのものは中断できません）。`relay type --clear` は 33 秒長く応答を待つので、ランナーが先に答えます。
 
@@ -393,4 +392,27 @@ RelayRunnerHost で確かめた結果（時間は `relay type --clear` の呼び
 
 `relay.input` の `relay.events` には、全選択の Cmd-A のキーと、選んだ全体の delete（`delete 3` など）が記録されました。`relay.input2` では 1 文字ずつの delete でした。`TEST_RUNNER_RELAY_DISABLE_PRIVATE_TYPING=1`（`typeSynthesis: xcui`）でも、カーソルが途中の欄と全選択のない欄が空になりました（約 2.2–2.8 秒）。
 
-確かめた環境: iPhone 18 Pro シミュレータ（iOS 27.2、Xcode 27.2）。シミュレータはハードウェアキーボードをつないだ状態（ソフトウェアキーボードを出さない状態）です。実機とソフトウェアキーボードを出した状態では確かめていません。
+上の表の環境: iPhone 18 Pro シミュレータ（iOS 27.2、Xcode 27.2）。ハードウェアキーボードをつないだ状態（ソフトウェアキーボードを出さない状態）です。
+
+実機の結果（iPhone 14 Pro、iOS 26.7.3、Xcode 27.2、RelayRunnerHost、`typeSynthesis: private`、2026-11-16）:
+各場面を 1 回ずつ確認しました。時間は CLI の呼び出しから戻るまでで、ms に丸めています。フォーカスなしの場面を除き、`clear` の直前と直後にソフトウェアキーボードが画面内にあることを要素ツリーで確認しました。
+
+| 入力欄と状態 | 結果 | 時間 |
+| --- | --- | --- |
+| `relay.input`、ASCII 11 文字、カーソルは末尾 | 空 | 702 ms |
+| `relay.input`、ASCII 11 文字、カーソルは途中 | 空 | 776 ms |
+| `relay.input`、ZWJ の絵文字・国旗・結合文字・日本語、カーソルは途中 | 空 | 783 ms |
+| `relay.input`、ASCII 300 文字 | 空 | 766 ms |
+| `relay.password`、8 文字（`value` は `••••••••`） | 空（`relay.passwordLength` も 0） | 759 ms |
+| `relay.notes`、3 行、カーソルは 1 行目の途中 | 空 | 824 ms |
+| `relay.input2`（全選択なし）、ASCII 4 文字 `ab\|c`、カーソルは途中 | 空（2 段目で消えた） | 2307 ms |
+| `relay.input2`（全選択なし）、ASCII 250 文字、カーソルは途中 | 終了コード 6、`clear_failed`、`remaining: 49`（実際の値も 49 文字） | 6538 ms |
+| 上の 49 文字をもう一度 `clear` | 空 | 3086 ms |
+| `relay.input`、`placeholder` と同じ `Type here` | 空（`relay.text` でも空を確認） | 744 ms |
+| 空の `relay.input` | 空のまま、キーイベントなし | 104 ms |
+| フォーカスがない | 終了コード 6、`no_keyboard_focus`、キーイベントなし | 1056 ms |
+
+途中のカーソルは、文字列の途中にテスト用の `|` を挿入して確認しました。`relay.input2` ではソフトウェアキーボードのスペースキーを長押ししてドラッグしました。
+`relay.input` の `relay.events` には `press keyCode 227`（Command）・`press "a"` と、選択した文字列全体の 1 回の delete（ASCII 300 文字なら `delete 300`）が残りました。
+全選択のない `relay.input2` の短い場面では、最初の `delete 1` の後に `press keyCode 227` と `press "\u{1F}"`（下矢印）、さらに `delete 1` が 3 回残り、Cmd-↓ の到達と末尾からの削除を確認できました。250 文字の場面では、ログが最新 6 件なので最後の `delete 1` だけが残ります。
+パスワード欄ではキー名を伏せた `press` と `delete 8` が残りました。`relay.notes` の編集はホストアプリのイベント記録の対象外なので、`relay.events` は変わらず、入力欄の `value` で空になったことを確認しました。

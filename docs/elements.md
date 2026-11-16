@@ -450,7 +450,17 @@ relay find --type alert --gone --timeout 5 --require
 
 アラートを閉じた直後に `gone: true` になっても、前面アプリが元のアプリに戻るまで約 230 ms かかることがあります。続く要素指定の `tap` は、その間を待ってから送ります（「[別のアプリに覆われているとき](#別のアプリに覆われているとき)」）。
 
-確かめた環境: iPhone 18 Pro シミュレータ（iOS 27.2、Xcode 27.2）。実機では確かめていません。
+上の表の環境: iPhone 18 Pro シミュレータ（iOS 27.2、Xcode 27.2）。
+
+実機でも、iPhone 14 Pro（iOS 26.7.3、Xcode 27.2）の RelayRunnerHost で次を確認しました（2026-11-16、各 1 回、時間は CLI の呼び出しから戻るまで）:
+
+| 場面 | 結果 | 時間 |
+| --- | --- | --- |
+| `relay.showToast` を押し、`relay.toast --gone --timeout 5 --require` | `gone: true`、終了コード 0 | 1432 ms |
+| 消えない `relay.input --gone --timeout 2 --require` | `gone: false`、終了コード 6、`element_still_present` | 2129 ms |
+| 最初からない要素に `--gone --timeout 5 --require` | `gone: true`、終了コード 0 | 120 ms |
+
+トーストは、待機を測る前に、表示中の同じセレクタで `find --require` が一致することも確認しました。上のシミュレータの表にあるアラート・システムの許可ダイアログ・キーボードの消失・アプリ終了後の待機は、今回の実機検証には含めていません。
 
 ### システムの許可ダイアログ
 
