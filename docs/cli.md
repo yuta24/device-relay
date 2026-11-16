@@ -1114,7 +1114,7 @@ relay launch com.example.myapp                        # 入れたアプリを起
 relay uninstall com.example.myapp                     # 消す
 ```
 
-0.7.0 までの `relay install`（ランナーのコピー）は `relay runner install` になりました（「[Runner の用意（relay runner install）](setup.md#runner-の用意relay-runner-install)」）。
+0.7.0 までの `relay install`（ランナーのコピー）は `relay runner install` になりました。アプリを渡さない書き方は 0.9.0 で外したので、終了コード 2 です（「[Runner の用意（relay runner install）](setup.md#runner-の用意relay-runner-install)」）。
 
 ### 入れる・消す端末
 

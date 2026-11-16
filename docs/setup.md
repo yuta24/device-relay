@@ -77,7 +77,7 @@ relay のバージョンと、元がチェックアウトならそのコミッ�
 `relay runner uninstall` は、`~/.relay/runner` とそのビルド成果物を削除します。
 `config.json`、`runner.json`、ログは残します。
 
-0.7.0 までの書き方も、次の版までは同じように動き、stderr に `relay runner …` を使うよう注意を出します。
+0.7.0 までの書き方は 0.8.0 まで動きましたが、0.9.0 で外しました。今はアプリを渡さない `relay install` / `relay uninstall` と、`relay install` の `--project`・`--build`・`--verbose`・`--remove` は、書き方の誤り（終了コード 2）になり、エラーで `relay runner …` を案内します。
 
 | 0.7.0 までの書き方 | 今の書き方 |
 | --- | --- |

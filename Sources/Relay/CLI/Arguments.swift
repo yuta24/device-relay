@@ -16,7 +16,7 @@ enum Command: Equatable {
   case devices(json: Bool, os: String?)
   case doctor(DoctorOptions)
   case config(ConfigOptions)
-  /// `relay runner install|uninstall`, and the old `relay install` / `relay uninstall` without an app.
+  /// `relay runner install|uninstall`.
   case install(InstallOptions)
   /// `relay install <path>` / `relay uninstall <bundle-id>`: an app on the device, without the runner.
   case appInstall(AppInstallOptions)
@@ -614,8 +614,7 @@ enum Arguments {
            its bundle ID, name, and version as JSON. A simulator must be booted. An app built for the
            other kind of device is refused before anything is sent. A running copy of the app quits.
            relay uninstall <bundle ID> removes an app (app_not_installed, exit 6, if it is not
-           there); the runner's own apps are refused. Without an app, both still do what relay runner
-           install and uninstall do, with a note on stderr, until the next release.
+           there); the runner's own apps are refused. To copy the runner, use relay runner install.
   runner   relay runner install copies the runner project to ~/.relay/runner, for a relay binary
            copied away from its directory; relay runner uninstall removes the copy. relay runner
            --help for details.

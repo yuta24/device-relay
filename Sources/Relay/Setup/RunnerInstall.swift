@@ -203,9 +203,6 @@ struct InstallOptions: Equatable {
   /// Shows xcodebuild's output while `--build` builds, as `relay start --verbose` does.
   var verbose = false
   var remove = false
-  /// Written as `relay install` / `relay uninstall` without an app, the form before `relay runner`. It does
-  /// the same, with `legacyNote` on stderr, until the release after 0.7.0's next one drops it.
-  var legacy = false
 }
 
 enum InstallCommand {
@@ -219,18 +216,9 @@ enum InstallCommand {
   directory, or the relay executable's directory) to ~/.relay/runner, replacing a previous copy, and
   records the relay version. --build also builds it for simulators (log: ~/.relay/logs/build-*.log;
   --verbose also shows xcodebuild's output). uninstall deletes ~/.relay/runner and its builds;
-  config.json and runner.json stay.
-  Until the next release, relay install without an app does what relay runner install does, and
-  relay install --remove or relay uninstall without an app what relay runner uninstall does, with a
-  note on stderr.
+  config.json and runner.json stay. (Until 0.8.0, relay install and relay uninstall without an app
+  did this; now they take an app.)
   """
-
-  /// The `relay:` line of the old form (`InstallOptions.legacy`).
-  static func legacyNote(_ options: InstallOptions) -> String {
-    options.remove
-      ? "relay install --remove and relay uninstall without an app are now relay runner uninstall; the old form goes in the next release"
-      : "relay install without an app is now relay runner install; the old form goes in the next release"
-  }
 
   static func run(
     _ options: InstallOptions,

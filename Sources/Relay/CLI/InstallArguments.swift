@@ -2,28 +2,22 @@ import Foundation
 
 extension Arguments {
   /// `relay install <path> [--session <name> | --runner <path> | --udid <udid>]` and `relay uninstall
-  /// <bundle-id> [...]`: an app. Without one, the old `relay install [--project <path>] [--build [--verbose]]`,
-  /// `relay install --remove`, and `relay uninstall`, which are `relay runner install|uninstall` now and stay
-  /// for one release (`InstallOptions.legacy`). An app with an option of the old form is an error.
+  /// <bundle-id> [...]`: an app. The form without an app (`relay install [--project <path>] [--build]`,
+  /// `--remove`, `relay uninstall`), which copied or removed the runner until 0.8.0, is a usage error that
+  /// names `relay runner install|uninstall`.
   static func parseInstall(_ subcommand: String, _ raw: [String]) throws -> Command {
     let install = subcommand == "install"
-    var runner = InstallOptions(remove: !install, legacy: true)
-    var runnerOption: String?
+    let moved = install ? "relay runner install" : "relay runner uninstall"
     var target = LogTargetOptions()
     var targetOption: String?
     var arguments: [String] = []
     var rest = raw[...]
     while let option = rest.popFirst() {
       switch option {
-      case "--project" where install:
-        guard let value = rest.first, !value.hasPrefix("--") else {
-          throw ArgumentError(description: "--project requires a value")
-        }
-        runner.project = rest.removeFirst()
-        runnerOption = runnerOption ?? option
-      case "--build" where install: runner.build = true; runnerOption = runnerOption ?? option
-      case "--verbose" where install: runner.verbose = true; runnerOption = runnerOption ?? option
-      case "--remove" where install: runner.remove = true; runnerOption = runnerOption ?? option
+      case "--project" where install, "--build" where install, "--verbose" where install:
+        throw ArgumentError(description: "install \(option) is now relay runner install \(option); install takes an app")
+      case "--remove" where install:
+        throw ArgumentError(description: "install --remove is now relay runner uninstall; install takes an app")
       case "--session", "--runner", "--udid":
         try readTarget(option, from: &rest, into: &target)
         targetOption = targetOption ?? option
@@ -38,21 +32,14 @@ extension Arguments {
     guard arguments.count <= 1 else {
       throw ArgumentError(description: "\(subcommand) takes one app: \(what) (got \(arguments.count))")
     }
-    if let argument = arguments.first {
-      if let runnerOption {
-        throw ArgumentError(description: "install takes either an app or \(runnerOption), not both; "
-          + (runnerOption == "--remove" ? "relay runner uninstall removes the runner" : "relay runner install takes \(runnerOption) for the runner"))
-      }
-      try checkTarget(target, command: subcommand)
-      return install
-        ? .appInstall(AppInstallOptions(path: argument, target: target))
-        : .appUninstall(AppUninstallOptions(bundleID: argument, target: target))
+    guard let argument = arguments.first else {
+      throw ArgumentError(description: targetOption.map { "\(subcommand) \($0) requires \(what)" }
+        ?? "\(subcommand) requires \(what); \(moved) is for the runner")
     }
-    if let targetOption {
-      throw ArgumentError(description: "\(subcommand) \(targetOption) requires \(what)")
-    }
-    try checkRunnerOptions(runner)
-    return .install(runner)
+    try checkTarget(target, command: subcommand)
+    return install
+      ? .appInstall(AppInstallOptions(path: argument, target: target))
+      : .appUninstall(AppUninstallOptions(bundleID: argument, target: target))
   }
 
   /// `relay runner install [--project <path>] [--build [--verbose]]` and `relay runner uninstall`.

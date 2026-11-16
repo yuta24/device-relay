@@ -92,7 +92,7 @@ struct OptionEqualsTests {
     #expect(try Arguments.parse(["stop", "--runner=/tmp/r.json"]) == Arguments.parse(["stop", "--runner", "/tmp/r.json"]))
     #expect(try Arguments.parse(["devices", "--os=26"]) == .devices(json: false, os: "26"))
     #expect(try Arguments.parse(["doctor", "--device=iPhone 17"]) == Arguments.parse(["doctor", "--device", "iPhone 17"]))
-    #expect(try Arguments.parse(["install", "--project=/p"]) == Arguments.parse(["install", "--project", "/p"]))
+    #expect(try Arguments.parse(["runner", "install", "--project=/p"]) == Arguments.parse(["runner", "install", "--project", "/p"]))
     #expect(try Arguments.parse(["bench", "--url=http://127.0.0.1:8100", "--count=3"])
       == Arguments.parse(["bench", "--url", "http://127.0.0.1:8100", "--count", "3"]))
     #expect(try Arguments.parse(["record", "start", "--output=/tmp/a.mp4", "--max-duration=5"])
