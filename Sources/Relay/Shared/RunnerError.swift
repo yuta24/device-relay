@@ -34,6 +34,9 @@ enum RunnerErrorCode: String, CaseIterable {
   case elementNotHittable = "element_not_hittable"
   /// 422: hit testing identified another control at the selected touch point; nothing was sent.
   case elementPointCovered = "element_point_covered"
+  /// 422: a selector with `hittable` where what a touch reaches can't be told (an iPad window on part of the
+  /// screen, more than one display, or no hit test in XCTest); nothing was looked up or sent.
+  case hitTestUnavailable = "hit_test_unavailable"
   /// 422: `/type` or `/key` found no element with keyboard focus.
   case noKeyboardFocus = "no_keyboard_focus"
   /// 422: on a device with more than one display, the foreground app's display can't be told; nothing was sent.
@@ -106,6 +109,8 @@ enum RunnerError: Error, CustomStringConvertible {
   case displayUnknown(String)
   /// Where the app's window is can't be told, so an element's frame says nothing about the screen (422).
   case windowPositionUnknown(String)
+  /// A `hittable` selector where hit testing can't answer (422).
+  case hitTestUnavailable(String)
   /// Another app is in front of the app an element touch is for (422); nothing was sent.
   case coveredByOtherApp(RunnerCoverage.Covered)
   /// `/open` was refused (422).
@@ -128,7 +133,8 @@ enum RunnerError: Error, CustomStringConvertible {
     case .methodNotAllowed: return "method not allowed"
     case .internalError(let message), .touchFailed(let message), .touchSynthesisError(let message),
          .actionFailed(let message), .touchUnreachable(let message), .displayUnknown(let message),
-         .windowPositionUnknown(let message), .typingFailed(let message, _), .openFailed(let message):
+         .windowPositionUnknown(let message), .typingFailed(let message, _), .openFailed(let message),
+         .hitTestUnavailable(let message):
       return message
     case .noKeyboardFocus(let bundleID): return RunnerTyping.missingKeyboardFocusMessage(bundleID: bundleID)
     case .coveredByOtherApp(let covered): return covered.message
@@ -146,7 +152,7 @@ enum RunnerError: Error, CustomStringConvertible {
     case .internalError, .touchSynthesisError: return 500
     case .typingFailed(_, let status): return status
     case .touchFailed, .actionFailed, .touchUnreachable, .noKeyboardFocus, .displayUnknown, .windowPositionUnknown,
-         .coveredByOtherApp, .elementNotResolved, .openFailed, .clearFailed, .notAdjustable, .adjustFailed: return 422
+         .hitTestUnavailable, .coveredByOtherApp, .elementNotResolved, .openFailed, .clearFailed, .notAdjustable, .adjustFailed: return 422
     }
   }
 
@@ -164,6 +170,7 @@ enum RunnerError: Error, CustomStringConvertible {
     case .noKeyboardFocus: return .noKeyboardFocus
     case .displayUnknown: return .displayUnknown
     case .windowPositionUnknown: return .windowPositionUnknown
+    case .hitTestUnavailable: return .hitTestUnavailable
     case .coveredByOtherApp: return .coveredByOtherApp
     case .openFailed: return .openFailed
     case .clearFailed: return .clearFailed

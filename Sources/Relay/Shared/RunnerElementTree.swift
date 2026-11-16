@@ -35,6 +35,17 @@ struct RunnerElementNode: Sendable {
     let visible = frame.intersection(screen)
     return clip.map(visible.intersection) ?? visible
   }
+
+  /// Where a selector touches the element: the center of `visibleFrame(in:)`. Nil when the element isn't on the
+  /// screen: no part of a non-empty frame shows in `screen`, or where it is can't be told (`positionUnknown`).
+  /// This is what `onscreen` in `/find` says, and the checks `resolve` makes before `disabled`.
+  func touchPoint(in screen: CGRect) -> CGPoint? {
+    guard positionUnknown == nil, frame.width > 0, frame.height > 0, frame.origin.x.isFinite, frame.origin.y.isFinite
+    else { return nil }
+    let visible = visibleFrame(in: screen)
+    guard !visible.isNull, visible.width > 0, visible.height > 0 else { return nil }
+    return CGPoint(x: visible.midX, y: visible.midY)
+  }
 }
 
 enum RunnerElementTree {
@@ -46,6 +57,23 @@ enum RunnerElementTree {
     case nil, .fullScreen?: return true
     case .placed?, .unknown?: return false
     }
+  }
+
+  /// The error message for a `hittable` selector where hit testing can't answer, nil where it can: hit testing is
+  /// checked only where `canVerifyHit` holds, and the private hit test must be there (`apiUnavailable` is why
+  /// not). Left out matches would read as gone, or not there, so the selector fails instead of keeping or dropping them.
+  static func hitTestUnavailableMessage(window: RunnerWindowLookup?, displayCount: Int, apiUnavailable: String?) -> String? {
+    let reason: String
+    if displayCount > 1 {
+      reason = "the device has more than one display"
+    } else if !canVerifyHit(window: window, displayCount: displayCount) {
+      reason = "the app's window is not full screen"
+    } else if let apiUnavailable {
+      reason = apiUnavailable
+    } else {
+      return nil
+    }
+    return "cannot tell what a touch reaches (\(reason)), so hittable cannot be checked; nothing was sent. Use onscreen instead"
   }
 
   /// Finds the receiver by its identity in the original snapshot, including after display filtering.
@@ -73,6 +101,16 @@ enum RunnerElementTree {
   static func hitControl(at point: CGPoint, path: [Int], in root: RunnerElementNode) -> RunnerElementNode? {
     guard let node = node(at: path, in: root), interactiveTypes.contains(node.type), node.frame.contains(point), node.clip?.contains(point) != false else { return nil }
     return node
+  }
+
+  /// Whether a touch at `point`, which hit testing says reaches `hitPath`, reaches the element at `targetPath`: the
+  /// hit is the element or inside it, or a control that contains it (a cell or button around a text, which gets
+  /// the touch). The opposite of `hitControl`'s doubt, it needs a positive answer: no answer, another branch, or a
+  /// container that is not a control (the window, an `other` around a modal and the screen under it) is a no.
+  static func reaches(hitPath: [Int]?, target targetPath: [Int], at point: CGPoint, in root: RunnerElementNode) -> Bool {
+    guard let hitPath else { return false }
+    if hitPath.starts(with: targetPath) { return true }
+    return targetPath.starts(with: hitPath) && hitControl(at: point, path: hitPath, in: root) != nil
   }
 
   /// `XCUIElement.ElementType` case names, indexed by raw value (XCUIElementTypes.h in Xcode 27).

@@ -766,7 +766,7 @@ final class RelayRunnerUITests: XCTestCase {
         throw RunnerError.windowPositionUnknown(RunnerWindows.touchError(message))
       }
       let screen = CGRect(origin: .zero, size: self.screen(in: self.interfaceOrientation()).size)
-      var resolved = selector.resolve(in: root, screen: screen)
+      var resolved = selector.resolve(in: root, screen: screen, hitTest: try self.hitTest(for: selector))
       if case .success(let target) = resolved {
         try self.requireUncovered(bundleID)
         if self.canVerifyCommandHit {
@@ -793,6 +793,32 @@ final class RelayRunnerUITests: XCTestCase {
 
   private var canVerifyCommandHit: Bool {
     RunnerElementTree.canVerifyHit(window: commandWindow, displayCount: displays().count)
+  }
+
+  /// The hit test a `hittable` selector looks with in this attempt's snapshot (`commandSnapshot`), nil for another
+  /// selector. Throws `hitTestUnavailable` where hit testing can't answer (`RunnerElementTree.hitTestUnavailableMessage`).
+  /// A point is tested once per snapshot, though different matches seldom share one. The hit test takes points in the
+  /// portrait space, as the event synthesizer does: given points in the displayed orientation, it answered for no element
+  /// of a landscape screen, and with them turned it answered as in portrait. (The touch check, which only refuses on a
+  /// known hit, still passes displayed points.)
+  private func hitTest(for selector: RunnerElementSelector) throws -> RunnerElementSelector.HitTest? {
+    guard selector.visibility == .hittable else { return nil }
+    let apiUnavailable = commandSnapshot.map { RelayActiveApplication.hitTestUnavailableReason(forSnapshot: $0) }
+      ?? "no snapshot to test in"
+    if let message = RunnerElementTree.hitTestUnavailableMessage(window: commandWindow, displayCount: displays().count,
+                                                                 apiUnavailable: apiUnavailable) {
+      throw RunnerError.hitTestUnavailable(message)
+    }
+    let orientation = Self.runnerOrientation(interfaceOrientation())
+    let portraitSize = portraitScreen().size
+    var tested: [[CGFloat]: [Int]?] = [:]
+    return { point in
+      let key = [point.x, point.y]
+      if let path = tested[key] { return path }
+      let path = self.hitPath(at: RunnerDisplays.portraitPoint(point, from: orientation, portraitSize: portraitSize))
+      tested[key] = path
+      return path
+    }
   }
 
   private func hitPath(at point: CGPoint) -> [Int]? {
@@ -886,7 +912,7 @@ final class RelayRunnerUITests: XCTestCase {
         throw RunnerError.windowPositionUnknown(RunnerWindows.touchError(message))
       }
       let screen = CGRect(origin: .zero, size: self.screen(in: self.interfaceOrientation()).size)
-      switch selector.resolve(in: root, screen: screen) {
+      switch selector.resolve(in: root, screen: screen, hitTest: try self.hitTest(for: selector)) {
       case .success(let resolved):
         if let mismatch = RunnerAdjusting.typeMismatch(target, element: resolved.match.node) {
           throw RunnerError.notAdjustable(mismatch, element: resolved.match)
@@ -986,7 +1012,8 @@ final class RelayRunnerUITests: XCTestCase {
   }
 
   /// `/find`: the elements `element` matches, in document order, waiting up to `timeout` for the first, or
-  /// with `gone` for none to match.
+  /// with `gone` for none to match. The `onscreen` or `hittable` of `element` leaves matches out before `index`,
+  /// `limit`, and the wait look at them, so with `gone` it waits for none to be on the screen or reachable.
   private func find(_ body: RunnerJSON) throws -> RunnerHTTPResponse {
     let selector = try body.elementSelector(body.object["element"] ?? NSNull())
     let timeout = try body.elementTimeout()
@@ -999,8 +1026,17 @@ final class RelayRunnerUITests: XCTestCase {
     case .failure(let error): throw RunnerError.invalidField(error.description)
     }
     let bundleID = body.optionalString("bundleId") ?? foregroundApplication().bundleID
-    let (matches, count) = try waitForElements(bundleID: bundleID, timeout: timeout) { root, isLastAttempt in
-      let all = selector.allMatches(in: root)
+    let (matches, count) = try waitForElements(bundleID: bundleID, timeout: timeout) { root, isLastAttempt -> ([RunnerElementMatch], Int)? in
+      // Frames of a window that can't be placed aren't on the screen: no onscreen then, and a filter waits like a touch.
+      var screen: CGRect? = CGRect(origin: .zero, size: self.screen(in: self.interfaceOrientation()).size)
+      if case .unknown(let message)? = self.commandWindow {
+        screen = nil
+        if selector.visibility != nil {
+          guard isLastAttempt else { return nil }
+          throw RunnerError.windowPositionUnknown(RunnerWindows.visibilityError(message))
+        }
+      }
+      let all = selector.allMatches(in: root, screen: screen, hitTest: try self.hitTest(for: selector))
       let matches = selector.picked(from: all)
       let done = RunnerElementLookup.findIsDone(matchCount: matches.count, gone: gone, isLastAttempt: isLastAttempt)
       return done ? (matches, all.count) : nil

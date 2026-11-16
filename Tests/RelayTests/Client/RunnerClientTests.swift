@@ -194,4 +194,46 @@ struct RunnerClientTests {
     let single = RunnerOperation.tap(RunnerTouch(target: .point(RunnerPoint(x: 10, y: 20)), taps: 1))
     #expect(try perform(single, transport: Self.answer(200, #"{"ok":true,"mode":"private"}"#)).status == RunnerExitCode.success.rawValue)
   }
+
+  /// A runner from before `onscreen` and `hittable` rejects them as unknown keys of `element` (400), which relay reports as
+  /// a runner too old for them rather than a mistake in the command line. Other 400s stay as the runner sent them.
+  @Test func aRunnerThatRejectsVisibilityIsABadResponse() throws {
+    let old = #"{"ok":false,"code":"invalid_request","error":"invalid field: element: unknown key 'hittable' (expected identifier, label, type, value, index)"}"#
+    let operations: [RunnerOperation] = [
+      .find(RunnerElementSelector(label: "Play", visibility: .hittable), limit: nil, timeout: nil, bundleID: nil),
+      .tap(RunnerTouch(target: .element(RunnerElementSelector(label: "Play", visibility: .hittable)))),
+      .press(RunnerTouch(target: .element(RunnerElementSelector(label: "Play", visibility: .hittable)), duration: 1)),
+      .adjust(RunnerElementSelector(type: "slider", visibility: .hittable), .position(0.5), timeout: nil, bundleID: nil)
+    ]
+    for operation in operations {
+      let (status, failure) = try perform(operation, transport: Self.answer(400, old))
+      #expect(status == RunnerExitCode.runnerError.rawValue, "\(operation.commandName)")
+      #expect(failure?["code"] as? String == RelayErrorCode.runnerBadResponse.rawValue, "\(operation.commandName)")
+      #expect((failure?["error"] as? String)?.contains("predates --onscreen and --hittable") == true, "\(operation.commandName)")
+    }
+    let onscreen = RunnerOperation.find(RunnerElementSelector(label: "Play", visibility: .onscreen), limit: nil, timeout: nil, bundleID: nil)
+    let onscreenOld = old.replacingOccurrences(of: "'hittable'", with: "'onscreen'")
+    let rejected = try perform(onscreen, transport: Self.answer(400, onscreenOld))
+    #expect(rejected.failure?["error"] as? String
+      == "the runner rejected onscreen in the element: it predates --onscreen and --hittable (relay start --rebuild builds a current one)")
+
+    // Another 400, or the same answer to a selector without them, is the runner's own.
+    let other = #"{"ok":false,"code":"invalid_request","error":"invalid field: limit: expected an integer in 1...100"}"#
+    let invalid = try perform(onscreen, transport: Self.answer(400, other))
+    #expect(invalid.status == RunnerExitCode.badRequest.rawValue && invalid.failure?["code"] as? String == "invalid_request")
+    let plain = RunnerOperation.find(RunnerElementSelector(label: "Play"), limit: nil, timeout: nil, bundleID: nil)
+    #expect(try perform(plain, transport: Self.answer(400, old)).status == RunnerExitCode.badRequest.rawValue)
+
+    // A current runner gets the key in the element, and its answer (with onscreen) is printed as it came.
+    let sent = Locked<[URLRequest]>([])
+    let answer = #"{"ok":true,"bundleId":"app","count":1,"elements":[{"index":0,"label":"Play","onscreen":true}],"truncated":false}"#
+    let (found, none) = try perform(onscreen) { request in
+      sent.withLock { $0.append(request) }
+      return RunnerResponse(status: 200, body: Data(answer.utf8))
+    }
+    #expect(found == RunnerExitCode.success.rawValue && none == nil)
+    let body = try JSONSerialization.jsonObject(with: try #require(sent.value.first?.httpBody)) as? [String: Any]
+    #expect((body?["element"] as? [String: Any])?["onscreen"] as? Bool == true)
+    #expect((body?["element"] as? [String: Any])?["hittable"] == nil)
+  }
 }

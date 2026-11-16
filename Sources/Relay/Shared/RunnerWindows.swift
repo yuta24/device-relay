@@ -217,6 +217,11 @@ enum RunnerWindows {
     "\(message); nothing was sent. Touch by coordinates from a screenshot instead"
   }
 
+  /// The 422 of a `/find` with `onscreen` or `hittable`: no frame can be placed on the screen.
+  static func visibilityError(_ message: String) -> String {
+    "\(message); onscreen and hittable cannot be checked. Find without them, or look at a screenshot"
+  }
+
   private static func warning(_ message: String) -> String {
     "\(message); frames are relative to the window, not the screen"
   }

@@ -15,7 +15,7 @@
 | `GET /source` | `?format=json\|text\|compact&filter=interactive&maxDepth=<n>&bundleId=`（既定は json、bundleId の既定は前面アプリ） | XCUI の要素ツリー。json は要素ごとの属性と frame、text は `debugDescription`、compact は 1 行 1 要素。`filter=interactive` で操作できる要素だけに絞ります。詳しくは「[要素ツリー（/source）](elements.md#要素ツリーsource)」 |
 | `POST /tap` | `{"x":200,"y":120}`、または `{"element":{"identifier":"relay.input"}}`（`"taps":2` でダブルタップ。省略は 1） | タップ。`element` で要素を指定すると、その frame の中心をタップします（「[要素セレクタ](elements.md#要素セレクタ)」）。座標が画面の外なら `400`（下の「画面の外の座標」）。`taps` は下の「ダブルタップ（taps）」 |
 | `POST /press` | `{"x":200,"y":120,"duration":1.0}`、または `{"element":{…},"duration":1.0}` | 長押し。`taps` は受け付けません（`400`） |
-| `POST /find` | `{"element":{"type":"button"},"limit":20,"bundleId":"…","timeout":0,"gone":false}`（`limit`・`bundleId`・`timeout`・`gone` は省略可） | セレクタに一致する要素の一覧（type / identifier / label / value / frame / enabled）。ツリー全体を読まずに要素を探せます（「[要素セレクタ](elements.md#要素セレクタ)」）。`gone: true` で、一致する要素がなくなるのを待ちます（「[消えるのを待つ（gone）](elements.md#消えるのを待つgone)」） |
+| `POST /find` | `{"element":{"type":"button"},"limit":20,"bundleId":"…","timeout":0,"gone":false}`（`limit`・`bundleId`・`timeout`・`gone` は省略可） | セレクタに一致する要素の一覧（type / identifier / label / value / frame / enabled / onscreen）。ツリー全体を読まずに要素を探せます（「[要素セレクタ](elements.md#要素セレクタ)」）。`element` に `"onscreen": true` / `"hittable": true` を付けると、画面の中の要素 / 押すと当たる要素だけを返します（「[画面の中・押せる要素だけに絞る](elements.md#画面の中押せる要素だけに絞るonscreen--hittable)」。`/tap`・`/press`・`/adjust` のセレクタも同じ）。`gone: true` で、一致する要素がなくなるのを待ちます（「[消えるのを待つ（gone）](elements.md#消えるのを待つgone)」） |
 | `POST /swipe` | `{"from":{"x":200,"y":700},"to":{"x":200,"y":200},"duration":0.3,"hold":0.05}` | スワイプ（ドラッグ）。`from`・`to` のどちらかが画面の外なら `400` |
 | `POST /adjust` | `{"element":{"identifier":"volume"},"position":0.5}`、または `{"element":{"type":"pickerWheel","index":0},"pickerValue":"June"}`（`timeout`・`bundleId` は省略可） | スライダーの位置（0〜1）か、ピッカーのホイールの値を設定し、設定した後の値を返します。詳しくは下の「スライダーとピッカー（/adjust）」 |
 | `POST /type` | `{"text":"hello","keys":["return"],"bundleId":"com.apple.Preferences","clear":false}`（`keys`・`bundleId`・`clear` は省略可。`keys` か `clear: true` があれば `text` は省略・空文字でも可。`text` が文字列以外なら `keys` があっても 400） | キーボードのフォーカスがある要素への文字入力。`clear: true` なら先に入力欄を空にし（下の「入力欄を空にする（clear）」）、`text` の後に `keys` を順に送ります。対象の既定は前面アプリ |
@@ -165,10 +165,11 @@ curl -s -H "$AUTH" -X POST $R/shutdown
 | `element_not_found` | 422 | セレクタに一致する要素がない、または `index` が範囲外（`reason` は `notFound` / `indexOutOfRange`） | 待つ（`timeout`）、前面アプリを確かめる、`/find`・`/source` で実際の値を確かめる |
 | `element_ambiguous` | 422 | 2 つ以上一致して `index` がない（`reason` は `ambiguous`）。待たずに返る | `candidates` を見て条件か `index` を足す。待っても直らない |
 | `element_point_covered` | 422 | 押す点が別のコントロールに当たると確認できたため、何も送っていない（「[要素セレクタ](elements.md#要素セレクタ)」） | 画面で対象を確かめ、覆いを閉じるか、確認した座標を指定する |
+| `hit_test_unavailable` | 422 | セレクタの `hittable` で、hit test が使えない（iPad のウィンドウ表示、表示が複数ある端末、hit test を無効にしたランナー）。要素を探さず、何も送っていない（「[画面の中・押せる要素だけに絞る](elements.md#画面の中押せる要素だけに絞るonscreen--hittable)」） | `hittable` の代わりに `onscreen` を使い、スクリーンショットで確かめる |
 | `element_not_hittable` | 422 | 要素はあるが触れない: frame が空、画面の外、`enabled: false`（`reason` は `emptyFrame` / `offscreen` / `disabled`） | スクロールする、前提の操作をする、画面を観察し直す |
 | `no_keyboard_focus` | 422 | `/type`・`/key` でキーボードのフォーカスがある要素がない | 入力欄をタップしてから送り直す |
 | `display_unknown` | 422 | 表示が複数ある端末で、前面アプリの表示を判定できない（どの表示も暗いなど）。何も送っていない | 画面の状態を利用者に確かめる |
-| `window_position_unknown` | 422 | iPad で、アプリのウィンドウが画面のどこにあるかわからない（同じアプリのウィンドウが複数あるなど）。何も送っていない | ウィンドウを 1 つにするか、スクリーンショットから座標で指定する |
+| `window_position_unknown` | 422 | iPad で、アプリのウィンドウが画面のどこにあるかわからない（同じアプリのウィンドウが複数あるなど）。何も送っていない。`onscreen`・`hittable` を付けた `/find` も同じ | ウィンドウを 1 つにするか、スクリーンショットから座標で指定する |
 | `remote_view_position_unknown` | 422 | 要素を指定した `/tap`・`/press` で、選んだ要素が共有シート（別のプロセスが描くビュー）の中にあり、画面上の位置が決まらない（`reason: positionUnknown`）。何も送っていない（「[共有シートの中の要素](elements.md#共有シートの中の要素)」） | スクリーンショットで位置を確かめ、座標で指定する |
 | `covered_by_other_app` | 422 | 要素を指定した `/tap`・`/press` と `/adjust` で、対象アプリが前面のアプリの一覧になく、先頭が SpringBoard（システムの許可ダイアログ、コントロールセンターなどに覆われている）。何も送っていない。`bundleId`・`foreground`・`alert`（SpringBoard の alert の label か `null`）が付く（「[別のアプリに覆われているとき](elements.md#別のアプリに覆われているとき)」） | スクリーンショットか `/find`（`bundleId: com.apple.springboard`、`type: alert`）で確かめ、ダイアログなどを閉じてから送り直す |
 | `touch_failed` | 422 / 500 | 合成したタッチが失敗した、時間内に終わらなかった、合成を始められなかった（500） | 1 回だけ再試行する。続くならランナーのログを見る |

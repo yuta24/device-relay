@@ -96,11 +96,12 @@
 - **公開 API では足りない理由**: `frame` の中心が別の要素に重なることがあります。`isHittable` は、こちらで選んだ点に何があるかを返しません。
 - **コントロールの判定**: `RunnerElementTree.interactiveTypes` を再利用します。名前や enabled による一覧の条件は使いません。`staticText`・`other`・`image`・`group` などの内容は、ラベルやセルへクリックを渡す場合があるため、拒否の根拠にしません。
 - **使えないとき**: API が欠ける、nil・エラーが返る、返された要素がスナップショットにない場合は、確認を省き、従来どおり送ります。座標指定のタッチには使いません。
-- **無効にするとき**: `RELAY_DISABLE_PRIVATE_HITTEST=1` で `hitPathAtPoint:` は nil を返し、タッチと一覧の確認を省きます。`relay start` には `TEST_RUNNER_RELAY_DISABLE_PRIVATE_HITTEST=1` を渡します。
+- **無効にするとき**: `RELAY_DISABLE_PRIVATE_HITTEST=1` で `hitPathAtPoint:` は nil を返し、タッチと一覧の確認を省きます。セレクタの `hittable` は `hit_test_unavailable` になります。`relay start` には `TEST_RUNNER_RELAY_DISABLE_PRIVATE_HITTEST=1` を渡します。
 - **確かめていない座標**: iPad のウィンドウが placed または unknown のときと、画面が複数ある端末では、hit test の座標を確かめていないため使いません。全画面のアプリとその共有シートでは、これまでどおり確認します。
 - **結果の整合性**: `com.apple.SafariViewService` の Close・Cancel では、点を含まない Address 要素が返ることがありました。返された要素の frame が点を含まない場合も、確認できないものとして送ります。
 - **同じ方式のツール**: [WebDriverAgent の iOS 用インターフェース宣言](https://github.com/appium/WebDriverAgent/blob/master/PrivateHeaders/XCTest/XCAXClient_iOS.h)にも同じメソッドがあります。
 - **一覧での利用**: `filter=interactive` では、後のコントロールの枠と重なる候補だけを同じ方法で確認します。別のコントロールに当たると確認できた候補だけを外します。確認できない候補は残します。
+- **セレクタの `hittable`**: 一致した要素のうち画面の中にあるものに 1 件ずつ使い、その要素・子孫・その要素を含むコントロールに当たると確認できたものだけを残します。確認できないものは外します。確かめていない座標（上）と、API がない・無効にしたときは、`422`、`hit_test_unavailable` です。点は縦向きの座標に直して渡します（横向きで表示の向きの点を渡すと、どの要素にも当たりませんでした）。API があるかどうかは `hitTestUnavailableReasonForSnapshot:` で、点ごとの結果とは別に調べます（「[画面の中・押せる要素だけに絞る](elements.md#画面の中押せる要素だけに絞るonscreen--hittable)」）。
 
 確かめた環境: Xcode 27.2、iPhone 17 Pro シミュレータ（iOS 27.0）、iPhone 14 Pro 実機（iOS 26.7.1）。iPad での hit test は確かめていません。
 

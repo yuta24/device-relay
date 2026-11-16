@@ -52,6 +52,17 @@ enum RunnerOperation: Equatable {
     }
   }
 
+  /// The element selector the operation sends, nil for one without.
+  var selector: RunnerElementSelector? {
+    switch self {
+    case .find(let selector, _, _, _, _), .adjust(let selector, _, _, _): return selector
+    case .tap(let touch), .press(let touch):
+      guard case .element(let selector) = touch.target else { return nil }
+      return selector
+    default: return nil
+    }
+  }
+
   var request: RunnerHTTPRequest {
     switch self {
     case .ping: return .get("/ping")
@@ -218,6 +229,8 @@ extension RunnerElementSelector {
     object["type"] = type
     object["value"] = value
     object["index"] = index
+    object["onscreen"] = visibility == .onscreen ? true : nil
+    object["hittable"] = visibility == .hittable ? true : nil
     return object
   }
 }

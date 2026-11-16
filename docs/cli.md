@@ -66,10 +66,10 @@ relay crashes                                  # 直近 24 時間のクラッシ
 | `ping` / `health` / `foreground` | `GET /ping` / `/health` / `/foreground` | – |
 | `screenshot` | `GET /screenshot` | `-o <file>`（`-` で stdout）、`--format png\|jpeg`、`--quality 0.05–1.0`、`--max-size <px>`、`--scale <px/pt>` |
 | `source` | `GET /source` | `--format json\|text\|compact`、`--filter interactive`、`--max-depth <n>`、`--bundle-id <id>` |
-| `find` | `POST /find` | セレクタ、`--limit <n>`、`--timeout <s>`、`--gone`、`--require`、`--bundle-id <id>` |
-| `tap` / `press` | `POST /tap` / `/press` | `<x> <y>` かセレクタ、`--mode private\|xcui`、`--timeout`・`--bundle-id`（セレクタのみ）、`--count 2`（tap のみ。ダブルタップ）、`--duration`（press のみ） |
+| `find` | `POST /find` | セレクタ、`--onscreen` か `--hittable`、`--limit <n>`、`--timeout <s>`、`--gone`、`--require`、`--bundle-id <id>` |
+| `tap` / `press` | `POST /tap` / `/press` | `<x> <y>` かセレクタ（`--onscreen`・`--hittable` も可）、`--mode private\|xcui`、`--timeout`・`--bundle-id`（セレクタのみ）、`--count 2`（tap のみ。ダブルタップ）、`--duration`（press のみ） |
 | `swipe` | `POST /swipe` | `<x1> <y1> <x2> <y2>`、`--duration`、`--hold`、`--mode` |
-| `adjust` | `POST /adjust` | セレクタ、`--position <0-1>`（スライダー）か `--picker-value <値>`（ピッカーのホイール）、`--timeout <s>`、`--bundle-id <id>` |
+| `adjust` | `POST /adjust` | セレクタ（`--onscreen`・`--hittable` も可）、`--position <0-1>`（スライダー）か `--picker-value <値>`（ピッカーのホイール）、`--timeout <s>`、`--bundle-id <id>` |
 | `type` | `POST /type` | `<text>` か `--stdin`、`--key <name>`（複数可、順に送る）、`--clear`、`--bundle-id` |
 | `key` / `button` / `orientation` | `POST /key` / `/button` / `/orientation` | 名前（`key` は `--bundle-id` も可、`orientation` は `landscape` を `landscapeLeft` として送る） |
 | `launch` / `terminate` | `POST /launch` / `/terminate` | `<bundle-id>`（`host` も可） |
@@ -105,6 +105,20 @@ relay crashes                                  # 直近 24 時間のクラッシ
 `--gone` を付けると逆に、一致する要素がなくなるまで待ちます。読み込みの表示が消える、アラートが閉じる、を待つときに使います。
 応答には `gone`（`true` / `false`）が付きます。`--require` と組み合わせると、時間内に消えなければ終了コード 6（`element_still_present`）です。
 `--index` とは組み合わせられません。消えたとみなす条件は「[消えるのを待つ（gone）](elements.md#消えるのを待つgone)」にあります。
+
+`--onscreen` を付けると画面の中にある要素だけを、`--hittable` を付けると中心を押したときにその要素に当たる要素だけを残します。
+ページ式の画面の外のページや、重ねて表示したプレイヤーの下に残った画面の要素を外すときに使います。
+並び順は変わらず、`count`・`--index`・`--limit`・`--gone` は残った要素で数えます。`tap`・`press`・`adjust` のセレクタにも付けられます。
+
+```sh
+relay find --type staticText --hittable
+relay tap --label Play --type button --hittable
+relay find --id spinner --onscreen --gone --timeout 5 --require   # 画面から外れるまで待つ
+```
+
+`find` の要素には、絞り込まなくても `onscreen`（`true` / `false`）が付きます。
+`--hittable` は hit test が使えない端末（iPad のウィンドウ表示、表示が複数ある端末）では終了コード 6（`hit_test_unavailable`）です。
+判定と制約は「[画面の中・押せる要素だけに絞る](elements.md#画面の中押せる要素だけに絞るonscreen--hittable)」にあります。
 
 `relay source` は要素ツリーを取得します。`source --format text` / `compact` の出力はテキストです。
 
@@ -403,7 +417,7 @@ relay 自身は次の `code` を出します。ランナーは返しません。
 | `runner_unavailable` | `3` | runner.json がない、接続できない、接続が OS に拒否された |
 | `runner_timeout` | `3` | 時間内に応答がない（ランナーは操作を続けていて、終わるまで busy） |
 | `runner_info_invalid` | `1` | runner.json が読めない、url が不正、`host` を解決できない |
-| `runner_bad_response` | ランナーのステータスによる（`8` など） | JSON でない本文のエラー（古いランナー、別のサーバー）で、`status` に HTTP ステータスが入ります。`find --gone` への応答に `gone` がない（`gone` を知らない古いランナー）ときも、この code で終了コード 8 です。 |
+| `runner_bad_response` | ランナーのステータスによる（`8` など） | JSON でない本文のエラー（古いランナー、別のサーバー）で、`status` に HTTP ステータスが入ります。`find --gone` への応答に `gone` がない（`gone` を知らない古いランナー）ときと、`--onscreen`・`--hittable` を知らない古いランナーがそれを拒否したときも、この code で終了コード 8 です。 |
 | `screenshot_save_failed` | `1` | 画像を受け取ったが、ファイルに保存できない |
 | `app_not_installed` | `6` | `launch` と `open --bundle-id` で、アプリが端末に入っていない（ランナーには送らない）。`uninstall` では何も消していない |
 | `app_bundle_invalid` | `1` | `install` のパスがない、`.app`・`.ipa` でない、Info.plist が読めない |
@@ -447,6 +461,7 @@ code を返さない古いランナーでは、`401`・`409` のヒントだけ�
 | `element_not_found` | `relay find --type …` / `relay source` で画面を確かめるか、`--timeout <秒>` で待つ |
 | `element_ambiguous` | `--type`・`--label`・`--id` を足すか、候補から `--index <n>` で選ぶ |
 | `touch_mode_unavailable` | `--mode` を外すか、エラーが示す経路で送り直す |
+| `hit_test_unavailable` | `--hittable` の代わりに `--onscreen` を使い、`relay screenshot` で画面を確かめる |
 | `element_point_covered` | `relay screenshot` / `relay source` で対象を確かめ、覆いを閉じるか、スクリーンショットで確認した座標を指定する |
 | `covered_by_other_app` | `relay screenshot` か `relay find --type alert --bundle-id com.apple.springboard` で覆っている画面を確かめ、閉じてから送り直す |
 | `element_still_present` | もっと待つ（`find --gone --timeout <秒>` を繰り返す）か、`relay screenshot` で画面を確かめる |

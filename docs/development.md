@@ -294,6 +294,7 @@ xcodebuild の出力に `RELAY_RUNNER_READY port=8100 addresses=en0=…,utun3=�
 | `relay.events` | 直近の編集（insert / delete / return）とハードウェアキーの押下（`press Tab` など）。新しい順。パスワード欄の編集は文字数だけ（`insert 3 chars`） |
 | `relay.overlay` | 別プロセスの画面（許可のダイアログ、共有シート、写真の選択、通知のバナー）を試す画面を開く。下の表 |
 | `relay.gestures` | 1 回のタップ以外の操作（ダブルタップなど）を試す画面を開く。下の表 |
+| `relay.visibility` | 見えている要素・押せる要素（`relay find --onscreen` / `--hittable`）を試す画面を開く。下の表 |
 | `relay.showToast` | 押すと画面の下に `relay.toast` のラベルを出し、1.5 秒後にビューから外す（`relay find --gone` を試す） |
 
 `relay.overlay` で開く画面（`OverlayViewController`）は、アプリの上に別のプロセスが描く画面での relay の振る舞いを確かめるためのものです。
@@ -323,6 +324,20 @@ xcodebuild の出力に `RELAY_RUNNER_READY port=8100 addresses=en0=…,utun3=�
 | `relay.dateValue` | 日付のピッカーの日付（`date: 2026-06-15`） |
 | `relay.picker` | 2 列のピッカー（果物 8 つと 1〜20。最初は `Banana`、`3`） |
 | `relay.pickerValue` | ピッカーの選択（`picker: Banana, 3`） |
+
+`relay.visibility` で開く画面（`VisibilityViewController`）は、ツリーにあっても見えない・押せない要素での `--onscreen` / `--hittable` の振る舞いを確かめるためのものです。
+
+| accessibilityIdentifier | 内容 |
+| --- | --- |
+| `relay.visibility.close` | 入力欄の画面に戻る |
+| `relay.openPlayer` | 不透明なプレイヤー（`PlayerViewController`）を、子のビューコントローラとして画面の上に重ねる。下の画面はツリーに残る |
+| `relay.presentPlayer` | 同じプレイヤーを `.overFullScreen` で表示する。下の画面はツリーから外れる（比較用） |
+| `relay.play` / `relay.nowPlaying` | ラベルが `Play` のボタンと `Now playing` の文字。プレイヤーにも同じラベルがある |
+| `relay.playCount` | 2 つの `Play` が押された回数（`play: 1, player: 2`） |
+| `relay.pages` | 横にページを送るスクロールビュー（3 ページ）。各ページに `Page title` の文字（`relay.page1.title` …）と、ラベルが `Select` のボタン（`relay.page1.select` …）。最初は 1 ページ目だけが画面にある |
+| `relay.pageStatus` | 最後に押された `Select` のページ（`selected: page 2`） |
+| `relay.item1` … `relay.item100` | `Item` の文字を 10×10 に並べたもの。要素の多い画面で時間を測る |
+| `relay.player.close` / `relay.player.play` / `relay.player.nowPlaying` / `relay.player.playCount` | プレイヤーの閉じるボタン、`Play`（下の画面の `Now playing` の上に重なる）、`Now playing`、押された回数 |
 
 許可を求めた直後に `relay tap --id relay.behind3 --value late --timeout 5` を送ると、ランナーはダイアログが出る前に対象アプリを決め、ダイアログが出た後で要素を見つけてタップします。シミュレータでは `xcrun simctl privacy <UDID> reset location <ホストのバンドル ID>` で位置情報の許可を戻せます。実機では「Allow Once」を選べば、アプリを終了したときに未決定に戻ります。
 

@@ -269,6 +269,10 @@ struct ScenarioFindCheckTests {
     #expect(try Scenario.parse(Scenario.lines(of: "find --id a --gone --timeout 5 --require")).map(\.action) == [
       .runner(.find(selector, limit: nil, timeout: 5, bundleID: nil, gone: true), requireMatch: true)
     ])
+    #expect(try Scenario.parse(Scenario.lines(of: "tap --label Play --hittable\nfind --label Play --onscreen --gone")).map(\.action) == [
+      .runner(.tap(RunnerTouch(target: .element(RunnerElementSelector(label: "Play", visibility: .hittable))))),
+      .runner(.find(RunnerElementSelector(label: "Play", visibility: .onscreen), limit: nil, timeout: nil, bundleID: nil, gone: true))
+    ])
     var required: [Bool] = []
     #expect(Scenario.execute(steps, perform: { _, requireMatch in required.append(requireMatch); return 0 }, log: { _ in }) == 0)
     #expect(required == [false, true])
