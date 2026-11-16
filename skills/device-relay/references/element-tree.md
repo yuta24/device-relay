@@ -41,7 +41,7 @@ What `--filter interactive` keeps and leaves out:
   - A partial match: `Remain` matches `Remaining 3:42`. Write `^...$` to match it whole: `relay tap --label-match '^Remaining \d+:\d{2}$' --type button`.
   - Add `--type button`: the pattern also matches the `staticText` inside the button, so alone it is `element_ambiguous`.
   - `(?i)` ignores case (`'(?i)^play$'`); `(?s)` and `(?m)` work too. A missing value is empty: `--value-match '^$'`.
-  - They work in `find` (also `--gone`), `tap`, `press`, `adjust`, and `relay run` steps, with `--onscreen`, `--hittable`, `--index`, `--limit`.
+  - They work in `find` (also `--gone`), `tap`, `press`, `adjust`, and `relay run` steps, with `--onscreen`, `--hittable`, `--index` (and `--limit`, `find` only).
   - Exit 2, nothing sent: an invalid pattern, one over 1000 characters, or `--label` with `--label-match` (`--value` with `--value-match`; write `^...$` instead). A pattern starting with `--` is taken as an option: write `[-]-`.
   - Over 1 s for one snapshot is exit 7 (`invalid_request`). A runner from before them is `runner_bad_response` (exit 8): if you started it, `relay stop`, then `relay start --rebuild`.
 - `--index <n>`: the nth of the matching elements (from 0, in the same order as `relay source`'s JSON). You can use `index` from a `relay find` result as it is.
