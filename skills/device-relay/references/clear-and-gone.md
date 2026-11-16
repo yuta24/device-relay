@@ -21,7 +21,7 @@ Checked on an iPhone 18 Pro simulator (iOS 27.2) with a hardware keyboard connec
 
 `relay find <selector> --gone --timeout <s> --require` waits for no element to match: a loading indicator, a sheet, or an alert going away. Use it instead of `sleep`.
 
-- Gone means no matching element in the element tree, the same test as `"count":0`. An element off the screen or with an empty frame still counts as there; the frame isn't looked at.
+- Gone means no matching element in the element tree, the same test as `"count":0`. An element off the screen or with an empty frame still counts as there; the frame isn't looked at. With `--onscreen` / `--hittable`, it waits until none is on the screen / reachable instead ([element-tree](element-tree.md#hidden-elements-and-frame-reliability)).
 - The answer adds `gone` (`true` / `false`). When the time runs out, it is still exit 0 with `gone:false` and the elements left; with `--require` it is exit 6, `code` `element_still_present` (decided by relay).
 - An element that never matched is `gone:true` at once, so a wrong selector also succeeds. Check the selector with a plain `relay find` first.
 - `--index` can't be used with `--gone` (exit 2). `--limit` applies to the list of elements left.
