@@ -1,6 +1,6 @@
 # The app for trying things out
 
-RelayRunnerHost is installed with the runner. Its bundle ID differs per user (`<prefix>.RelayRunnerHost`), so in relay commands write `host` in place of the bundle ID (`relay launch host`, `--bundle-id host`). The actual ID appears as `host app` in `relay status`. You can try operations on it in place of a target app. Identifiers: `relay.input` / `relay.input2` (text fields; `relay.input2` doesn't take select all, Cmd-A, to try the second way of `relay type --clear`), `relay.password` (password field; `secureTextField`), `relay.notes` (multi-line field; return adds a line), `relay.text`, `relay.passwordLength`, `relay.submitted`, `relay.events`, `relay.showToast` (shows the label `relay.toast` and removes it after 1.5 seconds, to try `relay find --gone`), `relay.gestures` (opens the screen below) ("検証用のホストアプリ" in docs/development.md of device-relay).
+RelayRunnerHost is installed with the runner. Its bundle ID differs per user (`<prefix>.RelayRunnerHost`), so in relay commands write `host` in place of the bundle ID (`relay launch host`, `--bundle-id host`). The actual ID appears as `host app` in `relay status`. You can try operations on it in place of a target app. Identifiers: `relay.input` / `relay.input2` (text fields; `relay.input2` doesn't take select all, Cmd-A, to try the second way of `relay type --clear`), `relay.password` (password field; `secureTextField`), `relay.notes` (multi-line field; return adds a line), `relay.text`, `relay.passwordLength`, `relay.submitted`, `relay.events`, `relay.showToast` (shows the label `relay.toast` and removes it after 1.5 seconds, to try `relay find --gone`), `relay.gestures` (opens the screen below), `relay.scroll` and `relay.stability` (the screens at the end) ("検証用のホストアプリ" in docs/development.md of device-relay).
 
 ```sh
 relay launch host
@@ -24,4 +24,14 @@ relay tap --id relay.tapTarget --count 2       # adds 1 to double in relay.tapCo
 relay adjust --id relay.steppedSlider --position 0.75
 relay adjust --type pickerWheel --value June --picker-value March   # the date picker's month
 relay find --id relay.dateValue                # its label is "date: 2026-03-15"
+```
+
+`relay.scroll` opens a screen for `--scroll` ([scrolling](scrolling.md)): `relay.scroll.vertical` (a table of 100 rows, `relay.scroll.row1` … `row100`), `relay.scroll.horizontal` (a horizontal list of 40 tiles, `relay.scroll.tile1` … `tile40`), `relay.scroll.status` (the row or tile last tapped), `relay.scroll.close` (back).
+
+`relay.stability` opens a screen for `relay wait --stable` ([waiting-for-the-screen](waiting-for-the-screen.md)): `relay.stable.animate` (1.8 seconds of motion that only the screen shows), `relay.stable.load` (content after 1.5 seconds; `relay.stable.status` shows `Loaded` when it is there), `relay.stable.spin` / `relay.stable.stop` (a spinner that never settles), `relay.stable.push` / `relay.stable.modal` (transitions).
+
+```sh
+relay tap --id relay.scroll --timeout 3
+relay tap --id relay.scroll.row42 --scroll down --in relay.scroll.vertical
+relay tap --id relay.scroll.tile15 --scroll right --in relay.scroll.horizontal --timeout 40 --max-swipes 20
 ```

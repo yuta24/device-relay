@@ -15,7 +15,8 @@ Each file in `references/` stands alone; read only the one you need.
 - [system-alerts](references/system-alerts.md): permission dialogs, SpringBoard targeting, exact labels
 - [failures](references/failures.md): all exit codes, `code`s, `reason`s
 - [coordinates](references/coordinates.md): orientation, iPad windows, iPhone Duo
-- [scrolling](references/scrolling.md): to an element off the screen
+- [scrolling](references/scrolling.md): to an element off the screen (`--scroll`), swiping by hand
+- [waiting-for-the-screen](references/waiting-for-the-screen.md): waiting for the screen to settle (`relay wait --stable`)
 - [recording](references/recording.md): `relay record`
 - [logs](references/logs.md): `relay logs`, `relay crashes`
 - [relay-run](references/relay-run.md): replaying confirmed steps
