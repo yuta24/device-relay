@@ -12,6 +12,10 @@
 インストールした `relay` は、どのディレクトリからでも使えます。
 リポジトリ内では `xcrun swift run relay …` でも動きます。
 
+### 要素をスクロールして探す
+
+`relay tap --id item42 --scroll down` のように `find`・`tap`・`press`・`adjust` に `--scroll <方向>` を付けられます。`--in <identifier>` で入れ物、`--max-swipes` で回数を指定できます。`--scroll` 付きの `--timeout` は探索全体の上限で、既定 20 秒です。`relay run` の各手順でも使えます。停止条件、失敗時の応答と対応端末は「[見えるまでスクロール](elements.md#見えるまでスクロールscroll)」を参照してください。
+
 ### 起動・停止と接続先
 
 ランナーは `relay start --background`、または別のターミナルの `relay start` で起動しておき、使い終わったら `relay stop` で止めます。

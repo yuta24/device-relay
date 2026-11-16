@@ -16,7 +16,7 @@ extension Arguments {
     "key": ["--bundle-id"],
     "open": ["--bundle-id"]
   ]
-  static let selectorOptions: Set<String> = ["--id", "--label", "--type", "--value", "--label-match", "--value-match", "--index"]
+  static let selectorOptions: Set<String> = ["--scroll", "--max-swipes", "--in", "--id", "--label", "--type", "--value", "--label-match", "--value-match", "--index"]
   /// Options without a value.
   static let runnerFlags: [String: Set<String>] = [
     "type": ["--stdin", "--clear"],
@@ -84,7 +84,21 @@ extension Arguments {
     parser.onscreen = givenFlags.contains("--onscreen")
     parser.hittable = givenFlags.contains("--hittable")
     parser.clear = givenFlags.contains("--clear")
-    let operation = try parser.operation()
+    var operation = try parser.operation()
+    if let direction = try parser.string("--scroll") {
+      guard let selector = operation.selector else { throw ArgumentError(description: "--scroll needs an element selector") }
+      var object: [String: Any] = ["direction": direction]
+      object["maxSwipes"] = try parser.integer("--max-swipes", "an integer in 1...30") { (1 ... 30).contains($0) }
+      if let identifier = try parser.string("--in") { object["in"] = ["identifier": identifier] }
+      do {
+        let options = try RunnerScrolling.Options(json: object, timeout: values["--timeout"] == nil ? nil : operation.selectorTimeout,
+                                                  selector: selector, gone: parser.gone)
+        if values["--mode"]?.first == "xcui" { throw RunnerScrolling.Invalid("requires private gestures; --mode xcui is not supported") }
+        operation = .scrolling(operation, options)
+      } catch { throw ArgumentError(description: String(describing: error)) }
+    } else if values["--max-swipes"] != nil || values["--in"] != nil {
+      throw ArgumentError(description: "--max-swipes and --in require --scroll <direction>")
+    }
     let runnerPath = try parser.string("--runner")
     let session = try parser.string("--session")
     guard runnerPath == nil || session == nil else {
@@ -120,7 +134,9 @@ extension Arguments {
     }
     if let name, let help = commandHelp(for: name) { return help }
     guard let name, let command = runnerUsages[name] else { return usage }
-    return "Usage:\n  \(command.synopsis)\n\n\(command.details)\n\n\(runnerCommonUsage)"
+    let scroll = ["find", "tap", "press", "adjust"].contains(name)
+      ? "\n      [--scroll up|down|left|right] [--max-swipes 10] [--in <identifier>]" : ""
+    return "Usage:\n  \(command.synopsis)\(scroll)\n\n\(command.details)\n\n\(runnerCommonUsage)"
   }
 
   /// The help of a command that has no text of its own: its synopsis from `commandSynopses` and its entry
@@ -596,6 +612,16 @@ extension Arguments {
     that shape when it fails before the runner answers (code runner_unavailable, runner_timeout,
     runner_info_invalid, app_not_installed, ...). relay: lines on stderr are hints for people.
     Exception: screenshot -o - writes the image to stdout, so a failure's JSON goes to stderr.
+  Scroll search (find, tap, press, adjust with a selector):
+    --scroll <direction> searches while scrolling within one request (direction is required).
+    --in <identifier> selects the scroll container; otherwise the largest visible one is used.
+    --max-swipes is 1-30, default 10. With --scroll, --timeout is the total search budget, 0-60 s,
+    default 20 s (0 checks once). Stops at the edge after two unchanged swipes. Answers include
+    swipes and scrollStop (found, edge, maxSwipes, timeout, or failed); not found is exit 6.
+    A partial target is scrolled fully into the container. find requires onscreen, or hittable
+    if requested; tap, press, adjust require hittable and fail if hit testing is unavailable.
+    Requires private touch synthesis. Cannot take --index, --gone, coordinates, or --mode xcui.
+    An older runner without swipes is exit 8; rebuild it with relay start --rebuild.
   Options may be written --opt value or --opt=value; text after -- is never split.
   Exit status: 0 ok, 1 local failure (runner.json unreadable, screenshot not saved; for relay install
     and uninstall, the app or device), 2 usage error (the command line is wrong: two relay: lines on
@@ -754,7 +780,7 @@ private struct RunnerArgumentValues {
     return value
   }
 
-  private func integer(_ option: String, _ requirement: String, where isValid: (Int) -> Bool) throws -> Int? {
+  func integer(_ option: String, _ requirement: String, where isValid: (Int) -> Bool) throws -> Int? {
     guard let text = try string(option) else { return nil }
     guard let value = Int(text), isValid(value) else {
       throw ArgumentError(description: "\(option) requires \(requirement)")
@@ -807,7 +833,7 @@ private struct RunnerArgumentValues {
   }
 
   private func timeout() throws -> TimeInterval? {
-    let maxTimeout = RunnerElementLookup.maxTimeout
+    let maxTimeout = values["--scroll"] == nil ? RunnerElementLookup.maxTimeout : RunnerScrolling.maxTimeout
     return try number("--timeout", "seconds in 0...\(Int(maxTimeout))") { (0 ... maxTimeout).contains($0) }
   }
 

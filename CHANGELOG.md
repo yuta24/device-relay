@@ -4,6 +4,11 @@
 
 ## 次の版（0.8.0 から）
 
+### 要素を見つけるまでスクロールする --scroll
+
+`find`・`tap`・`press`・`adjust` と `relay run` のセレクタに `--scroll <方向>` を付けられます。ランナー内で探索とスワイプを繰り返し、`swipes` と `scrollStop` を返します。`--in` で入れ物、`--max-swipes` で回数を指定できます。
+`--scroll` 付きの `--timeout` は探索全体の時間（既定 20 秒、0–60 秒）です。`--index`・`--gone`・座標・`--mode xcui` は併用できません。古いランナーは終了コード 8 で拒否するので `relay start --rebuild` で作り直してください（「[見えるまでスクロール](docs/elements.md#見えるまでスクロールscroll)」）。
+
 ### label と value を正規表現で探す --label-match / --value-match（0.8.0 から）
 
 `relay find`・`tap`・`press`・`adjust` のセレクタと `relay run` の手順に、`--label-match <regex>` と `--value-match <regex>` を付けられるようになりました（HTTP API では `element` の `"labelMatch"` / `"valueMatch"`）。

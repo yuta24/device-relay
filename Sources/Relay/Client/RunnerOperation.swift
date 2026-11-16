@@ -5,6 +5,7 @@ import Foundation
 /// Kept apart from argument parsing and from output so another front end (an MCP server, say) can build
 /// the same operations from its own input and send them with `RunnerControl`.
 enum RunnerOperation: Equatable {
+  indirect case scrolling(RunnerOperation, RunnerScrolling.Options)
   case ping
   case health
   case foreground
@@ -31,6 +32,7 @@ enum RunnerOperation: Equatable {
   /// The name of the `relay` command that sends it.
   var commandName: String {
     switch self {
+    case .scrolling(let base, _): return base.commandName
     case .ping: return "ping"
     case .health: return "health"
     case .foreground: return "foreground"
@@ -55,6 +57,7 @@ enum RunnerOperation: Equatable {
   /// The element selector the operation sends, nil for one without.
   var selector: RunnerElementSelector? {
     switch self {
+    case .scrolling(let base, _): return base.selector
     case .find(let selector, _, _, _, _), .adjust(let selector, _, _, _): return selector
     case .tap(let touch), .press(let touch):
       guard case .element(let selector) = touch.target else { return nil }
@@ -65,6 +68,11 @@ enum RunnerOperation: Equatable {
 
   var request: RunnerHTTPRequest {
     switch self {
+    case .scrolling(let base, let options):
+      var request = base.request
+      request.body?["scroll"] = options.json
+      request.body?["timeout"] = options.timeout
+      return request
     case .ping: return .get("/ping")
     case .health: return .get("/health")
     case .foreground: return .get("/foreground")
@@ -131,6 +139,8 @@ enum RunnerOperation: Equatable {
   /// short leaves the runner busy with it, so the next command gets 409.
   var waitTime: TimeInterval {
     switch self {
+    case .scrolling(let base, let options):
+      return base.waitTime - base.selectorTimeout + options.timeout + RunnerScrolling.lastGestureWait
     case .find(_, _, let timeout, _, _): return timeout ?? 0
     case .tap(let touch): return (touch.timeout ?? 0) + Double((touch.taps ?? 1) - 1) * RunnerRequestValues.tapPeriod
     case .press(let touch): return (touch.timeout ?? 0) + (touch.duration ?? 1)
@@ -145,6 +155,24 @@ enum RunnerOperation: Equatable {
     case .type(let text, let keys, _, let clear):
       return RunnerTyping.wait(text: text ?? "", keyCount: keys.count) + (clear ? RunnerTyping.clearGiveUp : 0)
     case .key: return RunnerTyping.wait(text: "", keyCount: 1)
+    default: return 0
+    }
+  }
+
+  var baseOperation: RunnerOperation {
+    if case .scrolling(let base, _) = self { return base.baseOperation }
+    return self
+  }
+
+  var scrollOptions: RunnerScrolling.Options? {
+    if case .scrolling(_, let options) = self { return options }
+    return nil
+  }
+
+  var selectorTimeout: TimeInterval {
+    switch self {
+    case .find(_, _, let timeout, _, _), .adjust(_, _, let timeout, _): return timeout ?? 0
+    case .tap(let touch), .press(let touch): return touch.timeout ?? 0
     default: return 0
     }
   }
@@ -218,23 +246,6 @@ struct RunnerScreenshot: Equatable {
   var fileExtension: String { format == "jpeg" ? "jpg" : "png" }
 
   var isResized: Bool { maxSize != nil || scale != nil }
-}
-
-extension RunnerElementSelector {
-  /// The `element` object of `/tap`, `/press`, and `/find`.
-  var json: [String: Any] {
-    var object: [String: Any] = [:]
-    object["identifier"] = identifier
-    object["label"] = label
-    object["type"] = type
-    object["value"] = value
-    object["labelMatch"] = labelMatch?.pattern
-    object["valueMatch"] = valueMatch?.pattern
-    object["index"] = index
-    object["onscreen"] = visibility == .onscreen ? true : nil
-    object["hittable"] = visibility == .hittable ? true : nil
-    return object
-  }
 }
 
 struct RunnerHTTPRequest {

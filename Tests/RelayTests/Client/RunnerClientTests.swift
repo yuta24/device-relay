@@ -278,3 +278,31 @@ struct RunnerClientTests {
     #expect(body?["element"] as? [String: String] == ["labelMatch": "^Remaining"])
   }
 }
+
+extension RunnerClientTests {
+  @Test func scrollingRequiresAcknowledgementOnSuccessAndNotFoundAndRejectsOldRunners() throws {
+    let operation = RunnerOperation.scrolling(.find(RunnerElementSelector(identifier: "row"), limit: nil, timeout: nil, bundleID: nil),
+                                              RunnerScrolling.Options())
+    for (status, body) in [(200, #"{"ok":true,"elements":[]}"#),
+                           (422, #"{"ok":false,"code":"element_not_found"}"#),
+                           (400, #"{"ok":false,"code":"invalid_request","error":"unknown key 'scroll'"}"#),
+                           (400, #"{"ok":false,"code":"invalid_request","error":"timeout: expected 0...10"}"#),
+                           (200, #"{"ok":true,"swipes":true}"#), (200, #"{"ok":true,"swipes":-1}"#)] {
+      let result = try perform(operation, transport: Self.answer(status, body))
+      #expect(result.status == 8)
+      #expect(result.failure?["code"] as? String == "runner_bad_response")
+      #expect((result.failure?["error"] as? String)?.contains("relay start --rebuild") == true)
+    }
+    let timeout = Locked(0.0)
+    let result = try perform(operation) { request in
+      timeout.withLock { $0 = request.timeoutInterval }
+      return RunnerResponse(status: 422, body: Data(#"{"ok":false,"code":"element_not_found","swipes":10,"scrollStop":"edge"}"#.utf8))
+    }
+    #expect(result.status == 6)
+    #expect(timeout.value == RunnerControl.baseTimeout + operation.waitTime)
+    #expect(result.failure?["scrollStop"] as? String == "edge")
+    #expect(try perform(operation, transport: Self.answer(200, #"{"ok":true,"swipes":0,"elements":[{}]}"#)).status == 0)
+    #expect(try perform(operation, transport: Self.answer(400, #"{"ok":false,"error":"invalid timeout","swipes":0}"#)).status == 7)
+    #expect(try perform(operation, transport: Self.answer(409, #"{"ok":false,"code":"busy"}"#)).status == 5)
+  }
+}
