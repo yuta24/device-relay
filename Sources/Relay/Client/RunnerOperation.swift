@@ -8,6 +8,7 @@ enum RunnerOperation: Equatable {
   case ping
   case health
   case foreground
+  case waitStable(RunnerStability.Options, bundleID: String?)
   case screenshot(RunnerScreenshot)
   case source(format: String?, maxDepth: Int?, filter: String?, bundleID: String?)
   /// `gone`: wait for no element to match instead of for one to (`relay find --gone`).
@@ -34,6 +35,7 @@ enum RunnerOperation: Equatable {
     case .ping: return "ping"
     case .health: return "health"
     case .foreground: return "foreground"
+    case .waitStable: return "wait"
     case .screenshot: return "screenshot"
     case .source: return "source"
     case .find: return "find"
@@ -68,6 +70,10 @@ enum RunnerOperation: Equatable {
     case .ping: return .get("/ping")
     case .health: return .get("/health")
     case .foreground: return .get("/foreground")
+    case .waitStable(let options, let bundleID):
+      var body: [String: Any] = ["stable": true, "for": options.duration, "timeout": options.timeout]
+      body["bundleId"] = bundleID
+      return .post("/wait", body)
     case .screenshot(let screenshot):
       return .get("/screenshot", query: [
         ("format", screenshot.format),
@@ -131,6 +137,7 @@ enum RunnerOperation: Equatable {
   /// short leaves the runner busy with it, so the next command gets 409.
   var waitTime: TimeInterval {
     switch self {
+    case .waitStable(let options, _): return options.timeout + RunnerStability.captureAllowance
     case .find(_, _, let timeout, _, _): return timeout ?? 0
     case .tap(let touch): return (touch.timeout ?? 0) + Double((touch.taps ?? 1) - 1) * RunnerRequestValues.tapPeriod
     case .press(let touch): return (touch.timeout ?? 0) + (touch.duration ?? 1)

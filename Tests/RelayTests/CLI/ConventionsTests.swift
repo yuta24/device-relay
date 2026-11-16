@@ -139,7 +139,7 @@ struct JSONFlagTests {
   @Test func everyRunnerCommandAcceptsJSONAndItChangesNothing() throws {
     let lines: [[String]] = [
       ["ping"], ["health"], ["foreground"], ["screenshot", "-o", "/tmp/a.png"], ["source", "--format", "compact"],
-      ["find", "--label", "OK"], ["tap", "1", "2"], ["tap", "--label", "OK"], ["press", "1", "2"], ["swipe", "1", "2", "3", "4"],
+      ["find", "--label", "OK"], ["wait", "--stable"], ["tap", "1", "2"], ["tap", "--label", "OK"], ["press", "1", "2"], ["swipe", "1", "2", "3", "4"],
       ["adjust", "--id", "volume", "--position", "0.5"],
       ["type", "hello"], ["key", "return"], ["button", "home"], ["orientation", "portrait"], ["launch", "com.example"],
       ["open", "myapp://item/1"], ["open", "https://example.com", "--bundle-id", "com.example"], ["terminate", "com.example"],
@@ -200,7 +200,8 @@ struct FailureJSONTests {
       .crashesUnavailable: "crashes_unavailable",
       .crashFilterUnsupported: "crash_filter_unsupported",
       .crashesSaveFailed: "crashes_save_failed",
-      .elementStillPresent: "element_still_present"
+      .elementStillPresent: "element_still_present",
+      .screenNotStable: "screen_not_stable"
     ]
     #expect(RelayErrorCode.allCases.count == expected.count)
     for code in RelayErrorCode.allCases {

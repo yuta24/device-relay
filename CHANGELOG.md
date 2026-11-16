@@ -4,6 +4,13 @@
 
 ## 次の版（0.8.0 から）
 
+### 画面が落ち着くまで待つ wait --stable（0.8.0 から）
+
+`relay wait --stable`（HTTP `POST /wait`）と `relay run` の待機手順を追加しました。縮小画像で描画の静止を確かめ、`stable` と `waitedMs` を返します。
+時間切れは通常成功し、`--require` では `screen_not_stable`、終了コード 6 です。
+古いランナーの拒否・応答不足は `runner_bad_response`、終了コード 8 になります。`relay start --rebuild` で更新してください。
+値と制約は「[画面が落ち着くまで待つ](docs/screen.md#画面が落ち着くまで待つ)」にあります。
+
 ### label と value を正規表現で探す --label-match / --value-match（0.8.0 から）
 
 `relay find`・`tap`・`press`・`adjust` のセレクタと `relay run` の手順に、`--label-match <regex>` と `--value-match <regex>` を付けられるようになりました（HTTP API では `element` の `"labelMatch"` / `"valueMatch"`）。

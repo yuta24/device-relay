@@ -54,6 +54,7 @@ enum RelayErrorCode: String, CaseIterable {
   case crashesSaveFailed = "crashes_save_failed"
   /// Exit 6: `relay find --gone --require` still found a matching element when its `--timeout` ran out.
   case elementStillPresent = "element_still_present"
+  case screenNotStable = "screen_not_stable"
 }
 
 /// What relay prints for people and for scripts, and where.

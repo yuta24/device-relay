@@ -100,9 +100,14 @@ final class InputViewController: UIViewController, UITextFieldDelegate {
     toastButton.accessibilityIdentifier = "relay.showToast"
     toastButton.addTarget(self, action: #selector(showToast), for: .touchUpInside)
 
+    let stableButton = UIButton(type: .system)
+    stableButton.setTitle("Screen stability", for: .normal)
+    stableButton.accessibilityIdentifier = "relay.stability"
+    stableButton.addTarget(self, action: #selector(openStability), for: .touchUpInside)
+
     let stack = UIStackView(arrangedSubviews: [
       input, secondInput, passwordInput, notes, textLabel, passwordLengthLabel, submittedLabel, eventsLabel, overlayButton, gesturesButton,
-      visibilityButton, toastButton
+      visibilityButton, toastButton, stableButton
     ])
     stack.axis = .vertical
     stack.spacing = 12
@@ -134,6 +139,10 @@ final class InputViewController: UIViewController, UITextFieldDelegate {
     label.accessibilityIdentifier = identifier
     label.text = text
     label.font = .monospacedSystemFont(ofSize: 15, weight: .regular)
+  }
+
+  @objc private func openStability() {
+    present(UINavigationController(rootViewController: StabilityViewController()), animated: true)
   }
 
   @objc private func openOverlay() {
