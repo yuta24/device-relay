@@ -52,7 +52,8 @@ relay stop  # when done, if you started it
 - Coordinates are points from the top left (`relay tap x y`; `relay swipe x1 y1 x2 y2` to scroll).
 - Double-tap: `tap --count 2`, not two taps. Sliders, pickers: `adjust`, not `swipe`.
 - Text: tap the field, `relay type "text"` (`--key return` submits); to replace text, `relay type --clear "text"`, not repeated `delete`; `relay key return|delete|space`.
-- Wait with `relay find <selector> --timeout <s>` (≤ 10 s, repeat for longer) or `tap --timeout`; for it to go, `find <selector> --gone --timeout <s> --require`; never `sleep`, except to let a swipe's scroll stop ([scrolling](references/scrolling.md)).
+- Wait with `relay find <selector> --timeout <s>` (≤ 10 s, repeat for longer) or `tap --timeout`; for it to go, `find <selector> --gone --timeout <s> --require`; for motion to end, `relay wait --stable` ([waiting](references/waiting-for-the-screen.md)). Never `sleep`.
+- Off the screen: `relay tap <selector> --scroll down` ([scrolling](references/scrolling.md)).
 - After the screen changes, observe again: don't reuse selectors, indexes, or coordinates.
 - One command at a time; overlapping ones get busy (5).
 - Permission dialogs: wait with `relay find --type alert --bundle-id com.apple.springboard --timeout 5`, tap the exact `label` from `find`/`source` ([system-alerts](references/system-alerts.md)).
@@ -66,7 +67,7 @@ relay stop  # when done, if you started it
 - 6 / 7: branch on `code` in the stdout JSON:
   - `element_not_found`: wait with `--timeout`, check `relay foreground`, real values with `relay find --type …`
   - `element_ambiguous`: add `--type` or `--index` (waiting won't help)
-  - `element_not_hittable`: `offscreen` → scroll; `disabled` → do the prior step; `emptyFrame` → observe again
+  - `element_not_hittable`: `offscreen` → `--scroll`; `disabled` → do the prior step; `emptyFrame` → observe again
   - `no_keyboard_focus`: tap the text field, resend
   - `covered_by_other_app`: an alert etc. covers the app: `relay screenshot`, close it, resend
   - `app_not_installed`: check the bundle ID (case-sensitive) or `relay install <path>`
@@ -81,14 +82,11 @@ Device asking for its passcode during automation mode (`Failed to initialize for
 
 - [starting-and-stopping](references/starting-and-stopping.md): `start` options, which device, the app, doctor, `relay skill`
 - [start-status-stop](references/start-status-stop.md): their output and exit codes
-- [sessions](references/sessions.md): parallel sessions, runner.json lookup
-- [sandbox](references/sandbox.md): `Operation not permitted`
 - [commands](references/commands.md): options, timeouts, `open`, `install`; [clear-and-gone](references/clear-and-gone.md); [gestures-and-controls](references/gestures-and-controls.md)
 - [element-tree](references/element-tree.md): `source` formats, selectors
 - [failures](references/failures.md): all exit codes, `code`s, `reason`s
 - [coordinates](references/coordinates.md): orientation, iPad windows, iPhone Duo
-- [scrolling](references/scrolling.md): to an element off the screen
+- [scrolling](references/scrolling.md): `--scroll`, swipes; [waiting-for-the-screen](references/waiting-for-the-screen.md): `wait --stable`
 - [recording](references/recording.md), [logs](references/logs.md): `record`, `logs`, `crashes`
 - [relay-run](references/relay-run.md): replaying confirmed steps
 - [test-app](references/test-app.md): an app to try things on
-- [troubleshooting](references/troubleshooting.md): start failures, prompts, logs
