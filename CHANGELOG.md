@@ -4,6 +4,15 @@
 
 ## 次の版（0.8.0 から）
 
+### label と value を正規表現で探す --label-match / --value-match（0.8.0 から）
+
+`relay find`・`tap`・`press`・`adjust` のセレクタと `relay run` の手順に、`--label-match <regex>` と `--value-match <regex>` を付けられるようになりました（HTTP API では `element` の `"labelMatch"` / `"valueMatch"`）。
+数字や時刻が入って変わるラベル、一部だけわかるラベル、大文字と小文字だけが違うラベルを選べます。式は ICU（`NSRegularExpression`）で、文字列のどこかに一致すれば一致です。全体と一致させるには `^` と `$`、大文字と小文字を区別しないには `(?i)` を書きます。
+`--label` と `--label-match`（`--value` と `--value-match`）を両方付けたときと、正しくない式は、ランナーに送る前に終了コード 2 です。値のない要素は空の値として扱います（`--value-match '^$'`）。
+式は 1000 文字までで、画面の要素にかけて 1 秒を超えると `invalid_request`（終了コード 7）です。`--id`・`--label`・`--value` は今までどおり完全一致です。
+以前のランナーは `labelMatch`・`valueMatch` を知らないキーとして拒否するので、relay は `runner_bad_response`（終了コード 8）で失敗します。`relay start --rebuild` でランナーを作り直してください。
+扱いは「[正規表現で探す](docs/elements.md#正規表現で探すlabelmatch--valuematch)」にあります。
+
 ### 横向きでも、覆われた要素へのタッチを止める（0.8.0 から）
 
 要素指定の `relay tap`・`press` の前の確認（`element_point_covered`）と `relay source --filter interactive` は、横向き（`landscapeLeft`・`landscapeRight`）と `portraitUpsideDown` で、hit test に表示の向きの点をそのまま渡していました。hit test は縦向きの座標で点を受け取るので、別の場所を調べていました。

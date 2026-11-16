@@ -236,4 +236,45 @@ struct RunnerClientTests {
     #expect((body?["element"] as? [String: Any])?["onscreen"] as? Bool == true)
     #expect((body?["element"] as? [String: Any])?["hittable"] == nil)
   }
+
+  /// A runner from before `labelMatch` and `valueMatch` rejects them as unknown keys too: runner_bad_response (exit 8), not a
+  /// silently broader match, and a current runner gets the pattern as written.
+  @Test func aRunnerThatRejectsPatternsIsABadResponse() throws {
+    let old = #"{"ok":false,"code":"invalid_request","error":"invalid field: element: unknown key 'labelMatch' (expected identifier, label, type, value, index, onscreen, hittable)"}"#
+    let selector = RunnerElementSelector(labelMatch: try RunnerElementPattern("^Remaining"))
+    let operations: [RunnerOperation] = [
+      .find(selector, limit: nil, timeout: nil, bundleID: nil),
+      .find(selector, limit: nil, timeout: 1, bundleID: nil, gone: true),
+      .tap(RunnerTouch(target: .element(selector))),
+      .press(RunnerTouch(target: .element(selector), duration: 1)),
+      .adjust(selector, .position(0.5), timeout: nil, bundleID: nil)
+    ]
+    for operation in operations {
+      let (status, failure) = try perform(operation, transport: Self.answer(400, old))
+      #expect(status == RunnerExitCode.runnerError.rawValue, "\(operation.commandName)")
+      #expect(failure?["code"] as? String == RelayErrorCode.runnerBadResponse.rawValue, "\(operation.commandName)")
+      #expect(failure?["error"] as? String == "the runner rejected labelMatch in the element: it predates --label-match and "
+        + "--value-match (relay start --rebuild builds a current one)", "\(operation.commandName)")
+    }
+    let value = RunnerOperation.find(RunnerElementSelector(type: "textField", valueMatch: try RunnerElementPattern("^$")),
+                                     limit: nil, timeout: nil, bundleID: nil)
+    let valueOld = old.replacingOccurrences(of: "'labelMatch'", with: "'valueMatch'")
+    #expect((try perform(value, transport: Self.answer(400, valueOld)).failure?["error"] as? String)?
+      .hasPrefix("the runner rejected valueMatch in the element") == true)
+    // The same words about a key this selector did not send, or a runner's own 400 about the pattern, stay as they came.
+    #expect(try perform(value, transport: Self.answer(400, old)).status == RunnerExitCode.badRequest.rawValue)
+    let slow = #"{"ok":false,"code":"invalid_request","error":"invalid field: element.labelMatch: the regular expression took more than 1 s"}"#
+    let tooSlow = try perform(operations[0], transport: Self.answer(400, slow))
+    #expect(tooSlow.status == RunnerExitCode.badRequest.rawValue && tooSlow.failure?["code"] as? String == "invalid_request")
+
+    let sent = Locked<[URLRequest]>([])
+    let answer = #"{"ok":true,"bundleId":"app","count":1,"elements":[{"index":0,"label":"Remaining 4:59"}],"truncated":false}"#
+    let found = try perform(operations[0]) { request in
+      sent.withLock { $0.append(request) }
+      return RunnerResponse(status: 200, body: Data(answer.utf8))
+    }
+    #expect(found.status == RunnerExitCode.success.rawValue)
+    let body = try JSONSerialization.jsonObject(with: try #require(sent.value.first?.httpBody)) as? [String: Any]
+    #expect(body?["element"] as? [String: String] == ["labelMatch": "^Remaining"])
+  }
 }

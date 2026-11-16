@@ -118,12 +118,14 @@ searchField label="Search" placeholder="Search" frame=28,808,346,28
 {"element":{"identifier":"relay.input"}}
 {"element":{"label":"History","type":"button"}}
 {"element":{"type":"textField","index":1},"bundleId":"com.example.app","timeout":3}
+{"element":{"labelMatch":"^Remaining \\d+:\\d{2}$","type":"button"}}
 ```
 
 | キー | 内容 |
 | --- | --- |
 | `element.identifier` / `element.label` / `element.value` | `/source` の同名の値との完全一致（大文字小文字も区別） |
 | `element.type` | `/source` の `type` と同じケース名（`button`、`textField`、`cell` など）。知らない名前は `400` |
+| `element.labelMatch` / `element.valueMatch` | label / value のどこかに一致する正規表現（「[正規表現で探す（labelMatch / valueMatch）](#正規表現で探すlabelmatch--valuematch)」）。正しくない式は `400` |
 | `element.index` | 一致した要素のうち何番目を使うか（0 から。順序は `/source` の JSON と同じ文書順＝親が先の深さ優先）。`onscreen`・`hittable` を付けたときは、残った要素の中で数えます |
 | `element.onscreen` / `element.hittable` | `true` で、画面の中にある要素だけ / 中心を押すとその要素に当たる要素だけを残します（「[画面の中・押せる要素だけに絞る（onscreen / hittable）](#画面の中押せる要素だけに絞るonscreen--hittable)」）。真偽値以外は `400` |
 | `bundleId` | 対象アプリ。省略時は前面アプリ（`/source` と同じ） |
@@ -131,8 +133,8 @@ searchField label="Search" placeholder="Search" frame=28,808,346,28
 | `limit`（`/find` のみ） | 返す要素の上限（1–100、既定 20）。`count` は常に一致した総数で、上限で切った場合は `truncated: true` |
 | `gone`（`/find` のみ） | `true` で、一致する要素がなくなるまで `timeout` の間待ちます（「[消えるのを待つ（gone）](#消えるのを待つgone)」）。`index` とは組み合わせられません |
 
-- 条件（`identifier`・`label`・`type`・`value`）は AND で組み合わせ、少なくとも 1 つ必要です（`onscreen`・`hittable` だけでは足りません）。空文字列・文字列以外・未知のキー（`id` など）は `400` です。打ち間違いで条件が黙って消え、意図より広く一致するのを防ぐためです。
-- 部分一致・正規表現は、まだ入れていません。完全一致なら同じセレクタが常に同じ要素を指し、一致の理由が説明しやすいためです。部分一致は複数一致が増え、`index` の意味が画面の内容で変わりやすくなります。曖昧な名前で探したいときは、`/find` を `type` などで絞って一覧から選び、その `identifier` や `index` を使ってください。
+- 条件（`identifier`・`label`・`type`・`value`・`labelMatch`・`valueMatch`）は AND で組み合わせ、少なくとも 1 つ必要です（`onscreen`・`hittable` だけでは足りません）。空文字列・文字列以外・未知のキー（`id` など）は `400` です。打ち間違いで条件が黙って消え、意図より広く一致するのを防ぐためです。
+- `identifier`・`label`・`value` は完全一致です。変わるラベルや一部だけわかるラベルは、`labelMatch`・`valueMatch` の正規表現で探します（「[正規表現で探す](#正規表現で探すlabelmatch--valuematch)」）。`identifier` には正規表現はありません。
 - ラベルは `/find`・`/source` の値をそのままコピーしてください。システムの許可ダイアログの `Don’t Allow` はアポストロフィが `’`（U+2019）で、ASCII の `'` を使った `relay tap --label "Don't Allow"` は一致しません。
 - 解決には `/source` と同じ `snapshot()` を使い、frame は表示の向きのポイント（`/tap` と同じ座標系）なので、横向きでもそのまま使えます。タップ位置は「frame と画面の重なる部分」の中心です（画面端で一部が切れたセルも、見えている部分の中心を押します）。iPad のウィンドウでは、frame を画面の座標に変換したうえで、見えているウィンドウとの重なりの中心を押します。タッチは座標指定と同じ経路（`private`、だめなら `xcui`。`mode` も同じ）で送ります。
 - `x`・`y` と `element` を両方指定すると `400` です。
@@ -280,6 +282,61 @@ Safari の同じボタンを各 5 回押した CLI 応答の平均です。
 | 実機 | 未計測 | 566.5 ms |
 
 確かめた環境: Xcode 27.2、iPhone 17 Pro シミュレータ（iOS 27.0）の Safari・WKWebView・設定、iPhone 14 Pro 実機（iOS 26.7.1）の Safari・設定。iPad の hit test は確かめていません。
+
+### 正規表現で探す（labelMatch / valueMatch）
+
+`labelMatch` と `valueMatch` は、label と value を正規表現で探します。数字や時刻が入って変わるラベル（`Remaining 3:42`、`12 items`）、一部だけわかる長いラベル、大文字と小文字だけが違うラベルを選べます。CLI では `--label-match <regex>` と `--value-match <regex>` です。
+
+```sh
+relay tap --label-match '^Remaining \d+:\d{2}$' --type button   # 変わる時刻
+relay find --label-match 'items$' --onscreen                      # 終わりだけわかる
+relay tap --label-match '(?i)^play$' --type button --hittable     # 大文字と小文字を区別しない
+relay find --type textField --value-match '^$'                    # 値が空の入力欄
+```
+
+- **一致のしかた**: 文字列のどこかに一致すれば一致です（部分一致）。全体と一致させるときは `^` と `$` を書きます。
+- **方言**: `NSRegularExpression`（ICU）を、オプションなしで使います。CLI とランナーは同じコードで式を作ります。
+- **オプション**: 式の中に書きます。`(?i)` で大文字と小文字を区別しません。`(?s)` で `.` が改行にも一致し、`(?m)` で `^`・`$` が各行の始めと終わりに一致します。そのための印（`--ignore-case` など）はありません。
+- **改行を含むラベル**: オプションなしでは、`.` は改行に一致せず、`^`・`$` はラベル全体の始めと終わりにだけ一致します。`$` は、末尾の改行 1 つの前にも一致します。
+- **値のない要素**: value が `null` の要素は、空文字列として扱います（`--format compact` と同じ）。`--value-match '^$'` で、値が空か `null` の要素を選べます。label はもともと文字列で、ないときは空文字列です。
+- **組み合わせ**: ほかの条件・`index`・`onscreen`・`hittable`・`limit`・`gone` とは、完全一致の条件と同じに組み合わせます。`/find`・`/tap`・`/press`・`/adjust` と、`relay run` の手順で使えます。
+- **同じ属性の完全一致と同時に**: `label` と `labelMatch`（`value` と `valueMatch`）を両方付けると `400` です（CLI は終了コード 2）。`--label` を残したまま `--label-match` を足した、という間違いを黙って AND にしないためです。完全一致は `^...$` で書けます。
+- **正しくない式**: CLI はランナーに送る前に確かめ、終了コード 2 にします（`--label-match: not a valid regular expression …`）。ランナーも確かめて `400`、`invalid_request` を返します。空文字列も `400` です。
+- **長さと時間の上限**: 式は 1000 文字までです。スナップショットごとに、ツリーのすべての label・value に式をかけて 1 秒を超えたら、待たずに `400`、`invalid_request` です（CLI は終了コード 7）。`(a+)+$` のように後戻りが限りなく増える式で、ランナーが止まらないようにするためです。
+- **失敗の応答**: `element_not_found`・`element_ambiguous` などの応答と `candidates` は、完全一致のときと同じです。候補の `label`・`value` を見て、式を締めるか `--type`・`--index` を足してください。
+- **古いランナー**: `labelMatch`・`valueMatch` を知らないランナーは、未知のキーとして `400` で拒否します（黙って無視はしません）。relay はこれを `runner_bad_response`（終了コード 8）にして、`relay start --rebuild` を案内します。
+
+#### 確かめた結果
+
+Xcode 27.2、iPhone 18 Pro シミュレータ（iOS 27.2）の RelayRunnerHost で確かめました。`relay.countdown` は、ラベルが 1 秒ごとに減るボタンです（「[検証用のホストアプリ](development.md#検証用のホストアプリ)」）。
+
+| 場面 | コマンド | 結果 |
+| --- | --- | --- |
+| 変わる時刻 | `tap --label-match '^Remaining \d+:\d{2}$'` | `element_ambiguous`（ボタンとその中の文字の 2 件）。終了コード 6 |
+| 同上 | 上に `--type button` | `Remaining …` のボタンを押した。value は `taps: 1` になった |
+| 部分一致 | `find --label-match Remain --type button` | 1 件（`relay.countdown`） |
+| 全体一致 | `find --label-match '^Remain$'` | 0 件 |
+| 大文字と小文字 | `find --label-match '^play$'` / `'(?i)^PLAY$'` | 0 件 / 2 件（`Play` のボタンとその中の文字） |
+| `--hittable` | プレイヤーありの `tap --label-match '(?i)^play$' --type button --hittable` | 手前の `relay.player.play` を押した。`--hittable` なしでは 4 件が一致 |
+| 同上 | プレイヤーありの `tap --label-match '^Remaining' --type button --hittable` | `element_not_found`（プレイヤーの下）。`--onscreen` では 1 件 |
+| `--onscreen` と `--index` | `find --label-match '^Page' --onscreen` / `--index 2` | 1 件（1 ページ目）/ `count: 3` のうち 3 ページ目 |
+| `--gone` | `relay.showToast` の後に `find --label-match '(?i)^TOAST$' --gone --timeout 5 --require` | `gone: true`。終了コード 0 |
+| 値が空 | 入力欄の画面で `find --type textField --value-match '^$'` | 空の `relay.input`・`relay.input2` の 2 件 |
+| 正しくない式 | `find --label-match '('` | 終了コード 2。ランナーには送らない |
+| 同上（HTTP で直接） | `/find` に `{"labelMatch":"("}`・`label` と `labelMatch` の両方・1001 文字の式 | どれも `400`、`invalid_request` |
+| 後戻りの多い式 | `relay.notes` に `a` 40 文字と `b` を入れて `find --value-match '(a+)+$'` | 約 1.1 秒で `400`、`invalid_request`（終了コード 7）。その後もランナーは応答した |
+| `relay run` | 上の `tap`・`find --gone` を手順にしたもの | 5 手順すべて成功 |
+| 古いランナー | – | 確かめていません（単体テストで、拒否の応答を偽の通信に返させて確かめた） |
+
+要素の多い画面（`relay.visibility` の `Item` 100 件が一致する画面）でかかる時間です。10 回の中央値で、CLI の往復を含みます。
+
+| 条件 | 絞り込みなし | `--hittable` |
+| --- | ---: | ---: |
+| `--label Item`（完全一致） | 58 ms | 131 ms |
+| `--label-match '^Item$'` | 61 ms | 133 ms |
+| `--label-match '(?i)item'` | 61 ms | – |
+
+正規表現による差は、測った範囲ではばらつきの中でした。実機と iPad では確かめていません。
 
 ### 共有シートの中の要素
 

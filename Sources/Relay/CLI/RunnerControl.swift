@@ -163,10 +163,11 @@ enum RunnerControl {
     }
 
     let code = RunnerExitCode(status: response.status)
-    if let visibility = resolved.selector?.visibility, predatesVisibility(response) {
+    if let selector = resolved.selector, let key = rejectedSelectorKey(response, selector: selector) {
       // An older runner rejects the key as unknown (400), which reads as a mistake in the command line.
-      return fail(.runnerBadResponse, "the runner rejected \(visibility.rawValue) in the element: it predates --onscreen and "
-        + "--hittable (relay start --rebuild builds a current one)", exit: .runnerError, to: failureOutput)
+      let options = ["onscreen", "hittable"].contains(key) ? "--onscreen and --hittable" : "--label-match and --value-match"
+      return fail(.runnerBadResponse, "the runner rejected \(key) in the element: it predates \(options) "
+        + "(relay start --rebuild builds a current one)", exit: .runnerError, to: failureOutput)
     }
     guard code == .success else {
       CLIOutput.writeLine(failureBody(of: response), to: failureOutput)
@@ -256,12 +257,13 @@ enum RunnerControl {
     return value.boolValue
   }
 
-  /// Whether an answer is a runner from before `onscreen` and `hittable` rejecting them: a 400 whose error names one
-  /// of them as an unknown key of `element`.
-  static func predatesVisibility(_ response: RunnerResponse) -> Bool {
+  /// The key of `selector` that a runner from before it rejected as unknown (a 400 whose error names it as an unknown
+  /// key of `element`): `onscreen` or `hittable` (#100), `labelMatch` or `valueMatch`. Nil for any other answer.
+  static func rejectedSelectorKey(_ response: RunnerResponse, selector: RunnerElementSelector) -> String? {
     guard response.status == 400, let object = try? JSONSerialization.jsonObject(with: response.body) as? [String: Any],
-          let error = object["error"] as? String else { return false }
-    return ["onscreen", "hittable"].contains { error.contains("element: unknown key '\($0)'") }
+          let error = object["error"] as? String else { return nil }
+    let sent = selector.json
+    return ["onscreen", "hittable", "labelMatch", "valueMatch"].first { sent[$0] != nil && error.contains("element: unknown key '\($0)'") }
   }
 
   /// The `taps` of a `/tap` answer, nil when there is none (one tap, or a runner from before `taps`).

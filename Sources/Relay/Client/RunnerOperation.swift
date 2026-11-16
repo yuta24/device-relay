@@ -228,6 +228,8 @@ extension RunnerElementSelector {
     object["label"] = label
     object["type"] = type
     object["value"] = value
+    object["labelMatch"] = labelMatch?.pattern
+    object["valueMatch"] = valueMatch?.pattern
     object["index"] = index
     object["onscreen"] = visibility == .onscreen ? true : nil
     object["hittable"] = visibility == .hittable ? true : nil

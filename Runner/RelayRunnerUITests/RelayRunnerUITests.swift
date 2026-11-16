@@ -755,6 +755,7 @@ final class RelayRunnerUITests: XCTestCase {
     let mode = try touchMode(body)
     let bundleID = body.optionalString("bundleId") ?? foregroundApplication().bundleID
     let target = try waitForElements(bundleID: bundleID, timeout: timeout) { root, isLastAttempt -> RunnerElementTarget? in
+      try self.checkPatternTime(selector, in: root)
       // Without the window's position a frame says nothing about the screen, and a touch would miss
       // while reporting success. It can be passing, as while a window moves, so it is waited out too.
       if case .unknown(let message)? = self.commandWindow {
@@ -785,6 +786,15 @@ final class RelayRunnerUITests: XCTestCase {
       "element": target.match.json,
       "point": RunnerElementTree.json(target.point)
     ].merging(tapsAnswer) { $1 })
+  }
+
+  /// A `labelMatch` or `valueMatch` that takes too long over this snapshot is a bad request (400), not something to wait out.
+  private func checkPatternTime(_ selector: RunnerElementSelector, in root: RunnerElementNode) throws {
+    do {
+      try selector.checkPatternTime(in: root)
+    } catch let error as RunnerElementSelectorError {
+      throw RunnerError.invalidField(error.description)
+    }
   }
 
   private var canVerifyCommandHit: Bool {
@@ -908,6 +918,7 @@ final class RelayRunnerUITests: XCTestCase {
     let target = try body.adjustTarget()
     let bundleID = body.optionalString("bundleId") ?? foregroundApplication().bundleID
     let match = try waitForElements(bundleID: bundleID, timeout: timeout) { root, isLastAttempt -> RunnerElementMatch? in
+      try self.checkPatternTime(selector, in: root)
       if case .unknown(let message)? = self.commandWindow {
         guard isLastAttempt else { return nil }
         throw RunnerError.windowPositionUnknown(RunnerWindows.touchError(message))
@@ -1028,6 +1039,7 @@ final class RelayRunnerUITests: XCTestCase {
     }
     let bundleID = body.optionalString("bundleId") ?? foregroundApplication().bundleID
     let (matches, count) = try waitForElements(bundleID: bundleID, timeout: timeout) { root, isLastAttempt -> ([RunnerElementMatch], Int)? in
+      try self.checkPatternTime(selector, in: root)
       // Frames of a window that can't be placed aren't on the screen: no onscreen then, and a filter waits like a touch.
       var screen: CGRect? = CGRect(origin: .zero, size: self.screen(in: self.interfaceOrientation()).size)
       if case .unknown(let message)? = self.commandWindow {

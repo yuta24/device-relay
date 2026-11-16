@@ -16,7 +16,7 @@ extension Arguments {
     "key": ["--bundle-id"],
     "open": ["--bundle-id"]
   ]
-  static let selectorOptions: Set<String> = ["--id", "--label", "--type", "--value", "--index"]
+  static let selectorOptions: Set<String> = ["--id", "--label", "--type", "--value", "--label-match", "--value-match", "--index"]
   /// Options without a value.
   static let runnerFlags: [String: Set<String>] = [
     "type": ["--stdin", "--clear"],
@@ -221,7 +221,7 @@ extension Arguments {
     "find": (
       "relay find <selector> [--onscreen | --hittable] [--limit 20] [--timeout <s>] [--gone] [--require]\n      [--bundle-id <id>]",
       """
-      Lists the elements that match every given condition exactly (at most --limit, 1-100). --timeout
+      Lists the elements that match every given condition (at most --limit, 1-100). --timeout
       waits up to 10 seconds for a match. Prints {"ok":true,"bundleId":..,"count":n,"elements":[{"index",
       "type","identifier","label","value","frame":{"x","y","width","height"},"enabled","onscreen"}],
       "truncated":bool}:
@@ -563,14 +563,23 @@ extension Arguments {
 
   static let runnerCommonUsage = """
   <selector>: one or more of --id <identifier> --label <label> --type <type> --value <value>, which
-    must all match exactly (the attributes relay source reports), plus --index <n> to pick one of
-    several matches (from 0, in the order relay find lists them). --type takes an element type name
+    must all match exactly (the attributes relay source reports), or --label-match <regex> and
+    --value-match <regex> (below), plus --index <n> to pick one of several matches (from 0, in the
+    order relay find lists them). --type takes an element type name
     such as button, cell, staticText, textField, or switch (relay source --help lists them all).
+    --label-match <regex> and --value-match <regex> match the label or value with a regular
+    expression (ICU, as NSRegularExpression) anywhere in it: write ^ and $ to match it whole, (?i) to
+    ignore case, (?s) for . to match a line break, (?m) for ^ and $ at each line. An element without
+    a value has the empty value (--value-match '^$'). Each is up to 1000 characters; one that takes
+    over 1 s over the screen's elements is exit 7. --label with --label-match (--value with
+    --value-match) is an error: write ^...$ instead. A pattern cannot start with -- ([-]- does).
+    --id always matches exactly.
     --onscreen keeps only matches with part of the frame inside the screen (not the other pages of a
     pager); --hittable only those a touch at that part's center reaches, checked by hit testing (not
     what a player or an overlay covers). The order stays, and --index counts the kept ones. Where hit
     testing cannot answer (an iPad window, more than one display), --hittable is exit 6 with code
-    hit_test_unavailable. A runner from before them is runner_bad_response (relay start --rebuild).
+    hit_test_unavailable. A runner from before --onscreen, --hittable, --label-match, or --value-match
+    is runner_bad_response (exit 8; relay start --rebuild).
   Runner commands read the runner URL and token from runner.json, never from the command line:
     --runner <path> or --session <name>, else $RELAY_RUNNER or $RELAY_SESSION (both set is an error),
     else ~/.relay/runner.json (where relay start without a session writes it). A session is
@@ -657,7 +666,7 @@ private struct RunnerArgumentValues {
     case "find":
       _ = try positional(0, "an element selector, not arguments")
       guard let selector = try selector() else {
-        throw ArgumentError(description: "find requires an element selector (--id, --label, --type, --value)")
+        throw ArgumentError(description: "find requires an element selector (\(Self.selectorOptionList))")
       }
       let maxLimit = RunnerElementLookup.maxFindLimit
       let limit = try integer("--limit", "an integer in 1...\(maxLimit)") { (1 ... maxLimit).contains($0) }
@@ -675,7 +684,7 @@ private struct RunnerArgumentValues {
     case "adjust":
       _ = try positional(0, "an element selector, not arguments")
       guard let selector = try selector() else {
-        throw ArgumentError(description: "adjust requires an element selector (--id, --label, --type, --value)")
+        throw ArgumentError(description: "adjust requires an element selector (\(Self.selectorOptionList))")
       }
       let target: RunnerAdjusting.Target
       switch (try number("--position", "a number in 0...1 (0 is the left end)") { (0 ... 1).contains($0) },
@@ -806,15 +815,16 @@ private struct RunnerArgumentValues {
     try oneOf("--mode", ["private", "xcui"])
   }
 
-  /// The `element` built from --id, --label, --type, --value, --index, --onscreen, and --hittable; nil when none
-  /// is given. It is checked with the runner's own parser, so a bad type name fails before anything is sent.
+  /// The `element` built from --id, --label, --type, --value, --label-match, --value-match, --index, --onscreen, and
+  /// --hittable; nil when none is given. It is checked with the runner's own parser, so a bad type name or regular
+  /// expression fails before anything is sent.
   private func selector() throws -> RunnerElementSelector? {
     var object: [String: Any] = [:]
-    for (option, key) in [("--id", "identifier"), ("--label", "label"), ("--type", "type"), ("--value", "value")] {
+    for (option, key) in Self.selectorKeys {
       object[key] = try string(option)
     }
     if (onscreen || hittable) && object.isEmpty {
-      throw ArgumentError(description: "--onscreen and --hittable narrow an element selector; give --id, --label, --type, or --value too")
+      throw ArgumentError(description: "--onscreen and --hittable narrow an element selector; give \(Self.selectorOptionList) too")
     }
     object["index"] = try integer("--index", "a non-negative integer") { $0 >= 0 }
     object["onscreen"] = onscreen ? true : nil
@@ -823,7 +833,29 @@ private struct RunnerArgumentValues {
     do {
       return try RunnerElementSelector(json: object)
     } catch let error as RunnerElementSelectorError {
-      throw ArgumentError(description: error.description)
+      throw ArgumentError(description: Self.cliDescription(error))
+    }
+  }
+
+  /// The options of a selector's attributes and the `element` keys they set.
+  static let selectorKeys = [
+    ("--id", "identifier"), ("--label", "label"), ("--type", "type"), ("--value", "value"), ("--label-match", "labelMatch"),
+    ("--value-match", "valueMatch")
+  ]
+  static let selectorOptionList = "--id, --label, --type, --value, --label-match, or --value-match"
+
+  /// A selector error in the words of the command line, where `labelMatch` is `--label-match`.
+  static func cliDescription(_ error: RunnerElementSelectorError) -> String {
+    let options = ["label": "--label", "value": "--value", "labelMatch": "--label-match", "valueMatch": "--value-match"]
+    switch error {
+    case .exactAndPattern(let exact, let pattern):
+      let exact = options[exact] ?? exact, pattern = options[pattern] ?? pattern
+      return "\(exact) and \(pattern) cannot be combined (\(exact) matches exactly; write ^...$ in \(pattern) for that)"
+    case .invalidPattern(let key), .patternTooLong(let key):
+      let description = error.description
+      return (options[key] ?? key) + description[description.firstIndex(of: ":")!...]
+    default:
+      return error.description
     }
   }
 
@@ -839,7 +871,7 @@ private struct RunnerArgumentValues {
       let xy = try coordinates(positionals)
       target = .point(RunnerPoint(x: xy[0], y: xy[1]))
     case (_, nil):
-      throw ArgumentError(description: "\(command) requires <x> <y> or an element selector (--id, --label, --type, --value)")
+      throw ArgumentError(description: "\(command) requires <x> <y> or an element selector (\(Self.selectorOptionList))")
     default:
       throw ArgumentError(description: "\(command) takes <x> <y> or an element selector, not both")
     }

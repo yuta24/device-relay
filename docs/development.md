@@ -335,6 +335,7 @@ xcodebuild の出力に `RELAY_RUNNER_READY port=8100 addresses=en0=…,utun3=�
 | `relay.play` / `relay.nowPlaying` | ラベルが `Play` のボタンと `Now playing` の文字。プレイヤーにも同じラベルがある |
 | `relay.covered` | ラベルが `Covered` のボタン。2 行目の右端にあり、どの向きでもプレイヤーの `relay.player.cover` のちょうど下にある |
 | `relay.playCount` | 2 つの `Play` と `Covered` が押された回数（`play: 1, player: 2, covered: 0`） |
+| `relay.countdown` | `Item` の下にある、ラベルが 1 秒ごとに減るボタン（`Remaining 4:59`）。押すと `Remaining 5:00` に戻る。value は押された回数（`taps: 1`）。変わるラベルを `--label-match` で選ぶ |
 | `relay.pages` | 横にページを送るスクロールビュー（3 ページ）。各ページに `Page title` の文字（`relay.page1.title` …）と、ラベルが `Select` のボタン（`relay.page1.select` …）。最初は 1 ページ目だけが画面にある |
 | `relay.pageStatus` | 最後に押された `Select` のページ（`selected: page 2`） |
 | `relay.item1` … `relay.item100` | `Item` の文字を 10×10 に並べたもの。要素の多い画面で時間を測る |
