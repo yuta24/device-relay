@@ -4,6 +4,12 @@
 
 ## 次の版（0.8.0 から）
 
+### 横向きでも、覆われた要素へのタッチを止める（0.8.0 から）
+
+要素指定の `relay tap`・`press` の前の確認（`element_point_covered`）と `relay source --filter interactive` は、横向き（`landscapeLeft`・`landscapeRight`）と `portraitUpsideDown` で、hit test に表示の向きの点をそのまま渡していました。hit test は縦向きの座標で点を受け取るので、別の場所を調べていました。
+そのため横向きでは、ほかのコントロールに覆われた要素へのタップを止められず、覆っているほうに届いていました。今は `--hittable` と同じく縦向きに直して渡すので、縦向きと同じように `element_point_covered`（終了コード 6）で止まります。
+覆われていない要素へのタップと、縦向きの結果は変わりません。横向きでこれまで送れていたタップが止まるようになったら、本当に覆われていないか `relay screenshot` で確かめてください。
+
 ### 画面の中・押せる要素だけを選ぶ --onscreen / --hittable（0.8.0 から）
 
 `relay find`・`tap`・`press`・`adjust` のセレクタに `--onscreen` と `--hittable` を付けられるようになりました（HTTP API では `element` の `"onscreen": true` / `"hittable": true`）。

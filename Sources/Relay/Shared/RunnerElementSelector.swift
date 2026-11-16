@@ -260,6 +260,11 @@ struct RunnerElementTarget {
 
   /// Refuse only a control positively identified on an unrelated branch in this snapshot. An unavailable hit test
   /// or an element absent from the tree (for example a remote view) preserves the existing touch.
+  func verified(hitTest: (CGPoint) -> [Int]?, in root: RunnerElementNode) -> Result<RunnerElementTarget, RunnerElementLookupFailure> {
+    verified(hitPath: hitTest(point), in: root)
+  }
+
+  /// `verified(hitTest:in:)` with the path hit at `point` already known.
   func verified(hitPath: [Int]?, in root: RunnerElementNode) -> Result<RunnerElementTarget, RunnerElementLookupFailure> {
     guard let hitPath, !RunnerElementTree.isRelatedHit(hitPath, to: match.path),
           let hit = RunnerElementTree.hitControl(at: point, path: hitPath, in: root) else { return .success(self) }

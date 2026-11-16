@@ -95,15 +95,26 @@
 - **API**: `-[XCUIDevice accessibilityInterface]` が返すオブジェクトの `-hitTestElement:withPoint:error:`、スナップショットの `-accessibilityElement` と `-children`。実装は `RelayActiveApplication.m` です。セレクタの存在を実行時に確認します。
 - **公開 API では足りない理由**: `frame` の中心が別の要素に重なることがあります。`isHittable` は、こちらで選んだ点に何があるかを返しません。
 - **コントロールの判定**: `RunnerElementTree.interactiveTypes` を再利用します。名前や enabled による一覧の条件は使いません。`staticText`・`other`・`image`・`group` などの内容は、ラベルやセルへクリックを渡す場合があるため、拒否の根拠にしません。
+- **座標**: hit test は、タッチの合成と同じく縦向きの座標で点を受け取ります。タッチ前の確認、`filter=interactive`、セレクタの `hittable` は、どれも表示の向きの点を `RunnerElementTree.displayedHitTest` で縦向きに直してから渡します。以前のタッチ前の確認と `filter=interactive` は表示の向きの点のまま渡していたので、横向きでは別の場所を調べていました。実機で、プレイヤーの Close の中心が入れ物の `other` や「答えなし」になり、覆われた要素へのタップを止められませんでした。
 - **使えないとき**: API が欠ける、nil・エラーが返る、返された要素がスナップショットにない場合は、確認を省き、従来どおり送ります。座標指定のタッチには使いません。
 - **無効にするとき**: `RELAY_DISABLE_PRIVATE_HITTEST=1` で `hitPathAtPoint:` は nil を返し、タッチと一覧の確認を省きます。セレクタの `hittable` は `hit_test_unavailable` になります。`relay start` には `TEST_RUNNER_RELAY_DISABLE_PRIVATE_HITTEST=1` を渡します。
 - **確かめていない座標**: iPad のウィンドウが placed または unknown のときと、画面が複数ある端末では、hit test の座標を確かめていないため使いません。全画面のアプリとその共有シートでは、これまでどおり確認します。
 - **結果の整合性**: `com.apple.SafariViewService` の Close・Cancel では、点を含まない Address 要素が返ることがありました。返された要素の frame が点を含まない場合も、確認できないものとして送ります。
 - **同じ方式のツール**: [WebDriverAgent の iOS 用インターフェース宣言](https://github.com/appium/WebDriverAgent/blob/master/PrivateHeaders/XCTest/XCAXClient_iOS.h)にも同じメソッドがあります。
 - **一覧での利用**: `filter=interactive` では、後のコントロールの枠と重なる候補だけを同じ方法で確認します。別のコントロールに当たると確認できた候補だけを外します。確認できない候補は残します。
-- **セレクタの `hittable`**: 一致した要素のうち画面の中にあるものに 1 件ずつ使い、その要素・子孫・その要素を含むコントロールに当たると確認できたものだけを残します。確認できないものは外します。確かめていない座標（上）と、API がない・無効にしたときは、`422`、`hit_test_unavailable` です。点は縦向きの座標に直して渡します（横向きで表示の向きの点を渡すと、どの要素にも当たりませんでした）。API があるかどうかは `hitTestUnavailableReasonForSnapshot:` で、点ごとの結果とは別に調べます（「[画面の中・押せる要素だけに絞る](elements.md#画面の中押せる要素だけに絞るonscreen--hittable)」）。
+- **セレクタの `hittable`**: 一致した要素のうち画面の中にあるものに 1 件ずつ使い、その要素・子孫・その要素を含むコントロールに当たると確認できたものだけを残します。確認できないものは外します。確かめていない座標（上）と、API がない・無効にしたときは、`422`、`hit_test_unavailable` です。API があるかどうかは `hitTestUnavailableReasonForSnapshot:` で、点ごとの結果とは別に調べます（「[画面の中・押せる要素だけに絞る](elements.md#画面の中押せる要素だけに絞るonscreen--hittable)」）。
 
 確かめた環境: Xcode 27.2、iPhone 17 Pro シミュレータ（iOS 27.0）、iPhone 14 Pro 実機（iOS 26.7.1）。iPad での hit test は確かめていません。
+
+横向きの座標は、RelayRunnerHost の `relay.visibility` の画面で確かめました。プレイヤーを重ね、下の画面の `relay.covered` を、ボタンとして読まれる `relay.player.cover` で覆った状態です（Xcode 27.2、iPhone 18 Pro シミュレータ iOS 27.2、iPhone 14 Pro 実機 iOS 26.7.3）。
+
+| 確認 | 縦向き | 横向き（左・右）、直す前 | 横向き（左・右）、直した後 |
+| --- | --- | --- | --- |
+| `tap --id relay.covered`（覆われている） | `element_point_covered`（`hit` は Cover） | 送った（届いたのは Cover） | `element_point_covered`（`hit` は Cover） |
+| `tap --id relay.player.play`（覆われていない） | 押せた | 押せた | 押せた |
+| プレイヤーを閉じた後の `tap --id relay.covered` | 押せた | 押せた | 押せた |
+
+直す前の結果はシミュレータだけで、実機は直した後だけです。`portraitUpsideDown` は単体テストだけで確かめました（iPhone 18 Pro シミュレータでは、`relay orientation portraitUpsideDown` の後も `/health` は `landscapeRight` のままでした）。
 
 ### 前面アプリ
 
