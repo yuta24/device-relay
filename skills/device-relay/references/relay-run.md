@@ -15,6 +15,7 @@ relay run steps.relay --check   # validate only (no runner needed, runs nothing;
 
 - Steps are runner commands without `relay` (`tap`, `press`, `swipe`, `adjust`, `type`, `key`, `button`, `orientation`, `launch`, `open`, `terminate`, `find`, `source`, `screenshot`, `health`, `foreground`, `ping`) and `sleep <seconds>` (up to 60). `start` / `stop` / `shutdown` and the like can't be written.
 - Words split as in a shell (spaces, `'...'`, `"..."`, `\`). `--runner` and `--session` go on `relay run` and can't be in a step. `type --stdin` can't be used either. `screenshot` requires `--output <file>`.
+- Put a regular expression in `'...'`: `tap --label-match '^Remaining \d+:\d{2}$' --type button`. Outside quotes `\` is dropped (`\d` becomes `d`), and `--check` doesn't catch that.
 - For a scenario you save, write `# relay-run: 1` (the format version) on the first line. For an unsupported version, that line is an error and nothing runs.
 - All lines are checked before running. For an invalid line it prints `relay: line <N>: <reason>`, runs nothing, and exits 2 (stderr only). You can check a scenario you wrote with `--check` before running it.
 - While running, it stops at the first step that fails, prints that step's error and `relay: step i/n (line N) failed: <step>`, and exits with that step's exit code (1, 3–8; 1 when a screenshot couldn't be saved).
