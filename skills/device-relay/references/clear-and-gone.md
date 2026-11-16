@@ -30,4 +30,4 @@ Checked on an iPhone 18 Pro simulator (iOS 27.2) with a hardware keyboard connec
 - An old runner ignores `--gone` and waits for the element to appear; relay then fails with `runner_bad_response` (exit 8). If you started the runner, `relay stop`, then `relay start --rebuild`.
 - Right after an alert closes with `gone:true`, the foreground app can take about 230 ms to come back. An element `tap` waits for that by itself.
 
-Checked on an iPhone 18 Pro simulator (iOS 27.2): `relay.toast` in the host app ([test-app](test-app.md)) was gone about 1.4 seconds after the tap, and an element that stayed gave exit 6 after `--timeout 2`. The same on an iPhone 14 Pro (iOS 26.7.3); alerts and the keyboard going away were checked only on the simulator.
+Checked on an iPhone 18 Pro simulator (iOS 27.2): `relay.toast` in the host app ([test-app](test-app.md)) was gone about 1.4 seconds after the tap, and an element that stayed gave exit 6 after `--timeout 2`. The same on an iPhone 14 Pro (iOS 26.7.3); alerts, system permission dialogs, the keyboard going away, and waiting after the app quits were checked only on the simulator.
