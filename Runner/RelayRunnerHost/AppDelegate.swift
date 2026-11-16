@@ -95,6 +95,11 @@ final class InputViewController: UIViewController, UITextFieldDelegate {
     visibilityButton.accessibilityIdentifier = "relay.visibility"
     visibilityButton.addTarget(self, action: #selector(openVisibility), for: .touchUpInside)
 
+    let scrollButton = UIButton(configuration: .bordered())
+    scrollButton.configuration?.title = "Scroll checks"
+    scrollButton.accessibilityIdentifier = "relay.scroll"
+    scrollButton.addTarget(self, action: #selector(openScroll), for: .touchUpInside)
+
     let toastButton = UIButton(configuration: .bordered())
     toastButton.configuration?.title = "Show toast"
     toastButton.accessibilityIdentifier = "relay.showToast"
@@ -107,7 +112,7 @@ final class InputViewController: UIViewController, UITextFieldDelegate {
 
     let stack = UIStackView(arrangedSubviews: [
       input, secondInput, passwordInput, notes, textLabel, passwordLengthLabel, submittedLabel, eventsLabel, overlayButton, gesturesButton,
-      visibilityButton, toastButton, stableButton
+      visibilityButton, scrollButton, toastButton, stableButton
     ])
     stack.axis = .vertical
     stack.spacing = 12
@@ -155,6 +160,12 @@ final class InputViewController: UIViewController, UITextFieldDelegate {
 
   @objc private func openVisibility() {
     present(VisibilityViewController(), animated: false)
+  }
+
+  @objc private func openScroll() {
+    let controller = ScrollViewController()
+    controller.modalPresentationStyle = .fullScreen
+    present(controller, animated: false)
   }
 
   /// A label at the bottom of the screen, removed from the view hierarchy (not hidden) after `toastDuration`.

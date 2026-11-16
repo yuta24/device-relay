@@ -295,12 +295,15 @@ xcodebuild の出力に `RELAY_RUNNER_READY port=8100 addresses=en0=…,utun3=�
 | `relay.overlay` | 別プロセスの画面（許可のダイアログ、共有シート、写真の選択、通知のバナー）を試す画面を開く。下の表 |
 | `relay.gestures` | 1 回のタップ以外の操作（ダブルタップなど）を試す画面を開く。下の表 |
 | `relay.visibility` | 見えている要素・押せる要素（`relay find --onscreen` / `--hittable`）を試す画面を開く。下の表 |
+| `relay.scroll` | スクロール探索を試す画面を開く。`relay.scroll.vertical` は100行の UITableView（`relay.scroll.row1` … `row100`）、`relay.scroll.horizontal` は40タイルの横の UICollectionView（`relay.scroll.tile1` … `tile40`）。`relay.scroll.status` で押した行・タイルを確認し、`relay.scroll.close` で戻る |
 | `relay.stability` | 描画の静止を試す画面を開きます。下の説明。 |
 | `relay.showToast` | 押すと画面の下に `relay.toast` のラベルを出し、1.5 秒後にビューから外す（`relay find --gone` を試す） |
 
 `relay.stability` で開く画面は `relay.stable.animate` で 1.8 秒の描画だけのアニメーション、`relay.stable.load` で 1.5 秒後の表示を試せます。
 `relay.stable.spin` / `relay.stable.stop` はスピナーの開始・停止、`relay.stable.push` / `relay.stable.modal` は画面遷移です。
 `relay.stable.status` が `Loading` から `Loaded` に変わります。外部通信はしません。
+
+古いホスト画面が残っている場合は、今回の `build-for-testing` で作った `RelayRunnerHost.app` を `relay install <path> --udid <UDID>` で更新してから `relay launch host` してください。
 
 `relay.overlay` で開く画面（`OverlayViewController`）は、アプリの上に別のプロセスが描く画面での relay の振る舞いを確かめるためのものです。
 

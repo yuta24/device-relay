@@ -413,6 +413,51 @@ iPhone で、上の止めるもので止まり、止めないものとダイア�
 - 横向き（landscapeLeft / landscapeRight）でも、identifier 指定のタップでフォーカスが移りました（`point` は 874×402 の座標で `{"x":437,"y":87}` など）。
 - 設定: `{"label":"General","type":"button"}` → `{"label":"About","type":"button"}` と順にタップして「情報」画面に移りました。
 
+### 見えるまでスクロール（scroll）
+
+`find`・`tap`・`press`・`adjust` のセレクタに `--scroll <方向>` を付けると、ランナー内で「探す → スワイプ → 探す」を繰り返します。まだ作られていない一覧のセルも、スクロールで現れれば見つけられます。CLI とランナーの間は 1 要求です。`relay run` の手順でも同じ書き方を使えます。
+
+```sh
+relay tap --id relay.scroll.row42 --scroll down
+relay tap --id relay.scroll.row3 --scroll up
+relay tap --id relay.scroll.tile15 --scroll right --in relay.scroll.horizontal --timeout 40 --max-swipes 20
+relay find --label Item42 --type cell --scroll down --max-swipes 20 --timeout 40 --require
+```
+
+- **方向**: コンテンツのどちらを探すかを `up` / `down` / `left` / `right` で指定します。指が動く向きは逆です。CLI では方向が必須、HTTP では省略時に `down` です。
+- **見つかった条件**: 要素の全体が入れ物の見えている矩形に収まったときだけ見つかったとみなします。一部だけ見えている要素は、`find` でもスワイプ 0 回の時点でも見つかったとはみなさず、探索を続けます。そのうえで、`find` は画面内（`onscreen`）、`--hittable` を付けた場合は到達可能な要素です。`tap`・`press`・`adjust` は常に `hittable` と同じ判定を使い、`--onscreen` との併用は CLI では終了コード 2、HTTP では 400 で断ります。判定できない環境（非公開 API がない、配置された iPad ウィンドウ、表示が複数など）では `hit_test_unavailable` で止まり、`onscreen` への暗黙の切り替えはしません。
+- **端に少し見える要素**: 要素全体が入れ物の見えている矩形に収まるまで、最後の移動量を小さく補正します。行き過ぎたときは逆向きにも補正します。入れ物より大きい要素は、全体が収まらないため見つかったとはみなしません。
+- **入れ物**: 画面内で有効な `scrollView`・`table`・`collectionView`・`textView` のうち、見えている面積が最大のもの（同面積ならツリー順の先頭）を使います。入れ物を明示しなければ、すでに条件を満たす要素は画面全体から探し、入れ物の外でもスワイプ 0 回で成功します。画面外のセルの子が表示中の座標を返す場合に備え、親のセル・入れ物のクリップも考慮します。
+- **明示する入れ物**: CLI の `--in <identifier>` は入れ物の accessibilityIdentifier を指定します。対象の要素もその入れ物の中だけで探します。複数一致は `element_ambiguous`、入れ物が見つからなければ `element_not_found` です。HTTP の `scroll.in` は属性セレクタのオブジェクトです（`index`・`onscreen`・`hittable` は指定できません）。
+- **スワイプ**: 入れ物と画面・親のスクロール領域の重なりから、キーボード・ナビゲーションバー・タブバー・ツールバー・ステータスバーを避ける矩形を選びます。通常は長さの 65% を 0.5 秒で動かし、終点で 0.15 秒止めてから離します。移動の最後の 10% は速度を落とし、離した後に最大 0.2 秒待ちます。その入れ物の表示内容が 0.1 秒間隔で 2 回続けて変わらなくなるまで、探索の期限内で最大 2 秒確かめます。長いアイドル待ちを避けるため、非公開のタッチ合成が使えない環境や `--mode xcui` は断ります。
+- **回数と時間**: `--max-swipes` は既定 10、1–30 回。`--scroll` がある場合の `--timeout` は探索全体の時間で、既定 20 秒、0–60 秒です（`0` は初回の確認だけ）。通常の、スクロールしない `--timeout`（0–10 秒）とは異なります。探索が終わった後に、別の待機はしません。CLI は探索の期限をまたぐ最後の合成タッチの猶予と、press / adjust の処理時間を加え、その上で 30 秒待ちます。
+- **停止条件**: 見つかった、回数上限、時間切れ、または 2 回続けてスワイプ後の表示内容が変わらない場合です。最後は端とみなしますが、端の検出は要素の属性と矩形の比較なので、同じ表示が続く一覧では上限も使ってください。スクロール中に選択の順序が変わるため、`--index` と `--gone` は併用できません。
+- **応答**: `swipes` は試みたスワイプ数（失敗した合成を含む）、`scrollStop` は `found` / `edge` / `maxSwipes` / `timeout` / `failed` です。`found` は探索成功の印で、その後の tap / adjust 自体の成功は `ok` で確かめます。探索の上限や端まで行っても見つからない場合は、`find` の `--require` の有無によらず `422`、`element_not_found`（CLI の終了コード 6）です。
+- **古いランナー**: `scroll` を無視して応答に `swipes` がない、または未知の `scroll` として断るランナーは `runner_bad_response`（終了コード 8）になります。`relay start --rebuild` で作り直してください。古いランナーがスクロールを無視した操作を既に行っている場合があるので、画面を確認してから送り直してください。
+
+#### スクロール探索を確かめた結果
+
+iPhone 14 Pro 実機（iOS 26.7.3、Xcode 27.2、2026-11-16）の RelayRunnerHost で、下の順に各 1 回確認しました。縦は100行の UITableView、横は40タイルの UICollectionView です。時間は CLI の起動から戻るまでで、直前の場面の位置を引き継いでいます。横方向は `--timeout 40 --max-swipes 20`、ない要素の探索は `--timeout 60 --max-swipes 30`、それ以外は表の指定以外は既定値です。
+
+| 場面 | 結果 | swipes | 時間 |
+| --- | --- | ---: | ---: |
+| 下端に一部だけ見える Row 13 を tap | 成功 | 2 | 5884 ms |
+| 下の Row 42 を tap（down） | 成功 | 5 | 13838 ms |
+| Row 3 へ戻って tap（up） | 成功 | 4 | 11215 ms |
+| 横の Tile 15 を tap（right、`--in`） | 成功 | 10 | 26746 ms |
+| 横の Tile 2 へ戻って tap（left、`--in`） | 成功 | 7 | 18836 ms |
+| 表示済みの Row 3 を tap（`--in`） | 成功 | 0 | 603 ms |
+| 画面外の Row 42 の子ラベルを find | 成功 | 4 | 10866 ms |
+| Row 50 を press（`--duration 0.1`） | 成功 | 2 | 5996 ms |
+| ない要素を下の端まで find（Row 50 付近から） | 終了コード 6、`element_not_found`、`edge` | 10 | 27952 ms |
+| Row 1 を上へ探す（`--max-swipes 1`） | 終了コード 6、`element_not_found`、`maxSwipes` | 1 | 2998 ms |
+| Row 1 を上へ探す（`--timeout 0`） | 終了コード 6、`element_not_found`、`timeout` | 0 | 355 ms |
+| `relay run` の tap 手順で Row 75 へ戻る | 成功 | 1 | 3624 ms |
+| 別の検証画面の表示済みスライダーを adjust | 成功（目標 0.7、実測位置 0.718） | 0 | 2200 ms |
+
+成功した tap / press は、ホストの `relay.scroll.status` が指定した行・タイルを示すことも確認しました。画面外のセルの子ラベルに表示中の位置が返る場合も、親セルのクリップによりスワイプ 0 回での誤った成功にはならず、実際に表示されてから find が成功しました。
+`relay run` は、スクロールして押す手順の後で `selected: row 75` を find する2手順が成功しています。adjust は表示済みのスライダーで、スクロール後の adjust や pickerWheel は今回の実機確認には含めていません。
+
 ### 消えるのを待つ（gone）
 
 `/find` に `"gone": true` を付けると、セレクタに一致する要素がなくなるまで待ちます。読み込みの表示が消える、シートやアラートが閉じる、を待つためのものです。CLI では `relay find <セレクタ> --gone --timeout <秒>` です。

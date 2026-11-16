@@ -505,3 +505,20 @@ extension RunnerElementNode {
   /// The value a `valueMatch` reads: the empty string for an element without one, as `--format compact` shows it.
   var matchedValue: String { value ?? "" }
 }
+
+extension RunnerElementSelector {
+  /// The `element` object of `/tap`, `/press`, and `/find`.
+  var json: [String: Any] {
+    var object: [String: Any] = [:]
+    object["identifier"] = identifier
+    object["label"] = label
+    object["type"] = type
+    object["value"] = value
+    object["labelMatch"] = labelMatch?.pattern
+    object["valueMatch"] = valueMatch?.pattern
+    object["index"] = index
+    object["onscreen"] = visibility == .onscreen ? true : nil
+    object["hittable"] = visibility == .hittable ? true : nil
+    return object
+  }
+}

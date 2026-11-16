@@ -163,6 +163,19 @@ enum RunnerControl {
     }
 
     let code = RunnerExitCode(status: response.status)
+    if resolved.scrollOptions != nil {
+      let object = (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any]
+      let message = (object?["error"] as? String ?? "").lowercased()
+      let rejected = response.status == 400 && message.contains("scroll")
+        && ["unknown", "unexpected", "unsupported"].contains(where: message.contains)
+      let swipes = object?["swipes"].flatMap(RunnerRequestValues.number)
+      let acknowledged = swipes.map { $0.isFinite && $0 >= 0 && $0.rounded() == $0 } ?? false
+      // Old runners may reject the new default timeout (20 > their 10) before they even read scroll.
+      if rejected || ([.success, .actionFailed, .badRequest].contains(code) && !acknowledged) {
+        return fail(.runnerBadResponse, "the runner did not acknowledge scroll; relay start --rebuild builds a current one",
+                    exit: .runnerError, to: failureOutput)
+      }
+    }
     if let selector = resolved.selector, let key = rejectedSelectorKey(response, selector: selector) {
       // An older runner rejects the key as unknown (400), which reads as a mistake in the command line.
       let options = ["onscreen", "hittable"].contains(key) ? "--onscreen and --hittable" : "--label-match and --value-match"
@@ -194,17 +207,17 @@ enum RunnerControl {
         return RunnerExitCode.actionFailed.rawValue
       }
     }
-    if case .type(_, _, _, clear: true) = resolved, !answerSays("cleared", response.body) {
+    if case .type(_, _, _, clear: true) = resolved.baseOperation, !answerSays("cleared", response.body) {
       // A runner from before `clear` ignored it: the text went in after what the field held.
       return fail(.runnerBadResponse, "the runner's /type answer has no cleared; it predates type --clear and typed without "
         + "clearing the field (relay start --rebuild builds a current one)", exit: .runnerError, to: failureOutput)
     }
-    if case .tap(let touch) = resolved, let taps = touch.taps, taps > 1, tapsAnswer(response.body) != taps {
+    if case .tap(let touch) = resolved.baseOperation, let taps = touch.taps, taps > 1, tapsAnswer(response.body) != taps {
       // A runner from before `taps` ignored it and tapped once.
       return fail(.runnerBadResponse, "the runner's /tap answer has no taps; it predates tap --count and tapped once "
         + "(relay start --rebuild builds a current one)", exit: .runnerError, to: failureOutput)
     }
-    if case .find(_, _, _, _, gone: true) = resolved {
+    if case .find(_, _, _, _, gone: true) = resolved.baseOperation {
       guard let gone = goneAnswer(response.body) else {
         // A runner from before `gone` ignored it and waited for an element to appear instead.
         return fail(.runnerBadResponse, "the runner's /find answer has no gone; it predates find --gone (relay start --rebuild "
