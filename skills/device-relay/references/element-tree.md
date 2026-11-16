@@ -36,7 +36,14 @@ What `--filter interactive` keeps and leaves out:
 
 ## Element selectors
 
-- Conditions: `--id` (accessibilityIdentifier), `--label`, `--type`, `--value`. An exact match (including case) with the values of the same name in `relay source`, all ANDed. There are no partial matches or regular expressions.
+- Conditions: `--id` (accessibilityIdentifier), `--label`, `--type`, `--value`, all ANDed. Each is an exact match (including case) with the value of the same name in `relay source`. `--id` has no regular expression.
+- `--label-match <regex>` / `--value-match <regex>` (ICU, as `NSRegularExpression`) select a label with changing numbers or times, or one known only in part:
+  - A partial match: `Remain` matches `Remaining 3:42`. Write `^...$` to match it whole: `relay tap --label-match '^Remaining \d+:\d{2}$' --type button`.
+  - Add `--type button`: the pattern also matches the `staticText` inside the button, so alone it is `element_ambiguous`.
+  - `(?i)` ignores case (`'(?i)^play$'`); `(?s)` and `(?m)` work too. A missing value is empty: `--value-match '^$'`.
+  - They work in `find` (also `--gone`), `tap`, `press`, `adjust`, and `relay run` steps, with `--onscreen`, `--hittable`, `--index` (and `--limit`, `find` only).
+  - Exit 2, nothing sent: an invalid pattern, one over 1000 characters, or `--label` with `--label-match` (`--value` with `--value-match`; write `^...$` instead). A pattern starting with `--` is taken as an option: write `[-]-`.
+  - Over 1 s for one snapshot is exit 7 (`invalid_request`). A runner from before them is `runner_bad_response` (exit 8): if you started it, `relay stop`, then `relay start --rebuild`.
 - `--index <n>`: the nth of the matching elements (from 0, in the same order as `relay source`'s JSON). You can use `index` from a `relay find` result as it is.
 - `--type` names are the same as `type` in `relay source` (`button`, `staticText`, `textField`, `secureTextField`, `searchField`, `cell`, `switch`, `image`, `navigationBar`, `scrollView`, `table`, `collectionView`, `alert`, and so on). An unknown name is a usage error, exit code 2.
 - When a name is ambiguous, get a list with `relay find --type <type>` and use its `identifier` or `index`. When the same label is also on a hidden screen (under a player, another page), `--hittable` or `--onscreen` may leave just the visible one.
