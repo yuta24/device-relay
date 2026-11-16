@@ -45,6 +45,26 @@ relay run --step 'tap --id next' --step 'wait --stable --require' --step 'screen
 CLI は表示の取得と最後の画像取得に備えて 180 秒、さらに通信に 30 秒を足して待ちます。
 古いランナーが `/wait` を拒否した場合や、応答に有効な `stable`・`waitedMs` がない場合は `runner_bad_response`、終了コード 8 です。`relay start --rebuild` で更新してください。
 
+### ホストアプリでの確認結果
+
+次の表は、静止区間を 0.5 秒にしたときの `waitedMs` です。時間にはランナー内の画像取得を含み、通信と CLI の起動は含みません。`relay run` の行だけは静止区間を 0.2 秒にしています。
+タイムアウトは通常 3 秒です。静止画面のシミュレータと `relay run` は 10 秒、`--require` のスピナーは 1 秒にしています。
+
+| 場面 | 結果 | シミュレータ | 実機 |
+| --- | --- | --- | --- |
+| 最初から静止、3 回 | `stable:true`、終了コード 0 です。 | 653 / 668 / 707 ms | 708 / 710 / 712 ms |
+| 描画だけの 1.8 秒の移動 | 移動が止まった後に `stable:true` です。 | 2323 ms | 2374 ms |
+| 1.5 秒後の内容表示 | `stable:true` になり、`Loaded` の表示も確認できました。 | 2208 ms | 2189 ms |
+| 連続スピナー | `stable:false`、終了コード 0 です。 | 3042 ms | 3002 ms |
+| 連続スピナー、`--require` | `stable:false`、`screen_not_stable`、終了コード 6 です。 | 1063 ms | 1001 ms |
+| push 後 | `stable:true`、終了コード 0 です。 | 1028 ms | 1180 ms |
+| モーダル表示後 | `stable:true`、終了コード 0 です。 | 1065 ms | 1189 ms |
+| `relay run` の wait と find | `wait --stable --for 0.2 --require` と次の `find --require` が成功しました。 | wait 471 ms | wait 309 ms |
+
+遅延表示の画面は、待機中にスピナーが回る作りです。描画が変わらないまま後から内容が出る画面の完了を保証するものではありません。
+
+確かめた環境: Xcode 27.2、iPhone 18 Pro シミュレータ iOS 27.2、eclair 14 Pro（iPhone 14 Pro）実機 iOS 26.7.3。実機の確認日は 2026-11-16 です。
+
 ## スクリーンショット
 
 実機では、DRM 付きの映像がスクリーンショットに黒く写ることがあり、映像の中身は確かめられません（利用者からの報告で、relay では確かめていません）。
