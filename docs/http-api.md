@@ -315,6 +315,17 @@ iPad Pro 11-inch (M5) シミュレータ（iPadOS 26.2、「Windowed Apps」の�
 
 要素を指定した `/tap`・`/press` と `/adjust` は、タッチを送る（値を設定する）直前にも一覧を読み直し、対象アプリが一覧になく先頭が SpringBoard なら何も送らずに `422`（`covered_by_other_app`）を返します（「[別のアプリに覆われているとき](elements.md#別のアプリに覆われているとき)」）。システムの許可ダイアログ・コントロールセンター・通知センターの表示中は、一覧が SpringBoard だけになります（シミュレータ iOS 27、実機 iOS 26.7.1）。
 
+## 要素をスクロールして探す
+
+`POST /find`・`/tap`・`/press`・`/adjust` のボディに `scroll` を付けられます。探索と操作は同じ要求の中で行います。
+
+```json
+{"element":{"identifier":"relay.scroll.row42"},"scroll":{"direction":"down","maxSwipes":10,"in":{"identifier":"relay.scroll.vertical"}},"timeout":20}
+```
+
+`direction` は `up` / `down` / `left` / `right`（省略時 `down`）、`maxSwipes` は 1–30（既定 10）。`scroll.in` は任意の入れ物の属性セレクタで、省略時は最大面積の入れ物を選びます。`timeout` は探索全体の秒数で、0–60（省略時 20、0 は初回だけ）。`scroll` と `element.index`・`gone: true`・座標・`mode: xcui` は併用できません。`/tap`・`/press`・`/adjust` では `element.onscreen` も併用できません（常に `hittable` の判定を使います）。
+成功と操作失敗の JSON には `swipes` と `scrollStop` が付きます。見つからない場合は `422`、`element_not_found` と停止理由（`edge` / `maxSwipes` / `timeout`）です。hit test などの前提条件の失敗は既存のエラー code を返します。詳細は「[見えるまでスクロール](elements.md#見えるまでスクロールscroll)」を参照してください。
+
 ## 文字入力と特殊キー
 
 - `/type {"text":"..."}` は前面アプリ（または `bundleId`）で、キーボードのフォーカスがある要素に入力します。入力欄をタップしてフォーカスを当ててから送ってください。

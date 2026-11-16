@@ -31,6 +31,8 @@ final class RelayRunnerUITests: XCTestCase {
   /// Why elements of the command's latest element tree inside the share sheet could not be placed on the screen
   /// (`RunnerRemoteViews`); empty when they all were.
   private var commandRemoteViews: [String] = []
+  private var commandScroll: RunnerScrolling.Progress?
+  private var preparedScrollTree: RunnerElementNode?
   private var commandSnapshot: XCUIElementSnapshot?
 
   private lazy var springboard = XCUIApplication(bundleIdentifier: Self.springboardBundleID)
@@ -133,17 +135,21 @@ final class RelayRunnerUITests: XCTestCase {
     commandWindow = nil
     commandRemoteViews = []
     commandSnapshot = nil
+    commandScroll = nil
+    preparedScrollTree = nil
     defer {
       capturedIssues = nil
       commandDisplay = nil
       commandWindow = nil
       commandRemoteViews = []
       commandSnapshot = nil
+      commandScroll = nil
+      preparedScrollTree = nil
     }
 
     var response: RunnerHTTPResponse
     do {
-      response = try route(request)
+      response = try routeWithScroll(request)
     } catch let error as RunnerError {
       response = .error(error)
     } catch {
@@ -153,6 +159,12 @@ final class RelayRunnerUITests: XCTestCase {
       response = .error(.xcuiFailed, issues.joined(separator: "; "), status: 422)
     }
 
+    if let progress = commandScroll,
+       var object = (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any] {
+      object["swipes"] = progress.swipes
+      object["scrollStop"] = progress.stop?.rawValue ?? "failed"
+      response = .json(object, status: response.status)
+    }
     let durationMs = Int((DispatchTime.now().uptimeNanoseconds - startedAt) / 1_000_000)
     Self.emit("relay-runner \(request.method) \(request.path) -> \(response.status) \(durationMs)ms")
     return response
@@ -162,6 +174,158 @@ final class RelayRunnerUITests: XCTestCase {
   private func shutdown() {
     shouldStop = true
     Self.emit("relay-runner POST /shutdown -> 200")
+  }
+
+  /// The existing action runs after scrolling, on the same snapshot and chosen container.
+  /// The command gate stays held throughout; the CLI sends one request.
+  private func routeWithScroll(_ request: RunnerHTTPRequest) throws -> RunnerHTTPResponse {
+    guard request.method == "POST", ["/find", "/tap", "/press", "/adjust"].contains(request.path) else {
+      return try route(request)
+    }
+    let body = try RunnerJSON(request.body)
+    guard let scroll = body.object["scroll"] else { return try route(request) }
+    let selector = try body.elementSelector(body.object["element"] ?? NSNull())
+    let gone = try body.bool("gone")
+    let options: RunnerScrolling.Options
+    do {
+      options = try RunnerScrolling.Options(json: scroll, timeout: body.object["timeout"], selector: selector, gone: gone)
+    } catch { throw RunnerError.invalidField(String(describing: error)) }
+    commandScroll = RunnerScrolling.Progress()
+    guard request.path == "/find" || selector.visibility != .onscreen else {
+      throw RunnerError.invalidField("scroll: \(request.path) requires hittable; onscreen cannot be combined")
+    }
+    guard body.object["x"] == nil, body.object["y"] == nil else {
+      throw RunnerError.invalidField("scroll: coordinates and element cannot be combined")
+    }
+    if request.path == "/find", RunnerElementLookup.findLimit(body.object["limit"]) == nil {
+      throw RunnerError.invalidField("limit")
+    }
+    if request.path == "/press" {
+      _ = try body.positiveDouble("duration", default: 1)
+      guard body.object["taps"] == nil else { throw RunnerError.invalidField("taps: not supported by /press") }
+    }
+    if request.path == "/tap" { _ = try body.taps() }
+    if request.path == "/adjust" { _ = try body.adjustTarget() }
+    if body.optionalString("mode") == "xcui" {
+      throw RunnerError.invalidField("scroll: requires private gestures, not mode xcui")
+    }
+    _ = try touchMode(body)
+    // XCUI gestures may idle-wait for minutes. Refuse them rather than promising a bounded search.
+    guard privateTouchIsDefault else {
+      throw RunnerError.touchModeRejected("scroll: private gesture synthesis is unavailable; nothing was sent")
+    }
+    let bundleID = body.optionalString("bundleId") ?? foregroundApplication().bundleID
+    var strict = selector
+    strict.visibility = request.path == "/find" && selector.visibility != .hittable ? .onscreen : .hittable
+    let result = try scrollUntil(strict, bundleID: bundleID, options: options)
+    guard result else {
+      return .json(["ok": false, "code": RunnerErrorCode.elementNotFound.rawValue,
+                    "error": "no fully visible element found before scroll stopped (\(commandScroll?.stop?.rawValue ?? "failed"))",
+                    "count": 0, "elements": []], status: 422)
+    }
+    var object = body.object
+    object.removeValue(forKey: "scroll")
+    object["element"] = strict.json
+    object["timeout"] = 0
+    object["bundleId"] = bundleID
+    if request.path == "/tap" || request.path == "/press" { object["mode"] = "private" }
+    let data = try JSONSerialization.data(withJSONObject: object, options: [.withoutEscapingSlashes])
+    return try route(RunnerHTTPRequest(method: request.method, path: request.path, query: request.query,
+                                       headers: request.headers, body: data))
+  }
+
+  private func scrollContainer(in root: RunnerElementNode, screen: CGRect,
+                               selector: RunnerElementSelector?) throws -> RunnerScrolling.Container? {
+    do { return try RunnerScrolling.container(in: root, screen: screen, selector: selector) }
+    catch let failure as RunnerElementLookupFailure { throw RunnerError.elementNotResolved(failure) }
+    catch let error as RunnerElementSelectorError { throw RunnerError.invalidField(error.description) }
+  }
+
+  private func scrollUntil(_ selector: RunnerElementSelector, bundleID: String, options: RunnerScrolling.Options) throws -> Bool {
+    let application = XCUIApplication(bundleIdentifier: bundleID)
+    let deadline = ProcessInfo.processInfo.systemUptime + options.timeout
+    var progress = RunnerScrolling.Progress()
+    while true {
+      let root = try elementTree(application, bundleID: bundleID)
+      if case .unknown(let message)? = commandWindow {
+        throw RunnerError.windowPositionUnknown(RunnerWindows.touchError(message))
+      }
+      try checkPatternTime(selector, in: root)
+      let screen = CGRect(origin: .zero, size: self.screen(in: interfaceOrientation()).size)
+      let hitTest = try self.hitTest(for: selector)
+      if options.container == nil, progress.swipes == 0 {
+        let global = RunnerScrolling.clipped(root, to: screen)
+        if selector.allMatches(in: global, screen: screen, hitTest: hitTest).contains(where: { RunnerScrolling.fullyVisible($0.node, in: screen) }) {
+          progress.stop = .found
+          commandScroll = progress
+          preparedScrollTree = global
+          return true
+        }
+      }
+      let container = try scrollContainer(in: root, screen: screen, selector: options.container)
+      if options.container != nil, container == nil {
+        throw RunnerError.elementNotResolved(RunnerElementLookupFailure(reason: .notFound, count: 0, candidates: []))
+      }
+      // With no container, an already visible target still succeeds with zero swipes.
+      let viewport = container?.viewport ?? screen
+      let scope = RunnerScrolling.clipped(container?.node ?? root, to: viewport)
+      let matches = selector.allMatches(in: scope, screen: screen, hitTest: hitTest)
+      let ready = matches.contains { RunnerScrolling.fullyVisible($0.node, in: viewport) }
+      if let stop = progress.decision(ready: ready, fingerprint: RunnerScrolling.fingerprint(scope, viewport: viewport),
+                                      now: ProcessInfo.processInfo.systemUptime, deadline: deadline, limit: options.maxSwipes) {
+        commandScroll = progress
+        if stop == .found { preparedScrollTree = scope }
+        return stop == .found
+      }
+      commandScroll = progress
+      guard let container else {
+        throw RunnerError.elementNotResolved(RunnerElementLookupFailure(reason: .notFound, count: 0, candidates: []))
+      }
+      try requireUncovered(bundleID)
+      // Never swipe a container that a front control covers, even for onscreen-only find.
+      if canVerifyCommandHit {
+        let point = CGPoint(x: viewport.midX, y: viewport.midY)
+        let target = RunnerElementTarget(match: container.match, point: point)
+        if case .failure(let failure) = target.verified(hitTest: displayedHitTest(), in: root) {
+          throw RunnerError.elementNotResolved(failure)
+        }
+      }
+      // Partial targets may not pass hittable yet. Their frames still guide the final small correction.
+      var unfiltered = selector
+      unfiltered.visibility = nil
+      let partial = unfiltered.allMatches(in: scope).first { $0.node.touchPoint(in: viewport) != nil }?.node.frame
+      let gesture = RunnerScrolling.gesture(in: viewport, direction: options.direction, target: partial)
+      let from = (x: Double(gesture.from.x), y: Double(gesture.from.y))
+      let to = (x: Double(gesture.to.x), y: Double(gesture.to.y))
+      try requireOnScreen([("scroll.from", from.x, from.y), ("scroll.to", to.x, to.y)])
+      // Count attempted gestures, including a synthesizer failure after input may already have started.
+      progress.swipes += 1
+      commandScroll = progress
+      let moveEnd = RunnerScrolling.hold + RunnerScrolling.moveDuration
+      let lift = moveEnd + RunnerScrolling.rest
+      let near = (x: from.x + (to.x - from.x) * 0.9, y: from.y + (to.y - from.y) * 0.9)
+      try synthesizeTouch(points: [from, from, near, to, to],
+                          offsets: [RunnerScrolling.hold, RunnerScrolling.hold + RunnerScrolling.moveDuration * 0.5, moveEnd, lift], liftOffset: lift)
+      let next = min(deadline, ProcessInfo.processInfo.systemUptime + RunnerScrolling.settle)
+      while ProcessInfo.processInfo.systemUptime < next {
+        _ = RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.01))
+      }
+      // UIKit can still decelerate after lift, making a fresh frame and a subsequent hit test
+      // disagree. Sample just this scroll container before the next search; never extend the deadline.
+      let settleDeadline = min(deadline, ProcessInfo.processInfo.systemUptime + RunnerScrolling.settleLimit)
+      var settlement = RunnerScrolling.Settlement()
+      while ProcessInfo.processInfo.systemUptime < settleDeadline {
+        let settledRoot = try elementTree(application, bundleID: bundleID)
+        let settledContainer = try scrollContainer(in: settledRoot, screen: screen, selector: options.container)
+        let settledViewport = settledContainer?.viewport ?? screen
+        let settledScope = RunnerScrolling.clipped(settledContainer?.node ?? settledRoot, to: settledViewport)
+        if settlement.observe(RunnerScrolling.fingerprint(settledScope, viewport: settledViewport)) { break }
+        let sampleAt = min(settleDeadline, ProcessInfo.processInfo.systemUptime + RunnerScrolling.settlePoll)
+        while ProcessInfo.processInfo.systemUptime < sampleAt {
+          _ = RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.01))
+        }
+      }
+    }
   }
 
   private func route(_ request: RunnerHTTPRequest) throws -> RunnerHTTPResponse {
@@ -1072,7 +1236,12 @@ final class RelayRunnerUITests: XCTestCase {
       let isLastAttempt = Date() >= deadline
       let root: RunnerElementNode?
       do {
-        root = try elementTree(application, bundleID: bundleID)
+        if let prepared = preparedScrollTree {
+          root = prepared
+          preparedScrollTree = nil
+        } else {
+          root = try elementTree(application, bundleID: bundleID)
+        }
       } catch where !isLastAttempt {
         // Usually the app isn't running yet.
         root = nil
