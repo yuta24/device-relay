@@ -685,7 +685,9 @@ private struct RunnerArgumentValues {
       let duration = try number("--for", "seconds in 0.1...5") { RunnerStability.durationRange.contains($0) }
         ?? RunnerStability.defaultDuration
       let timeout = try timeout() ?? RunnerStability.defaultTimeout
-      return .waitStable(RunnerStability.Options(duration: duration, timeout: timeout), bundleID: try string("--bundle-id"))
+      let bundleID = try string("--bundle-id")
+      guard bundleID?.isEmpty != true else { throw ArgumentError(description: "--bundle-id requires a non-empty bundle ID") }
+      return .waitStable(RunnerStability.Options(duration: duration, timeout: timeout), bundleID: bundleID)
     case "screenshot":
       _ = try positional(0, "no arguments (save to a file with -o)")
       var screenshot = RunnerScreenshot(output: try string("--output"))

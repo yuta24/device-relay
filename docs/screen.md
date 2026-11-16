@@ -29,7 +29,7 @@ relay run --step 'tap --id next' --step 'wait --stable --require' --step 'screen
 | `--for <秒>` | 0.1〜5 秒、既定 0.5 秒の静止区間を待ちます。 |
 | `--timeout <秒>` | 0〜10 秒、既定 10 秒で待機を打ち切ります。0 は 1 回だけ取得して `stable:false` です。 |
 | `--require` | 時間切れを `screen_not_stable`、終了コード 6 にします。省略時は終了コード 0 です。 |
-| `--bundle-id <id>` | 指定アプリが前面であることを毎回確認し、違えば終了コード 6 です。`host` も使えます。 |
+| `--bundle-id <id>` | 指定アプリが前面であることを毎回確認し、違えば終了コード 6 です。前面のアプリを判定できない場合も、確認できなかったという内容のエラーで終了コード 6 にします。`host` も使えます。 |
 
 応答は `{"ok":true,"stable":true,"waitedMs":650}` の形です。時間切れでは `stable:false`、`--require` の失敗でも `stable` と `waitedMs` を残します。
 `waitedMs` は画像取得を含む、ランナー内で待った時間です。待機中は他の操作が busy になります。
@@ -43,7 +43,7 @@ relay run --step 'tap --id next' --step 'wait --stable --require' --step 'screen
 
 開始済みの XCTest の画像取得は中断しないので、応答が `--timeout` を超える場合があります。
 CLI は表示の取得と最後の画像取得に備えて 180 秒、さらに通信に 30 秒を足して待ちます。
-古いランナーが `/wait` を拒否した場合や、応答に有効な `stable`・`waitedMs` がない場合は `runner_bad_response`、終了コード 8 です。`relay start --rebuild` で更新してください。
+`/wait` を持たない古いランナー（404）の場合や、応答に有効な `stable`・`waitedMs` がない場合は `runner_bad_response`、終了コード 8 です。`relay start --rebuild` で更新してください。
 
 ### ホストアプリでの確認結果
 

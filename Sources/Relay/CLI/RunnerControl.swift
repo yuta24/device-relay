@@ -182,8 +182,9 @@ enum RunnerControl {
       return fail(.runnerBadResponse, "the runner rejected \(key) in the element: it predates \(options) "
         + "(relay start --rebuild builds a current one)", exit: .runnerError, to: failureOutput)
     }
-    if case .waitStable = resolved, [400, 404].contains(response.status) {
-      return fail(.runnerBadResponse, "the runner rejected /wait; relay start --rebuild builds a current one",
+    // A runner from before /wait has no such route (404). A current runner's 400 is a real field error.
+    if case .waitStable = resolved, response.status == 404 {
+      return fail(.runnerBadResponse, "the runner has no /wait; relay start --rebuild builds a current one",
                   exit: .runnerError, to: failureOutput)
     }
     guard code == .success else {

@@ -13,7 +13,7 @@ struct StabilityTests {
     for words in [["wait"], ["wait", "--stable=true"], ["wait", "--stable", "extra"],
                   ["wait", "--stable", "--for", "0"], ["wait", "--stable", "--for", "5.1"],
                   ["wait", "--stable", "--timeout", "11"], ["wait", "--stable", "--timeout", "nan"],
-                  ["wait", "--stable", "--for", "1", "--for", "2"], ["tap", "1", "2", "--stable"]] {
+                  ["wait", "--stable", "--for", "1", "--for", "2"], ["tap", "1", "2", "--stable"], ["wait", "--stable", "--bundle-id", ""]] {
       #expect(throws: ArgumentError.self) { try Arguments.parse(words) }
     }
   }
@@ -64,11 +64,11 @@ struct StabilityTests {
       #expect(failure?["code"] as? String == "runner_bad_response")
       #expect((failure?["error"] as? String)?.contains("relay start --rebuild") == true)
     }
-    for http in [400, 404] {
-      let (status, failure) = try perform(#"{"ok":false,"code":"invalid_request","error":"unknown key stable"}"#, status: http)
-      #expect(status == 8)
-      #expect(failure?["code"] as? String == "runner_bad_response")
-    }
+    let (status, failure) = try perform(#"{"ok":false,"code":"not_found","error":"no such route"}"#, status: 404)
+    #expect(status == 8)
+    #expect(failure?["code"] as? String == "runner_bad_response")
+    // A current runner's field error stays a bad request with its own message.
+    #expect(try perform(#"{"ok":false,"code":"invalid_request","error":"bundleId: expected a non-empty string"}"#, status: 400).0 == 7)
     #expect(try perform(#"{"ok":false,"code":"busy"}"#, status: 409).0 == 5)
     #expect(try perform(#"{"ok":false,"code":"xcui_failed"}"#, status: 422).0 == 6)
   }

@@ -1235,8 +1235,14 @@ final class RelayRunnerUITests: XCTestCase {
       let next = Date(timeIntervalSinceNow: seconds)
       while Date() < next { _ = RunLoop.current.run(mode: .default, before: next) }
     }, sample: { () throws -> VisualSample in
-      if let bundleID, self.foregroundApplication().bundleID != bundleID {
-        throw RunnerError.actionFailed("/wait bundleId must be the foreground app")
+      if let bundleID {
+        let foreground = self.foregroundApplication()
+        if foreground.bundleID != bundleID {
+          // Fail closed, but do not claim a mismatch the runner could not actually check.
+          throw RunnerError.actionFailed(foreground.source == .fallback
+            ? "/wait could not determine the foreground app to check bundleId; nothing was compared"
+            : "/wait bundleId must be the foreground app (front: \(foreground.bundleID))")
+        }
       }
       if captureScreen == nil { captureScreen = try self.screenshotDisplay().xcuiScreen }
       guard let captureScreen else { throw RunnerError.internalError("no screen to capture") }
