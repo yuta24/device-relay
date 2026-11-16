@@ -103,7 +103,7 @@ struct RunnerArgumentsTests {
       == .press(RunnerTouch(target: .element(RunnerElementSelector(label: "Play", visibility: .onscreen)), duration: 1)))
     #expect(try operation(["adjust", "--type", "slider", "--hittable", "--position", "0.5"])
       == .adjust(RunnerElementSelector(type: "slider", visibility: .hittable), .position(0.5), timeout: nil, bundleID: nil))
-    let needsSelector = "--onscreen and --hittable narrow an element selector; give --id, --label, --type, or --value too"
+    let needsSelector = "--onscreen and --hittable narrow an element selector; give --id, --label, --type, --value, --label-match, or --value-match too"
     let wrong: [([String], String)] = [
       (["find", "--hittable"], needsSelector),
       (["find", "--onscreen", "--index", "0"], needsSelector),
@@ -167,7 +167,7 @@ struct RunnerArgumentsTests {
       (["adjust", "--id", "a", "--position", "0.5", "--picker-value", "x"], "adjust takes either --position or --picker-value, not both"),
       (["adjust", "--id", "a", "--position", "1.5"], "--position requires a number in 0...1 (0 is the left end)"),
       (["adjust", "--id", "a", "--position", "-0.1"], "--position requires a number in 0...1 (0 is the left end)"),
-      (["adjust", "--position", "0.5"], "adjust requires an element selector (--id, --label, --type, --value)"),
+      (["adjust", "--position", "0.5"], "adjust requires an element selector (--id, --label, --type, --value, --label-match, or --value-match)"),
       (["adjust", "100", "200", "--position", "0.5"], "adjust takes an element selector, not arguments"),
       (["adjust", "--id", "a", "--position", "0.5", "--timeout", "11"], "--timeout requires seconds in 0...10"),
       (["adjust", "--id", "a", "--position", "0.5", "--mode", "xcui"], "unknown option for adjust: --mode")
@@ -284,5 +284,64 @@ struct RunnerArgumentsTests {
     // It still has its help, which says to use relay stop first.
     #expect(try Arguments.parse(["shutdown", "--help"]) == .commandHelp("shutdown"))
     #expect(Arguments.usage(for: "shutdown").contains("Normally use relay stop."))
+  }
+
+  @Test func parsesLabelAndValueMatch() throws {
+    let remaining = try RunnerElementPattern(#"^Remaining \d+:\d{2}$"#)
+    #expect(try operation(["tap", "--label-match", #"^Remaining \d+:\d{2}$"#])
+      == .tap(RunnerTouch(target: .element(RunnerElementSelector(labelMatch: remaining)))))
+    #expect(try operation(["find", "--value-match=^$", "--type", "textField", "--onscreen", "--index", "1", "--limit", "5"])
+      == .find(RunnerElementSelector(type: "textField", valueMatch: try RunnerElementPattern("^$"), index: 1, visibility: .onscreen),
+               limit: 5, timeout: nil, bundleID: nil))
+    #expect(try operation(["press", "--label-match", "(?i)^play$", "--hittable", "--duration", "1"])
+      == .press(RunnerTouch(target: .element(RunnerElementSelector(labelMatch: try RunnerElementPattern("(?i)^play$"), visibility: .hittable)),
+                            duration: 1)))
+    #expect(try operation(["adjust", "--value-match", "%$", "--position", "0.5"])
+      == .adjust(RunnerElementSelector(valueMatch: try RunnerElementPattern("%$")), .position(0.5), timeout: nil, bundleID: nil))
+    #expect(try operation(["find", "--label-match", "^Toast", "--gone", "--timeout", "3"])
+      == .find(RunnerElementSelector(labelMatch: try RunnerElementPattern("^Toast")), limit: nil, timeout: 3, bundleID: nil, gone: true))
+    // A pattern with = in it, written either way, is kept whole; one starting with - is a value too.
+    #expect(try operation(["find", "--label-match", "(?=x)a=b"])
+      == .find(RunnerElementSelector(labelMatch: try RunnerElementPattern("(?=x)a=b")), limit: nil, timeout: nil, bundleID: nil))
+    #expect(try operation(["find", "--label-match=a=b"])
+      == .find(RunnerElementSelector(labelMatch: try RunnerElementPattern("a=b")), limit: nil, timeout: nil, bundleID: nil))
+    #expect(try operation(["find", "--value-match", "-1$"])
+      == .find(RunnerElementSelector(valueMatch: try RunnerElementPattern("-1$")), limit: nil, timeout: nil, bundleID: nil))
+    // An exact match on the other attribute is fine.
+    #expect(try operation(["find", "--label", "Play", "--value-match", "on"])
+      == .find(RunnerElementSelector(label: "Play", valueMatch: try RunnerElementPattern("on")), limit: nil, timeout: nil, bundleID: nil))
+  }
+
+  /// Usage errors (exit 2), found before anything is sent, in the words of the command line.
+  @Test func rejectsBadLabelAndValueMatch() throws {
+    let cases: [([String], String)] = [
+      (["tap", "--label-match", "("], "--label-match: not a valid regular expression (ICU syntax, as NSRegularExpression)"),
+      (["find", "--value-match", "[a"], "--value-match: not a valid regular expression (ICU syntax, as NSRegularExpression)"),
+      (["find", "--label-match", String(repeating: "a", count: RunnerElementPattern.maxLength + 1)],
+       "--label-match: the regular expression is longer than 1000 characters"),
+      (["tap", "--label", "Play", "--label-match", "Play"],
+       "--label and --label-match cannot be combined (--label matches exactly; write ^...$ in --label-match for that)"),
+      (["find", "--value", "on", "--value-match", "on"],
+       "--value and --value-match cannot be combined (--value matches exactly; write ^...$ in --value-match for that)"),
+      (["find", "--label-match"], "--label-match requires a value"),
+      (["find", "--label-match", ""], "--label-match requires a value"),
+      // A value starting with -- reads as the next option, as for every other option.
+      (["find", "--label-match", "--x"], "--label-match requires a value"),
+      (["swipe", "--label-match", "a", "1", "2", "3", "4"], "unknown option for swipe: --label-match")
+    ]
+    func usageError(_ arguments: [String]) -> String? {
+      do {
+        _ = try Arguments.parse(arguments)
+        return nil
+      } catch {
+        return (error as? ArgumentError)?.description
+      }
+    }
+    for (arguments, message) in cases {
+      #expect(usageError(arguments) == message, "\(arguments.prefix(3))")
+    }
+    #expect(usageError(["tap", "--label-match", "a", "10", "20"]) == "tap takes <x> <y> or an element selector, not both")
+    #expect(usageError(["find", "--onscreen"])
+      == "--onscreen and --hittable narrow an element selector; give --id, --label, --type, --value, --label-match, or --value-match too")
   }
 }

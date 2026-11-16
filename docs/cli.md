@@ -66,7 +66,7 @@ relay crashes                                  # 直近 24 時間のクラッシ
 | `ping` / `health` / `foreground` | `GET /ping` / `/health` / `/foreground` | – |
 | `screenshot` | `GET /screenshot` | `-o <file>`（`-` で stdout）、`--format png\|jpeg`、`--quality 0.05–1.0`、`--max-size <px>`、`--scale <px/pt>` |
 | `source` | `GET /source` | `--format json\|text\|compact`、`--filter interactive`、`--max-depth <n>`、`--bundle-id <id>` |
-| `find` | `POST /find` | セレクタ、`--onscreen` か `--hittable`、`--limit <n>`、`--timeout <s>`、`--gone`、`--require`、`--bundle-id <id>` |
+| `find` | `POST /find` | セレクタ（正規表現の `--label-match`・`--value-match` も可）、`--onscreen` か `--hittable`、`--limit <n>`、`--timeout <s>`、`--gone`、`--require`、`--bundle-id <id>` |
 | `tap` / `press` | `POST /tap` / `/press` | `<x> <y>` かセレクタ（`--onscreen`・`--hittable` も可）、`--mode private\|xcui`、`--timeout`・`--bundle-id`（セレクタのみ）、`--count 2`（tap のみ。ダブルタップ）、`--duration`（press のみ） |
 | `swipe` | `POST /swipe` | `<x1> <y1> <x2> <y2>`、`--duration`、`--hold`、`--mode` |
 | `adjust` | `POST /adjust` | セレクタ（`--onscreen`・`--hittable` も可）、`--position <0-1>`（スライダー）か `--picker-value <値>`（ピッカーのホイール）、`--timeout <s>`、`--bundle-id <id>` |
@@ -120,6 +120,18 @@ relay find --id spinner --onscreen --gone --timeout 5 --require   # 画面から
 `--hittable` は hit test が使えない端末（iPad のウィンドウ表示、表示が複数ある端末）では終了コード 6（`hit_test_unavailable`）です。
 判定と制約は「[画面の中・押せる要素だけに絞る](elements.md#画面の中押せる要素だけに絞るonscreen--hittable)」にあります。
 
+`--label-match <regex>` と `--value-match <regex>` は、label と value を正規表現（ICU、`NSRegularExpression`）で探します。
+文字列のどこかに一致すれば一致で、全体と一致させるときは `^` と `$` を書きます。大文字と小文字を区別しないときは `(?i)` を書きます。
+`find`・`tap`・`press`・`adjust` と `relay run` の手順で使え、ほかの条件や `--onscreen`・`--hittable`・`--index`・`--gone` と組み合わせられます。
+
+```sh
+relay tap --label-match '^Remaining \d+:\d{2}$' --type button
+relay find --label-match '(?i)^play$' --hittable
+```
+
+正しくない式と、`--label` と `--label-match`（`--value` と `--value-match`）を両方付けたときは、終了コード 2 です。`--id` は完全一致だけです。
+改行・値のない要素・時間の上限の扱いは「[正規表現で探す](elements.md#正規表現で探すlabelmatch--valuematch)」にあります。
+
 `relay source` は要素ツリーを取得します。`source --format text` / `compact` の出力はテキストです。
 
 `relay screenshot` は画像をファイルに保存し、その絶対パスを 1 行出します。
@@ -134,10 +146,11 @@ relay: image 471x1024 px, screen 402x874 pt, 1.172 px/pt (tap in points: px / 1.
 
 ### セレクタと入力
 
-セレクタでは、`--id`（= `identifier`）・`--label`・`--type`・`--value` を 1 つ以上指定し、任意で `--index <n>` を付けます。
-「[要素セレクタ](elements.md#要素セレクタ)」と同じ完全一致・AND です。
+セレクタでは、`--id`（= `identifier`）・`--label`・`--type`・`--value`・`--label-match`・`--value-match` を 1 つ以上指定し、任意で `--index <n>` を付けます。
+「[要素セレクタ](elements.md#要素セレクタ)」と同じく AND で、`--label-match`・`--value-match` のほかは完全一致です。
+`--label-match` などの値は、`--` で始められません（ほかの値と同じく、次の印とみなして終了コード 2 です）。`--label-match '[-]-x'` のように書き換えてください。
 
-`--type` の名前、キー名、ボタン名、向きの名前、数値の範囲は送る前に確認し、間違っていれば終了コード 2 で何も送りません。
+`--type` の名前、正規表現、キー名、ボタン名、向きの名前、数値の範囲は送る前に確認し、間違っていれば終了コード 2 で何も送りません。
 
 `relay tap --count 2` は、同じ点をダブルタップします（`1` か `2`。それ以外は終了コード 2）。`relay tap` を 2 回続けて送る代わりにはなりません。
 2 回の間隔が往復の時間で決まり、ダブルタップと認識されないことがあるためです（「[ダブルタップ（taps）](http-api.md#エンドポイント)」）。
@@ -417,7 +430,7 @@ relay 自身は次の `code` を出します。ランナーは返しません。
 | `runner_unavailable` | `3` | runner.json がない、接続できない、接続が OS に拒否された |
 | `runner_timeout` | `3` | 時間内に応答がない（ランナーは操作を続けていて、終わるまで busy） |
 | `runner_info_invalid` | `1` | runner.json が読めない、url が不正、`host` を解決できない |
-| `runner_bad_response` | ランナーのステータスによる（`8` など） | JSON でない本文のエラー（古いランナー、別のサーバー）で、`status` に HTTP ステータスが入ります。`find --gone` への応答に `gone` がない（`gone` を知らない古いランナー）ときと、`--onscreen`・`--hittable` を知らない古いランナーがそれを拒否したときも、この code で終了コード 8 です。 |
+| `runner_bad_response` | ランナーのステータスによる（`8` など） | JSON でない本文のエラー（古いランナー、別のサーバー）で、`status` に HTTP ステータスが入ります。`find --gone` への応答に `gone` がない（`gone` を知らない古いランナー）ときと、`--onscreen`・`--hittable`・`--label-match`・`--value-match` を知らない古いランナーがそれを拒否したときも、この code で終了コード 8 です。 |
 | `screenshot_save_failed` | `1` | 画像を受け取ったが、ファイルに保存できない |
 | `app_not_installed` | `6` | `launch` と `open --bundle-id` で、アプリが端末に入っていない（ランナーには送らない）。`uninstall` では何も消していない |
 | `app_bundle_invalid` | `1` | `install` のパスがない、`.app`・`.ipa` でない、Info.plist が読めない |

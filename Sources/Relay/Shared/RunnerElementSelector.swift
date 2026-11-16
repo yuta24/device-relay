@@ -1,8 +1,8 @@
 import CoreGraphics
 import Foundation
 
-/// The `element` of `/tap`, `/press`, and `/find`: exact matches on the attributes `/source` reports,
-/// combined with AND.
+/// The `element` of `/tap`, `/press`, and `/find`: exact matches on the attributes `/source` reports, and regular
+/// expressions on its label and value (`labelMatch`, `valueMatch`), combined with AND.
 ///
 /// Like `RunnerElementTree.swift`, this file is compiled into both the `relay` CLI and the
 /// RelayRunnerUITests target, so the matching the runner relies on is covered by the SwiftPM unit tests.
@@ -13,6 +13,10 @@ struct RunnerElementSelector: Equatable {
   /// A `/source` type name such as `button` or `textField`.
   var type: String?
   var value: String?
+  /// A regular expression that must match somewhere in the label (`labelMatch`); `^` and `$` match it whole.
+  var labelMatch: RunnerElementPattern?
+  /// The same for the value (`valueMatch`), where an element without one has the empty value.
+  var valueMatch: RunnerElementPattern?
   /// Which match to use, counted from 0 in document order; required when more than one element matches.
   /// It counts only the matches `visibility` keeps.
   var index: Int?
@@ -28,7 +32,7 @@ struct RunnerElementSelector: Equatable {
     case hittable
   }
 
-  static let keys: Set<String> = ["identifier", "label", "type", "value", "index", "onscreen", "hittable"]
+  static let keys: Set<String> = ["identifier", "label", "type", "value", "labelMatch", "valueMatch", "index", "onscreen", "hittable"]
 
   /// Parses the `element` object. Unknown keys are rejected so a typo (`id`, `text`) isn't silently
   /// dropped and turned into a broader match.
@@ -49,6 +53,14 @@ struct RunnerElementSelector: Equatable {
     if let type, !Self.isTypeName(type) {
       throw RunnerElementSelectorError.unknownType(type)
     }
+    // Both on one attribute is most likely a --label left in when --label-match was added.
+    if label != nil, object["labelMatch"] != nil { throw RunnerElementSelectorError.exactAndPattern("label", "labelMatch") }
+    if value != nil, object["valueMatch"] != nil { throw RunnerElementSelectorError.exactAndPattern("value", "valueMatch") }
+    func pattern(_ name: String) throws -> RunnerElementPattern? {
+      try string(name).map { try RunnerElementPattern($0, key: name) }
+    }
+    labelMatch = try pattern("labelMatch")
+    valueMatch = try pattern("valueMatch")
     if let raw = object["index"] {
       guard let number = RunnerRequestValues.number(raw), number >= 0, number <= Double(Int32.max),
             number.rounded() == number else {
@@ -67,19 +79,22 @@ struct RunnerElementSelector: Equatable {
     } else if try flag("onscreen") {
       visibility = .onscreen
     }
-    guard identifier != nil || label != nil || type != nil || value != nil else {
+    guard identifier != nil || label != nil || type != nil || value != nil || labelMatch != nil || valueMatch != nil else {
       throw RunnerElementSelectorError.empty
     }
   }
 
   init(
-    identifier: String? = nil, label: String? = nil, type: String? = nil, value: String? = nil, index: Int? = nil,
+    identifier: String? = nil, label: String? = nil, type: String? = nil, value: String? = nil,
+    labelMatch: RunnerElementPattern? = nil, valueMatch: RunnerElementPattern? = nil, index: Int? = nil,
     visibility: Visibility? = nil
   ) {
     self.identifier = identifier
     self.label = label
     self.type = type
     self.value = value
+    self.labelMatch = labelMatch
+    self.valueMatch = valueMatch
     self.index = index
     self.visibility = visibility
   }
@@ -96,7 +111,28 @@ struct RunnerElementSelector: Equatable {
     if let label, node.label != label { return false }
     if let type, node.type != type { return false }
     if let value, node.value != value { return false }
+    if let labelMatch, !labelMatch.matches(node.label) { return false }
+    if let valueMatch, !valueMatch.matches(node.matchedValue) { return false }
     return true
+  }
+
+  /// Throws `patternTooSlow` when `labelMatch` and `valueMatch` take more than `RunnerElementPattern.timeBudget`
+  /// over every label and value in the tree. The runner calls it on each snapshot before matching, so a pattern
+  /// that backtracks without end (`(a+)+$`) fails the request instead of holding the runner; the matching after
+  /// it then reads the same strings and takes no longer.
+  func checkPatternTime(in root: RunnerElementNode, budget: TimeInterval = RunnerElementPattern.timeBudget) throws {
+    guard labelMatch != nil || valueMatch != nil else { return }
+    let deadline = Date(timeIntervalSinceNow: budget)
+    func visit(_ node: RunnerElementNode) throws {
+      if let labelMatch, labelMatch.matches(node.label, before: deadline) == nil {
+        throw RunnerElementSelectorError.patternTooSlow("labelMatch")
+      }
+      if let valueMatch, valueMatch.matches(node.matchedValue, before: deadline) == nil {
+        throw RunnerElementSelectorError.patternTooSlow("valueMatch")
+      }
+      for child in node.children { try visit(child) }
+    }
+    try visit(root)
   }
 
   /// The snapshot path of the element a touch at a point would reach, nil when the hit test has no answer there.
@@ -198,17 +234,31 @@ enum RunnerElementSelectorError: Error, Equatable, CustomStringConvertible {
   case unknownType(String)
   case invalidIndex
   case notABoolean(String)
+  /// The exact key and the pattern key of one attribute (`label` and `labelMatch`).
+  case exactAndPattern(String, String)
+  case invalidPattern(String)
+  case patternTooLong(String)
+  case patternTooSlow(String)
 
   var description: String {
     switch self {
     case .notAnObject: return "element: expected an object"
-    case .empty: return "element: expected at least one of identifier, label, type, value"
+    case .empty: return "element: expected at least one of identifier, label, type, value, labelMatch, valueMatch"
     case .unknownKey(let key):
-      return "element: unknown key '\(key)' (expected identifier, label, type, value, index, onscreen, hittable)"
+      return "element: unknown key '\(key)' (expected identifier, label, type, value, labelMatch, valueMatch, index, onscreen, "
+        + "hittable)"
     case .notAString(let key): return "element.\(key): expected a non-empty string"
     case .unknownType(let type): return "element.type: unknown type '\(type)' (use the type names of /source)"
     case .invalidIndex: return "element.index: expected a non-negative integer"
     case .notABoolean(let key): return "element.\(key): expected true or false"
+    case .exactAndPattern(let exact, let pattern):
+      return "element: \(exact) and \(pattern) cannot be combined (\(exact) matches exactly; write ^...$ in \(pattern) for that)"
+    case .invalidPattern(let key): return "element.\(key): not a valid regular expression (ICU syntax, as NSRegularExpression)"
+    case .patternTooLong(let key):
+      return "element.\(key): the regular expression is longer than \(RunnerElementPattern.maxLength) characters"
+    case .patternTooSlow(let key):
+      return "element.\(key): the regular expression took more than \(Int(RunnerElementPattern.timeBudget)) s over the elements on "
+        + "the screen; write one that backtracks less (no nested repeats such as (a+)+)"
     }
   }
 }
@@ -399,4 +449,59 @@ enum RunnerElementLookup {
   static func findIsDone(matchCount: Int, gone: Bool, isLastAttempt: Bool) -> Bool {
     isLastAttempt || (gone ? matchCount == 0 : matchCount > 0)
   }
+}
+
+/// A `labelMatch` or `valueMatch`: an ICU regular expression (`NSRegularExpression` with no options) that must match
+/// somewhere in the string. Options go in the pattern: `(?i)` ignores case, `(?s)` lets `.` match a line break, and
+/// `(?m)` makes `^` and `$` match at each line; without `(?m)` they match at the start and the end of the whole
+/// string (`$` also before a line break that ends it). The CLI and the runner both build it here.
+struct RunnerElementPattern: Equatable, @unchecked Sendable {
+  /// The longest pattern, in characters. Longer ones are more likely pasted by mistake than written.
+  static let maxLength = 1000
+  /// How long `labelMatch` and `valueMatch` together may take over one snapshot (`checkPatternTime`).
+  static let timeBudget: TimeInterval = 1
+
+  let pattern: String
+  private let expression: NSRegularExpression
+
+  /// `key` names the field in the error (`labelMatch`, `valueMatch`).
+  init(_ pattern: String, key: String = "pattern") throws {
+    guard pattern.count <= Self.maxLength else { throw RunnerElementSelectorError.patternTooLong(key) }
+    guard let expression = try? NSRegularExpression(pattern: pattern) else {
+      throw RunnerElementSelectorError.invalidPattern(key)
+    }
+    self.pattern = pattern
+    self.expression = expression
+  }
+
+  func matches(_ string: String) -> Bool {
+    expression.firstMatch(in: string, range: NSRange(location: 0, length: (string as NSString).length)) != nil
+  }
+
+  /// `matches`, or nil when it runs past `deadline`. ICU reports progress while it backtracks, so a pattern that
+  /// would take minutes on one string is stopped too.
+  func matches(_ string: String, before deadline: Date) -> Bool? {
+    guard Date() < deadline else { return nil }
+    var found = false
+    var late = false
+    expression.enumerateMatches(in: string, options: [.reportProgress], range: NSRange(location: 0, length: (string as NSString).length)) { match, _, stop in
+      if match != nil {
+        found = true
+        stop.pointee = true
+      } else if Date() >= deadline {
+        late = true
+        stop.pointee = true
+      }
+    }
+    return late && !found ? nil : found
+  }
+
+  static func == (lhs: RunnerElementPattern, rhs: RunnerElementPattern) -> Bool {
+    lhs.pattern == rhs.pattern
+  }
+}
+
+extension RunnerElementNode {
+  /// The value a `valueMatch` reads: the empty string for an element without one, as `--format compact` shows it.
+  var matchedValue: String { value ?? "" }
 }

@@ -15,6 +15,8 @@ import UIKit
 ///   `relay.player.cover` in every orientation. That one is a control with no text inside, so a touch check that hits it
 ///   knows the point is covered (a hit on a button's text proves nothing)
 /// - `relay.playCount`: how many times each `Play`, and `Covered`, was tapped (`play: 1, player: 2, covered: 0`)
+/// - `relay.countdown`: below the grid, a button whose label counts down each second (`Remaining 4:59`) and starts again at `Remaining 5:00`
+///   when tapped; its value is the count of taps (`taps: 1`). A label that changes, for `--label-match`
 /// - `relay.pages`: a paging scroll view of three pages, each with the text `Page title` (`relay.page1.title`, ...) and
 ///   a button labeled `Select` (`relay.page1.select`, ...); only the first page is on the screen at first
 /// - `relay.pageStatus`: the page whose `Select` was tapped last (`selected: page 1`)
@@ -25,6 +27,10 @@ final class VisibilityViewController: UIViewController {
   private var plays = 0
   private var playerPlays = 0
   private var coveredTaps = 0
+  private let countdownButton = UIButton(configuration: .bordered())
+  private var countdownTimer: Timer?
+  private var countdownEnd = Date()
+  private var countdownTaps = 0
 
   /// Where `relay.covered` and `relay.player.cover` are: the same place on both screens, which cover the same window.
   static func pinToCoverSlot(_ slot: UIView, in view: UIView) {
@@ -66,7 +72,9 @@ final class VisibilityViewController: UIViewController {
       playCountLabel,
       pages(),
       pageStatusLabel,
-      grid()
+      grid(),
+      // Last, so the elements above stay where they were measured.
+      countdownButton
     ])
     stack.axis = .vertical
     stack.spacing = 8
@@ -78,6 +86,38 @@ final class VisibilityViewController: UIViewController {
       stack.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16)
     ])
     Self.pinToCoverSlot(button("relay.covered", "Covered", #selector(coveredTapped)), in: view)
+
+    countdownButton.accessibilityIdentifier = "relay.countdown"
+    countdownButton.addTarget(self, action: #selector(restartCountdown), for: .touchUpInside)
+    countdownEnd = Date(timeIntervalSinceNow: 300)
+    updateCountdown()
+    countdownTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+      MainActor.assumeIsolated { self?.updateCountdown() }
+    }
+  }
+
+  override func viewDidDisappear(_ animated: Bool) {
+    super.viewDidDisappear(animated)
+    if isBeingDismissed {
+      countdownTimer?.invalidate()
+    }
+  }
+
+  @objc private func restartCountdown() {
+    countdownTaps += 1
+    countdownEnd = Date(timeIntervalSinceNow: 300)
+    updateCountdown()
+  }
+
+  private func updateCountdown() {
+    let seconds = max(0, Int(countdownEnd.timeIntervalSinceNow.rounded(.up)))
+    let title = String(format: "Remaining %d:%02d", seconds / 60, seconds % 60)
+    // No animation, so the title changes in place each second.
+    UIView.performWithoutAnimation {
+      countdownButton.configuration?.title = title
+      countdownButton.layoutIfNeeded()
+    }
+    countdownButton.accessibilityValue = "taps: \(countdownTaps)"
   }
 
   /// Three pages as wide as the scroll view, side by side; the scroll view shows one at a time.

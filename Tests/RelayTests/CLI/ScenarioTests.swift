@@ -273,6 +273,17 @@ struct ScenarioFindCheckTests {
       .runner(.tap(RunnerTouch(target: .element(RunnerElementSelector(label: "Play", visibility: .hittable))))),
       .runner(.find(RunnerElementSelector(label: "Play", visibility: .onscreen), limit: nil, timeout: nil, bundleID: nil, gone: true))
     ])
+    // Patterns go through the same parser, so a bad one is a line error before anything runs.
+    #expect(try Scenario.parse(Scenario.lines(of: #"tap --label-match '^Remaining \d+:\d{2}$' --hittable"# + "\n"
+        + "find --label-match \"(?i)^toast\" --gone --timeout 3")).map(\.action) == [
+      .runner(.tap(RunnerTouch(target: .element(RunnerElementSelector(labelMatch: try RunnerElementPattern(#"^Remaining \d+:\d{2}$"#),
+                                                                      visibility: .hittable))))),
+      .runner(.find(RunnerElementSelector(labelMatch: try RunnerElementPattern("(?i)^toast")), limit: nil, timeout: 3, bundleID: nil, gone: true))
+    ])
+    #expect(throws: ScenarioLineErrors(errors: [
+      ScenarioLineError(line: 2, reason: "--label-match: not a valid regular expression (ICU syntax, as NSRegularExpression)"),
+      ScenarioLineError(line: 3, reason: "--value and --value-match cannot be combined (--value matches exactly; write ^...$ in --value-match for that)")
+    ])) { try Scenario.parse(Scenario.lines(of: "find --id a\ntap --label-match '('\nfind --value on --value-match on")) }
     var required: [Bool] = []
     #expect(Scenario.execute(steps, perform: { _, requireMatch in required.append(requireMatch); return 0 }, log: { _ in }) == 0)
     #expect(required == [false, true])

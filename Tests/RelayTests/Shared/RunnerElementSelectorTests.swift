@@ -540,4 +540,152 @@ struct RunnerElementSelectorTests {
     #expect(error.status == 422 && error.code == .hitTestUnavailable && error.json["code"] as? String == "hit_test_unavailable")
     #expect(RunnerWindows.visibilityError("cannot tell").contains("onscreen and hittable cannot be checked"))
   }
+
+  // MARK: - labelMatch and valueMatch
+
+  private func pattern(_ source: String) throws -> RunnerElementPattern { try RunnerElementPattern(source) }
+
+  @Test func parsesPatterns() throws {
+    #expect(try selector(#"{"labelMatch":"^Remaining"}"#) == RunnerElementSelector(labelMatch: try pattern("^Remaining")))
+    #expect(try selector(#"{"valueMatch":"^$","type":"textField","index":1}"#)
+      == RunnerElementSelector(type: "textField", valueMatch: try pattern("^$"), index: 1))
+    // An exact match on one attribute and a pattern on the other is fine; what relay sends parses back to the same.
+    let both = RunnerElementSelector(label: "Play", valueMatch: try pattern("(?i)on"), visibility: .hittable)
+    #expect(try RunnerElementSelector(json: both.json) == both)
+    #expect(both.json["valueMatch"] as? String == "(?i)on" && both.json["labelMatch"] == nil)
+    #expect(RunnerElementSelector(labelMatch: try pattern("a")) != RunnerElementSelector(labelMatch: try pattern("b")))
+  }
+
+  @Test func rejectsInvalidPatterns() throws {
+    let cases: [(String, RunnerElementSelectorError)] = [
+      (#"{"labelMatch":"("}"#, .invalidPattern("labelMatch")),
+      (#"{"valueMatch":"[a"}"#, .invalidPattern("valueMatch")),
+      (#"{"labelMatch":"a{2,1}"}"#, .invalidPattern("labelMatch")),
+      (#"{"labelMatch":""}"#, .notAString("labelMatch")),
+      (#"{"valueMatch":1}"#, .notAString("valueMatch")),
+      (#"{"label":"Play","labelMatch":"Play"}"#, .exactAndPattern("label", "labelMatch")),
+      (#"{"value":"on","valueMatch":"on"}"#, .exactAndPattern("value", "valueMatch")),
+      ("{\"labelMatch\":\"\(String(repeating: "a", count: RunnerElementPattern.maxLength + 1))\"}", .patternTooLong("labelMatch"))
+    ]
+    for (json, expected) in cases {
+      #expect(throws: expected, "\(json.prefix(60))") { try selector(json) }
+    }
+    #expect(try selector("{\"labelMatch\":\"\(String(repeating: "a", count: RunnerElementPattern.maxLength))\"}").labelMatch != nil)
+    #expect(RunnerElementSelectorError.exactAndPattern("label", "labelMatch").description
+      == "element: label and labelMatch cannot be combined (label matches exactly; write ^...$ in labelMatch for that)")
+    #expect(RunnerElementSelectorError.unknownKey("id").description.contains("labelMatch, valueMatch"))
+    #expect(RunnerElementSelectorError.empty.description.hasSuffix("value, labelMatch, valueMatch"))
+  }
+
+  /// A label with a count and a time in it, one with a line break, and a value that is empty or absent.
+  private var changing: RunnerElementNode {
+    node("application", frame: screen, children: [
+      node("window", frame: screen, children: [
+        node("button", identifier: "countdown", label: "Remaining 3:42", value: "taps: 2", frame: CGRect(x: 16, y: 80, width: 200, height: 34)),
+        node("staticText", identifier: "count", label: "12 items", frame: CGRect(x: 16, y: 130, width: 200, height: 20)),
+        node("staticText", identifier: "lines", label: "First line\nSecond line", frame: CGRect(x: 16, y: 160, width: 200, height: 40)),
+        node("textField", identifier: "empty", value: "", frame: CGRect(x: 16, y: 210, width: 200, height: 34)),
+        node("button", identifier: "play", label: "PLAY", frame: CGRect(x: 16, y: 260, width: 200, height: 34))
+      ])
+    ])
+  }
+
+  private func ids(_ selector: RunnerElementSelector, in root: RunnerElementNode? = nil) -> [String] {
+    selector.allMatches(in: root ?? changing, screen: screen).map(\.node.identifier)
+  }
+
+  @Test func patternsMatchAnywhereUnlessAnchored() throws {
+    #expect(ids(RunnerElementSelector(labelMatch: try pattern(#"Remaining \d+:\d{2}"#))) == ["countdown"])
+    #expect(ids(RunnerElementSelector(labelMatch: try pattern(#"^\d+ items$"#))) == ["count"])
+    // Somewhere in the label: "line" is in one label only, "i" in four.
+    #expect(ids(RunnerElementSelector(labelMatch: try pattern("line"))) == ["lines"])
+    #expect(ids(RunnerElementSelector(labelMatch: try pattern("i"))) == ["countdown", "count", "lines"])
+    // ^ and $ match the whole label: "Remaining" alone is not it.
+    #expect(ids(RunnerElementSelector(labelMatch: try pattern("^Remaining$"))).isEmpty)
+    #expect(ids(RunnerElementSelector(labelMatch: try pattern("^Remaining"))) == ["countdown"])
+    // Case matters unless the pattern says (?i).
+    #expect(ids(RunnerElementSelector(labelMatch: try pattern("^Play$"))).isEmpty)
+    #expect(ids(RunnerElementSelector(labelMatch: try pattern("(?i)^play$"))) == ["play"])
+    // Combined with the other attributes by AND.
+    #expect(ids(RunnerElementSelector(type: "staticText", labelMatch: try pattern("^\\d"))) == ["count"])
+    #expect(ids(RunnerElementSelector(type: "button", labelMatch: try pattern("^\\d"))).isEmpty)
+    #expect(ids(RunnerElementSelector(labelMatch: try pattern("^Remaining"), valueMatch: try pattern(#"^taps: \d+$"#))) == ["countdown"])
+  }
+
+  @Test func patternsOverLineBreaks() throws {
+    // Without options . stops at a line break and ^ $ are the ends of the whole label; (?s) and (?m) change that.
+    #expect(ids(RunnerElementSelector(labelMatch: try pattern("First.*Second"))).isEmpty)
+    #expect(ids(RunnerElementSelector(labelMatch: try pattern("(?s)First.*Second"))) == ["lines"])
+    #expect(ids(RunnerElementSelector(labelMatch: try pattern("^Second line$"))).isEmpty)
+    #expect(ids(RunnerElementSelector(labelMatch: try pattern("(?m)^Second line$"))) == ["lines"])
+    #expect(ids(RunnerElementSelector(labelMatch: try pattern("^First line\nSecond line$"))) == ["lines"])
+  }
+
+  @Test func anAbsentValueIsEmpty() throws {
+    // ^$ picks the elements whose value is empty or absent (null in /source), as --format compact shows both.
+    #expect(ids(RunnerElementSelector(type: "textField", valueMatch: try pattern("^$"))) == ["empty"])
+    #expect(ids(RunnerElementSelector(valueMatch: try pattern("^$"))) == ["", "", "count", "lines", "empty", "play"])
+    // .+ picks the ones with a value; an empty label is the empty string too.
+    #expect(ids(RunnerElementSelector(valueMatch: try pattern(".+"))) == ["countdown"])
+    #expect(ids(RunnerElementSelector(type: "textField", labelMatch: try pattern("^$"))) == ["empty"])
+  }
+
+  @Test func patternsWithVisibilityAndIndex() throws {
+    // Of the four Play labels, (?i)^play$ with hittable keeps the player's button and its text, as --label Play does.
+    let hittable = RunnerElementSelector(labelMatch: try pattern("(?i)^play$"), visibility: .hittable)
+    let kept = hittable.allMatches(in: player, screen: screen, hitTest: playerHitTest())
+    #expect(kept.map(\.path) == RunnerElementSelector(label: "Play", visibility: .hittable)
+      .allMatches(in: player, screen: screen, hitTest: playerHitTest()).map(\.path))
+    let button = RunnerElementSelector(type: "button", labelMatch: try pattern("^Pl"), visibility: .hittable)
+    #expect(try button.resolve(in: player, screen: screen, hitTest: playerHitTest()).get().match.node.identifier == "player.play")
+    // onscreen and index count only the kept ones.
+    let onscreen = RunnerElementSelector(labelMatch: try pattern("title$"), visibility: .onscreen)
+    #expect(onscreen.allMatches(in: pages, screen: screen).map(\.node.identifier) == ["page1"])
+    #expect(RunnerElementSelector(labelMatch: try pattern("title$"), index: 2).matches(in: pages, screen: screen)
+      .map(\.node.identifier) == ["page3"])
+  }
+
+  @Test func lookupFailuresAreTheSameWithPatterns() throws {
+    let ambiguous = RunnerElementSelector(labelMatch: try pattern("^Page"))
+    guard case .failure(let failure) = ambiguous.resolve(in: pages, screen: screen) else {
+      Issue.record("expected element_ambiguous")
+      return
+    }
+    #expect(failure.code == .elementAmbiguous && failure.count == 3 && failure.candidates.count == 3)
+    #expect(failure.json["candidates"].map { ($0 as? [[String: Any]])?.map { $0["label"] as? String } } == ["Page title", "Page title", "Page title"])
+    guard case .failure(let missing) = RunnerElementSelector(labelMatch: try pattern("^Nothing")).resolve(in: pages, screen: screen) else {
+      Issue.record("expected element_not_found")
+      return
+    }
+    #expect(missing.code == .elementNotFound && missing.reason == .notFound && missing.isRetryable)
+  }
+
+  @Test func aPatternThatBacktracksTooLongFails() throws {
+    let slow = RunnerElementSelector(labelMatch: try pattern("(a+)+$"))
+    var root = changing
+    root.children[0].children.append(node("staticText", label: String(repeating: "a", count: 40) + "b"))
+    let started = Date()
+    #expect(throws: RunnerElementSelectorError.patternTooSlow("labelMatch")) { try slow.checkPatternTime(in: root, budget: 0.2) }
+    #expect(Date().timeIntervalSince(started) < 2)
+    // An ordinary pattern, and a selector without one, pass.
+    try RunnerElementSelector(labelMatch: try pattern("^Remaining"), valueMatch: try pattern("taps")).checkPatternTime(in: root)
+    try RunnerElementSelector(label: "Play").checkPatternTime(in: root, budget: 0)
+    #expect(RunnerElementSelectorError.patternTooSlow("valueMatch").description.hasPrefix("element.valueMatch: the regular expression took"))
+    #expect(try pattern("a").matches("bab", before: .distantFuture) == true)
+    #expect(try pattern("c").matches("bab", before: .distantFuture) == false)
+  }
+
+  @Test func patternsOverAHundredElementsAreFast() throws {
+    // The relay.visibility grid: 100 texts. Exact and pattern matching both take well under the poll interval.
+    let grid = node("application", frame: screen, children: [node("window", frame: screen, children: (1 ... 100).map {
+      node("staticText", identifier: "relay.item\($0)", label: "Item", frame: CGRect(x: 0, y: CGFloat($0) * 4, width: 40, height: 4))
+    })])
+    let selector = RunnerElementSelector(labelMatch: try pattern(#"^Item$"#))
+    let started = Date()
+    for _ in 0 ..< 100 {
+      try selector.checkPatternTime(in: grid)
+      #expect(selector.allMatches(in: grid, screen: screen).count == 100)
+    }
+    #expect(Date().timeIntervalSince(started) / 100 < RunnerElementLookup.pollInterval)
+  }
 }
