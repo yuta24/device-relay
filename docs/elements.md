@@ -425,7 +425,7 @@ relay find --label Item42 --type cell --scroll down --max-swipes 20 --timeout 40
 ```
 
 - **方向**: コンテンツのどちらを探すかを `up` / `down` / `left` / `right` で指定します。指が動く向きは逆です。CLI では方向が必須、HTTP では省略時に `down` です。
-- **見つかった条件**: `find` は少なくとも画面内（`onscreen`）、`--hittable` を付けた場合は到達可能な要素です。`tap`・`press`・`adjust` は `hittable` と同じ判定を使います。判定できない環境（非公開 API がない、配置された iPad ウィンドウ、表示が複数など）では `hit_test_unavailable` で止まり、`onscreen` への暗黙の切り替えはしません。
+- **見つかった条件**: 要素の全体が入れ物の見えている矩形に収まったときだけ見つかったとみなします。一部だけ見えている要素は、`find` でもスワイプ 0 回の時点でも見つかったとはみなさず、探索を続けます。そのうえで、`find` は画面内（`onscreen`）、`--hittable` を付けた場合は到達可能な要素です。`tap`・`press`・`adjust` は常に `hittable` と同じ判定を使い、`--onscreen` との併用は CLI では終了コード 2、HTTP では 400 で断ります。判定できない環境（非公開 API がない、配置された iPad ウィンドウ、表示が複数など）では `hit_test_unavailable` で止まり、`onscreen` への暗黙の切り替えはしません。
 - **端に少し見える要素**: 要素全体が入れ物の見えている矩形に収まるまで、最後の移動量を小さく補正します。行き過ぎたときは逆向きにも補正します。入れ物より大きい要素は、全体が収まらないため見つかったとはみなしません。
 - **入れ物**: 画面内で有効な `scrollView`・`table`・`collectionView`・`textView` のうち、見えている面積が最大のもの（同面積ならツリー順の先頭）を使います。入れ物を明示しなければ、すでに条件を満たす要素は画面全体から探し、入れ物の外でもスワイプ 0 回で成功します。画面外のセルの子が表示中の座標を返す場合に備え、親のセル・入れ物のクリップも考慮します。
 - **明示する入れ物**: CLI の `--in <identifier>` は入れ物の accessibilityIdentifier を指定します。対象の要素もその入れ物の中だけで探します。複数一致は `element_ambiguous`、入れ物が見つからなければ `element_not_found` です。HTTP の `scroll.in` は属性セレクタのオブジェクトです（`index`・`onscreen`・`hittable` は指定できません）。

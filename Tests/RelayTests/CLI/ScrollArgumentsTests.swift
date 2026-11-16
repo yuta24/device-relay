@@ -26,6 +26,11 @@ struct ScrollArgumentsTests {
     #expect(throws: ArgumentError.self) { try Arguments.parse(["tap", "10", "20", "--scroll", "down"]) }
     #expect(throws: ArgumentError.self) { try Arguments.parse(["tap", "--id", "row", "--scroll", "down", "--mode", "xcui"]) }
     #expect(throws: ArgumentError.self) { try Arguments.parse(["find", "--id", "row", "--timeout", "11"]) }
+    for command in [["tap", "--id", "row"], ["press", "--id", "row"], ["adjust", "--id", "slider", "--position", "0.7"]] {
+      #expect(throws: ArgumentError.self) { try Arguments.parse(command + ["--onscreen", "--scroll", "down"]) }
+      #expect(throws: Never.self) { try Arguments.parse(command + ["--hittable", "--scroll", "down"]) }
+    }
+    #expect(throws: Never.self) { try Arguments.parse(["find", "--id", "row", "--onscreen", "--scroll", "down"]) }
   }
 
   @Test func preservesZeroAndWaitsTwentySecondsPastTheLastGestureAndAction() throws {

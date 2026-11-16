@@ -87,6 +87,10 @@ extension Arguments {
     var operation = try parser.operation()
     if let direction = try parser.string("--scroll") {
       guard let selector = operation.selector else { throw ArgumentError(description: "--scroll needs an element selector") }
+      if operation.commandName != "find", selector.visibility == .onscreen {
+        // The touch commands always require hittable while scrolling; refuse rather than override.
+        throw ArgumentError(description: "--onscreen cannot be combined with --scroll on \(operation.commandName); it requires hittable")
+      }
       var object: [String: Any] = ["direction": direction]
       object["maxSwipes"] = try parser.integer("--max-swipes", "an integer in 1...30") { (1 ... 30).contains($0) }
       if let identifier = try parser.string("--in") { object["in"] = ["identifier": identifier] }
@@ -620,7 +624,8 @@ extension Arguments {
     swipes and scrollStop (found, edge, maxSwipes, timeout, or failed); not found is exit 6.
     A partial target is scrolled fully into the container. find requires onscreen, or hittable
     if requested; tap, press, adjust require hittable and fail if hit testing is unavailable.
-    Requires private touch synthesis. Cannot take --index, --gone, coordinates, or --mode xcui.
+    Requires private touch synthesis. Cannot take --index, --gone, coordinates, or --mode xcui
+    (nor --onscreen on tap, press, adjust).
     An older runner without swipes is exit 8; rebuild it with relay start --rebuild.
   Options may be written --opt value or --opt=value; text after -- is never split.
   Exit status: 0 ok, 1 local failure (runner.json unreadable, screenshot not saved; for relay install

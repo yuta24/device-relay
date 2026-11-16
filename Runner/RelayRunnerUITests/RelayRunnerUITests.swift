@@ -191,6 +191,9 @@ final class RelayRunnerUITests: XCTestCase {
       options = try RunnerScrolling.Options(json: scroll, timeout: body.object["timeout"], selector: selector, gone: gone)
     } catch { throw RunnerError.invalidField(String(describing: error)) }
     commandScroll = RunnerScrolling.Progress()
+    guard request.path == "/find" || selector.visibility != .onscreen else {
+      throw RunnerError.invalidField("scroll: \(request.path) requires hittable; onscreen cannot be combined")
+    }
     guard body.object["x"] == nil, body.object["y"] == nil else {
       throw RunnerError.invalidField("scroll: coordinates and element cannot be combined")
     }

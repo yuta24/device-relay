@@ -323,7 +323,7 @@ iPad Pro 11-inch (M5) シミュレータ（iPadOS 26.2、「Windowed Apps」の�
 {"element":{"identifier":"relay.scroll.row42"},"scroll":{"direction":"down","maxSwipes":10,"in":{"identifier":"relay.scroll.vertical"}},"timeout":20}
 ```
 
-`direction` は `up` / `down` / `left` / `right`（省略時 `down`）、`maxSwipes` は 1–30（既定 10）。`scroll.in` は任意の入れ物の属性セレクタで、省略時は最大面積の入れ物を選びます。`timeout` は探索全体の秒数で、0–60（省略時 20、0 は初回だけ）。`scroll` と `element.index`・`gone: true`・座標・`mode: xcui` は併用できません。
+`direction` は `up` / `down` / `left` / `right`（省略時 `down`）、`maxSwipes` は 1–30（既定 10）。`scroll.in` は任意の入れ物の属性セレクタで、省略時は最大面積の入れ物を選びます。`timeout` は探索全体の秒数で、0–60（省略時 20、0 は初回だけ）。`scroll` と `element.index`・`gone: true`・座標・`mode: xcui` は併用できません。`/tap`・`/press`・`/adjust` では `element.onscreen` も併用できません（常に `hittable` の判定を使います）。
 成功と操作失敗の JSON には `swipes` と `scrollStop` が付きます。見つからない場合は `422`、`element_not_found` と停止理由（`edge` / `maxSwipes` / `timeout`）です。hit test などの前提条件の失敗は既存のエラー code を返します。詳細は「[見えるまでスクロール](elements.md#見えるまでスクロールscroll)」を参照してください。
 
 ## 文字入力と特殊キー
