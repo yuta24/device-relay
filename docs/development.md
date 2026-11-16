@@ -333,11 +333,13 @@ xcodebuild の出力に `RELAY_RUNNER_READY port=8100 addresses=en0=…,utun3=�
 | `relay.openPlayer` | 不透明なプレイヤー（`PlayerViewController`）を、子のビューコントローラとして画面の上に重ねる。下の画面はツリーに残る |
 | `relay.presentPlayer` | 同じプレイヤーを `.overFullScreen` で表示する。下の画面はツリーから外れる（比較用） |
 | `relay.play` / `relay.nowPlaying` | ラベルが `Play` のボタンと `Now playing` の文字。プレイヤーにも同じラベルがある |
-| `relay.playCount` | 2 つの `Play` が押された回数（`play: 1, player: 2`） |
+| `relay.covered` | ラベルが `Covered` のボタン。2 行目の右端にあり、どの向きでもプレイヤーの `relay.player.cover` のちょうど下にある |
+| `relay.playCount` | 2 つの `Play` と `Covered` が押された回数（`play: 1, player: 2, covered: 0`） |
 | `relay.pages` | 横にページを送るスクロールビュー（3 ページ）。各ページに `Page title` の文字（`relay.page1.title` …）と、ラベルが `Select` のボタン（`relay.page1.select` …）。最初は 1 ページ目だけが画面にある |
 | `relay.pageStatus` | 最後に押された `Select` のページ（`selected: page 2`） |
 | `relay.item1` … `relay.item100` | `Item` の文字を 10×10 に並べたもの。要素の多い画面で時間を測る |
 | `relay.player.close` / `relay.player.play` / `relay.player.nowPlaying` / `relay.player.playCount` | プレイヤーの閉じるボタン、`Play`（下の画面の `Now playing` の上に重なる）、`Now playing`、押された回数 |
+| `relay.player.cover` | ボタンとして読まれる `Cover` の文字（子の要素を持たないコントロール）。下の画面の `relay.covered` を覆う。タッチ前の確認は、ボタンの中の文字に当たっただけでは止めないので、覆われた点を確かめるときはこちらを使う |
 
 許可を求めた直後に `relay tap --id relay.behind3 --value late --timeout 5` を送ると、ランナーはダイアログが出る前に対象アプリを決め、ダイアログが出た後で要素を見つけてタップします。シミュレータでは `xcrun simctl privacy <UDID> reset location <ホストのバンドル ID>` で位置情報の許可を戻せます。実機では「Allow Once」を選べば、アプリを終了したときに未決定に戻ります。
 

@@ -621,11 +621,7 @@ final class RelayRunnerUITests: XCTestCase {
     // frame is dropped by the frames alone, as before hit testing was added.
     var verifyHit: ([Int], CGPoint) -> Bool? = { _, _ in false }
     if canVerifyCommandHit {
-      verifyHit = { path, point in
-        guard let hitPath = self.hitPath(at: point),
-              RunnerElementTree.hitControl(at: point, path: hitPath, in: root) != nil else { return nil }
-        return RunnerElementTree.isRelatedHit(hitPath, to: path)
-      }
+      verifyHit = RunnerElementTree.interactiveHitCheck(in: root, hitTest: displayedHitTest())
     }
     let elements = RunnerElementTree.interactiveElements(in: root, screen: screen, verifyHit: verifyHit)
     if format == "compact" {
@@ -770,7 +766,7 @@ final class RelayRunnerUITests: XCTestCase {
       if case .success(let target) = resolved {
         try self.requireUncovered(bundleID)
         if self.canVerifyCommandHit {
-          resolved = target.verified(hitPath: self.hitPath(at: target.point), in: root)
+          resolved = target.verified(hitTest: self.displayedHitTest(), in: root)
         }
       }
       switch resolved {
@@ -797,10 +793,7 @@ final class RelayRunnerUITests: XCTestCase {
 
   /// The hit test a `hittable` selector looks with in this attempt's snapshot (`commandSnapshot`), nil for another
   /// selector. Throws `hitTestUnavailable` where hit testing can't answer (`RunnerElementTree.hitTestUnavailableMessage`).
-  /// A point is tested once per snapshot, though different matches seldom share one. The hit test takes points in the
-  /// portrait space, as the event synthesizer does: given points in the displayed orientation, it answered for no element
-  /// of a landscape screen, and with them turned it answered as in portrait. (The touch check, which only refuses on a
-  /// known hit, still passes displayed points.)
+  /// A point is tested once per snapshot, though different matches seldom share one.
   private func hitTest(for selector: RunnerElementSelector) throws -> RunnerElementSelector.HitTest? {
     guard selector.visibility == .hittable else { return nil }
     let apiUnavailable = commandSnapshot.map { RelayActiveApplication.hitTestUnavailableReason(forSnapshot: $0) }
@@ -809,19 +802,27 @@ final class RelayRunnerUITests: XCTestCase {
                                                                  apiUnavailable: apiUnavailable) {
       throw RunnerError.hitTestUnavailable(message)
     }
-    let orientation = Self.runnerOrientation(interfaceOrientation())
-    let portraitSize = portraitScreen().size
+    let hitTest = displayedHitTest()
     var tested: [[CGFloat]: [Int]?] = [:]
     return { point in
       let key = [point.x, point.y]
       if let path = tested[key] { return path }
-      let path = self.hitPath(at: RunnerDisplays.portraitPoint(point, from: orientation, portraitSize: portraitSize))
+      let path = hitTest(point)
       tested[key] = path
       return path
     }
   }
 
-  private func hitPath(at point: CGPoint) -> [Int]? {
+  /// The hit test in `commandSnapshot` at points in the displayed orientation (`RunnerElementTree.displayedHitTest`), the
+  /// one every check uses. It is only used where `canVerifyHit` holds (one display, no placed window), so the main
+  /// display's portrait size is the space to turn points into. The orientation is read once, here.
+  private func displayedHitTest() -> (CGPoint) -> [Int]? {
+    RunnerElementTree.displayedHitTest(orientation: Self.runnerOrientation(interfaceOrientation()),
+                                       portraitSize: portraitScreen().size) { self.hitPath(atPortrait: $0) }
+  }
+
+  /// The private hit test, at a point in the portrait space. Call `displayedHitTest()` instead.
+  private func hitPath(atPortrait point: CGPoint) -> [Int]? {
     guard let snapshot = commandSnapshot else { return nil }
     let (path, failed) = ignoringIssues {
       RelayActiveApplication.hitPath(at: point, snapshot: snapshot)?.map { $0.intValue }

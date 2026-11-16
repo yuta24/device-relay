@@ -11,7 +11,10 @@ import UIKit
 ///   element tree, so nothing under the player matches
 /// - `relay.play` (a button labeled `Play`) and `relay.nowPlaying` (a text labeled `Now playing`): the labels the player
 ///   also has
-/// - `relay.playCount`: how many times each `Play` was tapped (`play: 1, player: 2`)
+/// - `relay.covered`: a button labeled `Covered` at the trailing end of the second line, exactly under the player's
+///   `relay.player.cover` in every orientation. That one is a control with no text inside, so a touch check that hits it
+///   knows the point is covered (a hit on a button's text proves nothing)
+/// - `relay.playCount`: how many times each `Play`, and `Covered`, was tapped (`play: 1, player: 2, covered: 0`)
 /// - `relay.pages`: a paging scroll view of three pages, each with the text `Page title` (`relay.page1.title`, ...) and
 ///   a button labeled `Select` (`relay.page1.select`, ...); only the first page is on the screen at first
 /// - `relay.pageStatus`: the page whose `Select` was tapped last (`selected: page 1`)
@@ -21,6 +24,19 @@ final class VisibilityViewController: UIViewController {
   private let pageStatusLabel = UILabel()
   private var plays = 0
   private var playerPlays = 0
+  private var coveredTaps = 0
+
+  /// Where `relay.covered` and `relay.player.cover` are: the same place on both screens, which cover the same window.
+  static func pinToCoverSlot(_ slot: UIView, in view: UIView) {
+    slot.translatesAutoresizingMaskIntoConstraints = false
+    view.addSubview(slot)
+    NSLayoutConstraint.activate([
+      slot.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 60),
+      slot.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
+      slot.widthAnchor.constraint(equalToConstant: 100),
+      slot.heightAnchor.constraint(equalToConstant: 34)
+    ])
+  }
 
   init() {
     super.init(nibName: nil, bundle: nil)
@@ -61,6 +77,7 @@ final class VisibilityViewController: UIViewController {
       stack.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16),
       stack.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16)
     ])
+    Self.pinToCoverSlot(button("relay.covered", "Covered", #selector(coveredTapped)), in: view)
   }
 
   /// Three pages as wide as the scroll view, side by side; the scroll view shows one at a time.
@@ -149,6 +166,11 @@ final class VisibilityViewController: UIViewController {
     return player
   }
 
+  @objc private func coveredTapped() {
+    coveredTaps += 1
+    updatePlayCount()
+  }
+
   @objc private func play() {
     plays += 1
     updatePlayCount()
@@ -159,7 +181,7 @@ final class VisibilityViewController: UIViewController {
   }
 
   private func updatePlayCount() {
-    playCountLabel.text = "play: \(plays), player: \(playerPlays)"
+    playCountLabel.text = "play: \(plays), player: \(playerPlays), covered: \(coveredTaps)"
   }
 
   private func configure(_ label: UILabel, identifier: String) {
@@ -186,7 +208,7 @@ final class VisibilityViewController: UIViewController {
 /// An opaque player over `VisibilityViewController`, with the same labels as that screen: the button `Play`
 /// (`relay.player.play`), first, so it covers the screen's `Now playing`, and the text `Now playing`
 /// (`relay.player.nowPlaying`) below it. `relay.player.close` closes it, and `relay.player.playCount` shows the
-/// count of both `Play` buttons.
+/// count of both `Play` buttons. `relay.player.cover` (a text read as a button, `Cover`) covers the screen's `relay.covered`.
 final class PlayerViewController: UIViewController {
   /// Counts a tap of the player's `Play` and returns the new count text.
   var onPlay: (() -> String)?
@@ -233,6 +255,15 @@ final class PlayerViewController: UIViewController {
       stack.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16),
       stack.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16)
     ])
+
+    let cover = UILabel()
+    cover.text = "Cover"
+    cover.textAlignment = .center
+    cover.backgroundColor = .tertiarySystemFill
+    cover.isAccessibilityElement = true
+    cover.accessibilityTraits = .button
+    cover.accessibilityIdentifier = "relay.player.cover"
+    VisibilityViewController.pinToCoverSlot(cover, in: view)
   }
 
   @objc private func closePlayer() {

@@ -76,6 +76,25 @@ enum RunnerElementTree {
     return "cannot tell what a touch reaches (\(reason)), so hittable cannot be checked; nothing was sent. Use onscreen instead"
   }
 
+  /// A hit test that takes points in the displayed orientation, made from the private one (`portrait`), which takes them in
+  /// the portrait space as the event synthesizer does (`RunnerDisplays.portraitPoint`). Given displayed points on a
+  /// landscape screen, it answered for the wrong place: an `other` or nothing where a button was. Every hit test the runner
+  /// makes (the touch check, `filter=interactive`, and `hittable`) goes through this.
+  static func displayedHitTest(
+    orientation: RunnerInterfaceOrientation, portraitSize: CGSize, portrait: @escaping (CGPoint) -> [Int]?
+  ) -> (CGPoint) -> [Int]? {
+    { point in portrait(RunnerDisplays.portraitPoint(point, from: orientation, portraitSize: portraitSize)) }
+  }
+
+  /// The `verifyHit` of `interactiveElements` from a hit test in displayed points: nil (unknown) unless the hit is a
+  /// known control at the point, else whether it is the candidate's own branch.
+  static func interactiveHitCheck(in root: RunnerElementNode, hitTest: @escaping (CGPoint) -> [Int]?) -> ([Int], CGPoint) -> Bool? {
+    { path, point in
+      guard let hitPath = hitTest(point), hitControl(at: point, path: hitPath, in: root) != nil else { return nil }
+      return isRelatedHit(hitPath, to: path)
+    }
+  }
+
   /// Finds the receiver by its identity in the original snapshot, including after display filtering.
   /// A path not present in this tree cannot establish that another element would receive the touch.
   static func node(at path: [Int], in root: RunnerElementNode) -> RunnerElementNode? {
