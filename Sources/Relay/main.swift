@@ -69,9 +69,6 @@ do {
   case .config(let options):
     exit(ConfigCommand.run(options))
   case .install(let options):
-    if options.legacy {
-      CLIOutput.note(InstallCommand.legacyNote(options))
-    }
     exit(try InstallCommand.run(options))
   case .appInstall(let options):
     exit(AppInstall.install(options))

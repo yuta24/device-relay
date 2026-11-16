@@ -4,6 +4,18 @@
 
 ## 次の版（0.8.0 から）
 
+### アプリを渡さない relay install / uninstall を外した（0.8.0 から）
+
+0.8.0 で予告したとおり、Runner をコピーする・消す古い書き方を外しました。
+
+| 外した書き方 | 今の書き方 |
+| --- | --- |
+| `relay install`、`relay install [--project <path>] [--build [--verbose]]` | `relay runner install` に同じオプション |
+| `relay install --remove`、アプリを渡さない `relay uninstall` | `relay runner uninstall` |
+
+これらは書き方の誤り（終了コード 2）になり、何もせずに `relay runner …` を案内します。0.8.0 までは同じように動き、stderr に注意を出していました。
+スクリプトに古い書き方が残っていたら、`relay runner install` / `relay runner uninstall` に書き換えてください。アプリを渡す `relay install <path>` と `relay uninstall <bundle-id>` は変わりません。
+
 ### 画面が落ち着くまで待つ wait --stable（0.8.0 から）
 
 `relay wait --stable`（HTTP `POST /wait`）と `relay run` の待機手順を追加しました。縮小画像で描画の静止を確かめ、`stable` と `waitedMs` を返します。

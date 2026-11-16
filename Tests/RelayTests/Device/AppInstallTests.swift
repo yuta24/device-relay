@@ -17,14 +17,17 @@ struct InstallArgumentsTests {
       == .appInstall(AppInstallOptions(path: "App.app", target: LogTargetOptions(runnerPath: "/r.json"))))
   }
 
-  @Test func withoutAnAppTheOldFormCopiesTheRunner() throws {
-    #expect(try Arguments.parse(["install"]) == .install(InstallOptions(legacy: true)))
-    #expect(try Arguments.parse(["install", "--project", "/p", "--build", "--verbose"])
-      == .install(InstallOptions(project: "/p", build: true, verbose: true, legacy: true)))
-    #expect(try Arguments.parse(["install", "--remove"]) == .install(InstallOptions(remove: true, legacy: true)))
-    #expect(try Arguments.parse(["uninstall"]) == .install(InstallOptions(remove: true, legacy: true)))
-    #expect(InstallCommand.legacyNote(InstallOptions(legacy: true)).contains("now relay runner install"))
-    #expect(InstallCommand.legacyNote(InstallOptions(remove: true, legacy: true)).contains("now relay runner uninstall"))
+  @Test func withoutAnAppTheOldFormIsAUsageErrorThatNamesRelayRunner() throws {
+    func message(_ words: [String]) -> String {
+      do { _ = try Arguments.parse(words); return "" } catch { return String(describing: error) }
+    }
+    #expect(message(["install"]).contains("relay runner install"))
+    #expect(message(["install", "--project", "/p", "--build"]).contains("relay runner install --project"))
+    #expect(message(["install", "--build"]).contains("relay runner install --build"))
+    #expect(message(["install", "--remove"]).contains("relay runner uninstall"))
+    #expect(message(["uninstall"]).contains("relay runner uninstall"))
+    #expect(message(["install", "--udid", "SIM-ON"]).contains("requires the path of an .app or .ipa"))
+    #expect(message(["install", "App.app", "--build"]).contains("relay runner install --build"))
   }
 
   @Test func relayRunner() throws {
@@ -47,8 +50,8 @@ struct InstallArgumentsTests {
         return "\(error)"
       }
     }
-    #expect(reason(["install", "App.app", "--build"]).hasPrefix("install takes either an app or --build, not both"))
-    #expect(reason(["install", "--remove", "App.app"]).hasSuffix("relay runner uninstall removes the runner"))
+    #expect(reason(["install", "App.app", "--build"]) == "install --build is now relay runner install --build; install takes an app")
+    #expect(reason(["install", "--remove", "App.app"]) == "install --remove is now relay runner uninstall; install takes an app")
     #expect(reason(["install", "a.app", "b.app"]) == "install takes one app: the path of an .app or .ipa (got 2)")
     #expect(reason(["uninstall", "a", "b"]) == "uninstall takes one app: the bundle ID of an app (got 2)")
     #expect(reason(["install", "--udid", "SIM-ON"]) == "install --udid requires the path of an .app or .ipa")
@@ -56,8 +59,9 @@ struct InstallArgumentsTests {
     #expect(reason(["install", "a.app", "--udid", "X", "--session", "a"]) == "install takes one of --session, --runner, and --udid")
     #expect(reason(["install", "a.app", "--json"]) == "unknown option for install: --json")
     #expect(reason(["uninstall", "--build"]) == "unknown option for uninstall: --build")
-    #expect(reason(["install", "--remove", "--build"]) == "install --remove takes no other options")
-    #expect(reason(["install", "--project"]) == "--project requires a value")
+    #expect(reason(["install"]) == "install requires the path of an .app or .ipa; relay runner install is for the runner")
+    #expect(reason(["uninstall"]) == "uninstall requires the bundle ID of an app; relay runner uninstall is for the runner")
+    #expect(reason(["runner", "install", "--project"]) == "--project requires a value")
     #expect(reason(["runner"]) == "runner takes install or uninstall")
     #expect(reason(["runner", "status"]) == "unknown runner action: status (install or uninstall)")
     #expect(reason(["runner", "uninstall", "--build"]) == "unknown option for runner uninstall: --build")
