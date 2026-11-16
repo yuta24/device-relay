@@ -31,6 +31,7 @@ relay launch host                              # RelayRunnerHost（host はそ�
 relay find --type textField                    # POST /find {"element":{"type":"textField"}}
 relay find --id home.title --timeout 5 --require   # 現れるまで待ち、現れなければ終了コード 6
 relay find --id spinner --gone --timeout 5 --require   # 消えるまで待ち、消えなければ終了コード 6
+relay wait --stable --require                   # 画面の描画が落ち着くまで待つ
 relay tap --id relay.input                     # POST /tap {"element":{"identifier":"relay.input"}}
 relay tap 200 120 --mode xcui                  # POST /tap {"x":200,"y":120,"mode":"xcui"}
 relay tap --id map --count 2                   # POST /tap {"element":{"identifier":"map"},"taps":2}（ダブルタップ）
@@ -71,6 +72,7 @@ relay crashes                                  # 直近 24 時間のクラッシ
 | `screenshot` | `GET /screenshot` | `-o <file>`（`-` で stdout）、`--format png\|jpeg`、`--quality 0.05–1.0`、`--max-size <px>`、`--scale <px/pt>` |
 | `source` | `GET /source` | `--format json\|text\|compact`、`--filter interactive`、`--max-depth <n>`、`--bundle-id <id>` |
 | `find` | `POST /find` | セレクタ（正規表現の `--label-match`・`--value-match` も可）、`--onscreen` か `--hittable`、`--limit <n>`、`--timeout <s>`、`--gone`、`--require`、`--bundle-id <id>` |
+| `wait` | `POST /wait` | `--stable`、`--for <秒>`、`--timeout <秒>`、`--require`、`--bundle-id <id>`（「[画面が落ち着くまで待つ](screen.md#画面が落ち着くまで待つ)」） |
 | `tap` / `press` | `POST /tap` / `/press` | `<x> <y>` かセレクタ（`--onscreen`・`--hittable` も可）、`--mode private\|xcui`、`--timeout`・`--bundle-id`（セレクタのみ）、`--count 2`（tap のみ。ダブルタップ）、`--duration`（press のみ） |
 | `swipe` | `POST /swipe` | `<x1> <y1> <x2> <y2>`、`--duration`、`--hold`、`--mode` |
 | `adjust` | `POST /adjust` | セレクタ（`--onscreen`・`--hittable` も可）、`--position <0-1>`（スライダー）か `--picker-value <値>`（ピッカーのホイール）、`--timeout <s>`、`--bundle-id <id>` |
@@ -347,6 +349,7 @@ URL がアプリの中に届いたかは、設定アプリが開いたこと以�
 
 | 操作 | 30 秒に足す時間 |
 | --- | --- |
+| `wait --stable` | `--timeout` と、表示・画像の取得の猶予 180 秒 |
 | `find` / `tap` | `--timeout` の時間（`tap --count 2` は、さらに 0.15 秒） |
 | `press` | `--timeout` と `--duration` の時間（`--duration` の既定は 1 秒） |
 | `swipe` | `--duration` と `--hold` の時間 |
@@ -443,6 +446,7 @@ relay 自身は次の `code` を出します。ランナーは返しません。
 | `app_uninstall_failed` | `1` | `simctl uninstall`・`devicectl device uninstall app` が失敗した・時間切れ |
 | `app_uninstall_refused` | `1` | `uninstall` で、relay のランナーのアプリを指定した（送らない） |
 | `element_not_found` | `6` | `find --require` で一致なし（ランナーの `code` と同じで、`count`・`elements` も付く） |
+| `screen_not_stable` | `6` | `wait --stable --require` が時間切れになりました。`stable` と `waitedMs` が付きます。 |
 | `element_still_present` | `6` | `find --gone --require` で、時間内に一致する要素がなくならなかった（`count`・`elements`・`gone` も付く） |
 | `device_unavailable` | `1` | `logs`・`crashes` で、UDID の端末がない、シミュレータが boot していない（logs）、実機が接続していない |
 | `logs_unavailable` | `1` | `log` が失敗した・時間切れ・読めない行を出した、出す JSON が 64 MiB を超えた |
@@ -564,7 +568,7 @@ screenshot --output about.png --scale 1
 
 | 種類 | 使える手順 |
 | --- | --- |
-| 観察 | `ping`、`health`、`foreground`、`screenshot`、`source`、`find` |
+| 観察 | `ping`、`health`、`foreground`、`screenshot`、`source`、`find`、`wait --stable` |
 | 操作 | `tap`、`press`、`swipe`、`type`、`key`、`button`、`orientation` |
 | アプリ | `launch`、`open`、`terminate` |
 | 疑似手順 | `sleep <秒>`（0 < 秒 ≤ 60） |
@@ -634,7 +638,8 @@ relay: step 4/7 (line 5) failed: find --label About --type button --timeout 5 --
 `find <セレクタ> --timeout <秒>`、または `tap` / `press` の `--timeout` を使います。
 要素が現れた時点で次に進むので、固定の `sleep` より速く、遅い環境でも崩れにくくなります。
 読み込みの表示やアラートが消えるのを待つときは、`find <セレクタ> --gone --timeout <秒> --require` を使います。
-`sleep` は、要素で表せない待ち（アニメーションの終わりなど）のための最後の手段です。
+描画が落ち着くまで待つときは `wait --stable --require` を使います（「[画面が落ち着くまで待つ](screen.md#画面が落ち着くまで待つ)」）。
+`sleep` は、観測で表せない固定時間の待ちに使います。
 
 確認には `find --require` を使います。単独のコマンドと同じく、`find` は一致がなくても成功（`"count":0`）し、シナリオは先に進みます。
 `find <セレクタ> --timeout 5 --require` は「現れるまで待ち、現れなければそこで止める」確認になります。終了コードは 6 です。
@@ -642,13 +647,13 @@ relay: step 4/7 (line 5) failed: find --label About --type button --timeout 5 --
 観察のためだけの `find` で、結果を後で読む場合は `--require` を付けません。
 
 `find --timeout` は要素が現れた時点で進むので、直後の `screenshot` が画面遷移のアニメーションの途中を写すことがあります。
-止まった画面がほしいときに限って、`sleep 0.5` などを挟みます。
+止まった画面がほしいときは、`wait --stable --require` を挟みます。
 
-**スワイプの後は固定の待ちが要ります。** 慣性スクロール中に `tap` すると、タップはスクロールを止めるだけで、要素は押されません。
+**スワイプの後はスクロールが止まるまで待ちます。** 慣性スクロール中に `tap` すると、タップはスクロールを止めるだけで、要素は押されません。
 `tap` は成功するので、次の `find` で止まります。
 
 実機の設定アプリでは、スワイプ後 1 秒ではまだ数 pt 動いていて同じ失敗になり、`sleep 2` で通りました。
-スクロールが止まったことは要素では表せないので、ここは `sleep` を使います。
+描画の静止を待つには `wait --stable --require` を使えます。
 
 #### AXe との違い
 

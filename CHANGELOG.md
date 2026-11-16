@@ -4,6 +4,13 @@
 
 ## 次の版（0.8.0 から）
 
+### 画面が落ち着くまで待つ wait --stable（0.8.0 から）
+
+`relay wait --stable`（HTTP `POST /wait`）と `relay run` の待機手順を追加しました。縮小画像で描画の静止を確かめ、`stable` と `waitedMs` を返します。
+時間切れは通常成功し、`--require` では `screen_not_stable`、終了コード 6 です。
+古いランナーの拒否・応答不足は `runner_bad_response`、終了コード 8 になります。`relay start --rebuild` で更新してください。
+値と制約は「[画面が落ち着くまで待つ](docs/screen.md#画面が落ち着くまで待つ)」にあります。
+
 ### 要素を見つけるまでスクロールする --scroll
 
 `find`・`tap`・`press`・`adjust` と `relay run` のセレクタに `--scroll <方向>` を付けられます。ランナー内で探索とスワイプを繰り返し、`swipes` と `scrollStop` を返します。`--in` で入れ物、`--max-swipes` で回数を指定できます。

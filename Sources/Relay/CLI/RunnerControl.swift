@@ -182,6 +182,11 @@ enum RunnerControl {
       return fail(.runnerBadResponse, "the runner rejected \(key) in the element: it predates \(options) "
         + "(relay start --rebuild builds a current one)", exit: .runnerError, to: failureOutput)
     }
+    // A runner from before /wait has no such route (404). A current runner's 400 is a real field error.
+    if case .waitStable = resolved, response.status == 404 {
+      return fail(.runnerBadResponse, "the runner has no /wait; relay start --rebuild builds a current one",
+                  exit: .runnerError, to: failureOutput)
+    }
     guard code == .success else {
       CLIOutput.writeLine(failureBody(of: response), to: failureOutput)
       if let hint = hint(for: code, errorCode: RunnerErrorCode.parse(body: response.body), infoURL: infoURL) {
@@ -190,6 +195,19 @@ enum RunnerControl {
       return code.rawValue
     }
 
+    if case .waitStable = resolved {
+      guard let object = (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any],
+            let stable = RunnerRequestValues.bool(object["stable"] ?? NSNull()),
+            let waited = RunnerRequestValues.number(object["waitedMs"] ?? NSNull()), waited.isFinite, waited >= 0 else {
+        return fail(.runnerBadResponse, "the runner's /wait answer has no valid stable/waitedMs; relay start --rebuild builds a current one",
+                    exit: .runnerError, to: failureOutput)
+      }
+      if requireMatch, !stable {
+        CLIOutput.writeLine(CLIOutput.failureBody(.screenNotStable, "the screen did not settle before the timeout", extra: object),
+                            to: failureOutput)
+        return RunnerExitCode.actionFailed.rawValue
+      }
+    }
     if case .type(_, _, _, clear: true) = resolved.baseOperation, !answerSays("cleared", response.body) {
       // A runner from before `clear` ignored it: the text went in after what the field held.
       return fail(.runnerBadResponse, "the runner's /type answer has no cleared; it predates type --clear and typed without "
@@ -211,7 +229,7 @@ enum RunnerControl {
         CLIOutput.note("an element still matches; wait longer (repeat find --gone --timeout <s>) or check the screen with relay screenshot")
         return RunnerExitCode.actionFailed.rawValue
       }
-    } else if requireMatch, !hasElements(response.body) {
+    } else if requireMatch, resolved.commandName == "find", !hasElements(response.body) {
       CLIOutput.writeLine(noMatchBody(response.body), to: failureOutput)
       return RunnerExitCode.actionFailed.rawValue
     }

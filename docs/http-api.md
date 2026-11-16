@@ -16,6 +16,7 @@
 | `POST /tap` | `{"x":200,"y":120}`、または `{"element":{"identifier":"relay.input"}}`（`"taps":2` でダブルタップ。省略は 1） | タップ。`element` で要素を指定すると、その frame の中心をタップします（「[要素セレクタ](elements.md#要素セレクタ)」）。座標が画面の外なら `400`（下の「画面の外の座標」）。`taps` は下の「ダブルタップ（taps）」 |
 | `POST /press` | `{"x":200,"y":120,"duration":1.0}`、または `{"element":{…},"duration":1.0}` | 長押し。`taps` は受け付けません（`400`） |
 | `POST /find` | `{"element":{"type":"button"},"limit":20,"bundleId":"…","timeout":0,"gone":false}`（`limit`・`bundleId`・`timeout`・`gone` は省略可） | セレクタに一致する要素の一覧（type / identifier / label / value / frame / enabled / onscreen）。ツリー全体を読まずに要素を探せます（「[要素セレクタ](elements.md#要素セレクタ)」）。`element` に `"onscreen": true` / `"hittable": true` を付けると、画面の中の要素 / 押すと当たる要素だけを返します（「[画面の中・押せる要素だけに絞る](elements.md#画面の中押せる要素だけに絞るonscreen--hittable)」。`/tap`・`/press`・`/adjust` のセレクタも同じ）。`labelMatch` / `valueMatch` で label / value を正規表現で探せます（「[正規表現で探す](elements.md#正規表現で探すlabelmatch--valuematch)」）。`gone: true` で、一致する要素がなくなるのを待ちます（「[消えるのを待つ（gone）](elements.md#消えるのを待つgone)」） |
+| `POST /wait` | `{"stable":true,"for":0.5,"timeout":10,"bundleId":"…"}`（`stable` 以外は省略可） | 画面の描画が変わらなくなるまで待ち、`stable` と `waitedMs` を返します。時間切れも HTTP 200 です。値・制約は「[画面が落ち着くまで待つ](screen.md#画面が落ち着くまで待つ)」。未知のキーや不正な値は 400、前面アプリが `bundleId` と違えば 422 です。 |
 | `POST /swipe` | `{"from":{"x":200,"y":700},"to":{"x":200,"y":200},"duration":0.3,"hold":0.05}` | スワイプ（ドラッグ）。`from`・`to` のどちらかが画面の外なら `400` |
 | `POST /adjust` | `{"element":{"identifier":"volume"},"position":0.5}`、または `{"element":{"type":"pickerWheel","index":0},"pickerValue":"June"}`（`timeout`・`bundleId` は省略可） | スライダーの位置（0〜1）か、ピッカーのホイールの値を設定し、設定した後の値を返します。詳しくは下の「スライダーとピッカー（/adjust）」 |
 | `POST /type` | `{"text":"hello","keys":["return"],"bundleId":"com.apple.Preferences","clear":false}`（`keys`・`bundleId`・`clear` は省略可。`keys` か `clear: true` があれば `text` は省略・空文字でも可。`text` が文字列以外なら `keys` があっても 400） | キーボードのフォーカスがある要素への文字入力。`clear: true` なら先に入力欄を空にし（下の「入力欄を空にする（clear）」）、`text` の後に `keys` を順に送ります。対象の既定は前面アプリ |
@@ -149,7 +150,7 @@ curl -s -H "$AUTH" -X POST $R/shutdown
 - `code` は「次に何をするか」が変わる単位です。1 つの code に複数の文言（ときには複数のステータス）が対応します。ステータスと code の対応は下の表のとおりで、ステータスは code を足す前から変えていません。
 - 要素の解決の失敗には、ほかに `reason`・`count`・`candidates` が付きます（「[要素セレクタ](elements.md#要素セレクタ)」）。`reason` は code より細かい区別です。
 - `code` がない応答は、code を返す前の古いランナーのものです。そのときはステータスで判断します。知らない `code` も同じく、ステータスで判断します。
-- `app_not_installed`・`runner_unavailable`・`runner_timeout`・`runner_info_invalid`・`runner_bad_response`・`screenshot_save_failed`・`element_still_present` は `relay` が出す code で、ランナーは返しません（「[CLI](cli.md)」）。CLI は失敗のとき、ランナーの本文もこれらも、同じ形で stdout に出します。
+- `app_not_installed`・`runner_unavailable`・`runner_timeout`・`runner_info_invalid`・`runner_bad_response`・`screenshot_save_failed`・`element_still_present`・`screen_not_stable` は `relay` が出す code で、ランナーは返しません（「[CLI](cli.md)」）。CLI は失敗のとき、ランナーの本文もこれらも、同じ形で stdout に出します。
 
 | `code` | ステータス | 意味 | 推奨する対処 |
 | --- | --- | --- | --- |

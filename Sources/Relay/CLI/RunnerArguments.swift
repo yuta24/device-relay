@@ -5,6 +5,7 @@ import Foundation
 extension Arguments {
   /// Options of each runner command; every one also takes `--runner` and `--session`. `-o` is short for `--output`.
   static let runnerOptions: [String: Set<String>] = [
+    "wait": ["--for", "--timeout", "--bundle-id"],
     "screenshot": ["--output", "--format", "--quality", "--max-size", "--scale"],
     "source": ["--format", "--max-depth", "--filter", "--bundle-id"],
     "find": selectorOptions.union(["--limit", "--timeout", "--bundle-id"]),
@@ -19,6 +20,7 @@ extension Arguments {
   static let selectorOptions: Set<String> = ["--scroll", "--max-swipes", "--in", "--id", "--label", "--type", "--value", "--label-match", "--value-match", "--index"]
   /// Options without a value.
   static let runnerFlags: [String: Set<String>] = [
+    "wait": ["--stable", "--require"],
     "type": ["--stdin", "--clear"],
     "find": selectorFlags.union(["--require", "--gone"]),
     "tap": selectorFlags,
@@ -80,6 +82,7 @@ extension Arguments {
       }
       parser.standardInputText = try text(fromStandardInput: standardInput())
     }
+    parser.stable = givenFlags.contains("--stable")
     parser.gone = givenFlags.contains("--gone")
     parser.onscreen = givenFlags.contains("--onscreen")
     parser.hittable = givenFlags.contains("--hittable")
@@ -236,6 +239,21 @@ extension Arguments {
       (compact).
       \(HelpText.wrapped("Types (the names --type takes; a newer type is type<n>): "
           + RunnerElementTree.typeNames.joined(separator: " "), hanging: 2))
+      """
+    ),
+    "wait": (
+      "relay wait --stable [--for 0.5] [--timeout 10] [--require] [--bundle-id <id>]",
+      """
+      Waits for the visible screen to stay unchanged for --for seconds (0.1-5; default 0.5), up to
+      --timeout seconds (0-10; default 10). Compares small screen images, including drawing absent
+      from the element tree. Prints {"ok":true,"stable":true|false,"waitedMs":n}. A timeout succeeds
+      with stable:false; --require makes it screen_not_stable (exit 6). --bundle-id requires that
+      app to remain in front (host names the runner host app). Works in relay run too.
+      This observes a quiet interval, not completion of future loading. Use find --timeout for known
+      content. A spinner, video, blinking cursor, or clock can keep the screen from settling; tiny
+      changes can be missed by the reduced image. An older runner is runner_bad_response (exit 8;
+      relay start --rebuild). An in-flight XCTest capture can finish after --timeout; relay allows
+      180 seconds for display discovery/capture, plus the usual 30 seconds for the answer.
       """
     ),
     "find": (
@@ -548,6 +566,7 @@ extension Arguments {
       later in a line is text). Words split like a shell: spaces, '...', "...", and \\ (no variables or
       globs).
       \(HelpText.wrapped("Steps: " + Scenario.stepCommands.joined(separator: " "), hanging: 2))
+      wait --stable waits for drawing to settle; --require stops the run (exit 6) on its timeout.
       sleep <s> waits a fixed time (0 < s <= \(Int(Scenario.maxSleep))); prefer find --timeout or tap --timeout,
       which wait only as long as needed, and find --gone --timeout for an element to go; find --require
       also stops the run (exit 6) when nothing matches (with --gone: when one is left), while find
@@ -573,7 +592,7 @@ extension Arguments {
   ]
 
   static let runnerCommandOrder = [
-    "ping", "health", "foreground", "screenshot", "source", "find", "tap", "press", "swipe", "adjust",
+    "ping", "health", "foreground", "screenshot", "source", "find", "wait", "tap", "press", "swipe", "adjust",
     "type", "key", "button", "orientation", "launch", "open", "terminate", "shutdown"
   ]
 
@@ -607,7 +626,8 @@ extension Arguments {
     directory is not read: pass it with --runner. A session name is up to 64 letters, digits, '.',
     '_', and '-', starting with a letter or digit.
   relay waits 30 seconds for the answer, plus what the command itself may wait: --timeout (find, tap,
-    press, adjust), --duration and --hold (press, swipe), \(Int(RunnerAdjusting.longestAnswer)) s (adjust), 120 s (launch, open,
+    press, adjust, wait), 180 s (wait: capture allowance), --duration and --hold (press, swipe),
+    \(Int(RunnerAdjusting.longestAnswer)) s (adjust), 120 s (launch, open,
     terminate: 150 s in all), 0.1 s a character and 1 s a key (type, key), \(Int(RunnerTyping.clearGiveUp)) s more for type
     --clear. Past that it fails with runner_timeout (exit 3), but the runner keeps at the command and
     stays busy (exit 5 for others) until it ends: wait until relay ping shows "busy":false.
@@ -643,6 +663,8 @@ private struct RunnerArgumentValues {
   let positionals: [String]
   /// The text of `relay type --stdin`.
   var standardInputText: String?
+  /// `relay wait --stable`.
+  var stable = false
   /// `relay find --gone`.
   var gone = false
   /// `--onscreen` and `--hittable` of a selector.
@@ -657,6 +679,15 @@ private struct RunnerArgumentValues {
     case "health": return try none(.health)
     case "foreground": return try none(.foreground)
     case "shutdown": return try none(.shutdown)
+    case "wait":
+      _ = try positional(0, "no arguments")
+      guard stable else { throw ArgumentError(description: "wait requires --stable") }
+      let duration = try number("--for", "seconds in 0.1...5") { RunnerStability.durationRange.contains($0) }
+        ?? RunnerStability.defaultDuration
+      let timeout = try timeout() ?? RunnerStability.defaultTimeout
+      let bundleID = try string("--bundle-id")
+      guard bundleID?.isEmpty != true else { throw ArgumentError(description: "--bundle-id requires a non-empty bundle ID") }
+      return .waitStable(RunnerStability.Options(duration: duration, timeout: timeout), bundleID: bundleID)
     case "screenshot":
       _ = try positional(0, "no arguments (save to a file with -o)")
       var screenshot = RunnerScreenshot(output: try string("--output"))

@@ -33,6 +33,8 @@
 		11111111111111111111111F /* RunnerWindows.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222234 /* RunnerWindows.swift */; };
 		111111111111111111111121 /* RunnerCoverage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222236 /* RunnerCoverage.swift */; };
 		111111111111111111111122 /* RunnerRemoteViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222237 /* RunnerRemoteViews.swift */; };
+		111111111111111111111129 /* StabilityViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222240 /* StabilityViewController.swift */; };
+		11111111111111111111112A /* RunnerStability.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222241 /* RunnerStability.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -79,6 +81,8 @@
 		222222222222222222222237 /* RunnerRemoteViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/Relay/Shared/RunnerRemoteViews.swift; sourceTree = "<group>"; };
 		222222222222222222222224 /* RelayRunnerHost.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RelayRunnerHost.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		222222222222222222222225 /* RelayRunnerUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RelayRunnerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		222222222222222222222240 /* StabilityViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayRunnerHost/StabilityViewController.swift; sourceTree = "<group>"; };
+		222222222222222222222241 /* RunnerStability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/Relay/Shared/RunnerStability.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -103,6 +107,7 @@
 			isa = PBXGroup;
 			children = (
 				222222222222222222222221 /* AppDelegate.swift */,
+				222222222222222222222240 /* StabilityViewController.swift */,
 				222222222222222222222235 /* OverlayViewController.swift */,
 				22222222222222222222223D /* GestureViewController.swift */,
 				22222222222222222222223F /* VisibilityViewController.swift */,
@@ -119,6 +124,7 @@
 				22222222222222222222223A /* RelayURLOpener.m */,
 				222222222222222222222228 /* RelayRunnerUITests-Bridging-Header.h */,
 				222222222222222222222229 /* RunnerAuth.swift */,
+				222222222222222222222241 /* RunnerStability.swift */,
 				22222222222222222222222A /* RunnerHTTPFraming.swift */,
 				22222222222222222222222B /* RunnerRequestValues.swift */,
 				22222222222222222222222D /* RunnerKeyboard.swift */,
@@ -226,6 +232,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				111111111111111111111111 /* AppDelegate.swift in Sources */,
+				111111111111111111111129 /* StabilityViewController.swift in Sources */,
 				111111111111111111111120 /* OverlayViewController.swift in Sources */,
 				111111111111111111111126 /* GestureViewController.swift in Sources */,
 				111111111111111111111128 /* VisibilityViewController.swift in Sources */,
@@ -241,6 +248,7 @@
 				111111111111111111111113 /* RelayRunnerUITests.swift in Sources */,
 				111111111111111111111114 /* RelayTouchSynthesizer.m in Sources */,
 				111111111111111111111115 /* RunnerAuth.swift in Sources */,
+				11111111111111111111112A /* RunnerStability.swift in Sources */,
 				111111111111111111111116 /* RunnerHTTPFraming.swift in Sources */,
 				111111111111111111111117 /* RunnerRequestValues.swift in Sources */,
 				11111111111111111111111A /* RelayActiveApplication.m in Sources */,

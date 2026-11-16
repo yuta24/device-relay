@@ -106,6 +106,8 @@ extension RunnerOperation {
     }
     switch self {
     case .scrolling(let base, let options): return .scrolling(try base.resolvingHostAlias(host), options)
+    case .waitStable(let options, let bundleID):
+      return .waitStable(options, bundleID: try resolve(bundleID))
     case .source(let format, let maxDepth, let filter, let bundleID):
       return .source(format: format, maxDepth: maxDepth, filter: filter, bundleID: try resolve(bundleID))
     case .find(let selector, let limit, let timeout, let bundleID, let gone):

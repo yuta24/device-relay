@@ -349,6 +349,8 @@ final class RelayRunnerUITests: XCTestCase {
         throw RunnerError.invalidField("taps: /press is one long press; send taps to /tap")
       }
       return try touch(body, duration: body.positiveDouble("duration", default: 1.0), taps: 1)
+    case ("POST", "/wait"):
+      return try waitStable(RunnerJSON(request.body))
     case ("POST", "/find"):
       return try find(RunnerJSON(request.body))
     case ("POST", "/adjust"):
@@ -401,7 +403,7 @@ final class RelayRunnerUITests: XCTestCase {
       }
       return ok()
     case (_, "/health"), (_, "/foreground"), (_, "/screenshot"), (_, "/source"), (_, "/tap"), (_, "/press"),
-         (_, "/find"), (_, "/adjust"), (_, "/swipe"), (_, "/type"), (_, "/key"), (_, "/button"), (_, "/orientation"), (_, "/launch"),
+         (_, "/wait"), (_, "/find"), (_, "/adjust"), (_, "/swipe"), (_, "/type"), (_, "/key"), (_, "/button"), (_, "/orientation"), (_, "/launch"),
          (_, "/open"), (_, "/terminate"), (_, "/shutdown"):
       throw RunnerError.methodNotAllowed
     default:
@@ -1219,6 +1221,59 @@ final class RelayRunnerUITests: XCTestCase {
       return done ? (matches, all.count) : nil
     }
     return annotated(RunnerElementLookup.findJSON(matches, count: count, limit: limit, bundleID: bundleID, gone: gone))
+  }
+
+  /// Screen capture observes drawing that accessibility snapshots omit, without XCUI quiescence.
+  private func waitStable(_ body: RunnerJSON) throws -> RunnerHTTPResponse {
+    let options = try RunnerStability.Options(json: body.object)
+    if let raw = body.object["bundleId"], !(raw is String) || (raw as? String)?.isEmpty == true {
+      throw RunnerError.invalidField("bundleId: expected a non-empty string")
+    }
+    let bundleID = body.optionalString("bundleId")
+    var captureScreen: XCUIScreen?
+    let result = try RunnerStability.wait(options, pause: { seconds in
+      let next = Date(timeIntervalSinceNow: seconds)
+      while Date() < next { _ = RunLoop.current.run(mode: .default, before: next) }
+    }, sample: { () throws -> VisualSample in
+      if let bundleID {
+        let foreground = self.foregroundApplication()
+        if foreground.bundleID != bundleID {
+          // Fail closed, but do not claim a mismatch the runner could not actually check.
+          throw RunnerError.actionFailed(foreground.source == .fallback
+            ? "/wait could not determine the foreground app to check bundleId; nothing was compared"
+            : "/wait bundleId must be the foreground app (front: \(foreground.bundleID))")
+        }
+      }
+      if captureScreen == nil { captureScreen = try self.screenshotDisplay().xcuiScreen }
+      guard let captureScreen else { throw RunnerError.internalError("no screen to capture") }
+      return try Self.visualSample(captureScreen.screenshot().image)
+    }, equal: { $0.width == $1.width && $0.height == $1.height && RunnerStability.samePixels($0.pixels, $1.pixels) })
+    return .json(result.json)
+  }
+
+  private struct VisualSample {
+    var width: Int
+    var height: Int
+    var pixels: [UInt8]
+  }
+
+  private static func visualSample(_ image: UIImage) throws -> VisualSample {
+    let factor = CGFloat(RunnerStability.imageEdge) / max(image.size.width, image.size.height)
+    let width = max(1, Int((image.size.width * factor).rounded()))
+    let height = max(1, Int((image.size.height * factor).rounded()))
+    let size = CGSize(width: width, height: height)
+    let upright = renderer(size: size).image { _ in image.draw(in: CGRect(origin: .zero, size: size)) }
+    guard let cgImage = upright.cgImage else { throw RunnerError.internalError("cannot resize screen image") }
+    var pixels = [UInt8](repeating: 0, count: width * height * 4)
+    let drawn = pixels.withUnsafeMutableBytes { bytes -> Bool in
+      guard let context = CGContext(data: bytes.baseAddress, width: width, height: height, bitsPerComponent: 8,
+                                    bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+      context.draw(cgImage, in: CGRect(origin: .zero, size: size))
+      return true
+    }
+    guard drawn else { throw RunnerError.internalError("cannot read screen pixels") }
+    return VisualSample(width: width, height: height, pixels: pixels)
   }
 
   /// Snapshots `bundleID` until `attempt` returns a value, every `pollInterval` for up to `timeout`
