@@ -2,7 +2,7 @@
 
 以前の版から更新するときに、スクリプトや設定を直す必要がある変更を書きます。すべての変更の一覧は GitHub の [Releases](https://github.com/yuta24/device-relay/releases) にあります。全体の入口は [README](README.ja.md) です。
 
-## 次の版
+## 0.10.0
 
 ### Duo シミュレータのヒンジと向き
 
@@ -10,6 +10,14 @@
 Duo の `relay orientation` が端末の姿勢イベントで動くようになり、変更後の画面方向と `screenChanged` を返します。古いランナーは `relay start --rebuild` で更新してください。
 ヒンジのない端末の `relay orientation` は、画面の変化を待たずに `{"ok":true}` を返します。画面方向は `relay health` で確認してください。
 表示と画面方向の対応は「[Duo](docs/screen.md#表示が複数ある端末iphone-duo)」にあります。
+
+### 更新の後にすること
+
+- ランナーは、次の `relay start` で自動でビルドし直します。
+- ランナーが古いまま `relay hinge` を使うと、終了コード 8（`runner_bad_response`）になります。古いランナーでは、Duo の `relay orientation` も画面を回しません。そのときは `relay start --rebuild` で作り直してください。
+- エージェントのスキルを入れている場合は、`relay skill install`（または `--global`）で入れ直してください。次の references が更新されます。
+  - `references/coordinates.md`：iPhone Duo の節（`relay hinge`、Duo の `relay orientation`）
+  - コマンドの一覧と `relay run` の references、`SKILL.md` の片付け
 
 ## 0.9.0
 
