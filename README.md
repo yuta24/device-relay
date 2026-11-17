@@ -17,6 +17,7 @@ See [docs/design.md](docs/design.md) for how it works. Detailed documentation in
 ## Requirements
 
 - macOS 26 or later with Xcode 26 or later (tested with Xcode 27; CI runs Xcode 26 and 27)
+- Intel Macs: an x86_64 package is released, but it is only built, not tested on an Intel Mac. It will be dropped together with Xcode 26 support ([docs/development.md](docs/development.md#intel-macx86_64))
 - **iOS 17.0 or later** (relay relies on the CoreDevice tunnel; the deployment target is 17.0)
 - For a physical device:
   - An Apple Development certificate (sign in under Xcode > Settings > Accounts to create one). The Team ID is detected from the certificate.

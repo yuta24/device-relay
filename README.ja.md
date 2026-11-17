@@ -17,6 +17,7 @@ Mac から iOS のシミュレータや実機を操作する CLI です。人も
 ## 要件
 
 - macOS 26 以上と Xcode 26 以上（Xcode 27 で動作確認。CI は Xcode 26 と 27）
+- Intel Mac：x86_64 のパッケージも配布していますが、ビルドしているだけで、Intel Mac では確かめていません。Xcode 26 のサポートをやめるときに一緒に外します（[docs/development.md](docs/development.md#intel-macx86_64)）
 - **iOS 17.0 以上**（CoreDevice トンネルを前提とします。デプロイメントターゲットは 17.0）
 - 実機の場合
   - Apple Development 証明書（Xcode > Settings > Accounts でサインインして作成）。Team ID は証明書から自動で検出します
