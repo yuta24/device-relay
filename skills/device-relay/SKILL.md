@@ -42,7 +42,7 @@ relay stop  # when done, if you started it
 - **Start from a known state:** `relay button home` and `relay launch <bundle-id>` (`relay terminate` first for a fresh launch).
 - **No passwords or personal data on your own.** Enter only what the user gave you, and secrets via stdin, never argv: `printf '%s' "$PASSWORD" | relay type --stdin`.
 - **Nothing destructive on a physical device** (deleting data or apps, purchases, sending messages, changing settings, signing out) without the user's confirmation. Share its screenshots only as far as the task needs.
-- **Clean up when the task is done:** after rotating, `relay orientation portrait`; leave the app on a sensible screen; then `relay stop` the runner you started, even if the user may want more (starting again is cheap).
+- **Clean up when the task is done:** after rotating, `relay orientation portrait` (after folding, `relay hinge close`); leave the app on a sensible screen; then `relay stop` the runner you started, even if the user may want more (starting again is cheap).
 
 ## Observe and operate
 
