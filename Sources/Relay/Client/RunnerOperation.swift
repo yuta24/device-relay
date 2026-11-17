@@ -23,6 +23,7 @@ enum RunnerOperation: Equatable {
   case type(text: String?, keys: [String], bundleID: String?, clear: Bool = false)
   case key(String, bundleID: String?)
   case button(String)
+  case hinge(Double?)
   case orientation(String)
   case launch(bundleID: String)
   /// A URL checked with `RunnerOpen.url(_:)`; nil `bundleID` lets the system pick the app.
@@ -48,6 +49,7 @@ enum RunnerOperation: Equatable {
     case .type: return "type"
     case .key: return "key"
     case .button: return "button"
+    case .hinge: return "hinge"
     case .orientation: return "orientation"
     case .launch: return "launch"
     case .open: return "open"
@@ -129,6 +131,7 @@ enum RunnerOperation: Equatable {
       body["bundleId"] = bundleID
       return .post("/key", body)
     case .button(let name): return .post("/button", ["name": name])
+    case .hinge(let angle): return angle.map { .post("/hinge", ["angle": $0]) } ?? .get("/hinge")
     case .orientation(let name): return .post("/orientation", ["orientation": name])
     case .launch(let bundleID): return .post("/launch", ["bundleId": bundleID])
     case .open(let url, let bundleID):
@@ -155,6 +158,7 @@ enum RunnerOperation: Equatable {
     // The runner answers within `RunnerAdjusting.longestAnswer` of finding the element (XCUI's idle waits and the last
     // slider correction included), so with the 30 s on top relay waits at least 20 s past the answer.
     case .adjust(_, _, let timeout, _): return (timeout ?? 0) + RunnerAdjusting.longestAnswer
+    case .hinge, .orientation: return 10 // runner: 2 s preflight + 3 s confirmation + 5 s display settling; CLI adds 30 s.
     case .launch, .open, .terminate: return Self.applicationStateWait
     // The runner gives up on synthesized text `RunnerTyping.synthesisGrace` after this, so it answers within
     // the 30 s on top. Clearing comes first with a grace of its own, which is added whole (`clearGiveUp`), so

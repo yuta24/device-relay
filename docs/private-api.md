@@ -35,6 +35,7 @@
 | [ウィンドウの位置](#ウィンドウの位置) | 要素指定のタッチは何も送らずに `422`。全画面に見えるアプリはそのまま | `window_position_unknown`、`window: null` と `warning` |
 | [共有シートの入れ物](#共有シートの入れ物) | 変換しない（中の要素の frame は相対座標のまま。要素指定のタッチは外れる） | なし |
 | [URL を開く](#url-を開く) | 公開 API で開く（アイドル待ちが入る） | なし |
+| [ヒンジと Duo の向き](#ヒンジと-duo-の向き) | 送信前に `422` で拒否 | `hinge_unavailable` |
 | [アプリの状態の待ち時間](#アプリの状態の待ち時間) | 120 秒のまま | なし |
 
 項目ごとの説明に「同じ方式のツール」を書いていなくても、ほかのツールが使っていないという意味ではありません。`code` の意味は「[エラーの形式と code](http-api.md#エラーの形式と-code)」を参照してください。
@@ -209,3 +210,21 @@ XCTest は、テストを始める前に端末の testmanagerd が automation mo
 
 - `XCUIScreen.screens` / `XCUIScreen.main`、`XCUIElement.snapshot()` と `XCUIElementSnapshot`、`hasFocus`、`XCUIApplication.state`、`XCUICoordinate`。
 - `relay record` が実機の録画で使う `kCMIOHardwarePropertyAllowScreenCaptureDevices`（macOS SDK の CoreMediaIO の公開ヘッダにあります）。
+
+## ヒンジと Duo の向き
+
+`RelayHinge.m` はシミュレータのゲスト内からヒンジと端末の姿勢を変えます。Mac 側の CLI では非公開 API を使いません。方式の出典は [artemnovichkov/hinge](https://github.com/artemnovichkov/hinge) と [AXe](https://github.com/cameroncooke/AXe) です。実装は `RelayHinge.m` に分けています。
+
+| API | 用途 |
+| --- | --- |
+| `IOHIDEventSystemClientCreateWithType`（type 4） | ゲストの HID クライアントを作る |
+| `IOHIDEventCreateVendorDefinedEvent` / `IOHIDEventSystemClientDispatchEvent` | usagePage `0xFF61`、usage `0x5B`、version 0 のイベントを送る |
+| `IOCFSerialize`（binary） | `provider:com.apple.Virtualization.VirtualMachines`、`source`、`type`、`value` を符号化する |
+| `CMAngleManager.isAvailable` / `startAngleUpdatesToQueue:handler:` / `stopAngleUpdates` | ヒンジの有無と角度を確認する |
+| `CMAngle.angleDegrees` / `mechanicalAngleDegrees` | センサー角度と機械角度を読む。確認には機械角度を使う |
+
+`source:hinge-slider-control` は `type:range` と 0〜180 の数値、`orientation-picker-control` は `type:enum` と `portrait` / `pud` / `landscape-left` / `landscape-right` を送ります。
+関数は `dlopen` / `dlsym`、クラスとメソッドは実行時に探します。実機はコンパイル時の分岐で拒否します。
+センサーが使えるシミュレータだけを Duo の向きの経路に選びます。HID 関数だけが欠けている場合も、効かない XCUI の経路へ切り替えずに拒否します。
+関数・クラス・メソッド・クライアント・イベント・有効な機械角度のどれかが得られなければ、何も送らず `hinge_unavailable` です。角度の到達確認が時間切れなら `hinge_failed` にします。
+ヒンジのない端末の `/orientation` は `XCUIDevice.orientation` を使い、画面の変化を待たずに返します。応答や待機時間は「[HTTP API のヒンジ](http-api.md#ヒンジhinge)」にあります。

@@ -2,6 +2,15 @@
 
 以前の版から更新するときに、スクリプトや設定を直す必要がある変更を書きます。すべての変更の一覧は GitHub の [Releases](https://github.com/yuta24/device-relay/releases) にあります。全体の入口は [README](README.ja.md) です。
 
+## 次の版
+
+### Duo シミュレータのヒンジと向き
+
+`relay hinge [0...180|open|close|half]` と、`relay run` の `hinge` 手順を追加しました。引数なしで今の角度を読みます。実機・ヒンジのない端末は何も送らず終了コード 6 です。
+Duo の `relay orientation` が端末の姿勢イベントで動くようになり、変更後の画面方向と `screenChanged` を返します。古いランナーは `relay start --rebuild` で更新してください。
+ヒンジのない端末の `relay orientation` は、画面の変化を待たずに `{"ok":true}` を返します。画面方向は `relay health` で確認してください。
+表示と画面方向の対応は「[Duo](docs/screen.md#表示が複数ある端末iphone-duo)」にあります。
+
 ## 0.9.0
 
 ### アプリを渡さない relay install / uninstall を外した（0.8.0 から）

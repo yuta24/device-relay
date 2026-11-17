@@ -183,6 +183,10 @@ enum RunnerControl {
         + "(relay start --rebuild builds a current one)", exit: .runnerError, to: failureOutput)
     }
     // A runner from before /wait has no such route (404). A current runner's 400 is a real field error.
+    if case .hinge = resolved, response.status == 404 {
+      return fail(.runnerBadResponse, "the runner has no /hinge; relay start --rebuild builds a current one",
+                  exit: .runnerError, to: failureOutput)
+    }
     if case .waitStable = resolved, response.status == 404 {
       return fail(.runnerBadResponse, "the runner has no /wait; relay start --rebuild builds a current one",
                   exit: .runnerError, to: failureOutput)
@@ -195,6 +199,20 @@ enum RunnerControl {
       return code.rawValue
     }
 
+    if case .hinge = resolved {
+      let object = (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any]
+      let angle = object?["angle"].flatMap(RunnerRequestValues.number)
+      let mechanical = object?["mechanicalAngle"].flatMap(RunnerRequestValues.number)
+      guard answerSays("ok", response.body), let angle, angle.isFinite, let mechanical, mechanical.isFinite,
+            (0 ... 180).contains(mechanical), object?["display"] != nil else {
+        return fail(.runnerBadResponse, "invalid /hinge answer; relay start --rebuild builds a current one",
+                    exit: .runnerError, to: failureOutput)
+      }
+      if case .hinge(let target?) = resolved, abs(mechanical - target) > 0.5 {
+        return fail(.runnerBadResponse, "the runner did not confirm the requested mechanical angle; relay start --rebuild",
+                    exit: .runnerError, to: failureOutput)
+      }
+    }
     if case .waitStable = resolved {
       guard let object = (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any],
             let stable = RunnerRequestValues.bool(object["stable"] ?? NSNull()),

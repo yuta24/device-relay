@@ -57,6 +57,10 @@ enum RunnerErrorCode: String, CaseIterable {
   case clearFailed = "clear_failed"
   /// 422: `/open` was refused: no installed app handles the URL, or the app named could not open it.
   case openFailed = "open_failed"
+  /// 422: no simulator hinge or required runtime API; nothing was sent.
+  case hingeUnavailable = "hinge_unavailable"
+  /// 422: angle confirmation or display settling timed out after sending.
+  case hingeFailed = "hinge_failed"
   /// 422: `/adjust` selected an element that is not a slider (for `position`) or a picker wheel (for `pickerValue`);
   /// nothing was adjusted.
   case elementNotAdjustable = "element_not_adjustable"

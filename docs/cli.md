@@ -52,6 +52,8 @@ relay source --max-depth 3 | jq .tree
 relay source --format text --bundle-id com.apple.Preferences
 relay source --format compact --filter interactive   # 操作できる要素だけを 1 行 1 要素で
 relay button home
+relay hinge                                    # 今の角度（Duo シミュレータ）
+relay hinge half                               # 90°。open=180、close=0、数値も可
 relay orientation landscapeLeft                # landscape は landscapeLeft の別名
 relay terminate com.apple.Preferences
 relay stop                                     # relay start ごと止める（boot したシミュレータの shutdown も）。普段はこれ
@@ -77,7 +79,8 @@ relay crashes                                  # 直近 24 時間のクラッシ
 | `swipe` | `POST /swipe` | `<x1> <y1> <x2> <y2>`、`--duration`、`--hold`、`--mode` |
 | `adjust` | `POST /adjust` | セレクタ（`--onscreen`・`--hittable` も可）、`--position <0-1>`（スライダー）か `--picker-value <値>`（ピッカーのホイール）、`--timeout <s>`、`--bundle-id <id>` |
 | `type` | `POST /type` | `<text>` か `--stdin`、`--key <name>`（複数可、順に送る）、`--clear`、`--bundle-id` |
-| `key` / `button` / `orientation` | `POST /key` / `/button` / `/orientation` | 名前（`key` は `--bundle-id` も可、`orientation` は `landscape` を `landscapeLeft` として送る） |
+| `hinge` | `GET /hinge` / `POST /hinge` | 引数なしで角度を読む。角度または `open` / `close` / `half` で設定。実機・ヒンジのない端末は終了コード 6。詳しくは [Duo](screen.md#表示が複数ある端末iphone-duo) |
+| `key` / `button` / `orientation` | `POST /key` / `/button` / `/orientation` | 名前（`key` は `--bundle-id` も可、`orientation` は `landscape` を `landscapeLeft` として送る）。Duo だけ画面の変化を最大 3 秒待ち、画面方向と `screenChanged` を返す。ヒンジのない端末は待たずに返す |
 | `launch` / `terminate` | `POST /launch` / `/terminate` | `<bundle-id>`（`host` も可） |
 | `open` | `POST /open` | `<url>`、`--bundle-id <id>`（`host` も可） |
 | `shutdown` | `POST /shutdown` | – |
@@ -569,7 +572,7 @@ screenshot --output about.png --scale 1
 | 種類 | 使える手順 |
 | --- | --- |
 | 観察 | `ping`、`health`、`foreground`、`screenshot`、`source`、`find`、`wait --stable` |
-| 操作 | `tap`、`press`、`swipe`、`type`、`key`、`button`、`orientation` |
+| 操作 | `tap`、`press`、`swipe`、`type`、`key`、`button`、`hinge`、`orientation` |
 | アプリ | `launch`、`open`、`terminate` |
 | 疑似手順 | `sleep <秒>`（0 < 秒 ≤ 60） |
 

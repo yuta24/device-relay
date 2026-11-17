@@ -5,6 +5,12 @@ import Foundation
 /// Like `RunnerAuth.swift`, this file is compiled into both the `relay` CLI and the runner target so the
 /// SwiftPM unit tests cover it.
 enum RunnerRequestValues {
+  /// Device poses, deliberately distinct from the foreground app’s screen orientation.
+  static func hingeOrientation(_ name: String) -> String? {
+    ["portrait": "portrait", "portraitUpsideDown": "pud",
+     "landscapeLeft": "landscape-left", "landscapeRight": "landscape-right"][name]
+  }
+
   static let jpegQualityRange = 0.05 ... 1.0
   static let defaultJPEGQuality = 0.7
 

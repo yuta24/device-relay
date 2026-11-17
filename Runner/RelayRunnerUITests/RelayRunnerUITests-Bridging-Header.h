@@ -2,3 +2,4 @@
 #import "RelayTouchSynthesizer.h"
 #import "RelayTextSynthesizer.h"
 #import "RelayURLOpener.h"
+#import "RelayHinge.h"
