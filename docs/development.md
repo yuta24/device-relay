@@ -622,6 +622,14 @@ Hardened Runtime で entitlements は要りません。tarball や単体の Mach
 
 手元で同じ tarball を作るには `make dist`、または `scripts/package.sh <version> <arm64|x86_64>` を使います。出力先は `dist/` です。バイナリは作業ツリーから、ほかのファイルは `git archive` で HEAD からとるので、未コミットの変更があると警告します。シークレットは要らず、署名も公証もされません（`RELAY_CODESIGN_IDENTITY` を設定すると署名だけします）。
 
+### Intel Mac（x86_64）
+
+x86_64 のパッケージは、Xcode 26 のサポートをやめるときに外します。macOS 26 が Intel Mac で動く最後の macOS なので、Intel Mac で relay を使えるのは macOS 26 と Xcode 26 の組み合わせが中心になるためです。
+
+- 今は、リリースの arm64 の Mac で x86_64 をクロスビルドして配布しています。CI と Release は x86_64 をビルドするだけで、Intel Mac で起動して確かめてはいません。
+- 外すときに直すもの: `.github/workflows/release.yml` と `scripts/package.sh` の x86_64、`mise.lock` の `macos-x64`、README の要件と手動インストールの `ARCH`、この節と「[インストールと更新](setup.md#インストールと更新)」のファイル名、CHANGELOG（mise の github backend や手動で x86_64 を入れている人への案内）。
+- Runner は手元の Mac の Xcode でビルドするので、配布物の x86_64 とは別です。Intel のシミュレータ向けにビルドできるかを CI で確かめ続けるかも、そのときに決めます。
+
 ### シークレット
 
 `release` environment に置きます。リポジトリのファイルに署名 ID の名前や Team ID を書かないでください。ワークフローは keychain の中の「Developer ID Application」の ID を実行時に探し、SHA-1 ハッシュで指定します。

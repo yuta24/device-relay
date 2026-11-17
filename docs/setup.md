@@ -6,6 +6,7 @@
 
 `relay` 本体（CLI）は、ビルド済みの tarball を GitHub Release で配布します。
 ファイル名は `device-relay-v<version>-macos-<arm64|x86_64>.tar.gz` です。
+x86_64（Intel）は Xcode 26 のサポートをやめるときに外します（「[Intel Mac（x86_64）](development.md#intel-macx86_64)」）。
 
 端末で動かす Runner は、XCUITest の Xcode プロジェクトです。ソースのまま tarball に入っていて、`relay start` が手元の Mac の Xcode でビルドします。
 
