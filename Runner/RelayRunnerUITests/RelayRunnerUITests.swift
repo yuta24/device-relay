@@ -384,9 +384,26 @@ final class RelayRunnerUITests: XCTestCase {
     case ("POST", "/button"):
       try pressButton(RunnerJSON(request.body).string("name"))
       return ok()
+    case ("GET", "/hinge"):
+      return hingeResponse(RelayHinge.readAngle())
+    case ("POST", "/hinge"):
+      let body = try RunnerJSON(request.body)
+      guard let angle = body.object["angle"].flatMap(RunnerRequestValues.number), angle.isFinite,
+            (0 ... 180).contains(angle) else { throw RunnerError.invalidField("angle") }
+      let result = RelayHinge.setAngle(angle)
+      guard result["ok"] as? Bool == true else { return hingeResponse(result) }
+      return hingeResponse(result, settle: true)
     case ("POST", "/orientation"):
-      XCUIDevice.shared.orientation = try orientation(RunnerJSON(request.body).string("orientation"))
-      return ok()
+      let name = try RunnerJSON(request.body).string("orientation")
+      let deviceOrientation = try orientation(name)
+      let result = RunnerOrientation.apply(
+        hasHinge: RelayHinge.hasHinge(),
+        setDevice: { XCUIDevice.shared.orientation = deviceOrientation },
+        setHinge: { RelayHinge.setOrientation(RunnerRequestValues.hingeOrientation(name)!) },
+        screen: { Self.name(of: self.interfaceOrientation()) }
+      )
+      guard result["ok"] as? Bool == true else { return hingeResponse(result) }
+      return .json(result)
     case ("POST", "/launch"):
       let bundleID = try RunnerJSON(request.body).string("bundleId")
       XCUIApplication(bundleIdentifier: bundleID).activate()
@@ -403,7 +420,7 @@ final class RelayRunnerUITests: XCTestCase {
       }
       return ok()
     case (_, "/health"), (_, "/foreground"), (_, "/screenshot"), (_, "/source"), (_, "/tap"), (_, "/press"),
-         (_, "/wait"), (_, "/find"), (_, "/adjust"), (_, "/swipe"), (_, "/type"), (_, "/key"), (_, "/button"), (_, "/orientation"), (_, "/launch"),
+         (_, "/wait"), (_, "/find"), (_, "/adjust"), (_, "/swipe"), (_, "/type"), (_, "/key"), (_, "/button"), (_, "/hinge"), (_, "/orientation"), (_, "/launch"),
          (_, "/open"), (_, "/terminate"), (_, "/shutdown"):
       throw RunnerError.methodNotAllowed
     default:
@@ -412,6 +429,44 @@ final class RelayRunnerUITests: XCTestCase {
   }
 
   // MARK: - Commands
+
+  private func hingeResponse(_ result: [String: Any], settle: Bool = false) -> RunnerHTTPResponse {
+    var result = result
+    if result["ok"] as? Bool == true, settle {
+      // Endpoints have an unambiguous display even with the Duo's hysteresis at intermediate angles.
+      // Do not return while the previous display is still stable but waiting to switch.
+      let angle = result["mechanicalAngle"] as? Double ?? .nan
+      let known = displays()
+      let expected = known.count == 2 ? known.first(where: {
+        angle <= 0.5 ? $0.isMain : angle >= 179.5 && !$0.isMain
+      })?.id : nil
+      // No hard-coded display IDs: require the lit/app display to remain stable for one second.
+      let started = Date()
+      let deadline = started.addingTimeInterval(5)
+      var previous: Int?
+      var since = Date()
+      var settled = false
+      repeat {
+        // appDisplay is normally cached for one command; a hinge command changes it mid-command.
+        commandDisplay = nil
+        let current = health()["display"] as? Int
+        if current == nil || current != previous { since = Date() }
+        previous = current
+        if current != nil && (expected == nil || current == expected)
+          && Date().timeIntervalSince(started) >= 2 && Date().timeIntervalSince(since) >= 1 {
+          settled = true
+          break
+        }
+        Thread.sleep(forTimeInterval: 0.1)
+      } while Date() < deadline
+      if !settled {
+        result.merge(RunnerErrorCode.hingeFailed.body("the display did not settle within 5 seconds")) { _, new in new }
+      }
+    }
+    commandDisplay = nil
+    result["display"] = health()["display"] ?? NSNull()
+    return .json(result, status: result["ok"] as? Bool == true ? 200 : 422)
+  }
 
   private func health() -> [String: Any] {
     let orientation = interfaceOrientation()

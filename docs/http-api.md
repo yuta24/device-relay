@@ -22,7 +22,9 @@
 | `POST /type` | `{"text":"hello","keys":["return"],"bundleId":"com.apple.Preferences","clear":false}`（`keys`・`bundleId`・`clear` は省略可。`keys` か `clear: true` があれば `text` は省略・空文字でも可。`text` が文字列以外なら `keys` があっても 400） | キーボードのフォーカスがある要素への文字入力。`clear: true` なら先に入力欄を空にし（下の「入力欄を空にする（clear）」）、`text` の後に `keys` を順に送ります。対象の既定は前面アプリ |
 | `POST /key` | `{"key":"return","bundleId":"…"}`（bundleId は省略可） | 特殊キー（`return` / `delete` / `space`）を 1 つ送ります。それ以外のキー名は 400。詳しくは「文字入力と特殊キー」 |
 | `POST /button` | `{"name":"home"}`（`volumeUp` / `volumeDown` は実機のみ） | ハードウェアボタン。`home` は実機では画面下端からのスワイプで代用します（「[ホームと音量ボタン](device.md#ホームと音量ボタン)」を参照） |
-| `POST /orientation` | `{"orientation":"portrait\|portraitUpsideDown\|landscapeLeft\|landscapeRight"}` | 端末の向き（`UIDeviceOrientation`）を設定 |
+| `GET /hinge` | – | Duo シミュレータの `angle`、`mechanicalAngle`、`display` を読む |
+| `POST /hinge` | `{"angle":90}` | 0〜180°の機械角度を確認し、表示が落ち着くまで待つ。応答は下の「ヒンジ」 |
+| `POST /orientation` | `{"orientation":"portrait\|portraitUpsideDown\|landscapeLeft\|landscapeRight"}` | 端末の向きを設定。Duo は最大 3 秒待ち、画面方向 `orientation` と `screenChanged` を返す。ヒンジのない端末は待たずに `{"ok":true}` を返す |
 | `POST /launch` | `{"bundleId":"com.apple.Preferences"}` | アプリの起動・前面化（`activate()`）で、入っていないアプリの扱いは「[アプリの指定と起動](cli.md#アプリの指定と起動)」を参照してください。 |
 | `POST /open` | `{"url":"myapp://title/42","bundleId":"…"}`（`bundleId` は省略可） | URL を開きます。`bundleId` を省くと、システムが選ぶアプリ（`https://` なら Safari）で開きます。詳しくは下の「URL を開く（/open）」 |
 | `POST /terminate` | `{"bundleId":"com.apple.Preferences"}` | アプリの終了。終了するまで `/launch` と同じだけ待ちます |
@@ -428,3 +430,23 @@ RelayRunnerHost で確かめた結果（時間は `relay type --clear` の呼び
 `relay.input` の `relay.events` には `press keyCode 227`（Command）・`press "a"` と、選択した文字列全体の 1 回の delete（ASCII 300 文字なら `delete 300`）が残りました。
 全選択のない `relay.input2` の短い場面では、最初の `delete 1` の後に `press keyCode 227` と `press "\u{1F}"`（下矢印）、さらに `delete 1` が 3 回残り、Cmd-↓ の到達と末尾からの削除を確認できました。250 文字の場面では、ログが最新 6 件なので最後の `delete 1` だけが残ります。
 パスワード欄ではキー名を伏せた `press` と `delete 8` が残りました。`relay.notes` の編集はホストアプリのイベント記録の対象外なので、`relay.events` は変わらず、入力欄の `value` で空になったことを確認しました。
+
+## ヒンジ（/hinge）
+
+Duo シミュレータのヒンジ角度を読み、設定できます。`GET /hinge` は読み取りだけ、`POST /hinge` は `{"angle":90}` で設定します。数値は有限の 0〜180° で、小数も使えます。
+
+成功は `{"ok":true,"angle":94.6,"mechanicalAngle":90,"display":3}` の形です。`angle` はセンサーの角度、`mechanicalAngle` は機械角度です。設定時は機械角度が指定値の ±0.5° 以内かを確かめます。
+
+| 待機 | 上限 |
+| --- | --- |
+| 送信前の機械角度の読み取り | 2 秒。読めなければ何も送りません |
+| 送信後の角度確認 | 3 秒 |
+| 表示の安定確認 | 5 秒。少なくとも 2 秒待ち、表示 ID が 1 秒変わらないことを確かめます |
+| CLI の HTTP 待機 | 40 秒。ランナーの待機上限より 30 秒長く待ちます |
+
+実機、ヒンジのない端末、必要な関数やクラスが使えない場合は、送信前に `422`、`hinge_unavailable` で断ります。角度や表示の確認が時間切れなら `422`、`hinge_failed` です。CLI はどちらも終了コード 6 です。
+`/hinge` のない古いランナーは CLI で `runner_bad_response`、終了コード 8 になります。`relay start --rebuild` で更新してください。
+
+`/orientation` は Duo では端末の姿勢イベントを送り、画面方向の変化を最大 3 秒待ちます。アプリが対応していない向きや、現在と同じ向きでは `screenChanged:false` になることがあります。
+ヒンジのない端末は `XCUIDevice.orientation` の設定後、画面の変化を待たずに `{"ok":true}` を返します。この経路では `orientation` と `screenChanged` は返しません。画面方向は `/health` で読み直してください。
+画面方向の対応は「[Duo](screen.md#表示が複数ある端末iphone-duo)」にあります。

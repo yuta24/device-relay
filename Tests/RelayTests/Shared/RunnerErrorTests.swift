@@ -28,6 +28,8 @@ struct RunnerErrorCodeTests {
       .touchFailed: "touch_failed",
       .typingFailed: "typing_failed",
       .openFailed: "open_failed",
+      .hingeUnavailable: "hinge_unavailable",
+      .hingeFailed: "hinge_failed",
       .clearFailed: "clear_failed",
       .elementNotAdjustable: "element_not_adjustable",
       .adjustFailed: "adjust_failed",

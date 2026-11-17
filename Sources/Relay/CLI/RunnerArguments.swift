@@ -333,9 +333,21 @@ extension Arguments {
     ),
     "key": ("relay key return|delete|space [--bundle-id <id>]", "Sends one special key to the element with keyboard focus."),
     "button": ("relay button home|volumeUp|volumeDown", "Presses a hardware button (the volume buttons on devices only)."),
+    "hinge": (
+      "relay hinge [0...180|open|close|half]",
+      """
+      Reads or sets the simulator hinge and confirms its mechanical angle. Waits for the display to
+      settle. Physical devices and simulators without a hinge are refused by the runner (exit 6).
+      An older runner needs relay start --rebuild (exit 8).
+      """
+    ),
     "orientation": (
       "relay orientation portrait|portraitUpsideDown|landscapeLeft|landscapeRight|landscape",
-      "Sets the device orientation. landscape is short for landscapeLeft."
+      """
+      Sets the device orientation, including Duo simulator poses. landscape means landscapeLeft.
+      Duo waits up to 3 s and answers with the screen orientation and screenChanged.
+      Other devices acknowledge immediately; use relay health to read the screen orientation.
+      """
     ),
     "launch": (
       "relay launch <bundle-id>",
@@ -593,7 +605,7 @@ extension Arguments {
 
   static let runnerCommandOrder = [
     "ping", "health", "foreground", "screenshot", "source", "find", "wait", "tap", "press", "swipe", "adjust",
-    "type", "key", "button", "orientation", "launch", "open", "terminate", "shutdown"
+    "type", "key", "button", "hinge", "orientation", "launch", "open", "terminate", "shutdown"
   ]
 
   /// The runner commands the overall usage lists: all of them. `relay shutdown` comes last, with a note
@@ -780,6 +792,14 @@ private struct RunnerArgumentValues {
       return .key(try key(try positional(1, "a key name (\(RunnerKey.supportedNames))")[0]), bundleID: try string("--bundle-id"))
     case "button":
       return .button(try choice(try positional(1, "a button name")[0], "button", Arguments.buttons))
+    case "hinge":
+      guard positionals.count <= 1 else { throw ArgumentError(description: "hinge takes at most one angle") }
+      guard let text = positionals.first else { return .hinge(nil) }
+      let aliases: [String: Double] = ["open": 180, "close": 0, "half": 90]
+      guard let angle = aliases[text] ?? Double(text), angle.isFinite, (0 ... 180).contains(angle) else {
+        throw ArgumentError(description: "hinge requires 0...180, open, close, or half")
+      }
+      return .hinge(angle)
     case "orientation":
       let name = try positional(1, "an orientation")[0]
       let orientations = Arguments.orientations + Arguments.orientationAliases.keys.sorted()

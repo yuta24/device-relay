@@ -176,12 +176,17 @@ iPhone Duo には表示が 2 つあります。外側（cover。`XCUIScreen.main
 - `/source?format=text`（XCUI の `debugDescription`）は表示の向きへの変換も、ほかの表示の window の除外もしません。
 - **ホーム**: iPhone Duo のシミュレータでは、`XCUIDevice.press(.home)` がどちらの表示でも成功を返して何も起きないので、実機と同じくホームインジケーターのスワイプで代用します。
 - **表示を指定するオプションはありません**: 点くのは 1 つだけで、暗い表示への操作やスクリーンショットには意味がないためです。アプリの表示は、`/health` の `display` とスクリーンショットの `X-Relay-Display` で確かめられます。
-- **折りたたみの切り替え**: relay からはできません。Xcode の DeviceHub（`Xcode.app/Contents/Applications/DeviceHub.app`）で端末を選び、姿勢のコントロールで切り替えます。姿勢は Closed・Book・Open の 3 つです。切り替えた後は `/health` を読み直します。Closed から Open への切り替えでは、シミュレータが起動し直してランナーが止まることがありました（2 回）。そのときは `relay status` が失敗するので `relay start` し直します。ランナーが動き続けた切り替えでも、表示の一覧（大きさは姿勢で変わりません）と向き（リクエストごとに読み直します）は古くなりませんでした。`devicectl device info displays` の `active` は、シミュレータが起動し直した直後に古い値のままのことがあるので、点いている表示はスクリーンショットで確かめます。
-- **姿勢と向き**: Closed・Book・Open のそれぞれで、`/orientation` を portrait・landscapeLeft・landscapeRight・portraitUpsideDown にして、ホーム画面・設定アプリ・RelayRunnerHost で確かめました。
+- **折りたたみの切り替え**: `relay hinge open`（180°）、`close`（0°）、`half`（90°）、または `relay hinge 120` で設定します。引数なしで現在の角度を読みます。HTTP の応答と待機時間は「[ヒンジ](http-api.md#ヒンジhinge)」にあります。
+- 設定後は機械角度が指定値の ±0.5° 以内になるまで待ち、少なくとも 2 秒待って表示 ID が 1 秒安定したことも確かめます。0° では外側、180° では内側への切り替えを確認してから応答します。表示を確かめられなければ `hinge_failed` です。
+- 中間の角度でどちらが点くかは、直前の姿勢にも依存します。閉じた状態から徐々に開く場合と、開いた状態から閉じる場合で境界が異なるため、角度だけで表示を決めず応答の `display` を使ってください。
+- DeviceHub の姿勢コントロールでも Closed・Book・Open に切り替えられます。Xcode 27.2、iOS 27.2 の Duo シミュレータでは、DeviceHub で Closed→Open にすると再起動してランナーが止まることがありました。その場合は `relay start` し直してください。同じ環境の `relay hinge` による開閉では再起動しませんでした。
+- 表示の一覧の大きさは姿勢で変わらず、向きはリクエストごとに読み直します。`devicectl device info displays` の `active` は、再起動直後に古いままのことがあるため、点いた表示はスクリーンショットでも確かめられます。
+- **姿勢と向き**: `relay orientation` は Duo シミュレータの端末姿勢を変更します。`portrait` / `landscapeLeft` / `landscapeRight` / `portraitUpsideDown` は、それぞれイベント値 `portrait` / `landscape-left` / `landscape-right` / `pud` に対応します。
+- 応答の `orientation` は変更後の画面方向で、`screenChanged` は画面方向が変わったかです。アプリが対応していない向きや現在と同じ向きでは `false` でも成功になります。`/health` の画面方向と大きさも実際の表示を返します。
+- 内側は元々横長なので、端末姿勢と画面方向が 90° ずれます。ホストアプリでは端末 `portrait` → 画面 `landscapeRight`、`landscapeLeft` → `portrait`、`portraitUpsideDown` → `landscapeLeft` でした。端末 `landscapeRight` は画面の上下逆さまに相当し、ホストアプリの画面は変わりません。
+- 方式の出典は [hinge](https://github.com/artemnovichkov/hinge) と [AXe](https://github.com/cameroncooke/AXe) です。ランナー内から同じ HID イベントを送り、角度は CoreMotion で確認します。非公開 API の一覧は「[ヒンジと Duo の向き](private-api.md#ヒンジと-duo-の向き)」にあります。
+- `XCUIDevice.orientation` と `xcrun devicectl device orientation set` / `rotate` では、Duo の画面は回転しませんでした。イベント送信直後の `devicectl device orientation get` は 1 つ前の値を返すことがありました。結果の確認には relay の応答を使ってください。
 - どの姿勢でも点く表示は 1 つで、両方が同時に点くことはありませんでした。
-- `/orientation` は端末の向き（`XCUIDevice.orientation`）を変えますが、画面は回転しません。外側は portrait、内側は landscapeRight のままで、横向きに対応した RelayRunnerHost も回転しませんでした。`/health` の `orientation` と `screen` は、実際の表示の向きを返します。
-
-Xcode 27.2 の `xcrun devicectl device orientation set` / `rotate` も、Duo では成功を返すのに `get` が portrait のままで、画面は回転しませんでした。iPhone 17 Pro シミュレータでは回転します。
 
 折りたたみを何度か切り替えた後、ホーム画面の一部のアイコンで、SpringBoard の frame が画面上の位置と合わないことがありました。要素指定のタップは成功を返して何も起きなかったので、スクリーンショットで位置を確かめてください。
 
@@ -190,7 +195,9 @@ Xcode 27.2 の `xcrun devicectl device orientation set` / `rotate` も、Duo で
 | 外側 | Watch | (145, 85) | (52, 331) |
 | 内側 | Settings | (763, 385) | (516, 287) |
 
-| 姿勢 | 点く表示 | `/health`（4 つの向きとも） | スクリーンショット | タップ（private / xcui の座標・要素） | 画面外 | ホーム |
+Xcode 27.2、iOS 27.2 の Duo シミュレータで、`XCUIDevice.orientation` による向きの指定を使って確かめた結果です。Duo の回転には、上の HID イベントを送る `relay orientation` を使ってください。
+
+| 姿勢 | 点く表示 | `/health`（XCUI の 4 つの向き指定とも） | スクリーンショット | タップ（private / xcui の座標・要素） | 画面外 | ホーム |
 | --- | --- | --- | --- | --- | --- | --- |
 | Closed | 外側（ID 1） | `display` 1、466×678、portrait | 外側の画像 | 設定・RelayRunnerHost・ホーム画面のすべてで届いた（ホーム画面の private の座標タップが 1 回だけ届かなかった） | 400 | 効いた |
 | Open | 内側（ID 3） | `display` 3、951×669、landscapeRight | 内側の画像 | 設定・RelayRunnerHost（回転表示）で届いた。ホーム画面は private と要素で届き、xcui は 422 | 400 | 効いた |
