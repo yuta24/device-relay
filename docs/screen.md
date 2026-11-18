@@ -182,7 +182,7 @@ iPhone Duo には表示が 2 つあります。外側（cover。`XCUIScreen.main
 - DeviceHub の姿勢コントロールでも Closed・Book・Open に切り替えられます。Xcode 27.2、iOS 27.2 の Duo シミュレータでは、DeviceHub で Closed→Open にすると再起動してランナーが止まることがありました。その場合は `relay start` し直してください。同じ環境の `relay hinge` による開閉では再起動しませんでした。
 - 表示の一覧の大きさは姿勢で変わらず、向きはリクエストごとに読み直します。`devicectl device info displays` の `active` は、再起動直後に古いままのことがあるため、点いた表示はスクリーンショットでも確かめられます。
 - **姿勢と向き**: `relay orientation` は Duo シミュレータの端末姿勢を変更します。`portrait` / `landscapeLeft` / `landscapeRight` / `portraitUpsideDown` は、それぞれイベント値 `portrait` / `landscape-left` / `landscape-right` / `pud` に対応します。
-- 応答の `orientation` は変更後の画面方向で、`screenChanged` は画面方向が変わったかです。アプリが対応していない向きや現在と同じ向きでは `false` でも成功になります。`/health` の画面方向と大きさも実際の表示を返します。
+- 全端末で応答に `requested`（指定した端末姿勢）・`orientation`（変更後の画面方向）・`screenChanged`（画面方向が変わったか）を返します。方向の変化を最大 3 秒待ち、方向と表示サイズが 1 秒変わらないことも確かめます（待機は合計最大 4 秒）。アプリが対応していない向きや現在と同じ向きでは `false` でも成功になります。`/health` の画面方向と大きさも実際の表示を返します。
 - 内側は元々横長なので、端末姿勢と画面方向が 90° ずれます。ホストアプリでは端末 `portrait` → 画面 `landscapeRight`、`landscapeLeft` → `portrait`、`portraitUpsideDown` → `landscapeLeft` でした。端末 `landscapeRight` は画面の上下逆さまに相当し、ホストアプリの画面は変わりません。
 - 方式の出典は [hinge](https://github.com/artemnovichkov/hinge) と [AXe](https://github.com/cameroncooke/AXe) です。ランナー内から同じ HID イベントを送り、角度は CoreMotion で確認します。非公開 API の一覧は「[ヒンジと Duo の向き](private-api.md#ヒンジと-duo-の向き)」にあります。
 - `XCUIDevice.orientation` と `xcrun devicectl device orientation set` / `rotate` では、Duo の画面は回転しませんでした。イベント送信直後の `devicectl device orientation get` は 1 つ前の値を返すことがありました。結果の確認には relay の応答を使ってください。

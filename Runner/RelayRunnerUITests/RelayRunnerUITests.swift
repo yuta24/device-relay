@@ -397,10 +397,15 @@ final class RelayRunnerUITests: XCTestCase {
       let name = try RunnerJSON(request.body).string("orientation")
       let deviceOrientation = try orientation(name)
       let result = RunnerOrientation.apply(
+        requested: name,
         hasHinge: RelayHinge.hasHinge(),
         setDevice: { XCUIDevice.shared.orientation = deviceOrientation },
         setHinge: { RelayHinge.setOrientation(RunnerRequestValues.hingeOrientation(name)!) },
-        screen: { Self.name(of: self.interfaceOrientation()) }
+        screen: {
+          let orientation = self.interfaceOrientation()
+          let size = self.screen(in: orientation).size
+          return RunnerOrientation.Screen(orientation: Self.name(of: orientation), width: size.width, height: size.height)
+        }
       )
       guard result["ok"] as? Bool == true else { return hingeResponse(result) }
       return .json(result)

@@ -97,6 +97,11 @@ struct RunnerOperationTests {
     }
   }
 
+  @Test func orientationTimeoutLeavesAtLeastTwentySecondsPastTheRunner() {
+    let longestRunnerWait = 2 + RunnerOrientation.screenWait + RunnerOrientation.settleTime
+    #expect(RunnerControl.baseTimeout + RunnerOperation.orientation("portrait").waitTime >= longestRunnerWait + 20)
+  }
+
   @Test func allowsForWaitsInTheTimeout() {
     #expect(RunnerOperation.health.waitTime == 0)
     #expect(RunnerOperation.find(RunnerElementSelector(type: "cell"), limit: nil, timeout: 5, bundleID: nil).waitTime == 5)

@@ -80,7 +80,7 @@ relay crashes                                  # 直近 24 時間のクラッシ
 | `adjust` | `POST /adjust` | セレクタ（`--onscreen`・`--hittable` も可）、`--position <0-1>`（スライダー）か `--picker-value <値>`（ピッカーのホイール）、`--timeout <s>`、`--bundle-id <id>` |
 | `type` | `POST /type` | `<text>` か `--stdin`、`--key <name>`（複数可、順に送る）、`--clear`、`--bundle-id` |
 | `hinge` | `GET /hinge` / `POST /hinge` | 引数なしで角度を読む。角度または `open` / `close` / `half` で設定。実機・ヒンジのない端末は終了コード 6。詳しくは [Duo](screen.md#表示が複数ある端末iphone-duo) |
-| `key` / `button` / `orientation` | `POST /key` / `/button` / `/orientation` | 名前（`key` は `--bundle-id` も可、`orientation` は `landscape` を `landscapeLeft` として送る）。Duo だけ画面の変化を最大 3 秒待ち、画面方向と `screenChanged` を返す。ヒンジのない端末は待たずに返す |
+| `key` / `button` / `orientation` | `POST /key` / `/button` / `/orientation` | 名前（`key` は `--bundle-id` も可、`orientation` は `landscape` を `landscapeLeft` として送る）。全端末で画面方向の変化を最大 3 秒、その後の安定を最大 1 秒待ち、`ok`・`requested`（指定した姿勢）・`orientation`（画面方向）・`screenChanged` を返す。同じ向き・非対応の向きも終了コード 0（[詳細](http-api.md#エンドポイント)） |
 | `launch` / `terminate` | `POST /launch` / `/terminate` | `<bundle-id>`（`host` も可） |
 | `open` | `POST /open` | `<url>`、`--bundle-id <id>`（`host` も可） |
 | `shutdown` | `POST /shutdown` | – |

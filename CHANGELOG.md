@@ -2,6 +2,18 @@
 
 以前の版から更新するときに、スクリプトや設定を直す必要がある変更を書きます。すべての変更の一覧は GitHub の [Releases](https://github.com/yuta24/device-relay/releases) にあります。全体の入口は [README](README.ja.md) です。
 
+## 次の版
+
+### orientation の応答と待機を全端末でそろえる
+
+`relay orientation`（`POST /orientation`）は、全端末で `{"ok":true,"requested":"landscapeLeft","orientation":"landscapeLeft","screenChanged":true}` の形を返します。`requested` は頼んだ姿勢、`orientation` は実際の画面方向です。Duo 内側ではこの 2 つが異なることがあります。
+ヒンジのない端末でも回転後の方向を読み直し、方向と表示サイズが短い間変わらなくなるまで待ちます。同じ向き・非対応の向きは `screenChanged:false`、終了コード 0 です。
+
+### 更新の後にすること
+
+- `relay start --rebuild` でランナーを作り直してください。すでに動いているランナーは停止して起動し直します。
+- orientation の応答のキーを決め打ちしているスクリプトは、全端末で `requested`・`orientation`・`screenChanged` が付く形に合わせてください。画面方向の確認には `requested` ではなく `orientation` を使います。
+
 ## 0.10.0
 
 ### Duo シミュレータのヒンジと向き
