@@ -158,7 +158,9 @@ enum RunnerOperation: Equatable {
     // The runner answers within `RunnerAdjusting.longestAnswer` of finding the element (XCUI's idle waits and the last
     // slider correction included), so with the 30 s on top relay waits at least 20 s past the answer.
     case .adjust(_, _, let timeout, _): return (timeout ?? 0) + RunnerAdjusting.longestAnswer
-    case .hinge, .orientation: return 10 // runner: 2 s preflight + 3 s confirmation + 5 s display settling; CLI adds 30 s.
+    case .hinge: return 10 // runner: 2 s preflight + 3 s confirmation + 5 s display settling; CLI adds 30 s.
+    // Duo: up to 2 s preflight + 3 s screen wait + 1 s settling. Leave at least 20 s beyond the answer.
+    case .orientation: return 10
     case .launch, .open, .terminate: return Self.applicationStateWait
     // The runner gives up on synthesized text `RunnerTyping.synthesisGrace` after this, so it answers within
     // the 30 s on top. Clearing comes first with a grace of its own, which is added whole (`clearGiveUp`), so

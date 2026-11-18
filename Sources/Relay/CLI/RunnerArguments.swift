@@ -345,8 +345,10 @@ extension Arguments {
       "relay orientation portrait|portraitUpsideDown|landscapeLeft|landscapeRight|landscape",
       """
       Sets the device orientation, including Duo simulator poses. landscape means landscapeLeft.
-      Duo waits up to 3 s and answers with the screen orientation and screenChanged.
-      Other devices acknowledge immediately; use relay health to read the screen orientation.
+      Every device waits up to 3 s for a changed screen direction and 1 s of unchanged direction/size.
+      Prints ok, requested (device pose), orientation (screen direction), and screenChanged.
+      Same or unsupported orientations return screenChanged:false and exit 0 after the wait.
+      Duo's inner screen can differ from the requested pose. Read relay health for the screen size.
       """
     ),
     "launch": (

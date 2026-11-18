@@ -24,7 +24,7 @@
 | `POST /button` | `{"name":"home"}`（`volumeUp` / `volumeDown` は実機のみ） | ハードウェアボタン。`home` は実機では画面下端からのスワイプで代用します（「[ホームと音量ボタン](device.md#ホームと音量ボタン)」を参照） |
 | `GET /hinge` | – | Duo シミュレータの `angle`、`mechanicalAngle`、`display` を読む |
 | `POST /hinge` | `{"angle":90}` | 0〜180°の機械角度を確認し、表示が落ち着くまで待つ。応答は下の「ヒンジ」 |
-| `POST /orientation` | `{"orientation":"portrait\|portraitUpsideDown\|landscapeLeft\|landscapeRight"}` | 端末の向きを設定。Duo は最大 3 秒待ち、画面方向 `orientation` と `screenChanged` を返す。ヒンジのない端末は待たずに `{"ok":true}` を返す |
+| `POST /orientation` | `{"orientation":"portrait\|portraitUpsideDown\|landscapeLeft\|landscapeRight"}` | 端末の姿勢を設定し、全端末で `ok`・`requested`・`orientation`・`screenChanged` を返す。画面方向の変化を最大 3 秒、その後の安定を最大 1 秒待つ（下の「向き」） |
 | `POST /launch` | `{"bundleId":"com.apple.Preferences"}` | アプリの起動・前面化（`activate()`）で、入っていないアプリの扱いは「[アプリの指定と起動](cli.md#アプリの指定と起動)」を参照してください。 |
 | `POST /open` | `{"url":"myapp://title/42","bundleId":"…"}`（`bundleId` は省略可） | URL を開きます。`bundleId` を省くと、システムが選ぶアプリ（`https://` なら Safari）で開きます。詳しくは下の「URL を開く（/open）」 |
 | `POST /terminate` | `{"bundleId":"com.apple.Preferences"}` | アプリの終了。終了するまで `/launch` と同じだけ待ちます |
@@ -447,6 +447,12 @@ Duo シミュレータのヒンジ角度を読み、設定できます。`GET /h
 実機、ヒンジのない端末、必要な関数やクラスが使えない場合は、送信前に `422`、`hinge_unavailable` で断ります。角度や表示の確認が時間切れなら `422`、`hinge_failed` です。CLI はどちらも終了コード 6 です。
 `/hinge` のない古いランナーは CLI で `runner_bad_response`、終了コード 8 になります。`relay start --rebuild` で更新してください。
 
-`/orientation` は Duo では端末の姿勢イベントを送り、画面方向の変化を最大 3 秒待ちます。アプリが対応していない向きや、現在と同じ向きでは `screenChanged:false` になることがあります。
-ヒンジのない端末は `XCUIDevice.orientation` の設定後、画面の変化を待たずに `{"ok":true}` を返します。この経路では `orientation` と `screenChanged` は返しません。画面方向は `/health` で読み直してください。
-画面方向の対応は「[Duo](screen.md#表示が複数ある端末iphone-duo)」にあります。
+**向き（/orientation）**: Duo シミュレータには姿勢イベントを送り、ほかの端末には `XCUIDevice.orientation` を設定します。成功時は全端末で同じ形です。
+
+```json
+{"ok":true,"requested":"landscapeLeft","orientation":"landscapeLeft","screenChanged":true}
+```
+
+`requested` は指定した端末姿勢、`orientation` は応答時の画面方向（`/health` と同じ名前）、`screenChanged` は送信前と比べて画面方向が変わったかです。端末姿勢と画面方向が異なっていても失敗ではありません。Duo 内側の対応は「[Duo](screen.md#表示が複数ある端末iphone-duo)」にあります。
+
+送信後に画面方向と表示サイズを 0.1 秒間隔で読み直し、方向の変化を最大 3 秒待ち、変わった方向とサイズが 1 秒変わらないことも確かめます（待機は合計最大 4 秒）。同じ向きやアプリが対応していない向きでは 3 秒待ち、`screenChanged:false`、HTTP 200（CLI は終了コード 0）です。サイズは `/health` と同じ読み取りで、方向から縦横を決めるため、それだけでアニメーションの終了を判断せず、短い安定待ちも行います。CLI は最大 40 秒待ちます。座標を作るときは応答後の `/health` の `screen` を使ってください。
