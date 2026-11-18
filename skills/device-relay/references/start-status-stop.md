@@ -34,7 +34,7 @@ pid:         <PID> (relay start running)
 started:     <date and time>
 host app:    <bundle ID of RelayRunnerHost>
 ping:        ok (idle)
-runner:      0.10.0 (sources <12 characters>)
+runner:      0.10.1 (sources <12 characters>)
 runner.json: /Users/<you>/.relay/runner.json
 ```
 
