@@ -40,7 +40,9 @@ enum RunnerOrientation {
         quietSince = time
       }
       if after.orientation != before.orientation, time - quietSince >= settleTime { break }
-      // A change first observed at the deadline still gets a full settling window.
+      // A change first observed at the deadline still gets a full settling window. A change observed after
+      // the deadline (a late size flicker) gets only what remains before `deadline + settleTime`: the cap
+      // keeps the answer within the CLI's timeout, so don't extend `stop` to `quietSince + settleTime`.
       let stop = after.orientation == before.orientation ? deadline : deadline + settleTime
       guard time < stop else { break }
       sleep(min(pollInterval, stop - time))
