@@ -2,7 +2,7 @@
 
 以前の版から更新するときに、スクリプトや設定を直す必要がある変更を書きます。すべての変更の一覧は GitHub の [Releases](https://github.com/yuta24/device-relay/releases) にあります。全体の入口は [README](README.ja.md) です。
 
-## 次の版
+## 0.10.1
 
 ### orientation の応答と待機を全端末でそろえる
 
@@ -11,8 +11,9 @@
 
 ### 更新の後にすること
 
-- `relay start --rebuild` でランナーを作り直してください。すでに動いているランナーは停止して起動し直します。
+- ランナーは、次の `relay start` で自動でビルドし直します。すでに動いているランナーは `relay stop` してから起動し直してください。作り直す前のランナーは、ヒンジのない端末で `{"ok":true}` だけを返します。
 - orientation の応答のキーを決め打ちしているスクリプトは、全端末で `requested`・`orientation`・`screenChanged` が付く形に合わせてください。画面方向の確認には `requested` ではなく `orientation` を使います。
+- エージェントのスキルを入れている場合は、`relay skill install`（または `--global`）で入れ直してください。`references/coordinates.md` の向きの説明が更新されます。
 
 ## 0.10.0
 
