@@ -13,7 +13,7 @@ relay run --step "launch <bundle-id>" --step "tap --id login.button --timeout 5"
 relay run steps.relay --check   # validate only (no runner needed, runs nothing; 0 if there are no problems)
 ```
 
-- Steps are runner commands without `relay` (`tap`, `press`, `swipe`, `adjust`, `type`, `key`, `button`, `hinge`, `orientation`, `launch`, `open`, `terminate`, `find`, `wait`, `source`, `screenshot`, `health`, `foreground`, `ping`) and `sleep <seconds>` (up to 60). `start` / `stop` / `shutdown` and the like can't be written.
+- Steps are runner commands without `relay` (`tap`, `press`, `pinch`, `swipe`, `adjust`, `type`, `key`, `button`, `hinge`, `orientation`, `launch`, `open`, `terminate`, `find`, `wait`, `source`, `screenshot`, `health`, `foreground`, `ping`) and `sleep <seconds>` (up to 60). `start` / `stop` / `shutdown` and the like can't be written.
 - Words split as in a shell (spaces, `'...'`, `"..."`, `\`). `--runner` and `--session` go on `relay run` and can't be in a step. `type --stdin` can't be used either. `screenshot` requires `--output <file>`.
 - Put a regular expression in `'...'`: `tap --label-match '^Remaining \d+:\d{2}$' --type button`. Outside quotes `\` is dropped (`\d` becomes `d`), and `--check` doesn't catch that.
 - For a scenario you save, write `# relay-run: 1` (the format version) on the first line. For an unsupported version, that line is an error and nothing runs.

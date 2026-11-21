@@ -1,4 +1,4 @@
-# Double taps, sliders, and pickers
+# Double taps, pinches, sliders, and pickers
 
 `relay tap --count 2` double-taps, and `relay adjust` sets a slider or a picker wheel. The other options of `tap` are in [commands](commands.md).
 
@@ -11,6 +11,19 @@
 - With a selector, both taps go to the point the element resolved to once. `--timeout`, `--bundle-id`, `--mode`, and the failures (`covered_by_other_app`, `element_point_covered`, …) are as for one tap.
 - The answer adds `"taps":2`. relay waits 0.15 seconds more for it.
 - An old runner ignores `--count` and taps once; relay then fails with `runner_bad_response` (exit 8). Don't retry: the screen already got one tap. If you started the runner, `relay stop`, then `relay start --rebuild`.
+
+## Pinching
+
+`relay pinch 201 500 --scale 2` (zoom in) or `relay pinch --id map --scale 0.5` (zoom out) puts two fingers on either side of the point, or of the visible element's center, along the screen's horizontal axis, and moves them in or out together. It is also a `relay run` step.
+
+- `--scale` is the end radius / start radius: 0.1–10, not 1. It is finger geometry, not the app's final zoom: with `--radius 50`, `--scale 2` arrived as about 1.85; with 100, as about 1.92. A larger radius comes closer. Check the result in the app (`relay find`, a screenshot).
+- `--radius` is the start distance from the center to each finger, in points. Without it, relay starts at a quarter of the screen's shorter side and shrinks it so that both fingers stay 16 points inside the screen (and inside the element). A center too near the edge for that is exit 7. An explicit `--radius` is never shrunk; if any finger would leave the screen, it is exit 7 (`point_offscreen`) and nothing is sent.
+- `--duration` is the movement, 0.05–5 seconds (default 0.6).
+- The answer gives what was sent: `{"ok":true,"gesture":"pinch","mode":"private","scale":2,"radius":50,"center":{…},"start":[…],"end":[…],"duration":0.6}`. Success means the fingers were sent, not that the app zoomed: near the screen edge (1–16 points in), a pinch answered `ok` but the app didn't see it. Move the center inward.
+- `--mode xcui` needs a selector, and takes no `--radius` or `--duration` (exit 2); XCUI picks the fingers, so `center`, `radius`, `start`, `end`, and `duration` are `null`. Don't normally give `--mode`.
+- `--scroll` isn't available for `pinch`. The selector, `--timeout`, `--bundle-id`, and `covered_by_other_app` work as for `tap`.
+- An old runner: exit 8 (`runner_bad_response`). If you started the runner, `relay stop`, then `relay start --rebuild`.
+- The host app has a pinch screen to try it on ([test-app](test-app.md)).
 
 ## Sliders and pickers
 
