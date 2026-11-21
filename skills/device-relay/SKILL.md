@@ -46,11 +46,11 @@ relay stop  # when done, if you started it
 
 ## Observe and operate
 
-- `relay screenshot --scale 1`: 1 px = 1 pt, so pixels are tap coordinates. Plain `relay screenshot` (full resolution) only for small text.
+- `relay screenshot --scale 1`: 1 px = 1 pt, so pixels are tap coordinates. Plain `relay screenshot` only for small text.
 - Pick selectors from `relay source --format compact --filter interactive` or `relay find`: a line's `type`, `label`, `id`, `value` are selectors. Use the whole tree only when needed ([formats](references/element-tree.md)).
 - Prefer selectors (`--id`, else `--label` + `--type`) over coordinates.
 - Coordinates are points from the top left (`relay tap x y`; `relay swipe x1 y1 x2 y2` to scroll).
-- Double-tap: `tap --count 2`, not two taps. Sliders, pickers: `adjust`, not `swipe`.
+- Double-tap: `tap --count 2`, not two taps. Zoom: `pinch`. Sliders, pickers: `adjust`, not `swipe`.
 - Text: tap the field, `relay type "text"` (`--key return` submits); to replace text, `relay type --clear "text"`, not repeated `delete`; `relay key return|delete|space`.
 - Wait with `relay find <selector> --timeout <s>` (≤ 10 s, repeat for longer) or `tap --timeout`; for it to go, `find <selector> --gone --timeout <s> --require`; for motion to end, `relay wait --stable` ([waiting](references/waiting-for-the-screen.md)). Never `sleep`.
 - Off the screen: `relay tap <selector> --scroll down` ([scrolling](references/scrolling.md)).
