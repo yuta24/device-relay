@@ -41,9 +41,8 @@ Swift・Python の整形検査、Python・Workflow・Shell の静的検査、カ
 `check` は `lint:swift`・`lint:python`・`lint:workflow`・`lint:shell`・`coverage`・`test:python` に、`coverage` は `test:swift` に依存します。
 `swift test` がビルドも行うため、`check` から `build` を別途呼び出すことはありません。
 `test:package` は Release ビルドを行うため `check` には含めず、CI の専用ジョブで実行します。
-PR では `Sources/`・`Runner/`・`skills/`・`scripts/`・`Package.swift`・`Makefile`・mise 設定とロック・
-CI／Release Workflow の変更時に実行し、README・CHANGELOG・`docs/` だけの変更では省略します。
-分類できないファイルでも安全側に倒して実行します。`main` への push では毎回実行します。
+PR では README・CHANGELOG・`docs/` だけの変更のときに省略し、それ以外（`skills/` の Markdown や、
+分類できないファイルを含む）の変更では実行します。`main` への push では毎回実行します。
 同じビルドディレクトリを使うため、ローカルで `check` と `test:package` を同時実行しないでください。
 
 ### 文書だけを変更するPRのCI
