@@ -4,8 +4,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from runner_smoke import STOP_TIMEOUT
-from runner_startup import STARTUP_LIMITS, StartupWatchdog
+from runner_smoke import SIMCTL_QUERY_TIMEOUT, SIMCTL_RETRY_DELAY, STOP_TIMEOUT
+from runner_startup import RUNNER_READY_TIMEOUT, STARTUP_LIMITS, StartupWatchdog
 
 
 class StartupWatchdogTests(unittest.TestCase):
@@ -34,6 +34,17 @@ class StartupWatchdogTests(unittest.TestCase):
     def test_stalled_boot_times_out_with_its_phase_name(self):
         self.now = STARTUP_LIMITS["boot"]
         with self.assertRaisesRegex(TimeoutError, "runner boot phase"):
+            self.watchdog.check()
+
+    def test_late_ready_notification_has_time_for_health_and_state_write(self):
+        self.assertEqual(RUNNER_READY_TIMEOUT, 300)
+        self.assertGreaterEqual(STARTUP_LIMITS["ready"], RUNNER_READY_TIMEOUT + 30)
+        self.progress(100, "relay: launching runner on DEVICE\n")
+        self.progress(356.5, "relay: launching runner on DEVICE\n")
+        self.assertLess(256.5, RUNNER_READY_TIMEOUT)
+        self.progress(100 + RUNNER_READY_TIMEOUT, "relay: launching runner on DEVICE\n")
+        self.now = 100 + STARTUP_LIMITS["ready"]
+        with self.assertRaisesRegex(TimeoutError, "runner ready phase"):
             self.watchdog.check()
 
     def test_phase_completed_before_deadline_is_accepted_at_next_poll(self):
@@ -127,6 +138,7 @@ class StartupWatchdogTests(unittest.TestCase):
         # Preparation queries/create, three startup phases, ping/auth, normal stop,
         # and fallback stop/reap/shutdown/delete must fit inside the step watchdog.
         budget = 510 + sum(STARTUP_LIMITS.values()) + 135 + STOP_TIMEOUT + 30 + 5
+        budget += SIMCTL_QUERY_TIMEOUT + SIMCTL_RETRY_DELAY
         budget += STOP_TIMEOUT + 5 + 15 + 120 + 120
         self.assertGreater(step_minutes * 60, budget)
         self.assertGreater(job_minutes, step_minutes)

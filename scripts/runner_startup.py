@@ -2,7 +2,8 @@
 
 import time
 
-RUNNER_READY_TIMEOUT = 240
+# CI smoke override; the CLI's default remains unchanged.
+RUNNER_READY_TIMEOUT = 300
 STARTUP_LIMITS = {
     # simctl boot: 300s, bootstatus: 600s, plus preflight/scheduling grace.
     "boot": 960,
