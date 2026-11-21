@@ -16,6 +16,7 @@ enum RunnerOperation: Equatable {
   case find(RunnerElementSelector, limit: Int?, timeout: TimeInterval?, bundleID: String?, gone: Bool = false)
   case tap(RunnerTouch)
   case press(RunnerTouch)
+  case pinch(RunnerTouch, RunnerPinch.Options)
   case swipe(from: RunnerPoint, to: RunnerPoint, duration: TimeInterval?, hold: TimeInterval?, mode: String?)
   /// Sets a slider or a picker wheel (`relay adjust`).
   case adjust(RunnerElementSelector, RunnerAdjusting.Target, timeout: TimeInterval?, bundleID: String?)
@@ -44,6 +45,7 @@ enum RunnerOperation: Equatable {
     case .find: return "find"
     case .tap: return "tap"
     case .press: return "press"
+    case .pinch: return "pinch"
     case .swipe: return "swipe"
     case .adjust: return "adjust"
     case .type: return "type"
@@ -63,7 +65,7 @@ enum RunnerOperation: Equatable {
     switch self {
     case .scrolling(let base, _): return base.selector
     case .find(let selector, _, _, _, _), .adjust(let selector, _, _, _): return selector
-    case .tap(let touch), .press(let touch):
+    case .tap(let touch), .press(let touch), .pinch(let touch, _):
       guard case .element(let selector) = touch.target else { return nil }
       return selector
     default: return nil
@@ -104,6 +106,12 @@ enum RunnerOperation: Equatable {
       return .post("/find", body)
     case .tap(let touch): return .post("/tap", touch.json)
     case .press(let touch): return .post("/press", touch.json)
+    case .pinch(let touch, let options):
+      var body = touch.json
+      body["scale"] = options.scale
+      body["radius"] = options.radius
+      body["duration"] = options.duration
+      return .post("/pinch", body)
     case .swipe(let from, let to, let duration, let hold, let mode):
       var body: [String: Any] = ["from": from.json, "to": to.json]
       body["duration"] = duration
@@ -154,6 +162,10 @@ enum RunnerOperation: Equatable {
     case .find(_, _, let timeout, _, _): return timeout ?? 0
     case .tap(let touch): return (touch.timeout ?? 0) + Double((touch.taps ?? 1) - 1) * RunnerRequestValues.tapPeriod
     case .press(let touch): return (touch.timeout ?? 0) + (touch.duration ?? 1)
+    case .pinch(let touch, let options):
+      // Private completion grace is 10 s: the 30 s base leaves 20 s after it.
+      return (touch.timeout ?? 0) + (touch.mode == "private"
+        ? options.movementDuration + 2 * RunnerPinch.rest : RunnerPinch.xcuiAnswer)
     case .swipe(_, _, let duration, let hold, _): return (duration ?? 0.3) + (hold ?? 0.05)
     // The runner answers within `RunnerAdjusting.longestAnswer` of finding the element (XCUI's idle waits and the last
     // slider correction included), so with the 30 s on top relay waits at least 20 s past the answer.
@@ -185,7 +197,7 @@ enum RunnerOperation: Equatable {
   var selectorTimeout: TimeInterval {
     switch self {
     case .find(_, _, let timeout, _, _), .adjust(_, _, let timeout, _): return timeout ?? 0
-    case .tap(let touch), .press(let touch): return touch.timeout ?? 0
+    case .tap(let touch), .press(let touch), .pinch(let touch, _): return touch.timeout ?? 0
     default: return 0
     }
   }

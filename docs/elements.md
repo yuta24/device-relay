@@ -1,6 +1,6 @@
 # 要素ツリーと要素セレクタ
 
-`/source` の要素ツリーと、`/tap`・`/press`・`/find`・`/adjust` の要素セレクタ、要素の待機について説明します。全体の入口は [README](../README.ja.md) です。
+`/source` の要素ツリーと、`/tap`・`/press`・`/pinch`・`/find`・`/adjust` の要素セレクタ、要素の待機について説明します。全体の入口は [README](../README.ja.md) です。
 
 ## 要素ツリー（/source）
 
@@ -114,6 +114,8 @@ searchField label="Search" placeholder="Search" frame=28,808,346,28
 
 `/tap` と `/press` は、`x`・`y` の代わりに `element` で要素を指定できます。`/find` は同じセレクタで一致した要素の一覧を返します。`/adjust` も同じセレクタでスライダーやピッカーのホイールを選びます（「[スライダーとピッカー（/adjust）](http-api.md#スライダーとピッカーadjust)」）。
 
+`/pinch` も同じセレクタ・待機・frame変換・覆いの確認を使います。中心はframeの画面内の部分の中心で、`center` に返します。中心のhit testは2本の指全体の到達を保証しません。半径・modeの制約は[ピンチ](http-api.md#ピンチpinch)を参照してください。
+
 ```json
 {"element":{"identifier":"relay.input"}}
 {"element":{"label":"History","type":"button"}}
@@ -219,7 +221,7 @@ relay tap --label Play --type button --hittable  # 見えているほうの Play
 | `hittable: true` | 画面の中にあり、押すと当たる要素 | `onscreen` に加えて、押す点（重なりの中心）の hit test が、その要素か子孫、またはその要素を含むコントロール（文字を含むセルやボタン）を返す |
 
 - **順序と番号**: 並び順は変えません。絞り込みは一致した要素に、`index`・`limit`・待機（`timeout`・`gone`）の判定より前にかけます。`count`・`truncated`・`index` は残った要素で数えます。`relay find --label Play --hittable` の `index` 1 は、`relay tap --label Play --hittable --index 1` で押す要素です。
-- **対象**: `/find`・`/tap`・`/press`・`/adjust` のセレクタ全体です。`/tap` で 2 つ一致して `ambiguous` になる場面でも、`hittable` で手前の 1 つだけが残れば押せます。
+- **対象**: `/find`・`/tap`・`/press`・`/pinch`・`/adjust` のセレクタ全体です。`/tap` で 2 つ一致して `ambiguous` になる場面でも、`hittable` で手前の 1 つだけが残れば押せます。
 - **`gone` と組み合わせたとき**: 「残る要素がなくなるまで待つ」になります。`onscreen` なら画面から外れるまで、`hittable` なら画面から外れるか、何かに覆われるまでです。ツリーから消えるまでではありません。
 - **両方を付けたとき**: `hittable` は画面の中にあることも含むので、`hittable` と同じです。`false` は付けないのと同じです。
 - **`enabled: false` の要素**: 外しません（押しても反応しない要素でも、見えていて当たれば残ります）。`/tap` は、これまでどおり `disabled` で止まります。
@@ -299,7 +301,7 @@ relay find --type textField --value-match '^$'                    # 値が空の
 - **オプション**: 式の中に書きます。`(?i)` で大文字と小文字を区別しません。`(?s)` で `.` が改行にも一致し、`(?m)` で `^`・`$` が各行の始めと終わりに一致します。そのための印（`--ignore-case` など）はありません。
 - **改行を含むラベル**: オプションなしでは、`.` は改行に一致せず、`^`・`$` はラベル全体の始めと終わりにだけ一致します。`$` は、末尾の改行 1 つの前にも一致します。
 - **値のない要素**: value が `null` の要素は、空文字列として扱います（`--format compact` と同じ）。`--value-match '^$'` で、値が空か `null` の要素を選べます。label はもともと文字列で、ないときは空文字列です。
-- **組み合わせ**: ほかの条件・`index`・`onscreen`・`hittable`・`limit`・`gone` とは、完全一致の条件と同じに組み合わせます。`/find`・`/tap`・`/press`・`/adjust` と、`relay run` の手順で使えます。
+- **組み合わせ**: ほかの条件・`index`・`onscreen`・`hittable`・`limit`・`gone` とは、完全一致の条件と同じに組み合わせます。`/find`・`/tap`・`/press`・`/pinch`・`/adjust` と、`relay run` の手順で使えます。
 - **同じ属性の完全一致と同時に**: `label` と `labelMatch`（`value` と `valueMatch`）を両方付けると `400` です（CLI は終了コード 2）。`--label` を残したまま `--label-match` を足した、という間違いを黙って AND にしないためです。完全一致は `^...$` で書けます。
 - **正しくない式**: CLI はランナーに送る前に確かめ、終了コード 2 にします（`--label-match: not a valid regular expression …`）。ランナーも確かめて `400`、`invalid_request` を返します。空文字列も `400` です。
 - **長さと時間の上限**: 式は 1000 文字までです。スナップショットごとに、ツリーのすべての label・value に式をかけて 1 秒を超えたら、待たずに `400`、`invalid_request` です（CLI は終了コード 7）。`(a+)+$` のように後戻りが限りなく増える式で、ランナーが止まらないようにするためです。

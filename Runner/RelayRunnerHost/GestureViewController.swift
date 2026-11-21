@@ -99,7 +99,7 @@ final class GestureViewController: UIViewController, UIPickerViewDataSource, UIP
 
     let stack = UIStackView(arrangedSubviews: [
       row(button("relay.gestures.close", "Close", #selector(close)), button("relay.tapReset", "Reset taps", #selector(resetTaps)),
-          animateButton),
+          animateButton, button("relay.pinch", "Pinch", #selector(openPinch))),
       tapTarget,
       tapCountsLabel,
       slider,
@@ -140,6 +140,10 @@ final class GestureViewController: UIViewController, UIPickerViewDataSource, UIP
     row.spacing = 8
     row.distribution = .fillEqually
     return row
+  }
+
+  @objc private func openPinch() {
+    present(PinchViewController(), animated: false)
   }
 
   @objc private func close() {

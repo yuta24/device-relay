@@ -15,6 +15,8 @@
 - `maxSize` / `scale` で縮小した画像では、画素 = ポイント × `X-Relay-Image-Scale` です（下の「スクリーンショットの縮小」）。タップなどの座標は、縮小してもポイントのままです。
 - タッチ: `xcui` 経路では、XCTest が SpringBoard 基準の座標を表示の向きで解釈します。`private` 経路の合成イベントは `XCSynthesizedEventRecord` の向きの指定では座標が変換されない（縦向きの画面座標として扱われる）ため、ランナーが表示の向きの座標を縦向きの画面座標に変換し、`portrait` として送ります。どちらの経路でも同じ座標が同じ位置に当たります。
 
+`/pinch` のprivate経路もこの座標系を使います。2本の指は表示の水平軸に並び、4端点を確認してから、対象表示の縦向き座標へそれぞれ変換します。自動半径の余白と端付近の制約は[ピンチ](http-api.md#ピンチpinch)を参照してください。
+
 ## 画面が落ち着くまで待つ
 
 `relay wait --stable` は、画面の描画が一定時間変わらなくなるまで待ちます。画面遷移やアニメーションの後に使います。
@@ -165,10 +167,10 @@ iPhone Duo には表示が 2 つあります。外側（cover。`XCUIScreen.main
 - **要件**: Xcode 27.1 以上と、iOS 27.1 以上の iPhone Duo（シミュレータ）。
 - Xcode 27.2 が既定でなければ、`DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer relay start --device "iPhone Duo"` のように、Xcode 27.2 の Developer ディレクトリを `DEVELOPER_DIR` で指定します（パスは Xcode を置いた場所に合わせます）。
 - **表示**: `/health` の `displays` に一覧（ID、縦向きのポイント、scale、`main`）を、`display` にアプリの表示の ID を返します。iPhone Duo のシミュレータでは、外側が ID 1（466×678 pt、main）、内側が ID 3（669×951 pt）です。ID は `xcrun devicectl device info displays --device <udid>` の `displayId` と同じです。内側はふつう横向きで使うので、内側にいるときの `screen` は 951×669、`orientation` は `landscapeRight` になります。表示が 1 つの端末でも、`displays` は 1 件、`display` はその ID です。一覧は端末に組み込まれた表示だけで、ワイヤレス（AirPlay）の表示は含めません（iPhone 14 Pro 実機の `XCUIScreen.screens` には `wireless, airplay` の表示も並んでいました。非公開の `-[XCUIScreen traits]` で見分けます）。
-- **合わせるもの**: `/health` の `screen`、`/screenshot`（アプリの表示を撮ります。以前は内側を開いていても外側を撮り、真っ黒な画像が返りました）、画面の外の座標の判定、タッチ（`/tap`・`/press`・`/swipe`、要素指定を含む）、`/button home`、要素の frame（`/source`・`/find`・要素指定のタップ）。
+- **合わせるもの**: `/health` の `screen`、`/screenshot`（アプリの表示を撮ります。以前は内側を開いていても外側を撮り、真っ黒な画像が返りました）、画面の外の座標の判定、タッチ（`/tap`・`/press`・`/swipe`・privateの`/pinch`、要素指定を含む）、`/button home`、要素の frame（`/source`・`/find`・要素指定のタップ）。
 - **判定**: アプリの window のスナップショットが持つ表示の ID（非公開の `-[XCElementSnapshot displayID]`）で決めます。SpringBoard は両方の表示に window を持つので、SpringBoard が前面のとき（ホーム画面）は、点いている表示で決めます（暗い表示のスクリーンショットは真っ黒です）。どちらでも決まらない場合（両方とも暗いなど）は、タッチとスクリーンショットを何も送らずに `422`（`cannot tell which display … is on`）にし、`/health` は `display` を `null`、`screen` を外側の大きさにします。ランナー自身のシーンの画面（`UIWindowScene.screen`）は、折りたたみを変えても追従しなかったので使いません。
 - **タッチ**: `private` 経路は、合成イベントに表示の ID を付け（非公開の `-[XCSynthesizedEventRecord initWithName:displayID:interfaceOrientation:]`）、座標をその表示の縦向きのポイントに変換して送ります。外側にも ID を付けます。ID を付けないイベントは、内側には届かず、いったん開いてから閉じた後は外側にも届きませんでした。`xcui` 経路は、外側では従来どおり SpringBoard を基準にし、内側では前面アプリの最初の window を基準に、その原点からの差で送ります（SpringBoard やアプリの要素を基準にした座標は、成功を返して何も起きませんでした。内側では、アプリが回転して (282, 0) から始まる window になることがあります）。内側で SpringBoard が前面のときと、回転しないアプリ（縦向きの window のまま回転して表示されるもの）が前面のときは、`xcui` の座標タッチを何も送らずに `422` にします（`use mode private`）。
-- 表示を指定できない Xcode では、`private` 経路を使わずに `xcui` に落ちます（`mode: private` の指定は 400）。
+- 表示を指定できない Xcode では、`private` 経路を使わずに `xcui` に落ちます（`mode: private` の指定は 400）。pinchの座標・半径指定の制約は[ピンチ](http-api.md#ピンチpinch)にあります。
 - 内側の回転しないアプリは、window が縦向きかどうかで判定します。その状態でのタッチは確かめていません。
 - 内側で RelayRunnerHost が回転表示になったときは、window が横向きの形で (282, 0) から始まっていて、この判定には当たりませんでした。window の原点からの差で送った `xcui` の座標タップ・要素タップが入力欄に届きました。
 - **要素の frame**: SpringBoard のツリーからは、ほかの表示の window を除きます。回転するアプリ（設定など）の frame は表示の向きで返りますが、SpringBoard と回転しないアプリは、縦向きの window とその表示の縦向きの座標で返るので、表示の向きに変換します。

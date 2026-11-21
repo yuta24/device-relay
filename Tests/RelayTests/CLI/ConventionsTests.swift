@@ -140,7 +140,7 @@ struct JSONFlagTests {
     let lines: [[String]] = [
       ["ping"], ["health"], ["foreground"], ["screenshot", "-o", "/tmp/a.png"], ["source", "--format", "compact"],
       ["find", "--label", "OK"], ["wait", "--stable"], ["tap", "1", "2"], ["tap", "--label", "OK"], ["press", "1", "2"], ["swipe", "1", "2", "3", "4"],
-      ["adjust", "--id", "volume", "--position", "0.5"],
+      ["adjust", "--id", "volume", "--position", "0.5"], ["pinch", "1", "2", "--scale", "2"],
       ["type", "hello"], ["key", "return"], ["button", "home"], ["hinge", "half"], ["orientation", "portrait"], ["launch", "com.example"],
       ["open", "myapp://item/1"], ["open", "https://example.com", "--bundle-id", "com.example"], ["terminate", "com.example"],
       ["shutdown"]

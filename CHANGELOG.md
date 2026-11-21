@@ -2,6 +2,14 @@
 
 以前の版から更新するときに、スクリプトや設定を直す必要がある変更を書きます。すべての変更の一覧は GitHub の [Releases](https://github.com/yuta24/device-relay/releases) にあります。全体の入口は [README](README.ja.md) です。
 
+## 次の版
+
+### 2本指のピンチ
+
+`relay pinch <x> <y> --scale <比>` と要素指定、HTTP `POST /pinch`、`relay run` のpinch手順を追加しました。privateは座標と要素、xcuiは要素だけです。指の間隔の比を指定するもので、アプリの最終倍率は保証しません。
+
+ランナーの作り直しが必要です。動作中なら `relay stop` して `relay start --rebuild` で起動し直してください。古いランナーの404や不完全な応答は終了コード8（`runner_bad_response`）になります。詳しい値と制約は[ピンチ](docs/http-api.md#ピンチpinch)を参照してください。
+
 ## 0.10.1
 
 ### orientation の応答と待機を全端末でそろえる

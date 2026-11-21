@@ -45,6 +45,15 @@ NS_ASSUME_NONNULL_BEGIN
                    completion:(void (^)(NSError *_Nullable error))completion
                         error:(NSError **)error;
 
+/// Simultaneous fingers, each with an initial point and moves at the shared offsets. The same
+/// portrait-point/display rules as synthesizeTouchWithPoints apply. All fingers start at offset 0.
++ (BOOL)synthesizeTouchesWithPaths:(NSArray<NSArray<NSValue *> *> *)paths
+                          offsets:(NSArray<NSNumber *> *)offsets
+                       liftOffset:(NSTimeInterval)liftOffset
+                        displayID:(nullable NSNumber *)displayID
+                       completion:(void (^)(NSError *_Nullable error))completion
+                            error:(NSError **)error;
+
 @end
 
 NS_ASSUME_NONNULL_END

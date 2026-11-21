@@ -183,6 +183,10 @@ enum RunnerControl {
         + "(relay start --rebuild builds a current one)", exit: .runnerError, to: failureOutput)
     }
     // A runner from before /wait has no such route (404). A current runner's 400 is a real field error.
+    if case .pinch = resolved, response.status == 404 {
+      return fail(.runnerBadResponse, "the runner has no /pinch; relay start --rebuild builds a current one",
+                  exit: .runnerError, to: failureOutput)
+    }
     if case .hinge = resolved, response.status == 404 {
       return fail(.runnerBadResponse, "the runner has no /hinge; relay start --rebuild builds a current one",
                   exit: .runnerError, to: failureOutput)
@@ -199,6 +203,11 @@ enum RunnerControl {
       return code.rawValue
     }
 
+    if case .pinch(let touch, let options) = resolved,
+       !RunnerPinch.acceptsAnswer(response.body, options: options, touch: touch) {
+      return fail(.runnerBadResponse, "invalid /pinch answer; relay start --rebuild builds a current one",
+                  exit: .runnerError, to: failureOutput)
+    }
     if case .hinge = resolved {
       let object = (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any]
       let angle = object?["angle"].flatMap(RunnerRequestValues.number)

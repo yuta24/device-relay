@@ -12,6 +12,8 @@ extension Arguments {
     "tap": selectorOptions.union(["--count", "--mode", "--timeout", "--bundle-id"]),
     "press": selectorOptions.union(["--duration", "--mode", "--timeout", "--bundle-id"]),
     "swipe": ["--duration", "--hold", "--mode"],
+    "pinch": selectorOptions.subtracting(["--scroll", "--max-swipes", "--in"])
+      .union(["--scale", "--radius", "--duration", "--mode", "--timeout", "--bundle-id"]),
     "adjust": selectorOptions.union(["--position", "--picker-value", "--timeout", "--bundle-id"]),
     "type": ["--key", "--bundle-id"],
     "key": ["--bundle-id"],
@@ -25,6 +27,7 @@ extension Arguments {
     "find": selectorFlags.union(["--require", "--gone"]),
     "tap": selectorFlags,
     "press": selectorFlags,
+    "pinch": selectorFlags,
     "adjust": selectorFlags
   ]
   /// Selector options without a value: which matches count (`RunnerElementSelector.Visibility`).
@@ -265,7 +268,7 @@ extension Arguments {
       "truncated":bool}:
       count is every match, elements the first --limit, truncated whether more were left out. index
       counts from 0 in screen order (the tree's order), and works as --index of find, tap, press,
-      and adjust. onscreen is whether part of the frame is inside the screen (missing when an iPad
+      pinch, and adjust. onscreen is whether part of the frame is inside the screen (missing when an iPad
       window cannot be placed). --onscreen and --hittable leave out the others first (see <selector>),
       so count, index, and --limit count only those kept.
       No match is exit 0 ("count":0); with --require it is exit 6, the answer (count, elements) coming
@@ -293,6 +296,23 @@ extension Arguments {
     "press": (
       "relay press (<x> <y> | <selector>) [--duration 1.0] [--mode private|xcui] [--timeout <s>]\n      [--bundle-id <id>] [--onscreen | --hittable]",
       "Long-presses like tap does, for --duration seconds."
+    ),
+    "pinch": (
+      "relay pinch (<x> <y> | <selector>) --scale <0.1-10, not 1> [--radius <pt>]\n      [--duration 0.6] [--mode private|xcui] [--timeout <s>] [--bundle-id <id>]",
+      """
+      Moves two fingers horizontally around the point or the visible element's center. Scale is the
+      end radius divided by the start radius, not a promise of the app's final zoom. Private synthesis
+      accepts both targets. Radius is start center-to-finger distance in points; when omitted it starts
+      at a quarter of the screen's shorter side and shrinks to fit a 16 pt screen margin and the visible
+      element. Explicit radius is never shrunk. All four endpoints must be on screen (exit 7 otherwise).
+      Duration is movement time, 0.05-5 s, default 0.6, plus 0.05 s rest at each end.
+      XCUI needs a selector, rejects --radius and --duration, and uses velocity +1/-1 scale/s. Auto uses
+      private if available, else XCUI for elements only. XCUI may wait 60 s before and after; relay allows
+      130 s plus --timeout and the usual 30 s for its answer. Private allows duration + 0.1 s + --timeout
+      plus the usual 30 s (including the runner's 10 s completion grace). No failed gesture is replayed.
+      Success means input was sent; inspect the app afterwards. Older runners are runner_bad_response
+      (exit 8; relay start --rebuild). Works in relay run.
+      """
     ),
     "adjust": (
       "relay adjust <selector> (--position <0-1> | --picker-value <value>) [--timeout <s>]\n      [--bundle-id <id>] [--onscreen | --hittable]",
@@ -606,7 +626,7 @@ extension Arguments {
   ]
 
   static let runnerCommandOrder = [
-    "ping", "health", "foreground", "screenshot", "source", "find", "wait", "tap", "press", "swipe", "adjust",
+    "ping", "health", "foreground", "screenshot", "source", "find", "wait", "tap", "press", "pinch", "swipe", "adjust",
     "type", "key", "button", "hinge", "orientation", "launch", "open", "terminate", "shutdown"
   ]
 
@@ -650,6 +670,7 @@ extension Arguments {
     that shape when it fails before the runner answers (code runner_unavailable, runner_timeout,
     runner_info_invalid, app_not_installed, ...). relay: lines on stderr are hints for people.
     Exception: screenshot -o - writes the image to stdout, so a failure's JSON goes to stderr.
+  Pinch waits duration + 0.1 s more with --mode private, or 130 s more for auto/XCUI, plus --timeout.
   Scroll search (find, tap, press, adjust with a selector):
     --scroll <direction> searches while scrolling within one request (direction is required).
     --in <identifier> selects the scroll container; otherwise the largest visible one is used.
@@ -757,6 +778,17 @@ private struct RunnerArgumentValues {
       return .tap(touch)
     case "press":
       return .press(try touch(duration: try number("--duration", "seconds greater than zero") { $0 > 0 }))
+    case "pinch":
+      let touch = try touch(duration: nil)
+      var json = touch.json
+      guard let scale = try number("--scale", "0.1...10, other than 1", where: { RunnerPinch.scaleRange.contains($0) && $0 != 1 }) else {
+        throw ArgumentError(description: "pinch requires --scale <0.1-10, not 1>")
+      }
+      json["scale"] = scale
+      json["radius"] = try number("--radius", "finite points greater than zero") { $0 > 0 }
+      json["duration"] = try number("--duration", "seconds in 0.05...5") { RunnerPinch.durationRange.contains($0) }
+      do { return .pinch(touch, try RunnerPinch.Options(json: json)) }
+      catch { throw ArgumentError(description: String(describing: error)) }
     case "adjust":
       _ = try positional(0, "an element selector, not arguments")
       guard let selector = try selector() else {
