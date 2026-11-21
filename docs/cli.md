@@ -16,6 +16,12 @@
 
 `relay tap --id item42 --scroll down` のように `find`・`tap`・`press`・`adjust` に `--scroll <方向>` を付けられます。`--in <identifier>` で入れ物、`--max-swipes` で回数を指定できます。`--scroll` 付きの `--timeout` は探索全体の上限で、既定 20 秒です。`relay run` の各手順でも使えます。停止条件、失敗時の応答と対応端末は「[見えるまでスクロール](elements.md#見えるまでスクロールscroll)」を参照してください。
 
+### ピンチ
+
+`relay pinch 201 500 --scale 2` か `relay pinch --id canvas --scale 0.5` で2本の指を動かします。CLIの値の範囲違反は送信前に終了コード2、端点の画面外は終了コード7です。`relay run --step 'pinch 201 500 --scale 2'` でも使えます。
+
+半径の自動計算、modeの組み合わせ、受信した倍率の非保証、応答と待ち時間は[HTTPのピンチ](http-api.md#ピンチpinch)にあります。`--scroll` は未対応です。
+
 ### 起動・停止と接続先
 
 ランナーは `relay start --background`、または別のターミナルの `relay start` で起動しておき、使い終わったら `relay stop` で止めます。
@@ -36,6 +42,9 @@ relay tap --id relay.input                     # POST /tap {"element":{"identifi
 relay tap 200 120 --mode xcui                  # POST /tap {"x":200,"y":120,"mode":"xcui"}
 relay tap --id map --count 2                   # POST /tap {"element":{"identifier":"map"},"taps":2}（ダブルタップ）
 relay press --label General --type button --duration 1.0
+relay pinch 201 500 --scale 2 --radius 50       # 2本指の拡大
+relay pinch --id canvas --scale 0.5             # 要素の画面内frameの中心
+relay pinch --id canvas --scale 2 --mode xcui   # 公開XCUI、radius/durationは指定不可
 relay swipe 200 700 200 200 --duration 0.3
 relay adjust --id volume --position 0.5        # POST /adjust {"element":{"identifier":"volume"},"position":0.5}
 relay adjust --type pickerWheel --value June --picker-value March   # ピッカーのホイール
@@ -76,6 +85,7 @@ relay crashes                                  # 直近 24 時間のクラッシ
 | `find` | `POST /find` | セレクタ（正規表現の `--label-match`・`--value-match` も可）、`--onscreen` か `--hittable`、`--limit <n>`、`--timeout <s>`、`--gone`、`--require`、`--bundle-id <id>` |
 | `wait` | `POST /wait` | `--stable`、`--for <秒>`、`--timeout <秒>`、`--require`、`--bundle-id <id>`（「[画面が落ち着くまで待つ](screen.md#画面が落ち着くまで待つ)」） |
 | `tap` / `press` | `POST /tap` / `/press` | `<x> <y>` かセレクタ（`--onscreen`・`--hittable` も可）、`--mode private\|xcui`、`--timeout`・`--bundle-id`（セレクタのみ）、`--count 2`（tap のみ。ダブルタップ）、`--duration`（press のみ） |
+| `pinch` | `POST /pinch` | `<x> <y>` かセレクタ、必須 `--scale`、`--radius`、`--duration`、`--mode`、要素のみ `--timeout`・`--bundle-id`（[詳細](http-api.md#ピンチpinch)） |
 | `swipe` | `POST /swipe` | `<x1> <y1> <x2> <y2>`、`--duration`、`--hold`、`--mode` |
 | `adjust` | `POST /adjust` | セレクタ（`--onscreen`・`--hittable` も可）、`--position <0-1>`（スライダー）か `--picker-value <値>`（ピッカーのホイール）、`--timeout <s>`、`--bundle-id <id>` |
 | `type` | `POST /type` | `<text>` か `--stdin`、`--key <name>`（複数可、順に送る）、`--clear`、`--bundle-id` |

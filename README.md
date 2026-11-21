@@ -8,9 +8,11 @@ A CLI for driving iOS simulators and physical devices from a Mac — for people,
 
 ## Overview
 
-- It uses the same "long-running XCTest runner" approach as WebDriverAgent. A runner, running on the device as a UI test, starts an HTTP server and uses the XCUITest APIs to tap, swipe, type, take screenshots, read the element tree, and more. You don't need to modify the target app or add an SDK to it.
+- It uses the same "long-running XCTest runner" approach as WebDriverAgent. A runner, running on the device as a UI test, starts an HTTP server and uses the XCUITest APIs to tap, swipe, pinch, type, take screenshots, read the element tree, and more. You don't need to modify the target app or add an SDK to it.
 - The `relay` CLI on the Mac builds and launches the runner, finds how to reach it, and cleans up afterwards. It also exposes each runner operation as a single command, so people, scripts, and coding agents all use it the same way.
 - Connections to the runner require a token. Build products and logs go in `~/.relay`, and nothing is created in the target app's repository.
+
+`relay pinch 201 500 --scale 2` moves two fingers around a point; selectors also work. Scale describes finger geometry, not the app's final zoom ([pinch](docs/http-api.md#ピンチpinch)).
 
 See [docs/design.md](docs/design.md) for how it works. Detailed documentation in docs/ is currently in Japanese.
 
@@ -153,6 +155,7 @@ A physical device needs the following before `relay start`. For details, see [�
 | `relay source` | Get the element tree (`--format compact --filter interactive` for only the elements you can operate) |
 | `relay find` | Find elements matching a selector (`--timeout` to wait, `--require` to fail if there is none, `--gone` to wait for them to go, `--onscreen` / `--hittable` for only those on the screen / a touch reaches) |
 | `relay tap` / `relay press` / `relay swipe` | Touch by coordinates or by element selector (`--id`, `--label`, `--type`, or a regular expression with `--label-match`) |
+| `relay pinch` | Two-finger pinch by coordinates or element selector ([contract](docs/http-api.md#ピンチpinch)) |
 | `relay type` / `relay key` | Send text or special keys to the element with keyboard focus (`type --clear` empties the field first) |
 | `relay launch` / `relay terminate` | Launch an app (or bring it to the foreground) / terminate it |
 | `relay open` | Open a URL or deep link (`https://` in Safari, `myapp://` in its app, `--bundle-id` to pick the app) |

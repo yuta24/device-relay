@@ -144,6 +144,37 @@ static NSString *const RelayTouchSynthesizerErrorDomain = @"RelayTouchSynthesize
     return YES;
 }
 
++ (BOOL)synthesizeTouchesWithPaths:(NSArray<NSArray<NSValue *> *> *)points
+                          offsets:(NSArray<NSNumber *> *)offsets
+                       liftOffset:(NSTimeInterval)liftOffset
+                        displayID:(nullable NSNumber *)displayID
+                       completion:(void (^)(NSError *_Nullable))completion
+                            error:(NSError **)error {
+    NSString *reason = points.count == 0 ? @"touch paths must be non-empty" : nil;
+    double previous = 0;
+    for (NSNumber *offset in offsets) {
+        if (!isfinite(offset.doubleValue) || offset.doubleValue <= previous) { reason = @"move offsets must increase"; }
+        previous = offset.doubleValue;
+    }
+    if (!isfinite(liftOffset) || liftOffset < previous) { reason = @"lift must follow the final move"; }
+    for (NSArray<NSValue *> *path in points) {
+        if (path.count != offsets.count + 1) { reason = @"each path needs an initial point and one point per move"; }
+    }
+    if (![self canSendToDisplay:displayID reason:reason error:error]) { return NO; }
+    NSMutableArray *paths = [NSMutableArray arrayWithCapacity:points.count];
+    for (NSArray<NSValue *> *positions in points) {
+        id<RelayXCPointerEventPath> path = [(id<RelayXCPointerEventPath>)[NSClassFromString(@"XCPointerEventPath") alloc]
+            initForTouchAtPoint:positions[0].CGPointValue offset:0];
+        for (NSUInteger index = 1; index < positions.count; index++) {
+            [path moveToPoint:positions[index].CGPointValue atOffset:offsets[index - 1].doubleValue];
+        }
+        [path liftUpAtOffset:liftOffset];
+        [paths addObject:path];
+    }
+    [self synthesizePaths:paths interfaceOrientation:UIInterfaceOrientationPortrait displayID:displayID completion:completion];
+    return YES;
+}
+
 /// NO, with `error` set, when the private path is unavailable (said first, as before), `reason` (a bad argument)
 /// is set, or `displayID` can't be named.
 + (BOOL)canSendToDisplay:(nullable NSNumber *)displayID reason:(nullable NSString *)reason error:(NSError **)error {

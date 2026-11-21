@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		111111111111111111111111 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222221 /* AppDelegate.swift */; };
 		111111111111111111111120 /* OverlayViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222235 /* OverlayViewController.swift */; };
+		B81111111111111111111112 /* PinchViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B82222222222222222222223 /* PinchViewController.swift */; };
 		111111111111111111111126 /* GestureViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22222222222222222222223D /* GestureViewController.swift */; };
 		111111111111111111111128 /* VisibilityViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22222222222222222222223F /* VisibilityViewController.swift */; };
 		A93333333333333333333333 /* ScrollViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A94444444444444444444444 /* ScrollViewController.swift */; };
@@ -28,6 +29,7 @@
 		111111111111111111111119 /* RunnerElementTree.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22222222222222222222222E /* RunnerElementTree.swift */; };
 		11111111111111111111111B /* RunnerCommandGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222230 /* RunnerCommandGate.swift */; };
 		11111111111111111111111C /* RunnerElementSelector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222231 /* RunnerElementSelector.swift */; };
+		B81111111111111111111111 /* RunnerPinch.swift in Sources */ = {isa = PBXBuildFile; fileRef = B82222222222222222222222 /* RunnerPinch.swift */; };
 		A91111111111111111111111 /* RunnerScrolling.swift in Sources */ = {isa = PBXBuildFile; fileRef = A92222222222222222222222 /* RunnerScrolling.swift */; };
 		11111111111111111111111D /* RunnerDisplays.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222232 /* RunnerDisplays.swift */; };
 		11111111111111111111111E /* RunnerError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222233 /* RunnerError.swift */; };
@@ -52,6 +54,7 @@
 /* Begin PBXFileReference section */
 		222222222222222222222221 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayRunnerHost/AppDelegate.swift; sourceTree = "<group>"; };
 		222222222222222222222235 /* OverlayViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayRunnerHost/OverlayViewController.swift; sourceTree = "<group>"; };
+		B82222222222222222222223 /* PinchViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayRunnerHost/PinchViewController.swift; sourceTree = "<group>"; };
 		22222222222222222222223D /* GestureViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayRunnerHost/GestureViewController.swift; sourceTree = "<group>"; };
 		22222222222222222222223F /* VisibilityViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayRunnerHost/VisibilityViewController.swift; sourceTree = "<group>"; };
 		A94444444444444444444444 /* ScrollViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayRunnerHost/ScrollViewController.swift; sourceTree = "<group>"; };
@@ -77,6 +80,7 @@
 		22222222222222222222222E /* RunnerElementTree.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/Relay/Shared/RunnerElementTree.swift; sourceTree = "<group>"; };
 		222222222222222222222230 /* RunnerCommandGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/Relay/Shared/RunnerCommandGate.swift; sourceTree = "<group>"; };
 		222222222222222222222231 /* RunnerElementSelector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/Relay/Shared/RunnerElementSelector.swift; sourceTree = "<group>"; };
+		B82222222222222222222222 /* RunnerPinch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/Relay/Shared/RunnerPinch.swift; sourceTree = "<group>"; };
 		A92222222222222222222222 /* RunnerScrolling.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/Relay/Shared/RunnerScrolling.swift; sourceTree = "<group>"; };
 		222222222222222222222232 /* RunnerDisplays.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/Relay/Shared/RunnerDisplays.swift; sourceTree = "<group>"; };
 		222222222222222222222233 /* RunnerError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/Relay/Shared/RunnerError.swift; sourceTree = "<group>"; };
@@ -115,6 +119,7 @@
 				222222222222222222222240 /* StabilityViewController.swift */,
 				222222222222222222222235 /* OverlayViewController.swift */,
 				22222222222222222222223D /* GestureViewController.swift */,
+				B82222222222222222222223 /* PinchViewController.swift */,
 				22222222222222222222223F /* VisibilityViewController.swift */,
 				A94444444444444444444444 /* ScrollViewController.swift */,
 				222222222222222222222222 /* RunnerHTTPServer.swift */,
@@ -142,6 +147,7 @@
 				222222222222222222222230 /* RunnerCommandGate.swift */,
 				222222222222222222222231 /* RunnerElementSelector.swift */,
 				A92222222222222222222222 /* RunnerScrolling.swift */,
+				B82222222222222222222222 /* RunnerPinch.swift */,
 				222222222222222222222232 /* RunnerDisplays.swift */,
 				222222222222222222222233 /* RunnerError.swift */,
 				222222222222222222222234 /* RunnerWindows.swift */,
@@ -243,6 +249,7 @@
 				111111111111111111111129 /* StabilityViewController.swift in Sources */,
 				111111111111111111111120 /* OverlayViewController.swift in Sources */,
 				111111111111111111111126 /* GestureViewController.swift in Sources */,
+				B81111111111111111111112 /* PinchViewController.swift in Sources */,
 				111111111111111111111128 /* VisibilityViewController.swift in Sources */,
 				A93333333333333333333333 /* ScrollViewController.swift in Sources */,
 			);
@@ -271,6 +278,7 @@
 				11111111111111111111111B /* RunnerCommandGate.swift in Sources */,
 				11111111111111111111111C /* RunnerElementSelector.swift in Sources */,
 				A91111111111111111111111 /* RunnerScrolling.swift in Sources */,
+				B81111111111111111111111 /* RunnerPinch.swift in Sources */,
 				11111111111111111111111D /* RunnerDisplays.swift in Sources */,
 				11111111111111111111111E /* RunnerError.swift in Sources */,
 				11111111111111111111111F /* RunnerWindows.swift in Sources */,

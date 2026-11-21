@@ -8,9 +8,11 @@ Mac から iOS のシミュレータや実機を操作する CLI です。人も
 
 ## 概要
 
-- WebDriverAgent と同じ「常駐 XCTest ランナー」方式です。端末上で UI テストとして動くランナーが HTTP サーバを立ち上げ、XCUITest の API でタップ・スワイプ・文字入力・スクリーンショット・要素ツリーの取得などを行います。対象アプリの改修や SDK の組み込みは要りません。
+- WebDriverAgent と同じ「常駐 XCTest ランナー」方式です。端末上で UI テストとして動くランナーが HTTP サーバを立ち上げ、XCUITest の API でタップ・スワイプ・ピンチ・文字入力・スクリーンショット・要素ツリーの取得などを行います。対象アプリの改修や SDK の組み込みは要りません。
 - Mac 側の `relay` CLI が、ランナーのビルドと起動、接続先の探索、後片付けをまとめて行い、ランナーの操作も 1 コマンドずつ呼べます。人もスクリプトもコーディングエージェントも同じ形で使えます。
 - 通信にはトークン認証が必要です。ビルド成果物やログは `~/.relay` に置き、対象アプリのリポジトリには何も作りません。
+
+`relay pinch 201 500 --scale 2` で指定点の周りに2本の指を動かせます。要素も指定できます。scale は指の間隔の比で、アプリの最終倍率ではありません（[ピンチ](docs/http-api.md#ピンチpinch)）。
 
 仕組みの詳細は [docs/design.md](docs/design.md) を参照してください。
 
@@ -153,6 +155,7 @@ relay screenshot --scale 1                            # 1 px = 1 pt に縮小し
 | `relay source` | 要素ツリーを取得する（`--format compact --filter interactive` で操作できる要素だけ） |
 | `relay find` | セレクタに一致する要素を探す（`--timeout` で待つ、`--require` で必須にする、`--gone` で消えるのを待つ、`--onscreen` / `--hittable` で画面の中 / 押せるものだけ） |
 | `relay tap` / `relay press` / `relay swipe` | 座標か要素セレクタ（`--id`・`--label`・`--type`、正規表現の `--label-match`）でタッチ操作する |
+| `relay pinch` | 座標か要素を指定して2本指のピンチを送る（[値と制約](docs/http-api.md#ピンチpinch)） |
 | `relay type` / `relay key` | フォーカスのある要素に文字・特殊キーを入力する（`type --clear` で先に入力欄を空にする） |
 | `relay launch` / `relay terminate` | アプリを起動（前面化）する / 終了する |
 | `relay open` | URL・ディープリンクを開く（`https://` は Safari、`myapp://` はそのアプリ、`--bundle-id` でアプリを指定） |

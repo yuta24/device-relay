@@ -355,6 +355,8 @@ final class RelayRunnerUITests: XCTestCase {
       return try find(RunnerJSON(request.body))
     case ("POST", "/adjust"):
       return try adjust(RunnerJSON(request.body))
+    case ("POST", "/pinch"):
+      return try pinch(RunnerJSON(request.body))
     case ("POST", "/swipe"):
       let body = try RunnerJSON(request.body)
       return ok(mode: try swipe(body, mode: touchMode(body)))
@@ -425,7 +427,7 @@ final class RelayRunnerUITests: XCTestCase {
       }
       return ok()
     case (_, "/health"), (_, "/foreground"), (_, "/screenshot"), (_, "/source"), (_, "/tap"), (_, "/press"),
-         (_, "/wait"), (_, "/find"), (_, "/adjust"), (_, "/swipe"), (_, "/type"), (_, "/key"), (_, "/button"), (_, "/hinge"), (_, "/orientation"), (_, "/launch"),
+         (_, "/wait"), (_, "/find"), (_, "/adjust"), (_, "/pinch"), (_, "/swipe"), (_, "/type"), (_, "/key"), (_, "/button"), (_, "/hinge"), (_, "/orientation"), (_, "/launch"),
          (_, "/open"), (_, "/terminate"), (_, "/shutdown"):
       throw RunnerError.methodNotAllowed
     default:
@@ -980,7 +982,20 @@ final class RelayRunnerUITests: XCTestCase {
     let timeout = try body.elementTimeout()
     let mode = try touchMode(body)
     let bundleID = body.optionalString("bundleId") ?? foregroundApplication().bundleID
-    let target = try waitForElements(bundleID: bundleID, timeout: timeout) { root, isLastAttempt -> RunnerElementTarget? in
+    let target = try touchTarget(selector: selector, bundleID: bundleID, timeout: timeout)
+    let x = Double(target.point.x), y = Double(target.point.y)
+    return annotated([
+      "ok": true,
+      "mode": try touch(x: x, y: y, duration: duration, taps: taps, mode: mode).rawValue,
+      "bundleId": bundleID,
+      "element": target.match.json,
+      "point": RunnerElementTree.json(target.point)
+    ].merging(tapsAnswer) { $1 })
+  }
+
+  /// Resolve and verify once, with the same wait/coverage/window policy for tap, press and pinch.
+  private func touchTarget(selector: RunnerElementSelector, bundleID: String, timeout: TimeInterval) throws -> RunnerElementTarget {
+    return try waitForElements(bundleID: bundleID, timeout: timeout) { root, isLastAttempt -> RunnerElementTarget? in
       try self.checkPatternTime(selector, in: root)
       // Without the window's position a frame says nothing about the screen, and a touch would miss
       // while reporting success. It can be passing, as while a window moves, so it is waited out too.
@@ -1004,14 +1019,6 @@ final class RelayRunnerUITests: XCTestCase {
         throw RunnerError.elementNotResolved(failure)
       }
     }
-    let x = Double(target.point.x), y = Double(target.point.y)
-    return annotated([
-      "ok": true,
-      "mode": try touch(x: x, y: y, duration: duration, taps: taps, mode: mode).rawValue,
-      "bundleId": bundleID,
-      "element": target.match.json,
-      "point": RunnerElementTree.json(target.point)
-    ].merging(tapsAnswer) { $1 })
   }
 
   /// A `labelMatch` or `valueMatch` that takes too long over this snapshot is a bad request (400), not something to wait out.
@@ -1224,7 +1231,7 @@ final class RelayRunnerUITests: XCTestCase {
   private func xcuiElement(for match: RunnerElementMatch, in application: XCUIApplication) throws -> XCUIElement {
     guard let snapshot = commandSnapshot, let path = match.node.snapshotPath,
           let found = Self.snapshot(at: path, in: snapshot) else {
-      throw RunnerError.actionFailed("cannot find the element in the snapshot; nothing was adjusted")
+      throw RunnerError.actionFailed("cannot find the element in the snapshot; no input was sent")
     }
     let wanted = RunnerElementTree.xcuiFrame(snapshot: found.frame, onScreen: match.node.frame, window: commandWindow)
     let (elements, failed) = ignoringIssues { () -> [XCUIElement] in
@@ -1233,8 +1240,8 @@ final class RelayRunnerUITests: XCTestCase {
       }
     }
     guard !failed, elements.count == 1 else {
-      throw RunnerError.actionFailed("the element moved or changed before it could be adjusted "
-        + "(\(failed ? "XCUI could not list the elements" : "\(elements.count) elements of its type have its frame")); nothing was adjusted")
+      throw RunnerError.actionFailed("the element moved or changed before input could be sent "
+        + "(\(failed ? "XCUI could not list the elements" : "\(elements.count) elements of its type have its frame")); no input was sent")
     }
     return elements[0]
   }
@@ -1675,6 +1682,74 @@ final class RelayRunnerUITests: XCTestCase {
     format.opaque = true
     format.preferredRange = .standard
     return UIGraphicsImageRenderer(size: size, format: format)
+  }
+
+  private func pinch(_ body: RunnerJSON) throws -> RunnerHTTPResponse {
+    let options: RunnerPinch.Options
+    do { options = try RunnerPinch.Options(json: body.object) }
+    catch { throw RunnerError.invalidField(String(describing: error)) }
+    let mode = try touchMode(body)
+    if mode == .xcui {
+      do { try options.validateXCUI(hasElement: body.object["element"] != nil) }
+      catch {
+        if body.object["element"] == nil { throw RunnerError.touchModeRejected(String(describing: error)) }
+        throw RunnerError.invalidField(String(describing: error))
+      }
+    }
+    var answer: [String: Any] = ["ok": true, "gesture": "pinch", "mode": mode.rawValue, "scale": options.scale]
+    let center: CGPoint
+    var visibleFrame: CGRect?
+    var match: RunnerElementMatch?
+    var bundleID: String?
+    if let element = body.object["element"] {
+      let selector = try body.elementSelector(element)
+      let app = body.optionalString("bundleId") ?? foregroundApplication().bundleID
+      let target = try touchTarget(selector: selector, bundleID: app, timeout: body.elementTimeout())
+      center = target.point
+      visibleFrame = target.match.node.frame.intersection(CGRect(origin: .zero, size: screen(in: interfaceOrientation()).size))
+      match = target.match
+      bundleID = app
+      answer["bundleId"] = app
+      answer["element"] = target.match.json
+    } else {
+      func coordinate(_ name: String) throws -> Double {
+        guard let value = body.object[name] else { throw RunnerError.missingField(name) }
+        guard let number = RunnerRequestValues.number(value), number.isFinite else { throw RunnerError.invalidField(name) }
+        return number
+      }
+      center = CGPoint(x: try coordinate("x"), y: try coordinate("y"))
+      try requireOnScreen([("center", center.x, center.y)])
+    }
+    // Display discovery must succeed for either path, including an XCUI element gesture.
+    _ = try touchDisplay()
+    if mode == .xcui {
+      let element = try xcuiElement(for: match!, in: XCUIApplication(bundleIdentifier: bundleID!))
+      element.pinch(withScale: CGFloat(options.scale), velocity: CGFloat(options.velocity))
+      // XCUI picks its own contact locations and timing; no fabricated geometry in the answer.
+      for key in ["center", "radius", "start", "end", "duration"] { answer[key] = NSNull() }
+      answer["velocity"] = options.velocity
+    } else {
+      let size = screen(in: interfaceOrientation()).size
+      guard cachedScreen != nil else {
+        throw RunnerError.invalidField("pinch: cannot verify the display size; nothing was sent")
+      }
+      let geometry: RunnerPinch.Geometry
+      do { geometry = try RunnerPinch.geometry(options: options, center: center,
+                                               screen: size, element: visibleFrame) }
+      catch { throw RunnerError.invalidField(String(describing: error)) }
+      try requireOnScreen((geometry.start + geometry.end).enumerated().map {
+        ("\($0.offset < 2 ? "start" : "end")[\($0.offset % 2)]", $0.element.x, $0.element.y)
+      })
+      try synthesize(lasting: geometry.liftOffset) { portraitPoint, displayID, completion in
+        try RelayTouchSynthesizer.synthesizeTouches(
+          withPaths: geometry.paths.map { path in path.map { NSValue(cgPoint: portraitPoint(($0.x, $0.y))) } },
+          offsets: geometry.offsets.map { NSNumber(value: $0) }, liftOffset: geometry.liftOffset,
+          displayID: displayID, completion: completion
+        )
+      }
+      answer.merge(geometry.json) { _, value in value }
+    }
+    return annotated(answer)
   }
 
   private func swipe(_ body: RunnerJSON, mode: TouchMode) throws -> TouchMode {

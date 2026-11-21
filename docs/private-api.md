@@ -23,8 +23,8 @@
 
 | 項目 | 使えないとき | 応答での見分け方 |
 | --- | --- | --- |
-| [タッチ合成](#タッチ合成) | `xcui` に切り替え（`mode: private` は `400`） | `/health` の `touchSynthesis`、応答の `mode` |
-| [表示を指定した合成タッチ](#表示を指定した合成タッチ) | 表示が複数ある端末だけ `xcui` に切り替え（`mode: private` は `400`） | 同上 |
+| [タッチ合成](#タッチ合成) | `xcui` に切り替え（座標のpinchと `mode: private` は `400`） | `/health` の `touchSynthesis`、応答の `mode` |
+| [表示を指定した合成タッチ](#表示を指定した合成タッチ) | 表示が複数ある端末だけ `xcui` に切り替え（座標のpinchと `mode: private` は `400`） | 同上 |
 | [文字入力の合成](#文字入力の合成) | `typeText` で入力（アイドル待ちが前後に入る） | `/health` の `typeSynthesis` |
 | [要素のタッチ位置の確認](#要素のタッチ位置の確認) | 確認を省き、従来どおり送る | なし |
 | [前面アプリ](#前面アプリ) | 最後に `/launch` したアプリか SpringBoard | `source: fallback`、`pid: null` |
@@ -45,7 +45,8 @@
 ### タッチ合成
 
 - **API**: `XCPointerEventPath`（`-initForTouchAtPoint:offset:`、`-moveToPoint:atOffset:`、`-liftUpAtOffset:`）、`XCSynthesizedEventRecord`（`-initWithName:interfaceOrientation:`、`-addPointerEventPath:`）、`-[XCUIDevice eventSynthesizer]` が返すオブジェクトの `-synthesizeEvent:completion:`（completion は `^(BOOL, NSError *)`）。実装は `RelayTouchSynthesizer.m` です。
-- **機能**: `/tap`・`/press`・`/swipe` の `private` 経路（既定）と、実機などの `/button home` のスワイプ。`/tap` の `taps: 2` は、1 つの `XCSynthesizedEventRecord` に、開始の offset をずらした `XCPointerEventPath` を 2 本入れます。`/adjust` のスライダーの補正のドラッグもこの経路です（使えなければ XCUI のドラッグ）。
+- **機能**: `/tap`・`/press`・`/swipe`・`/pinch` の `private` 経路（既定）と、実機などの `/button home` のスワイプ。`/tap` の `taps: 2` は、1 つの `XCSynthesizedEventRecord` に、開始の offset をずらした `XCPointerEventPath` を 2 本入れます。`/adjust` のスライダーの補正のドラッグもこの経路です（使えなければ XCUI のドラッグ）。
+- **ピンチ**: 同じイベント記録に時間の重なる2本の経路を入れ、同時に押して左右へ動かし、同時に離します。既存と同じクラス・セレクタを使います。要素への公開 `XCUIElement.pinch` と異なり中心と半径を指定できます。倍率の保証と失敗時の扱いは[ピンチ](http-api.md#ピンチpinch)を参照してください。
 - **公開 API では足りない理由**: `XCUICoordinate` のジェスチャーは、前後で対象アプリがアイドルになるのを待つので、タップ 1 回に 1–2 秒かかります（「[タッチ合成の経路](design.md#タッチ合成の経路)」）。
 - **同じ方式のツール**: WebDriverAgent。
 
@@ -59,6 +60,8 @@
 | 完了の callback がエラーを返した、または離す時刻の 10 秒後までに完了しない | `422`、`touch_failed` |
 
 `touch_failed` のとき、同じリクエストを `xcui` で送り直すことはしません。
+
+pinchのxcuiへの切り替えは要素指定だけです。座標・radius・durationとの組み合わせは[ピンチ](http-api.md#ピンチpinch)の規則で拒否します。
 
 ### 表示を指定した合成タッチ
 

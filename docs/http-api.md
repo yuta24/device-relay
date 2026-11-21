@@ -14,6 +14,7 @@
 | `GET /screenshot` | `?format=png\|jpeg&quality=0.05–1.0&maxSize=<px>&scale=<px/pt>`（既定は png、jpeg の既定 quality は 0.7。範囲外・数値以外の quality と、png への quality の指定は 400。`maxSize`・`scale` は省略時は縮小なし） | 画面全体のスクリーンショット（表示の向きに正規化済み）。`maxSize`・`scale` で端末側で縮小します。画像と座標の関係を `X-Relay-*` ヘッダーで返します。詳しくは「[スクリーンショットの縮小](screen.md#スクリーンショットの縮小)」 |
 | `GET /source` | `?format=json\|text\|compact&filter=interactive&maxDepth=<n>&bundleId=`（既定は json、bundleId の既定は前面アプリ） | XCUI の要素ツリー。json は要素ごとの属性と frame、text は `debugDescription`、compact は 1 行 1 要素。`filter=interactive` で操作できる要素だけに絞ります。詳しくは「[要素ツリー（/source）](elements.md#要素ツリーsource)」 |
 | `POST /tap` | `{"x":200,"y":120}`、または `{"element":{"identifier":"relay.input"}}`（`"taps":2` でダブルタップ。省略は 1） | タップ。`element` で要素を指定すると、その frame の中心をタップします（「[要素セレクタ](elements.md#要素セレクタ)」）。座標が画面の外なら `400`（下の「画面の外の座標」）。`taps` は下の「ダブルタップ（taps）」 |
+| `POST /pinch` | `{"x":201,"y":500,"scale":2,"radius":50,"duration":0.6}` または `{"element":{…},"scale":0.5}` | 2本指のピンチ。値・mode・応答は「[ピンチ](#ピンチpinch)」 |
 | `POST /press` | `{"x":200,"y":120,"duration":1.0}`、または `{"element":{…},"duration":1.0}` | 長押し。`taps` は受け付けません（`400`） |
 | `POST /find` | `{"element":{"type":"button"},"limit":20,"bundleId":"…","timeout":0,"gone":false}`（`limit`・`bundleId`・`timeout`・`gone` は省略可） | セレクタに一致する要素の一覧（type / identifier / label / value / frame / enabled / onscreen）。ツリー全体を読まずに要素を探せます（「[要素セレクタ](elements.md#要素セレクタ)」）。`element` に `"onscreen": true` / `"hittable": true` を付けると、画面の中の要素 / 押すと当たる要素だけを返します（「[画面の中・押せる要素だけに絞る](elements.md#画面の中押せる要素だけに絞るonscreen--hittable)」。`/tap`・`/press`・`/adjust` のセレクタも同じ）。`labelMatch` / `valueMatch` で label / value を正規表現で探せます（「[正規表現で探す](elements.md#正規表現で探すlabelmatch--valuematch)」）。`gone: true` で、一致する要素がなくなるのを待ちます（「[消えるのを待つ（gone）](elements.md#消えるのを待つgone)」） |
 | `POST /wait` | `{"stable":true,"for":0.5,"timeout":10,"bundleId":"…"}`（`stable` 以外は省略可） | 画面の描画が変わらなくなるまで待ち、`stable` と `waitedMs` を返します。時間切れも HTTP 200 です。値・制約は「[画面が落ち着くまで待つ](screen.md#画面が落ち着くまで待つ)」。未知のキーや不正な値は 400、前面アプリが `bundleId` と違えば 422 です。 |
@@ -183,6 +184,40 @@ curl -s -H "$AUTH" -X POST $R/shutdown
 | `open_failed` | 422 | `/open` で URL を開けなかった: スキームを扱うアプリが入っていない、`bundleId` のアプリで開けない、システムが時間内に答えない | URL のスキームと、扱うアプリが入っているかを確かめる。`bundleId` を指定すると、スキームにかかわらずそのアプリに渡せる |
 | `xcui_failed` | 422 | XCUI が失敗を報告した（XCTest の issue、要素ツリーの取得の失敗など）。`error` に XCUI の文 | `error` を読み、前面アプリと画面を観察し直す |
 | `internal_error` | 500 | ランナーの内部エラー（JPEG エンコードの失敗、終了処理中など） | 1 回だけ再試行する。続くならランナーのログを見る |
+
+## ピンチ（/pinch）
+
+`POST /pinch` は、中心の左右に2本の指を置いて拡大・縮小のジェスチャーを送ります。座標は表示の向きでのpt、要素指定の中心はframeの画面内部分の中心です。要素の `bundleId`・`timeout`・セレクタ・覆いとウィンドウ位置の確認は `/tap` と同じです。`scroll` は受け付けません。
+
+| フィールド | 値 |
+| --- | --- |
+| `scale` | 必須。有限の0.1〜10、1以外。終点半径÷始点半径 |
+| `radius` | privateのみ。中心から各指までの始めの距離。有限の正数、pt。省略時は下記の自動計算 |
+| `duration` | privateの移動時間。0.05〜5秒、既定0.6秒。押した後と離す前に各0.05秒の静止を追加 |
+| `mode` | `private` / `xcui` / `auto`。省略はauto。使えればprivate、なければ要素だけxcui |
+| `x`・`y` / `element` | どちらか一方。座標はprivateのみ。`bundleId`・`timeout`は要素のみ |
+
+数値以外、真偽値、範囲外、1のscale、radius/durationとxcuiの組み合わせは400です。autoがxcuiへ切り替わった場合も、明示したradius/durationを無視せず400にします。座標でprivateが使えなければ何も送らず400 `touch_mode_unavailable` です。
+
+半径の省略時は画面の短辺÷4から始め、広い方の両端が画面の端から16pt内側に収まるよう縮めます。要素指定では、その可視frameの中にも収めます。上下方向も含めた保守的な余地で計算します。余地がない中心は400 `invalid_request`、画面サイズを確認できないときも400です。計算がoverflowする半径や、座標の精度で2点を区別できない半径も400にします。
+
+**明示半径は縮めません。** 要素の外へ出ることもあります。送信前に4端点を画面内か確認し、1点でも外なら既存と同じ400 `point_offscreen` です。画面の幅・高さちょうどは外です。16ptは端のジェスチャーを避ける目安で、切り欠きや端付近の認識を保証しません。
+
+privateの応答例:
+
+```json
+{"ok":true,"gesture":"pinch","mode":"private","scale":2,"radius":50,"center":{"x":201,"y":500},"start":[{"x":151,"y":500},{"x":251,"y":500}],"end":[{"x":101,"y":500},{"x":301,"y":500}],"duration":0.6}
+```
+
+radiusと端点は実際に送った幾何です。radius省略時も実際の半径を返します。要素指定では `bundleId` と解決時の `element` が付きます。表示IDと向きの変換は通常の合成タッチと同じです（[座標と表示](screen.md#座標系と画面の向き)）。
+
+xcuiは `XCUIElement.pinch(withScale:velocity:)` を使い、拡大はvelocity=1、縮小は−1 scale/秒です。接触点と時間はXCUIが決めるため、`center`・`radius`・`start`・`end`・`duration` はnull、`velocity` を返します。アプリやwindow全体への自動置き換えはしません。
+
+**成功は送信の完了で、アプリが拡大したことではありません。** 認識器のしきい値やアプリの制限でscaleはずれ、小さな移動や端付近では認識しないこともあります。`source` / `find` などで結果を別に確認してください。合成のcallback失敗・時間切れは既存の `touch_failed` で、xcuiへ再送しません。
+
+privateは離す時刻の10秒後までcallbackを待ちます。xcuiは前後にアイドル待ちが入り、操作部分の待機予算は130秒です。CLIは要素のtimeoutと、この予算またはprivateの移動＋静止時間に通常の30秒を足し、privateのcallback期限からも20秒の余裕を取ります。
+
+古いランナーの404や `gesture:pinch`・mode・幾何が確認できない応答は、CLIで `runner_bad_response`、終了コード8です。`relay start --rebuild` で作り直してください。
 
 ## スライダーとピッカー（/adjust）
 

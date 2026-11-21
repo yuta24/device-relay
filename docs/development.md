@@ -332,6 +332,7 @@ xcodebuild の出力に `RELAY_RUNNER_READY port=8100 addresses=en0=…,utun3=�
 | accessibilityIdentifier | 内容 |
 | --- | --- |
 | `relay.gestures.close` | 入力欄の画面に戻る |
+| `relay.pinch` | 独立したピンチ検証画面を開く。`relay.pinch.canvas` は認識器を付けたビュー、`relay.pinch.status` は回数・state・scale・最大同時touch数・観測した指間隔・view内の中心、`relay.pinch.close` はジェスチャー画面へ戻る |
 | `relay.tapTarget` | 1 回のタップと 2 回のタップ（`numberOfTapsRequired` が 1 と 2）の `UITapGestureRecognizer` を付けたビュー。1 回の方は 2 回の方が失敗するのを待つので、ダブルタップと 2 回のタップを見分けられる |
 | `relay.tapCounts` | それぞれが発火した回数（`single: 2, double: 1`） |
 | `relay.tapReset` | 回数を 0 に戻す |

@@ -125,7 +125,10 @@ enum RunnerRequestValues {
   /// The shortest decimal of `value` rounded to 1/1000, like the frames of `/source` ("402", "1.172").
   static func decimal(_ value: CGFloat) -> String {
     guard value.isFinite else { return "0" }
-    let rounded = (Double(value) * 1000).rounded() / 1000
+    let number = Double(value)
+    // A finite but huge coordinate must produce a field error, not overflow Int while describing it.
+    guard abs(number) < Double(Int.max) / 1000 else { return String(number) }
+    let rounded = (number * 1000).rounded() / 1000
     return rounded == rounded.rounded() ? String(Int(rounded)) : String(rounded)
   }
 }
