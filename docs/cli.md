@@ -582,7 +582,7 @@ screenshot --output about.png --scale 1
 | 種類 | 使える手順 |
 | --- | --- |
 | 観察 | `ping`、`health`、`foreground`、`screenshot`、`source`、`find`、`wait --stable` |
-| 操作 | `tap`、`press`、`swipe`、`type`、`key`、`button`、`hinge`、`orientation` |
+| 操作 | `tap`、`press`、`pinch`、`swipe`、`type`、`key`、`button`、`hinge`、`orientation` |
 | アプリ | `launch`、`open`、`terminate` |
 | 疑似手順 | `sleep <秒>`（0 < 秒 ≤ 60） |
 

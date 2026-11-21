@@ -1706,7 +1706,7 @@ final class RelayRunnerUITests: XCTestCase {
       let app = body.optionalString("bundleId") ?? foregroundApplication().bundleID
       let target = try touchTarget(selector: selector, bundleID: app, timeout: body.elementTimeout())
       center = target.point
-      visibleFrame = target.match.node.frame.intersection(CGRect(origin: .zero, size: screen(in: interfaceOrientation()).size))
+      visibleFrame = target.match.node.visibleFrame(in: CGRect(origin: .zero, size: screen(in: interfaceOrientation()).size))
       match = target.match
       bundleID = app
       answer["bundleId"] = app
