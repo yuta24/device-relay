@@ -35,7 +35,7 @@ class CIChangesTests(unittest.TestCase):
         for path in (
             "Sources/Relay/main.swift",
             "Runner/RelayRunner.xcodeproj/project.pbxproj",
-            "skills/device-relay/SKILL.md",
+            "skills/device-relay/check.sh",
             "scripts/ci-changes.sh",
             "Package.swift",
             "Makefile",
@@ -49,7 +49,7 @@ class CIChangesTests(unittest.TestCase):
                     classify(["docs/setup.md", path]), {"code": "true", "run": "true"}
                 )
 
-    def test_other_inputs_still_run_code_checks(self):
+    def test_other_inputs_conservatively_run_all_checks(self):
         for path in (
             "Tests/RelayTests/Test.swift",
             "ruff.toml",
@@ -58,7 +58,30 @@ class CIChangesTests(unittest.TestCase):
             "unknown-file",
         ):
             with self.subTest(path=path):
-                self.assertEqual(classify([path]), {"code": "true", "run": "false"})
+                self.assertEqual(classify([path]), {"code": "true", "run": "true"})
+
+    def test_skill_markdown_with_or_without_docs_keeps_only_package(self):
+        for paths in (
+            ["skills/device-relay/SKILL.md"],
+            ["skills/device-relay/SKILL.md", "skills/device-relay/references/run.md"],
+            ["skills/device-relay/SKILL.md", "docs/setup.md", "README.md"],
+        ):
+            with self.subTest(paths=paths):
+                self.assertEqual(classify(paths), {"code": "false", "run": "true"})
+
+    def test_skill_markdown_does_not_hide_code_or_unknown_inputs(self):
+        for path in (
+            "Sources/Relay/main.swift",
+            "Tests/RelayTests/Test.swift",
+            "skills/device-relay/check.sh",
+            "skills/device-relay/reference.json",
+            "skills/device-relay/SKILL.MD",
+            "skills/device-relay/SKILL.md.bak",
+            "unknown-file",
+        ):
+            with self.subTest(path=path):
+                for paths in ([path], ["skills/device-relay/SKILL.md", path]):
+                    self.assertEqual(classify(paths), {"code": "true", "run": "true"})
 
     def test_empty_diff_conservatively_runs_all_checks(self):
         self.assertEqual(classify([]), {"code": "true", "run": "true"})
@@ -69,7 +92,7 @@ class CIChangesTests(unittest.TestCase):
             {"code": "false", "run": "false"},
         )
         self.assertEqual(
-            classify(["README.md\nnot-a-readme"]), {"code": "true", "run": "false"}
+            classify(["README.md\nnot-a-readme"]), {"code": "true", "run": "true"}
         )
 
     def test_unterminated_last_path_is_not_silently_ignored(self):
@@ -169,6 +192,15 @@ class CIChangesGitTests(unittest.TestCase):
         self.assertEqual(
             self.classify(self.base, head), {"code": "true", "run": "true"}
         )
+
+    def test_renaming_code_into_skill_markdown_still_runs_all_checks(self):
+        self.write("skills/device-relay/SKILL.md", "skill\n")
+        base = self.commit()
+        (self.root / "Sources/file.swift").rename(
+            self.root / "skills/device-relay/reference.md"
+        )
+        head = self.commit()
+        self.assertEqual(self.classify(base, head), {"code": "true", "run": "true"})
 
     def test_invalid_refs_fail_without_outputs_that_could_skip_checks(self):
         result = subprocess.run(

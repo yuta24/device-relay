@@ -24,6 +24,8 @@ ROOT = Path(__file__).resolve().parents[1]
 # relay stop allows 180 seconds for the launcher, plus its own setup/cleanup.
 STOP_TIMEOUT = 240
 DEVICE_TYPE = "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro"
+SIMCTL_QUERY_TIMEOUT = 120
+SIMCTL_RETRY_DELAY = 5
 
 
 class Cancelled(Exception):
@@ -72,6 +74,23 @@ class Cancellation:
 
 def run(*args, timeout=120, **kwargs):
     return subprocess.run(args, check=True, text=True, timeout=timeout, **kwargs)
+
+
+def simulator_runtimes(warn):
+    # Only this read-only query is safe to repeat after an ambiguous timeout.
+    # Create/boot/launch and general command failures must never be retried here.
+    command = ("xcrun", "simctl", "list", "runtimes", "--json")
+    try:
+        result = run(*command, timeout=SIMCTL_QUERY_TIMEOUT, capture_output=True)
+    except subprocess.TimeoutExpired:
+        warn(
+            f"simctl list runtimes timed out after {SIMCTL_QUERY_TIMEOUT}s; "
+            f"retrying once in {SIMCTL_RETRY_DELAY}s "
+            f"(maximum additional wait {SIMCTL_RETRY_DELAY + SIMCTL_QUERY_TIMEOUT}s)"
+        )
+        time.sleep(SIMCTL_RETRY_DELAY)
+        result = run(*command, timeout=SIMCTL_QUERY_TIMEOUT, capture_output=True)
+    return json.loads(result.stdout)["runtimes"]
 
 
 def simulator_target(runtimes, sdk):
@@ -216,9 +235,7 @@ def exercise(cancellation, session, diagnostics):
         "xcrun", "--sdk", "iphonesimulator", "--show-sdk-version", capture_output=True
     ).stdout.strip()
     diagnostics.save_environment(simulator_sdk=sdk)
-    runtimes = json.loads(
-        run("xcrun", "simctl", "list", "runtimes", "--json", capture_output=True).stdout
-    )["runtimes"]
+    runtimes = simulator_runtimes(diagnostics.warn)
     diagnostics.save_environment(
         runtimes=[
             {

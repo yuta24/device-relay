@@ -28,13 +28,13 @@ jobs:
             image: xcode-27
           - xcode: Xcode 26
             image: macos-latest
-    # Materialize every matrix check name, using Linux for documentation-only PRs.
+    # Materialize every matrix check name, using Linux for documentation/skill-Markdown-only PRs.
     runs-on: ${{ needs.package-changes.result == 'success' && needs.package-changes.outputs.code == 'false' && 'ubuntu-latest' || matrix.image }}
     timeout-minutes: 30
     steps:
-      - name: Documentation-only PR
+      - name: Documentation or skill Markdown-only PR
         if: env.RUN_CODE_CI != 'true'
-        run: echo "README/docs-only PR; Swift build, tests and coverage are not required."
+        run: echo "README/docs/skill-Markdown-only PR; Swift build, tests and coverage are not required."
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: env.RUN_CODE_CI == 'true'
       - name: Set up development tools
@@ -147,9 +147,9 @@ jobs:
     # Phase budgets plus normal stop, fallback cleanup, CLI build and diagnostics.
     timeout-minutes: 60
     steps:
-      - name: Documentation-only PR
+      - name: Documentation or skill Markdown-only PR
         if: env.RUN_CODE_CI != 'true'
-        run: echo "README/docs-only PR; Runner build and simulator smoke test are not required."
+        run: echo "README/docs/skill-Markdown-only PR; Runner build and simulator smoke test are not required."
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: env.RUN_CODE_CI == 'true'
       - name: Set up development tools
@@ -167,7 +167,7 @@ jobs:
       - name: Smoke-test Runner on the iOS simulator
         if: env.RUN_CODE_CI == 'true'
         run: mise run test:runner
-        timeout-minutes: 55
+        timeout-minutes: 58
       - name: Save Runner smoke diagnostics
         if: ${{ !cancelled() && env.RUN_CODE_CI == 'true' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

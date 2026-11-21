@@ -1,3 +1,4 @@
+import json
 import subprocess
 import sys
 import tempfile
@@ -5,7 +6,15 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from runner_smoke import DEVICE_TYPE, cleanup, simulator_target, stop
+from runner_smoke import (
+    DEVICE_TYPE,
+    SIMCTL_QUERY_TIMEOUT,
+    SIMCTL_RETRY_DELAY,
+    cleanup,
+    simulator_runtimes,
+    simulator_target,
+    stop,
+)
 
 
 def runtime(version, available=True):
@@ -21,6 +30,88 @@ def runtime(version, available=True):
 
 
 class RunnerSmokeTests(unittest.TestCase):
+    def test_runtime_query_retries_only_first_timeout_and_logs_the_bound(self):
+        command = ("xcrun", "simctl", "list", "runtimes", "--json")
+        result = subprocess.CompletedProcess(command, 0, '{"runtimes": []}')
+        for failures in (0, 1, 2):
+            errors = [
+                subprocess.TimeoutExpired(command, SIMCTL_QUERY_TIMEOUT)
+            ] * failures
+            warn = Mock()
+            with (
+                self.subTest(failures=failures),
+                patch(
+                    "runner_smoke.subprocess.run", side_effect=errors + [result]
+                ) as run,
+                patch("runner_smoke.time.sleep") as sleep,
+            ):
+                if failures == 2:
+                    with self.assertRaises(subprocess.TimeoutExpired):
+                        simulator_runtimes(warn)
+                else:
+                    self.assertEqual(simulator_runtimes(warn), [])
+                self.assertEqual(run.call_count, 1 if failures == 0 else 2)
+                for call in run.call_args_list:
+                    self.assertEqual(call.args, (command,))
+                    self.assertEqual(
+                        call.kwargs,
+                        dict(
+                            check=True,
+                            text=True,
+                            timeout=SIMCTL_QUERY_TIMEOUT,
+                            capture_output=True,
+                        ),
+                    )
+                if failures:
+                    sleep.assert_called_once_with(SIMCTL_RETRY_DELAY)
+                    warn.assert_called_once()
+                    self.assertIn("retrying once", warn.call_args.args[0])
+                    self.assertIn(
+                        "maximum additional wait 125s", warn.call_args.args[0]
+                    )
+                else:
+                    sleep.assert_not_called()
+                    warn.assert_not_called()
+
+    def test_runtime_query_does_not_retry_command_errors(self):
+        command = ("xcrun", "simctl", "list", "runtimes", "--json")
+        for error in (
+            subprocess.CalledProcessError(1, command, stderr="Invalid device state"),
+            OSError("cannot launch xcrun"),
+        ):
+            for after_timeout in (False, True):
+                effects = (
+                    [subprocess.TimeoutExpired(command, SIMCTL_QUERY_TIMEOUT)]
+                    if after_timeout
+                    else []
+                ) + [error]
+                with (
+                    self.subTest(
+                        error=type(error).__name__, after_timeout=after_timeout
+                    ),
+                    patch("runner_smoke.subprocess.run", side_effect=effects) as run,
+                    patch("runner_smoke.time.sleep") as sleep,
+                ):
+                    with self.assertRaises(type(error)) as raised:
+                        simulator_runtimes(Mock())
+                    self.assertIs(raised.exception, error)
+                    self.assertEqual(run.call_count, 2 if after_timeout else 1)
+                    self.assertEqual(sleep.call_count, int(after_timeout))
+
+    def test_runtime_query_does_not_retry_bad_json(self):
+        for text, error in (("invalid", json.JSONDecodeError), ("{}", KeyError)):
+            with (
+                self.subTest(text=text),
+                patch(
+                    "runner_smoke.subprocess.run", return_value=Mock(stdout=text)
+                ) as run,
+                patch("runner_smoke.time.sleep") as sleep,
+            ):
+                with self.assertRaises(error):
+                    simulator_runtimes(Mock())
+                run.assert_called_once()
+                sleep.assert_not_called()
+
     def test_stop_gives_cli_time_to_finish_and_keeps_failure_checks(self):
         for check in (True, False):
             with (

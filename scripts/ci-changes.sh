@@ -8,10 +8,9 @@ classify() {
 		seen=true
 		case "$path" in
 		README.md | README.ja.md | CHANGELOG.md | docs/*) ;;
-		*) code=true ;;
-		esac
-		case "$path" in
-		Sources/* | Runner/* | skills/* | scripts/* | Package.swift | Makefile | mise.toml | mise.lock | .github/workflows/ci.yml | .github/workflows/release.yml)
+		skills/*.md) package=true ;;
+		*)
+			code=true
 			package=true
 			;;
 		esac
