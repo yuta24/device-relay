@@ -4,6 +4,11 @@
 
 ## 次の版
 
+### relay logs の絞り込みと件数制限
+
+`--level` は指定した重大度以上、`--subsystem` と `--category` は完全一致、`--grep` は大文字小文字を区別するリテラル部分一致で絞ります。通常の読み出し・`--follow`・`--archive` で使えます。
+通常の読み出しと `--archive` で `--limit <N>` を指定すると、最新の一致 N 件を返し、JSON に `matchedCount` と `truncated` が加わります。
+
 ### 2本指のピンチ
 
 `relay pinch <x> <y> --scale <比>` と要素指定、HTTP `POST /pinch`、`relay run` のpinch手順を追加しました。privateは座標と要素、xcuiは要素だけです。指の間隔の比を指定するもので、アプリの最終倍率は保証しません。

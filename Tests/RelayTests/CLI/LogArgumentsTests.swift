@@ -34,6 +34,18 @@ struct LogArgumentsTests {
       == .logs(archive))
   }
 
+  @Test func logFiltersAndLimit() throws {
+    var options = LogsOptions()
+    options.conditions = LogConditions(level: .error, subsystem: "com.example.probe", category: "capture", grep: "--literal=日本語")
+    options.limit = 2
+    #expect(try Arguments.parse(["logs", "--level=error", "--subsystem", "com.example.probe", "--category=capture",
+                                 "--grep=--literal=日本語", "--limit=2"]) == .logs(options))
+    options.conditions.grep = "a\nb"
+    options.limit = Int.max
+    #expect(try Arguments.parse(["logs", "--level", "error", "--subsystem", "com.example.probe", "--category", "capture",
+                                 "--grep", "a\nb", "--limit", String(Int.max)]) == .logs(options))
+  }
+
   @Test func crashesOptions() throws {
     var options = CrashesOptions()
     options.bundleID = "host"
@@ -52,6 +64,9 @@ struct LogArgumentsTests {
       ["logs", "--follow", "--since", "5m"], ["logs", "--follow", "--archive", "a.logarchive"], ["logs", "--follow=1"],
       ["logs", "--udid", "A", "--session", "b"], ["logs", "--runner", "r.json", "--session", "b"], ["logs", "--udid", "A/B"],
       ["logs", "--udid", ""], ["logs", "--session", "bad/name"], ["logs", "-o"], ["logs", "--bundle-id", "--follow"],
+      ["logs", "--level", ""], ["logs", "--level", "notice"], ["logs", "--subsystem", ""], ["logs", "--category="], ["logs", "--grep", ""],
+      ["logs", "--grep", "--follow"], ["logs", "--limit"], ["logs", "--limit", ""], ["logs", "--limit", "0"], ["logs", "--limit", "-1"],
+      ["logs", "--limit", String(Int.max) + "0"], ["logs", "--follow", "--limit", "1"], ["logs", "--limit", "1", "--follow"],
       ["crashes", "--follow"], ["crashes", "--archive", "a"], ["crashes", "--name", "/abs.ips"], ["crashes", "--name", "../x.ips"],
       ["crashes", "--name", "a//b.ips"], ["crashes", "--name", "./a.ips"], ["crashes", "--name", ""],
       ["crashes", "--udid", "A", "--runner", "r.json"], ["crashes", "--since", "soon"]
@@ -68,6 +83,9 @@ struct LogArgumentsTests {
     }
     #expect(flattened(Arguments.usage(for: "logs")).contains("relay does not run sudo"))
     #expect(flattened(Arguments.usage(for: "logs")).contains("logs_filter_unsupported"))
+    for option in ["--level", "--subsystem", "--category", "--grep", "--limit"] {
+      #expect(Arguments.usage(for: "logs").contains(option))
+    }
     #expect(flattened(Arguments.usage(for: "crashes")).contains("crash_filter_unsupported"))
     #expect(flattened(Arguments.usage).contains("logs Prints the unified log"))
   }

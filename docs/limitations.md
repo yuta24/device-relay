@@ -40,7 +40,7 @@ device-relay の症状・制約から、説明と対処のある節を引く索�
 | 実機の `home` | スワイプで代用するため、ホームボタンのある端末ではコントロールセンターが開きます。 | [ホームと音量ボタン](device.md#ホームと音量ボタン) |
 | 音量ボタン | `volumeUp` / `volumeDown` は実機でのみ使えます。 | [ホームと音量ボタン](device.md#ホームと音量ボタン) |
 | usbmux 非対応 | 実機への接続には CoreDevice トンネルか、`--allow-wifi` による Wi-Fi が必要です。 | [接続の経路](device.md#接続の経路) |
-| 実機のログ | 収集に Mac の管理者の権限が要り、relay は sudo を実行しないので `logs_permission_denied` で失敗します。管理者でないアカウントでは、`sudo` を付けても取れません。`--archive` は実物の logarchive では確かめていません。 | [実機のログと logarchive](cli.md#実機のログと-logarchive) |
+| 実機のログ | 収集に Mac の管理者の権限が要り、relay は sudo を実行しないので `logs_permission_denied` で失敗します。管理者でないアカウントでは、`sudo` を付けても取れません。`--archive` の絞り込みはシミュレータで収集した logarchive で確認済みです。実機から収集した logarchive での動作は未確認です。 | [実機のログと logarchive](cli.md#実機のログと-logarchive) |
 | 実機のクラッシュ記録 | 記録を開かないため、バンドル ID で絞れず、プロセス名はファイル名からの推測です。 | [クラッシュ記録](cli.md#クラッシュ記録relay-crashes) |
 
 ### 起動とセッション

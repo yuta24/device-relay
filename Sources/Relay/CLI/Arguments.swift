@@ -138,6 +138,11 @@ enum Arguments {
         continue
       }
       let name = String(argument[..<equals])
+      // Keep these attached values intact so literal text starting with "--" can be passed with "=".
+      if arguments.first == "logs", logTextOptions.contains(name) {
+        result.append(argument)
+        continue
+      }
       guard !valuelessOptions.contains(name) else {
         throw ArgumentError(description: "\(name) does not take a value (got \(argument))")
       }
@@ -512,7 +517,8 @@ enum Arguments {
     relay record status [--json]
     """),
     (["logs"], """
-    relay logs [--bundle-id <ID>] [--since 5m] [--follow] [--archive <PATH>] [-o <file>]
+    relay logs [--bundle-id <ID>] [--since 5m] [--follow | --archive <PATH>] [-o <file>]
+        [--level <level>] [--subsystem <name>] [--category <name>] [--grep <text>] [--limit <N>]
         [--session <NAME> | --runner <PATH> | --udid <UDID>]
     """),
     (["crashes"], """

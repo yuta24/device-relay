@@ -111,6 +111,17 @@ func fakeMachO(uuid: [UInt8]) -> Data {
   return Data(bytes)
 }
 
+private func fakeFatMachO(_ first: Data, _ second: Data) -> Data {
+  func be(_ value: UInt32) -> [UInt8] { withUnsafeBytes(of: value.bigEndian, Array.init) }
+  let header = be(0xCAFE_BABE) + be(2)
+    + be(0x0100_000C) + be(0) + be(64) + be(UInt32(first.count)) + be(0)
+    + be(0x0100_0007) + be(3) + be(256) + be(UInt32(second.count)) + be(0)
+  var data = Data(header)
+  data += Data(count: 64 - data.count) + first
+  data += Data(count: 256 - data.count) + second
+  return data
+}
+
 /// An `.app` with Info.plist and a Mach-O executable, as `simctl get_app_container` points at.
 func fakeApp(in directory: URL, executable: String = "Probe", uuid: [UInt8] = Array(0x11 ... 0x20)) throws -> URL {
   let app = directory.appendingPathComponent("\(executable).app", isDirectory: true)
@@ -190,7 +201,93 @@ struct DeviceLogLineTests {
     let added10 = collector.add(fakeLogLine("c"))
     #expect(!added10)
     #expect(collector.failure?.message.contains("larger than") == true)
+    #expect(collector.failure?.message.contains("narrow the filters") == true)
+    #expect(collector.failure?.message.contains("use --limit") == true)
     #expect(collector.entries.count == 2)
+  }
+
+  @Test func collectorKeepsOnlyTheLatestMatchesInOrder() {
+    let filter = LogFilter(bundleID: "com.example.probe", executablePath: "/x/Probe", imageUUIDs: ["AAAA"])
+    // Two one-byte messages fit. Scanning five matching rows must not count bytes from eviction.
+    var collector = LogCollector(since: nil, until: nil, filter: filter, limit: 2, maxBytes: 402)
+    for number in 1 ... 5 {
+      let accepted = collector.add(fakeLogLine(String(number), uuid: "aaaa"))
+      #expect(accepted)
+      let rejected = collector.add(fakeLogLine("other image"))
+      #expect(rejected)
+    }
+    #expect(collector.entries.compactMap(\.message) == ["4", "5"])
+    #expect(collector.matchedCount == 5)
+    let broken = collector.add(Data("{".utf8))
+    #expect(!broken)
+    #expect(collector.failure?.message.contains("line 11") == true)
+
+    var bounded = LogCollector(since: nil, until: nil, filter: nil, limit: 1, maxBytes: 201)
+    let fits = bounded.add(fakeLogLine("x"))
+    let exceeds = bounded.add(fakeLogLine("xx"))
+    #expect(fits)
+    #expect(!exceeds)
+    #expect(bounded.failure?.code == .logsUnavailable)
+    #expect(bounded.failure?.message.contains("use a smaller --limit") == true)
+  }
+
+  @Test func escapesPredicateLiterals() {
+    let plain = "日本語"
+    #expect(DeviceLogs.predicateLiteral(plain) == #""日本語""#)
+    let literal = "日本語 \" OR logType == \"fault\" \\n \r\n\t (subsystem == 'x')"
+    let escaped = DeviceLogs.predicateLiteral(literal)
+    #expect(escaped == #""日本語 \" OR logType == \"fault\" \\n \r\n\t (subsystem == 'x')""#)
+    let conditions = LogConditions(subsystem: literal, category: literal, grep: literal)
+    let expected = "subsystem == \(escaped) AND category == \(escaped) AND eventMessage CONTAINS \(escaped)"
+    #expect(conditions.predicate() == expected)
+    let predicate = NSPredicate(format: expected)
+    let attributes = ["subsystem": literal, "category": literal, "eventMessage": "before \(literal) after"]
+    #expect(predicate.evaluate(with: attributes))
+    for (key, value) in [("subsystem", "prefix-\(literal)"), ("category", "\(literal)-suffix"), ("eventMessage", literal.lowercased())] {
+      var mismatch = attributes
+      mismatch[key] = value
+      #expect(!predicate.evaluate(with: mismatch))
+    }
+  }
+
+  @Test(arguments: ["\u{0301}", "\u{FE0F}"])
+  func escapesSpecialScalarsBeforeCombiningMarks(_ mark: String) throws {
+    let category = "x\"\(mark)y\\\(mark)z\n\(mark)n\r\(mark)r\t\(mark)t"
+    let expected = #""x\"\#(mark)y\\\#(mark)z\n\#(mark)n\r\#(mark)r\t\#(mark)t""#
+    #expect(DeviceLogs.predicateLiteral(category) == expected)
+
+    let conditions = LogConditions(level: .error, subsystem: "com.example", category: category, grep: "needle")
+    let format = try #require(conditions.predicate())
+    let predicate = NSPredicate(format: format)
+    let matching = ["logType": "error", "subsystem": "com.example", "category": category, "eventMessage": "a needle here"]
+    #expect(predicate.evaluate(with: matching))
+
+    var missingMessage = matching
+    missingMessage["eventMessage"] = "unrelated"
+    #expect(!predicate.evaluate(with: missingMessage))
+
+    var shortenedCategory = missingMessage
+    shortenedCategory["category"] = "x"
+    #expect(!predicate.evaluate(with: shortenedCategory))
+  }
+
+  @Test func severityPredicatesAndStreamLevels() {
+    let bundle = LogFilter(bundleID: "com.example.probe", executablePath: "/x/Probe", imageUUIDs: ["AAAA"])
+    let expected: [(LogLevel, [String], String)] = [
+      (.debug, ["debug", "info", "default", "error", "fault"], "debug"),
+      (.info, ["info", "default", "error", "fault"], "info"),
+      (.default, ["default", "error", "fault"], "default"),
+      (.error, ["error", "fault"], "default"),
+      (.fault, ["fault"], "default")
+    ]
+    for (level, types, streamLevel) in expected {
+      let conditions = LogConditions(level: level, subsystem: "dev.example", category: "capture", grep: "A.B")
+      let group = types.map { "logType == \"\($0)\"" }.joined(separator: " OR ")
+      let predicate = "process == \"Probe\" AND (\(group)) AND subsystem == \"dev.example\" AND category == \"capture\" AND eventMessage CONTAINS \"A.B\""
+      #expect(conditions.predicate(bundle: bundle) == predicate)
+      #expect(DeviceLogs.streamArguments(udid: "SIM-ON", predicate: predicate, level: level)
+        == ["simctl", "spawn", "SIM-ON", "log", "stream", "--style", "ndjson", "--level", streamLevel, "--predicate", predicate])
+    }
   }
 
   @Test func machOUUIDs() {
@@ -199,13 +296,7 @@ struct DeviceLogLineTests {
     // A fat file with two slices.
     let slice = fakeMachO(uuid: uuid)
     func be(_ value: UInt32) -> [UInt8] { withUnsafeBytes(of: value.bigEndian, Array.init) }
-    var fat = be(0xCAFE_BABE) + be(2)
-    fat += be(0x0100_000C) + be(0) + be(64) + be(UInt32(slice.count)) + be(0)
-    fat += be(0x0100_0007) + be(3) + be(256) + be(UInt32(slice.count)) + be(0)
-    var data = Data(fat)
-    data += Data(count: 64 - data.count) + slice
-    data += Data(count: 256 - data.count) + slice
-    #expect(MachO.uuids(data).count == 2)
+    #expect(MachO.uuids(fakeFatMachO(slice, slice)).count == 2)
 
     // A slice far into the file (a large first slice) is read at its offset.
     let other = fakeMachO(uuid: Array(0x21 ... 0x30))
@@ -347,11 +438,12 @@ struct DeviceLogsCommandTests {
     #expect(object["count"] as? Int == 1)
     #expect(object["skippedEvents"] as? Int == 1)
     #expect(object["filter"] is NSNull)
+    #expect(Set(object.keys) == ["ok", "backend", "device", "filter", "range", "count", "entries", "skippedEvents", "limitations"])
     let range = try #require(object["range"] as? [String: Any])
     #expect(range["requestedSince"] as? String == "2026-11-11T00:20:00Z")
     #expect(range["firstEntryAt"] as? String == "2026-11-11T00:20:48.096118Z")
     #expect((object["device"] as? [String: Any])?["udid"] as? String == "SIM-ON")
-    #expect(calls.value.first?.prefix(5) == ["simctl", "spawn", "SIM-ON", "log", "show"])
+    #expect(calls.value.first == ["simctl", "spawn", "SIM-ON", "log", "show", "--style", "ndjson", "--info", "--debug", "--start", "@1794356400"])
   }
 
   @Test func keepsTheLinesOfTheApp() throws {
@@ -370,6 +462,50 @@ struct DeviceLogsCommandTests {
     #expect((object["filter"] as? [String: Any])?["executablePath"] as? String == app.appendingPathComponent("Probe").path)
     #expect((object["limitations"] as? [String])?.contains(DeviceLogs.bundleLimitation) == true)
     #expect(calls.value.first?.suffix(2) == ["--predicate", #"process == "Probe""#])
+  }
+
+  @Test func limitCountsBothSlicesAfterTheTimeAndUUIDChecks() throws {
+    let home = try temporaryHome()
+    let app = try fakeApp(in: home)
+    let first = "11121314-1516-1718-191A-1B1C1D1E1F20"
+    let second = "21222324-2526-2728-292A-2B2C2D2E2F30"
+    try fakeFatMachO(fakeMachO(uuid: Array(0x11 ... 0x20)), fakeMachO(uuid: Array(0x21 ... 0x30)))
+      .write(to: app.appendingPathComponent("Probe"))
+    let output = CapturedOutput()
+    let calls = Locked<[[String]]>([])
+    let lines = [
+      fakeLogLine("probe too early", time: "2026-11-11 09:19:00+0900", uuid: second),
+      fakeLogLine("probe evicted", uuid: first),
+      fakeLogLine("probe second slice", time: "2026-11-11 09:22:00+0900", uuid: second.lowercased()),
+      fakeLogLine("probe first slice", time: "2026-11-11 09:23:00+0900", uuid: first),
+      fakeLogLine("probe other build", time: "2026-11-11 09:24:00+0900"),
+      fakeLogLine("probe too late", time: "2026-11-11 09:26:00+0900", uuid: second)
+    ]
+    let tools = fakeLogTools(home: home, output: output, xcrun: { _ in app.path }, stream: fakeStream(lines, calls: calls))
+    let options = options("SIM-ON") {
+      $0.bundleID = "com.example.probe"
+      $0.conditions = LogConditions(level: .default, subsystem: "com.example.probe", grep: "probe")
+      $0.limit = 2
+    }
+    #expect(DeviceLogs.run(options, tools: tools, now: now) == 0)
+    let predicate = #"process == "Probe" AND (logType == "default" OR logType == "error" OR logType == "fault") AND subsystem == "com.example.probe" AND eventMessage CONTAINS "probe""#
+    #expect(calls.value.first?.suffix(2) == ["--predicate", predicate])
+    let object = output.object
+    let filter = try #require(object["filter"] as? [String: Any])
+    #expect(filter["bundleID"] as? String == "com.example.probe")
+    #expect(filter["executablePath"] as? String == app.appendingPathComponent("Probe").path)
+    #expect(filter["imageUUIDs"] as? [String] == [first, second])
+    #expect(filter["level"] as? String == "default")
+    #expect(filter["subsystem"] as? String == "com.example.probe")
+    #expect(filter["grep"] as? String == "probe")
+    #expect(filter["category"] == nil)
+    #expect(object["matchedCount"] as? Int == 3)
+    #expect(object["count"] as? Int == 2)
+    #expect(object["truncated"] as? Bool == true)
+    #expect((object["entries"] as? [[String: Any]])?.compactMap { $0["message"] as? String } == ["probe second slice", "probe first slice"])
+    let range = try #require(object["range"] as? [String: Any])
+    #expect(range["firstEntryAt"] as? String == "2026-11-11T00:22:00Z")
+    #expect(range["lastEntryAt"] as? String == "2026-11-11T00:23:00Z")
   }
 
   @Test func anAppThatIsNotThereIsLogAppUnavailable() throws {
@@ -464,6 +600,40 @@ struct DeviceLogsCommandTests {
     #expect(missing.object["code"] as? String == "logs_unavailable")
   }
 
+  @Test func readsAnArchiveWithFiltersAndNoMatches() throws {
+    let home = try temporaryHome()
+    let archive = home.appendingPathComponent("d.logarchive", isDirectory: true)
+    try FileManager.default.createDirectory(at: archive, withIntermediateDirectories: true)
+    let output = CapturedOutput()
+    let calls = Locked<[[String]]>([])
+    let tools = fakeLogTools(home: home, output: output, stream: fakeStream([], calls: calls))
+    let options = options("SIM-ON") {
+      $0.archive = archive.path
+      $0.since = .ago(300)
+      $0.conditions = LogConditions(level: .fault, category: "capture")
+      $0.limit = Int.max
+      $0.output = "filtered.json"
+    }
+    #expect(DeviceLogs.run(options, tools: tools, now: now) == 0)
+    #expect(calls.value.first == ["show", "--archive", archive.path, "--style", "ndjson", "--info", "--debug", "--start", "@1794356400",
+                                  "--predicate", #"(logType == "fault") AND category == "capture""#])
+    let summary = output.object
+    let path = try #require(summary["path"] as? String)
+    let data = try Data(contentsOf: URL(fileURLWithPath: path))
+    let file = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    for object in [summary, file] {
+      #expect(object["count"] as? Int == 0)
+      #expect(object["matchedCount"] as? Int == 0)
+      #expect(object["truncated"] as? Bool == false)
+      #expect(object["filter"] as? [String: String] == ["level": "fault", "category": "capture"])
+      let range = try #require(object["range"] as? [String: Any])
+      #expect(range["firstEntryAt"] is NSNull)
+      #expect(range["lastEntryAt"] is NSNull)
+    }
+    #expect(summary["entries"] == nil)
+    #expect((file["entries"] as? [[String: Any]])?.isEmpty == true)
+  }
+
   @Test func writesANewFileWithMinusO() throws {
     let home = try temporaryHome()
     let output = CapturedOutput()
@@ -523,9 +693,56 @@ struct DeviceLogsCommandTests {
     #expect(DeviceLogs.run(options("SIM-ON") { $0.follow = true }, tools: tools, now: now) == 143)
     let objects = output.objects
     #expect(objects.map { $0["type"] as? String } == ["start", "log", "log", "end"])
+    #expect(objects.first?["filter"] is NSNull)
+    #expect(Set(try #require(objects.last).keys) == ["type", "ok", "count", "reason"])
     #expect(objects.last?["count"] as? Int == 2)
     #expect(objects.last?["reason"] as? String == "SIGTERM")
     #expect(objects[1]["message"] as? String == "one")
+  }
+
+  @Test func followReadsAMultilinePredicateNotice() throws {
+    let message = "first\r\n\n{\"eventType\":\"logEvent\"}"
+    let lines = [
+      Data(#"Filtering the log data using "composedMessage CONTAINS "first"#.utf8) + Data("\r".utf8),
+      Data(),
+      Data(#"{\"eventType\":\"logEvent\"}"""#.utf8),
+      fakeLogLine(message)
+    ]
+    let output = CapturedOutput()
+    let tools = fakeLogTools(home: try temporaryHome(), output: output,
+                             stream: fakeStream(lines, exit: LogToolExit(status: 0, stopped: .signal(SIGINT))))
+    let options = options("SIM-ON") {
+      $0.follow = true
+      $0.conditions.grep = message
+    }
+    #expect(DeviceLogs.run(options, tools: tools, now: now) == 130)
+    #expect(output.objects.compactMap { $0["type"] as? String } == ["start", "log", "end"])
+    #expect(output.objects.compactMap { $0["message"] as? String } == [message])
+  }
+
+  @Test func followDoesNotIgnoreErrorsWhenThePredicateHasNewlines() throws {
+    let options = options("SIM-ON") {
+      $0.follow = true
+      $0.conditions.grep = "first\nsecond\nthird"
+    }
+    let notice = Data(#"Filtering the log data using "composedMessage CONTAINS "first"#.utf8)
+    let output = CapturedOutput()
+    // The first JSON can be a non-log event. Invalid lines after it still stop the stream.
+    let lines = [notice, fakeLogLine("activity", event: "activityCreateEvent"), Data("garbage".utf8)]
+    let tools = fakeLogTools(home: try temporaryHome(), output: output, stream: fakeStream(lines))
+    #expect(DeviceLogs.run(options, tools: tools, now: now) == 1)
+    let error = try #require(output.objects.last)
+    #expect(error["type"] as? String == "error")
+    #expect(error["error"] as? String == "log stream printed a line that is not JSON; stopped")
+
+    let startup = CapturedOutput()
+    let failed = LogToolExit(status: 64, stderr: "log: Bad predicate")
+    let startupTools = fakeLogTools(home: try temporaryHome(), output: startup,
+                                    stream: fakeStream([notice, Data("second".utf8)], exit: failed))
+    #expect(DeviceLogs.run(options, tools: startupTools, now: now) == 1)
+    let startupError = try #require(startup.objects.last)
+    #expect(startupError["type"] as? String == "error")
+    #expect((startupError["error"] as? String)?.contains("log stream failed (64): log: Bad predicate") == true)
   }
 
   @Test func followEndsAtOnceWhenALineIsStuck() throws {
@@ -596,11 +813,25 @@ struct DeviceLogsCommandTests {
     let home = try temporaryHome()
     let app = try fakeApp(in: home)
     let output = CapturedOutput()
-    let lines = [fakeLogLine("mine", uuid: "11121314-1516-1718-191A-1B1C1D1E1F20"), fakeLogLine("not mine")]
+    let calls = Locked<[[String]]>([])
+    let lines = [fakeLogLine("mine", type: "Info", uuid: "11121314-1516-1718-191A-1B1C1D1E1F20"), fakeLogLine("other build mine")]
     let tools = fakeLogTools(home: home, output: output, xcrun: { _ in app.path },
-                             stream: fakeStream(lines, exit: LogToolExit(status: 0, stopped: .signal(SIGINT))))
-    #expect(DeviceLogs.run(options("SIM-ON") { $0.follow = true; $0.bundleID = "com.example.probe" }, tools: tools, now: now) == 130)
+                             stream: fakeStream(lines, exit: LogToolExit(status: 0, stopped: .signal(SIGINT)), calls: calls))
+    let options = options("SIM-ON") {
+      $0.follow = true
+      $0.bundleID = "com.example.probe"
+      $0.conditions = LogConditions(level: .info, grep: "mine")
+    }
+    #expect(DeviceLogs.run(options, tools: tools, now: now) == 130)
     #expect(output.objects.filter { $0["type"] as? String == "log" }.map { $0["message"] as? String } == ["mine"])
+    #expect(calls.value.first?.suffix(4) == [
+      "--level", "info", "--predicate",
+      #"process == "Probe" AND (logType == "info" OR logType == "default" OR logType == "error" OR logType == "fault") AND eventMessage CONTAINS "mine""#
+    ])
+    let filter = try #require(output.object["filter"] as? [String: Any])
+    #expect(filter["bundleID"] as? String == "com.example.probe")
+    #expect(filter["level"] as? String == "info")
+    #expect(filter["grep"] as? String == "mine")
   }
 
   @Test func theLiveToolsAndTheWorkDirectory() throws {
