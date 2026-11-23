@@ -7,7 +7,7 @@ When a check fails, read what the app logged and whether it crashed, besides the
 | Past log | Yes | No: collecting needs a Mac administrator; relay does not run sudo (`logs_permission_denied`) |
 | `--follow` | Yes | No (`logs_follow_unsupported`) |
 | `--bundle-id` | Yes | No (`logs_filter_unsupported`) |
-| Filters: `--level`, `--subsystem`, `--category`, `--grep`, `--limit` | Yes | Only with `--archive`, not on the device itself |
+| Filters: `--level`, `--subsystem`, `--category`, `--grep`, `--limit` | Yes | Yes, on the collected archive (collecting needs a Mac administrator; not checked with a device archive) |
 | Crash report list | With process, bundle ID, and crash time | Candidates by file name only; the reports are not opened |
 | Saving reports (`-o <dir>`) | Yes | Only the one `--name <relativePath>` chooses (not verified) |
 
