@@ -36,10 +36,36 @@ struct LogTargetOptions: Equatable {
   var udid: String?
 }
 
+/// Unified Logging severities, from least to most severe.
+enum LogLevel: String, CaseIterable {
+  case debug, info, `default`, error, fault
+
+  var includedLevels: ArraySlice<LogLevel> {
+    Self.allCases.drop(while: { $0 != self })
+  }
+
+  var streamLevel: String {
+    switch self {
+    case .debug, .info: rawValue
+    case .default, .error, .fault: "default"
+    }
+  }
+}
+
+struct LogConditions: Equatable {
+  var level: LogLevel?
+  var subsystem: String?
+  var category: String?
+  var grep: String?
+}
+
 /// `relay logs`: the unified log of an app or of the whole device (see `DeviceLogs`).
 struct LogsOptions: Equatable {
   /// `--bundle-id <id>` (`host` for the runner's host app): the log of its main executable only.
   var bundleID: String?
+  var conditions = LogConditions()
+  /// The latest N matching entries from a finite read.
+  var limit: Int?
   /// `--since`; nil is the last 5 minutes, or the whole archive with `--archive`.
   var since: LogSince?
   /// `--follow`: new lines as NDJSON until SIGINT or SIGTERM (simulators only).
@@ -65,14 +91,38 @@ struct CrashesOptions: Equatable {
 }
 
 extension Arguments {
-  /// `relay logs [--bundle-id <id>] [--since <time>] [--follow] [--archive <path>] [-o <file>]
-  /// [--session <name> | --runner <path> | --udid <udid>]`.
+  static let logTextOptions: Set<String> = ["--subsystem", "--category", "--grep"]
+
   static func parseLogs(_ raw: [String]) throws -> Command {
     var options = LogsOptions()
     var rest = raw[...]
-    while let option = rest.popFirst() {
+    while let argument = rest.popFirst() {
+      let parts = argument.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+      let name = String(parts[0])
+      let option = logTextOptions.contains(name) ? name : argument
+      func textValue() throws -> String {
+        let value = try parts.count == 2 ? String(parts[1]) : logValue(for: option, from: &rest)
+        guard !value.isEmpty else {
+          throw ArgumentError(description: "\(option) requires a nonempty value")
+        }
+        return value
+      }
       switch option {
       case "--bundle-id": options.bundleID = try logValue(for: option, from: &rest)
+      case "--level":
+        let value = try logValue(for: option, from: &rest)
+        guard let level = LogLevel(rawValue: value) else {
+          throw ArgumentError(description: "--level requires debug, info, default, error, or fault")
+        }
+        options.conditions.level = level
+      case "--subsystem": options.conditions.subsystem = try textValue()
+      case "--category": options.conditions.category = try textValue()
+      case "--grep": options.conditions.grep = try textValue()
+      case "--limit":
+        guard let limit = Int(try logValue(for: option, from: &rest)), limit >= 1 else {
+          throw ArgumentError(description: "--limit requires an integer of at least 1")
+        }
+        options.limit = limit
       case "--since": options.since = try LogSince.parse(try logValue(for: option, from: &rest))
       case "--follow": options.follow = true
       case "--archive": options.archive = try logValue(for: option, from: &rest)
@@ -88,6 +138,9 @@ extension Arguments {
     }
     if options.follow, options.archive != nil {
       throw ArgumentError(description: "--follow cannot read an --archive; pass one of them")
+    }
+    if options.follow, options.limit != nil {
+      throw ArgumentError(description: "--limit cannot be used with --follow")
     }
     return .logs(options)
   }

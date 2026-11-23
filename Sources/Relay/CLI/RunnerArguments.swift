@@ -497,9 +497,10 @@ extension Arguments {
     ),
     "logs": (
       """
-      relay logs [--bundle-id <id>] [--since 5m] [-o <file>] [<target>]
-        relay logs --follow [--bundle-id <id>] [-o <file>] [<target>]
-        relay logs --archive <path> [--since <time>] [-o <file>] [<target>]
+      relay logs [--bundle-id <id>] [--since 5m] [<filters>] [--limit <N>] [-o <file>] [<target>]
+        relay logs --follow [--bundle-id <id>] [<filters>] [-o <file>] [<target>]
+        relay logs --archive <path> [--since <time>] [<filters>] [--limit <N>] [-o <file>] [<target>]
+        <filters>: --level <level> | --subsystem <name> | --category <name> | --grep <text>
         <target>: --session <name> | --runner <path> | --udid <udid>
       """,
       """
@@ -510,6 +511,12 @@ extension Arguments {
       starts; 5 minutes by default. Note the time before a test, and pass it after a failure.
       --bundle-id <id> (host: the runner's host app) keeps the lines of the app's main executable as
       installed now (its UUID): not its extensions, nor lines of an earlier build.
+      --level keeps that severity and above, from debug, info, default, error, to fault.
+      --subsystem and --category match the whole value. --grep matches a case-sensitive literal
+      substring of the message. Filters can be combined. The text values must be nonempty.
+      --limit <N> keeps the newest N matches in chronological order (N >= 1); incompatible with
+      --follow. With --limit, count is the returned count, matchedCount is the total matched,
+      and truncated says whether any matches were omitted.
       Prints one JSON object: {"ok":true,"backend":..,"count":n,"device":{..},"entries":[{"category":..,
       "level":..,"message":..,"process":..,"processID":..,"subsystem":..,"timestamp":..}],"filter":..,
       "limitations":[..],"range":{..}}. -o <file> writes it to a new file (mode 0600) and prints a

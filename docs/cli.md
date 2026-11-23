@@ -98,7 +98,7 @@ relay crashes                                  # 直近 24 時間のクラッシ
 | `stop` | `relay start` への SIGTERM（なければ `POST /shutdown`） | – |
 | `run`（実験的） | 手順ごとに上のエンドポイント | `<file>` か `-` か `--step <手順>`（複数可）、`--runner`、`--session`、`--quiet` |
 | `record start` / `stop` / `status` | –（ホスト側で録画） | `-o <file>`、`--force`、`--max-duration <s>`（start）、`--json`（status）、`--port <n>`（stop・status）、`--runner`、`--session` |
-| `logs` | –（ホスト側で `log` を読む） | `--bundle-id <id>`、`--since <時間>`、`--follow`、`--archive <path>`、`-o <file>`、`--session`・`--runner`・`--udid` |
+| `logs` | –（ホスト側で `log` を読む） | `--bundle-id <id>`、`--since <時間>`、`--follow`、`--archive <path>`、`--level <level>`、`--subsystem <name>`、`--category <name>`、`--grep <text>`、`--limit <N>`、`-o <file>`、`--session`・`--runner`・`--udid` |
 | `crashes` | –（ホスト側で記録を読む） | `--bundle-id <id>`、`--since <時間>`、`--name <relativePath>`、`-o <dir>`、`--session`・`--runner`・`--udid` |
 | `install` / `uninstall` | –（ホスト側で `simctl`・`devicectl`） | `<path>`（install）、`<bundle-id>`（uninstall）、`--session`・`--runner`・`--udid` |
 
@@ -462,7 +462,7 @@ relay 自身は次の `code` を出します。ランナーは返しません。
 | `screen_not_stable` | `6` | `wait --stable --require` が時間切れになりました。`stable` と `waitedMs` が付きます。 |
 | `element_still_present` | `6` | `find --gone --require` で、時間内に一致する要素がなくならなかった（`count`・`elements`・`gone` も付く） |
 | `device_unavailable` | `1` | `logs`・`crashes` で、UDID の端末がない、シミュレータが boot していない（logs）、実機が接続していない |
-| `logs_unavailable` | `1` | `log` が失敗した・時間切れ・読めない行を出した、出す JSON が 64 MiB を超えた |
+| `logs_unavailable` | `1` | `log` が失敗した・時間切れ・読めない行を出した、出力用に保持する行が 64 MiB の目安を超えた |
 | `logs_permission_denied` | `1` | 実機のログの収集に管理者の権限が要る（`hint` に自分で実行するコマンド） |
 | `logs_follow_unsupported` | `1` | 実機の `logs --follow` |
 | `logs_filter_unsupported` | `1` | 実機の `logs --bundle-id`、`--archive` と `--bundle-id` の併用 |
@@ -919,6 +919,7 @@ relay: no frame for 5s (the device may be locked, or the capture stalled); still
 ```sh
 date -u +%Y-%m-%dT%H:%M:%SZ          # テストの前に時刻を控える（例: 2026-11-11T01:40:24Z）
 relay logs --bundle-id com.example.app --since 2026-11-11T01:40:24Z   # その後のアプリのログ
+relay logs --udid <UDID> --bundle-id com.example.app --level error --subsystem com.example.app --category network --grep 'request failed' --limit 20
 relay logs --since 10m -o app-logs.json                              # 端末全体の直近 10 分をファイルに
 relay logs --follow --bundle-id com.example.app                      # 新しい行を NDJSON で流し続ける（Ctrl-C で止める）
 relay crashes --since 2026-11-11T01:40:24Z                           # その後のクラッシュ記録の一覧
@@ -986,10 +987,26 @@ JSON の `filter` に、比べたバンドル ID・実行ファイル・UUID が
 
 確かめた環境: iPhone 18 Pro シミュレータ（iOS 27.2）、macOS 27.2.1、Xcode 27.2。確認用アプリの 8 行を、1.3〜2.0 秒で取れました。
 
+### 重大度・メッセージで絞る
+
+次の条件は、通常の読み出し・`--follow`・`--archive` で使えます。複数指定すると、すべての条件を満たす行が残ります。
+
+| オプション | 条件 |
+| --- | --- |
+| `--level <level>` | 指定した重大度以上。低いほうから `debug`、`info`、`default`、`error`、`fault` の順です。 |
+| `--subsystem <name>` | subsystem の完全一致。 |
+| `--category <name>` | category の完全一致。 |
+| `--grep <text>` | メッセージ内のリテラル部分一致。大文字小文字を区別します。 |
+
+空の値は終了コード `2` です。テキストが `--` で始まる場合は、`--grep=--example` のように渡します。
+
+`--limit <N>` は、時刻・UUID を含むすべての照合を通った行を走査し、最新の N 件を古い順に返します。N は 1 以上の整数です。
+通常の読み出しと `--archive` で使えます。0 件なら空の配列を返し、終了コードは `0` です。
+
 ### ログを追う（--follow）
 
 `--follow` は、新しい行を NDJSON（1 行に JSON 1 つ）で stdout に出し続けます。シミュレータでだけ使えます。
-`xcrun simctl spawn <UDID> log stream --style ndjson --level debug` で読むので、Debug の行も出ます。
+`--level` の指定がない場合は、`xcrun simctl spawn <UDID> log stream --style ndjson --level debug` で読むので、Debug の行も出ます。
 
 SIGINT（Ctrl-C）か SIGTERM で止まり、relay は `log stream` を止めてから終わります。
 
@@ -1001,7 +1018,7 @@ SIGINT（Ctrl-C）か SIGTERM で止まり、relay は `log stream` を止めて
 | `error` | 途中で失敗したときの最後の 1 行で、`ok:false`・`code`・`partial:true` を持ちます。 |
 
 `start` は `log stream` を起動したという意味で、その直後の行がすべて届く保証ではありません。
-`--follow` に `--since`・`--archive` は付けられません（`2`）。過去の分と続けて読むときは、別々に実行してください。
+`--follow` に `--since`・`--archive`・`--limit` は付けられません（`2`）。過去の分と続けて読むときは、別々に実行してください。
 
 | 終わり方 | 終了コード |
 | --- | --- |
@@ -1038,7 +1055,7 @@ then relay logs --archive <dir>/device.logarchive --udid <UDID>
 
 `relay` 全体を sudo で動かす使い方は勧めません。HOME が変わり、別の runner.json を探すことがあるためです。
 管理者の権限で収集した場合の所要時間・取れる期間は、確かめていません。
-`--archive` は、実物の logarchive では確かめていません。テストで使ったのは、`log show` の出力を模した行だけです。
+`--archive` の絞り込みは、シミュレータで収集した logarchive で確かめました。実機から収集した logarchive での動作は未確認です。
 
 確かめた環境: USB 接続の iPhone 14 Pro（iOS 26.7.1）、macOS 27.2.1、Xcode 27.2。一般のユーザーで 0.3 秒ほどで `logs_permission_denied` になりました。
 管理者でないアカウントでは、`sudo log collect` も `is not in the sudoers file` で実行できませんでした。
@@ -1051,11 +1068,14 @@ then relay logs --archive <dir>/device.logarchive --udid <UDID>
 | --- | --- |
 | `ok`・`backend` | 成功か、読んだ方法（`simctl`・`log collect`・`archive`） |
 | `device` | UDID・名前・種類・OS（archive では分かる範囲） |
-| `filter` | `--bundle-id` の絞り込み（なければ null） |
+| `filter` | `--bundle-id` の `bundleID`・`executablePath`・`imageUUIDs` と、指定した `level`・`subsystem`・`category`・`grep`（絞り込みがなければ null） |
 | `range` | `requestedSince`・`until`・`firstEntryAt`・`lastEntryAt`（UTC） |
-| `count`・`entries` | 行の数と、行の配列 |
+| `count`・`entries` | 返した行の数と、行の配列 |
+| `matchedCount`・`truncated` | `--limit` 指定時の全一致件数と、件数制限で省いた行があるか |
 | `skippedEvents` | ログの行でない event（activity など）の数 |
 | `limitations` | 取れないものの説明 |
+
+`--limit` を指定した場合、`range.firstEntryAt` は返した `entries` の先頭行の時刻です。
 
 `entries` の各行は、`timestamp`（UTC）・`level`・`processID`・`process`・`subsystem`・`category`・`message` を持ちます。
 OS が出さない項目は null です。`level` は OS の `messageType` を小文字にしたもの（`default`・`info`・`debug`・`error` など）です。
@@ -1063,7 +1083,7 @@ OS が出さない項目は null です。`level` は OS の `messageType` を�
 `-o <file>` を付けると、同じ JSON を新しいファイル（パーミッション 0600）に書き、`entries` の代わりに `path` を持つ要約を stdout に出します。
 同じ名前のファイルがあれば上書きせず、`logs_save_failed` で `1` です。
 
-出す JSON が 64 MiB を超えると、`logs_unavailable` で `1` です。`--since` を後にするか、`--bundle-id` で絞ってください。
+出力用に保持する行が 64 MiB の目安を超えると、`logs_unavailable` で `1` です。`--since` を後にするか、条件を追加して絞り込むか、`--limit` を指定してください。すでに `--limit` を指定している場合は、値を小さくしてください。
 `log` が JSON でない行を出したときも、行を飛ばさずに `logs_unavailable` で失敗します。
 
 確かめた環境: iPhone 18 Pro シミュレータ（iOS 27.2）、macOS 27.2.1、Xcode 27.2。端末全体の 3 分は約 7,700 行で、1.3 秒でした。

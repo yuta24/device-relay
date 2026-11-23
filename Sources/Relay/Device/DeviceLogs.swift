@@ -192,6 +192,31 @@ struct LogFilter: Equatable {
   }
 }
 
+extension LogConditions {
+  func predicate(bundle: LogFilter? = nil) -> String? {
+    var clauses: [String] = []
+    if let bundle { clauses.append(bundle.predicate) }
+    if let level {
+      let levels = level.includedLevels.map { "logType == \(DeviceLogs.predicateLiteral($0.rawValue))" }
+      // Group the OR so that every severity still has to match the other conditions.
+      clauses.append("(" + levels.joined(separator: " OR ") + ")")
+    }
+    if let subsystem { clauses.append("subsystem == \(DeviceLogs.predicateLiteral(subsystem))") }
+    if let category { clauses.append("category == \(DeviceLogs.predicateLiteral(category))") }
+    if let grep { clauses.append("eventMessage CONTAINS \(DeviceLogs.predicateLiteral(grep))") }
+    return clauses.isEmpty ? nil : clauses.joined(separator: " AND ")
+  }
+
+  func json(bundle: LogFilter? = nil) -> Any {
+    var object = bundle?.json ?? [:]
+    object["level"] = level?.rawValue
+    object["subsystem"] = subsystem
+    object["category"] = category
+    object["grep"] = grep
+    return object.isEmpty ? NSNull() : object
+  }
+}
+
 /// The LC_UUID of each architecture of a Mach-O file, thin or fat.
 enum MachO {
   /// How much of a slice is read for its load commands, which come right after its header.
@@ -263,20 +288,33 @@ struct LogCollector {
   var until: Date?
   var filter: LogFilter?
   /// The most JSON relay prints (about: each line's message and a fixed size for the rest).
-  var maxBytes = DeviceLogs.maxOutputBytes
+  let maxBytes: Int
+  let limit: Int?
 
-  private(set) var entries: [LogEntry] = []
+  private var buffer: [LogEntry] = []
+  private var oldestIndex = 0
+  var entries: [LogEntry] {
+    guard oldestIndex != 0 else { return buffer }
+    return Array(buffer[oldestIndex...] + buffer[..<oldestIndex])
+  }
+
+  private(set) var matchedCount = 0
   /// Events that are not log lines (`activityCreateEvent`, ...).
   private(set) var skipped = 0
   private(set) var failure: LogFailure?
   private var bytes = 0
   private var lineNumber = 0
 
-  init(since: Date?, until: Date?, filter: LogFilter?, maxBytes: Int = DeviceLogs.maxOutputBytes) {
+  init(since: Date?, until: Date?, filter: LogFilter?, limit: Int? = nil, maxBytes: Int = DeviceLogs.maxOutputBytes) {
     self.since = since
     self.until = until
     self.filter = filter
+    self.limit = limit
     self.maxBytes = maxBytes
+  }
+
+  private func byteCost(_ entry: LogEntry) -> Int {
+    200 + (entry.message?.utf8.count ?? 0)
   }
 
   /// False once it has to stop: a line it cannot read, or too much to print (`failure`).
@@ -287,13 +325,23 @@ struct LogCollector {
       if let since, entry.date < since { return true }
       if let until, entry.date > until { return true }
       if let filter, !filter.keeps(entry) { return true }
-      bytes += 200 + (entry.message?.utf8.count ?? 0)
-      guard bytes <= maxBytes else {
+      // log show emits entries from oldest to newest. Replace the oldest only after the ring fills.
+      let replacingOldest = buffer.count == limit
+      let retainedBytes = bytes - (replacingOldest ? byteCost(buffer[oldestIndex]) : 0) + byteCost(entry)
+      guard retainedBytes <= maxBytes else {
+        let limitAdvice = limit == nil ? "use --limit" : "use a smaller --limit"
         failure = LogFailure(code: .logsUnavailable, message: "the log is larger than \(maxBytes / 1024 / 1024) MiB; "
-          + "give a later --since, or --bundle-id")
+          + "give a later --since, narrow the filters (for example, --level or --subsystem), or \(limitAdvice)")
         return false
       }
-      entries.append(entry)
+      bytes = retainedBytes
+      matchedCount += 1
+      if replacingOldest {
+        buffer[oldestIndex] = entry
+        oldestIndex = (oldestIndex + 1) % buffer.count
+      } else {
+        buffer.append(entry)
+      }
     case .otherEvent:
       skipped += 1
     case .summary, .notice:
@@ -332,10 +380,26 @@ enum DeviceLogs {
     "@\(Int64(date.timeIntervalSince1970.rounded(.down)))"
   }
 
-  /// `process == "<name>"`, with `\` and `"` escaped.
+  /// Quote a literal for the predicate parser.
+  static func predicateLiteral(_ value: String) -> String {
+    var quoted = "\""
+    // A combining mark can share a grapheme with a quote or backslash.
+    for scalar in value.unicodeScalars {
+      switch scalar {
+      case "\"": quoted += "\\\""
+      case "\\": quoted += "\\\\"
+      case "\n": quoted += "\\n"
+      case "\r": quoted += "\\r"
+      case "\t": quoted += "\\t"
+      default: quoted.unicodeScalars.append(scalar)
+      }
+    }
+    quoted += "\""
+    return quoted
+  }
+
   static func predicate(process: String) -> String {
-    let escaped = process.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
-    return "process == \"\(escaped)\""
+    "process == \(predicateLiteral(process))"
   }
 
   static func showArguments(udid: String, since: Date, predicate: String?) -> [String] {
@@ -343,16 +407,18 @@ enum DeviceLogs {
       + (predicate.map { ["--predicate", $0] } ?? [])
   }
 
-  static func streamArguments(udid: String, predicate: String?) -> [String] {
-    ["simctl", "spawn", udid, "log", "stream", "--style", "ndjson", "--level", "debug"] + (predicate.map { ["--predicate", $0] } ?? [])
+  static func streamArguments(udid: String, predicate: String?, level: LogLevel? = nil) -> [String] {
+    ["simctl", "spawn", udid, "log", "stream", "--style", "ndjson", "--level", level?.streamLevel ?? "debug"]
+      + (predicate.map { ["--predicate", $0] } ?? [])
   }
 
   static func collectArguments(udid: String, since: Date, output: String) -> [String] {
     ["collect", "--device-udid", udid, "--start", epoch(since), "--output", output]
   }
 
-  static func archiveArguments(path: String, since: Date?) -> [String] {
+  static func archiveArguments(path: String, since: Date?, predicate: String? = nil) -> [String] {
     ["show", "--archive", path, "--style", "ndjson", "--info", "--debug"] + (since.map { ["--start", epoch($0)] } ?? [])
+      + (predicate.map { ["--predicate", $0] } ?? [])
   }
 
   /// What a line of `log --style ndjson` is.
@@ -429,6 +495,7 @@ enum DeviceLogs {
     extra: [String: Any] = [:]
   ) -> [String: Any] {
     var object = extra
+    let entries = collector.entries
     object["ok"] = true
     object["backend"] = backend
     object["device"] = device
@@ -436,11 +503,15 @@ enum DeviceLogs {
     object["range"] = [
       "requestedSince": nullable(since.map { LogTime.string($0) }),
       "until": nullable(until.map { LogTime.string($0) }),
-      "firstEntryAt": nullable(collector.entries.first.map { LogTime.string($0.date) }),
-      "lastEntryAt": nullable(collector.entries.last.map { LogTime.string($0.date) })
+      "firstEntryAt": nullable(entries.first.map { LogTime.string($0.date) }),
+      "lastEntryAt": nullable(entries.last.map { LogTime.string($0.date) })
     ]
-    object["count"] = collector.entries.count
-    object["entries"] = collector.entries.map(\.json)
+    object["count"] = entries.count
+    object["entries"] = entries.map(\.json)
+    if collector.limit != nil {
+      object["matchedCount"] = collector.matchedCount
+      object["truncated"] = collector.matchedCount > entries.count
+    }
     object["skippedEvents"] = collector.skipped
     object["limitations"] = limitations
     return object
@@ -528,7 +599,7 @@ enum DeviceLogs {
       let target = try LogTarget.resolve(options.target, tools: tools, optional: true)
       if options.bundleID != nil {
         throw LogFailure(code: .logsFilterUnsupported, message: "--bundle-id cannot be used with --archive yet: "
-          + "relay cannot tell which lines of an archive are the app's; pass --since only")
+          + "relay cannot tell which lines of an archive are the app's; leave out --bundle-id")
       }
       let url = RunnerLocator.resolve(archive, in: tools.currentDirectory)
       var isDirectory: ObjCBool = false
@@ -536,7 +607,7 @@ enum DeviceLogs {
         throw LogFailure(code: .logsUnavailable, message: "no .logarchive at \(url.path)")
       }
       let device: Any = target.map { ["udid": $0.udid, "name": nullable($0.info?.name), "kind": NSNull(), "os": NSNull()] } ?? NSNull()
-      return try show(archive: url, backend: "archive", device: device, since: since, until: nil, tools: tools, output: output,
+      return try show(archive: url, backend: "archive", device: device, since: since, until: nil, options: options, tools: tools, output: output,
                       limitations: ["the archive is not checked against the device: deviceVerified is false"],
                       extra: ["deviceVerified": false])
     }
@@ -554,11 +625,12 @@ enum DeviceLogs {
       }
       let limitations = simulatorLimitations + (filter == nil ? [] : [bundleLimitation])
       if options.follow {
-        return try follow(device: device, filter: filter, limitations: limitations, output: output, tools: tools)
+        return try follow(device: device, filter: filter, conditions: options.conditions, limitations: limitations, output: output, tools: tools)
       }
-      var collector = LogCollector(since: since, until: now, filter: filter)
-      try collect(into: &collector, "/usr/bin/xcrun", showArguments(udid: device.udid, since: since!, predicate: filter?.predicate), tools: tools)
-      let object = result(backend: "simctl", device: LogTarget.json(device), filter: nullable(filter?.json), since: since, until: now,
+      var collector = LogCollector(since: since, until: now, filter: filter, limit: options.limit)
+      let args = showArguments(udid: device.udid, since: since!, predicate: options.conditions.predicate(bundle: filter))
+      try collect(into: &collector, "/usr/bin/xcrun", args, tools: tools)
+      let object = result(backend: "simctl", device: LogTarget.json(device), filter: options.conditions.json(bundle: filter), since: since, until: now,
                           collector: collector, limitations: limitations)
       return try finish(object, output: output, tools: tools)
     case .device:
@@ -586,19 +658,20 @@ enum DeviceLogs {
           + "relay does not run sudo: run the hint yourself", hint: collectHint(udid: device.udid, since: since!))
       }
       try check(exit, tool: "log collect", timeout: collectTimeout)
-      return try show(archive: archive, backend: "log collect", device: LogTarget.json(device), since: since, until: now, tools: tools,
+      return try show(archive: archive, backend: "log collect", device: LogTarget.json(device), since: since, until: now, options: options, tools: tools,
                       output: output, limitations: [])
     }
   }
 
   /// `log show --archive`: the JSON of `relay logs` for an archive.
   private static func show(
-    archive: URL, backend: String, device: Any, since: Date?, until: Date?, tools: LogTools, output: URL?, limitations: [String],
+    archive: URL, backend: String, device: Any, since: Date?, until: Date?, options: LogsOptions, tools: LogTools, output: URL?, limitations: [String],
     extra: [String: Any] = [:]
   ) throws -> Int32 {
-    var collector = LogCollector(since: since, until: until, filter: nil)
-    try collect(into: &collector, "/usr/bin/log", archiveArguments(path: archive.path, since: since), tools: tools)
-    let object = result(backend: backend, device: device, filter: NSNull(), since: since, until: until, collector: collector,
+    var collector = LogCollector(since: since, until: until, filter: nil, limit: options.limit)
+    let args = archiveArguments(path: archive.path, since: since, predicate: options.conditions.predicate())
+    try collect(into: &collector, "/usr/bin/log", args, tools: tools)
+    let object = result(backend: backend, device: device, filter: options.conditions.json(), since: since, until: until, collector: collector,
                         limitations: limitations, extra: extra)
     return try finish(object, output: output, tools: tools)
   }
@@ -647,15 +720,41 @@ enum DeviceLogs {
 
   // MARK: - Follow
 
+  private enum FollowPreamble {
+    case waitingForNotice
+    case continuingNotice(Int)
+    case finished
+
+    mutating func consumes(_ line: Line, continuationCount: Int) -> Bool {
+      if case .waitingForNotice = self, case .notice(let text) = line, !text.isEmpty {
+        self = .continuingNotice(continuationCount)
+        return false
+      }
+      switch line {
+      case .entry, .otherEvent, .summary:
+        self = .finished
+      case .notice, .invalid:
+        if case .continuingNotice(let remaining) = self {
+          self = remaining == 1 ? .finished : .continuingNotice(remaining - 1)
+          return true
+        }
+      }
+      return false
+    }
+  }
+
   /// What `--follow` has written, shared with the thread that reads the lines.
   private struct FollowState {
     var count = 0
     var failure: LogFailure?
     var outputClosed = false
+    var preamble = FollowPreamble.waitingForNotice
   }
 
   /// `--follow`: `log stream` of a simulator as NDJSON, until a signal (exit 128 + the signal) or an error.
-  private static func follow(device: Device, filter: LogFilter?, limitations: [String], output: URL?, tools: LogTools) throws -> Int32 {
+  private static func follow(
+    device: Device, filter: LogFilter?, conditions: LogConditions, limitations: [String], output: URL?, tools: LogTools
+  ) throws -> Int32 {
     let fd = try output.map { url throws(LogFailure) in try createNewFile(url) } ?? -1
     var keepOpen = false
     defer { if fd >= 0, !keepOpen { close(fd) } }
@@ -668,13 +767,22 @@ enum DeviceLogs {
     let signals = LogSignals.install(stop)
     defer { LogSignals.uninstall(signals) }
     let start: [String: Any] = ["type": "start", "ok": true, "backend": "simctl", "device": LogTarget.json(device),
-                                "filter": nullable(filter?.json), "startedAt": LogTime.string(Date()), "limitations": limitations]
+                                "filter": conditions.json(bundle: filter), "startedAt": LogTime.string(Date()), "limitations": limitations]
     guard emit(CLIOutput.json(start)) else {
       throw LogFailure(code: .logsSaveFailed, message: "cannot write the log")
     }
     let state = Locked(FollowState())
-    let exit = try tools.stream("/usr/bin/xcrun", streamArguments(udid: device.udid, predicate: filter?.predicate), nil, stop) { raw in
-      switch parse(line: raw) {
+    let args = streamArguments(udid: device.udid, predicate: conditions.predicate(bundle: filter), level: conditions.level)
+    // log stream prints the predicate with LF expanded in its startup notice. The pipe splits on LF,
+    // so only those literal LFs can add notice lines.
+    let continuationCount = [filter?.executableName, conditions.subsystem, conditions.category, conditions.grep]
+      .compactMap { $0 }.reduce(0) { $0 + $1.utf8.count(where: { $0 == UInt8(ascii: "\n") }) }
+    let exit = try tools.stream("/usr/bin/xcrun", args, nil, stop) { raw in
+      let line = parse(line: raw)
+      if continuationCount > 0, state.withLock({ $0.preamble.consumes(line, continuationCount: continuationCount) }) {
+        return true
+      }
+      switch line {
       case .entry(let entry):
         if let filter, !filter.keeps(entry) { return true }
         var object = entry.json
