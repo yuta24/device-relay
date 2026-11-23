@@ -62,7 +62,7 @@ CLI・Runner・パッケージをすべて検査します。拡張子は小文�
 
 ### Swift の整形
 
-SwiftFormat（nicklockwood版）0.64.6 を mise と `mise.lock` で固定しています。
+SwiftFormat（nicklockwood版）0.64.7 を mise と `mise.lock` で固定しています。
 `mise run format` で整形し、`mise run lint:swift` で同じルールによる検査を行います。
 CI の `mise run check` も整形漏れがあると失敗します。
 対象は `Package.swift`・`Sources/`・`Tests/`・`Runner/` の Swift ファイルで、
@@ -80,7 +80,7 @@ Runner と両ターゲットでコンパイルする `Sources/Relay/Shared/` は
 
 ### Python の静的検査・整形
 
-Ruff 0.17.4 を mise と `mise.lock` で固定しています。
+Ruff 0.17.6 を mise と `mise.lock` で固定しています。
 `mise run format:python` でimport順序を整えてから整形し、`mise run lint:python` で
 静的検査と整形チェックを行います。CI も `check` 経由で同じ検査を実行します。
 対象はテストを含む `scripts/` の Python ファイルです。
