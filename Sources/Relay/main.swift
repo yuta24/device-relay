@@ -5,6 +5,9 @@ setvbuf(stdout, nil, _IOLBF, 0)
 
 let arguments = Array(CommandLine.arguments.dropFirst())
 do {
+  if arguments.first == "__console-worker" { exit(ConsoleCapture.worker(Array(arguments.dropFirst()))) }
+  if arguments.first == "__console-exec" { exit(ConsoleTransport.execTool(Array(arguments.dropFirst()))) }
+  if arguments.first == "__console-child" { exit(ConsoleTransport.guardChild(Array(arguments.dropFirst()))) }
   switch try Arguments.parse(arguments) {
   case .start(var options):
     options.session = try RelaySession.resolve(flag: options.session)
@@ -88,6 +91,8 @@ do {
     exit(RunnerStatus.run(options))
   case .stop(let options):
     exit(RunnerStop.run(options))
+  case .console(let command):
+    exit(ConsoleCapture.run(command))
   case .record(let options):
     exit(Recording.run(options))
   case .logs(let options):

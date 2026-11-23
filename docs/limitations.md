@@ -58,7 +58,7 @@ device-relay の症状・制約から、説明と対処のある節を引く索�
 
 | 症状・制約 | どうなるか（1 文） | 読む節 |
 | --- | --- | --- |
-| アプリのログに `print` の行がない | 標準出力・標準エラーは Unified Logging に入らないので、`relay logs` では取れません。 | [過去のログ](cli.md#過去のログrelay-logs) |
+| アプリのログに `print` の行がない | シミュレータでは `relay launch --console <新規ファイル>` で起動時から採取できます。標準出力・標準エラーは Unified Logging の対象外です。 | [起動時のコンソール採取](cli.md#起動時のコンソール採取シミュレータ) |
 | `--bundle-id` で拡張機能の行が出ない | メインの実行ファイルの、今のビルドの行だけを残します。 | [アプリで絞る](cli.md#アプリで絞る--bundle-id) |
 | 過去のログに Debug の行がない | Debug の行は過去のログに残らず、`--follow` でだけ見えます。 | [過去のログ](cli.md#過去のログrelay-logs) |
 | 実機でログを追えない | 実機の `--follow` は `logs_follow_unsupported` で失敗します。 | [ログを追う](cli.md#ログを追う--follow) |

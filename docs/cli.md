@@ -91,7 +91,8 @@ relay crashes                                  # 直近 24 時間のクラッシ
 | `type` | `POST /type` | `<text>` か `--stdin`、`--key <name>`（複数可、順に送る）、`--clear`、`--bundle-id` |
 | `hinge` | `GET /hinge` / `POST /hinge` | 引数なしで角度を読む。角度または `open` / `close` / `half` で設定。実機・ヒンジのない端末は終了コード 6。詳しくは [Duo](screen.md#表示が複数ある端末iphone-duo) |
 | `key` / `button` / `orientation` | `POST /key` / `/button` / `/orientation` | 名前（`key` は `--bundle-id` も可、`orientation` は `landscape` を `landscapeLeft` として送る）。全端末で画面方向の変化を最大 3 秒、その後の安定を最大 1 秒待ち、`ok`・`requested`（指定した姿勢）・`orientation`（画面方向）・`screenChanged` を返す。同じ向き・非対応の向きも終了コード 0（[詳細](http-api.md#エンドポイント)） |
-| `launch` / `terminate` | `POST /launch` / `/terminate` | `<bundle-id>`（`host` も可） |
+| `launch` / `terminate` | `POST /launch` / `/terminate` | `<bundle-id>`（`host` も可）、launch では `--console <新規ファイル> [--restart]` |
+| `console status` / `console stop` | Mac 側の採取状態 | `status [<captureID>]`、`stop <captureID>` |
 | `open` | `POST /open` | `<url>`、`--bundle-id <id>`（`host` も可） |
 | `shutdown` | `POST /shutdown` | – |
 | `status` | `GET /ping` と runner.json（ランナーの版も表示） | `--json`、`--all`（全セッションの一覧） |
@@ -452,6 +453,12 @@ relay 自身は次の `code` を出します。ランナーは返しません。
 | `runner_info_invalid` | `1` | runner.json が読めない、url が不正、`host` を解決できない |
 | `runner_bad_response` | ランナーのステータスによる（`8` など） | JSON でない本文のエラー（古いランナー、別のサーバー）で、`status` に HTTP ステータスが入ります。`find --gone` への応答に `gone` がない（`gone` を知らない古いランナー）ときと、`--onscreen`・`--hittable`・`--label-match`・`--value-match` を知らない古いランナーがそれを拒否したときも、この code で終了コード 8 です。 |
 | `screenshot_save_failed` | `1` | 画像を受け取ったが、ファイルに保存できない |
+| `console_requires_restart` | `1` | 起動済みのアプリを採取するには明示的な `--restart` が必要 |
+| `console_unsupported` | `1` | シミュレータ以外を指定した |
+| `console_unavailable` | `1` | 同時起動、所有するランナーの終了、simctl の起動失敗、採取の開始・停止の時間切れ |
+| `console_save_failed` | `1` | 新規ファイルまたは状態を作成・保存できない、採取中の書き込みに失敗した |
+| `console_not_found` | `1` | 指定した captureID の記録がない |
+| `console_ownership_unverified` | `1` | 状態が壊れている、またはプロセスと状態の所有情報が一致しない |
 | `app_not_installed` | `6` | `launch` と `open --bundle-id` で、アプリが端末に入っていない（ランナーには送らない）。`uninstall` では何も消していない |
 | `app_bundle_invalid` | `1` | `install` のパスがない、`.app`・`.ipa` でない、Info.plist が読めない |
 | `app_platform_mismatch` | `1` | `install` で、シミュレータ用のアプリを実機に、または実機用をシミュレータに入れようとした（送らない） |
@@ -697,6 +704,45 @@ relay: step 4/7 (line 5) failed: find --label About --type button --timeout 5 --
 主な利点は、エージェントやスクリプトが 1 回の呼び出しで決まった手順を再生でき、途中で止まった位置が行番号でわかることです。
 
 確かめた環境: シミュレータは iPhone 17 Pro / iOS 27.0。実機は iPhone 14 Pro / iOS 26.7.1。
+
+## 起動時のコンソール採取（シミュレータ）
+
+```sh
+relay launch host --session demo --console ./host.log
+relay console status
+relay console status <captureID>
+relay console stop <captureID>
+```
+
+停止中のアプリを `simctl launch --console-pty` で起動し、ランナーの `/launch` で前面化します。
+起動済みなら終了コード 1 で、元のプロセスも保存先もそのままです。起動し直してよいときは `--console ./host.log --restart` を指定します。
+`--restart` は元のアプリを終了させます。その後の起動が失敗すると、アプリは停止したままになる場合があります。
+起動に失敗した場合、ワーカーの終了を確認し、作成時と同じ空ファイルであれば取り除きます。別のファイルへの置き換え、書き込み済み、終了未確認の場合には保存先が残ります。
+`--restart` 単独は終了コード 2 です。実機、`relay run` の手順では使えません。
+
+launch は従来の JSON に `console` を加えて戻ります。ここに絶対パスの `path`、`backend: "simctl-pty"`、`stream: "combined"`、UUID の `captureID` と `state` が入ります。
+CLI はワーカーを起動するとすぐに、captureID と停止コマンドを stderr に 1 行表示します。応答待ち中に Ctrl-C で launch を中断しても、起動と採取は続きます。
+`relay console status` で ID を探し、`relay console stop <captureID>` で停止できます。
+`--restart` の終了要求と、失敗時の起動状態の再確認には、それぞれ最大 30 秒かかります。その後、前の採取の解放を最大 15 秒待ち、simctl 起動後は応答を別枠で最大 90 秒待ちます。時間切れの理由はそれぞれ `lease_timeout`、`launch_timeout` です。CLI はワーカー起動後の状態通知を、後片付けと処理の余裕 13 秒を含めて最大 178 秒待ち、失敗後の空ファイルの片付けにはワーカーの終了を最大 4 秒待ちます。前面化の直前に採取の終了を確認した場合は、アプリを再起動せず失敗を返します。
+前面化に失敗した場合も元のエラーコードと終了コードを返し、同じオブジェクトの `console` で採取を照会・停止できます。
+コマンドが戻った後も、端末から切り離したプロセスが採取を続けます。アプリの終了、クラッシュ、ランナーの停止、シミュレータの終了で採取も終わります。
+
+出力先には状態ディレクトリの外にある新規ファイル（0600）を指定します。既存ファイルやシンボリックリンクを渡すと失敗します。
+stdout と stderr が混ざった PTY のバイト列をそのまま保存します。改行コード・制御文字・UTF-8 以外のバイトも含まれます。
+16 MiB に達すると `limitReached: true` を記録し、以後の出力を読み捨てます。アプリは動き続けます。
+書き込みに失敗したときは `saveError` が残り、個別の status は `console_save_failed` で終了します。
+
+`console status` はセッションをまたいで採取記録を JSON 配列で返します。0 件は `[]`、終了コード 0 です。
+ID を付けると 1 件を返します。`console stop` は ID が必須で、所有が一致した採取の終了を最大 12 秒待ちます。時間切れでも停止要求は残ります。`relay console status <captureID>` で結果を確認してください。
+**stop はアプリも終了させることがあります。** simctl が受け取った信号をアプリへ転送するためです。
+`appState` は採取対象だった PID と起動時刻から確認した `ended`、`running`、または `unknown` です。
+すでに終了した採取への stop は終了コード 0 で、同じ終了理由を返します。`childExit` と `childSignal` は simctl の結果です。
+アプリのクラッシュでも simctl が正常終了する場合があります。
+
+記録は `~/.relay/consoles/` に保存します。終了から 7 日以上の記録は、次の `relay start` の prune または採取付き launch の際に削除します。
+Mac の再起動や強制終了で最終記録が途切れた場合、status・stop・prune はワーカーと監視プロセスの不在を照合して `ended`（`reason: "lost"`）にします。回復した記録の保管期間は最後の更新から 7 日です。7 日以上経った壊れた記録と孤立した一時ファイル・停止要求も prune の対象です。
+PID・起動時刻が合うのに引数が違う場合や新しい記録が壊れている場合は `console_ownership_unverified` になります。一覧の保存先・端末・bundle ID で対象を確認し、プロセス終了後に再度 status を実行してください。
+採取した出力ファイルは保管期限の対象外です。ランナー終了後にも記録がある間は ID で照会できます。
 
 ## 録画（relay record）
 

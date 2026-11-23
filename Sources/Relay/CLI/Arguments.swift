@@ -10,6 +10,7 @@ enum Command: Equatable {
   case stop(RunnerStopOptions)
   /// `relay record start|stop|status` (simulators, and devices plugged in with USB).
   case record(RecordOptions)
+  case console(ConsoleCommand)
   /// `relay logs` and `relay crashes`: read on the host, without the runner (see `DeviceLogs`, `CrashReports`).
   case logs(LogsOptions)
   case crashes(CrashesOptions)
@@ -117,7 +118,7 @@ enum Arguments {
   static let valuelessOptions: Set<String> = [
     "--json", "--simulator", "--rebuild", "--verbose", "--allow-wifi", "--background", "--all", "--stdin",
     "--require", "--quiet", "--check", "--force", "--build", "--remove", "--link", "--global", "--help", "--version",
-    "--stable", "--follow", "--gone", "--clear", "--onscreen", "--hittable"
+    "--restart", "--stable", "--follow", "--gone", "--clear", "--onscreen", "--hittable"
   ]
 
   /// Rewrites `--opt=value` as `--opt value`, the one form the parsers read, before any of them looks at the
@@ -172,6 +173,7 @@ enum Arguments {
     }
 
     switch subcommand {
+    case "console": return .console(try ConsoleCommand.parse(rest))
     case "start":
       var options = StartOptions()
       while !rest.isEmpty {
@@ -516,6 +518,7 @@ enum Arguments {
     relay record stop
     relay record status [--json]
     """),
+    (["console"], "relay console status [<captureID>] | stop <captureID>"),
     (["logs"], """
     relay logs [--bundle-id <ID>] [--since 5m] [--follow | --archive <PATH>] [-o <file>]
         [--level <level>] [--subsystem <name>] [--category <name>] [--grep <text>] [--limit <N>]

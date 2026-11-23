@@ -17,12 +17,14 @@ extension Arguments {
     "adjust": selectorOptions.union(["--position", "--picker-value", "--timeout", "--bundle-id"]),
     "type": ["--key", "--bundle-id"],
     "key": ["--bundle-id"],
+    "launch": ["--console"],
     "open": ["--bundle-id"]
   ]
   static let selectorOptions: Set<String> = ["--scroll", "--max-swipes", "--in", "--id", "--label", "--type", "--value", "--label-match", "--value-match", "--index"]
   /// Options without a value.
   static let runnerFlags: [String: Set<String>] = [
     "wait": ["--stable", "--require"],
+    "launch": ["--restart"],
     "type": ["--stdin", "--clear"],
     "find": selectorFlags.union(["--require", "--gone"]),
     "tap": selectorFlags,
@@ -114,8 +116,10 @@ extension Arguments {
     guard runnerPath == nil || session == nil else {
       throw ArgumentError(description: "\(name) takes either --runner or --session, not both")
     }
+    let console = try parser.string("--console").map { ConsoleLaunch(path: $0, restart: givenFlags.contains("--restart")) }
+    guard console != nil || !givenFlags.contains("--restart") else { throw ArgumentError(description: "--restart requires --console") }
     return .runner(RunnerControlOptions(operation: operation, runnerPath: runnerPath, session: try session.map(sessionName),
-                                        requireMatch: givenFlags.contains("--require")))
+                                        requireMatch: givenFlags.contains("--require"), console: console))
   }
 
   /// Text piped to `relay type --stdin`, without one trailing line break (`\n` or `\r\n`) such as
@@ -372,13 +376,22 @@ extension Arguments {
       """
     ),
     "launch": (
-      "relay launch <bundle-id>",
+      "relay launch <bundle-id> [--console <new-file> [--restart]]",
       """
       Launches the app, or brings it to the foreground. relay first checks with simctl or devicectl that
       the app is installed: if not, it fails at once with app_not_installed (exit 6) and sends nothing
       (relay install <app> installs one). When the check cannot tell (relay: cannot tell whether <id> is
       installed ...), the app is sent anyway; a missing app then keeps the runner busy for minutes.
       com.apple.* apps are not checked on a device. Waits up to 150 seconds for the answer.
+      --console captures simulator stdout and stderr together from launch in a new 0600 file
+      (16 MiB maximum). A running app requires --restart. Returns JSON with console.captureID.
+      --restart terminates the app first. A failed launch may leave it stopped or leave an output
+      file. Termination and its follow-up query can take 30 s each. The worker waits up to 15 s
+      for a previous capture, then 90 s for acknowledgement (178 s total with cleanup and slack).
+      Launch prints the captureID and stop command to stderr when the worker starts. After Ctrl-C,
+      startup and capture continue. Find the ID with relay console status.
+      relay console stop <captureID> waits up to 12 s and may terminate the app. On timeout the request
+      stays pending; check relay console status <captureID>.
       """
     ),
     "open": (
@@ -444,6 +457,16 @@ extension Arguments {
       A session still booting or building (no runner.json yet) is stopped too. --all stops every session
       and the runner of ~/.relay/runner.json, one after the other, printing <session>: stopped for each;
       it also stops other agents' runners, so an agent normally stops only its own session.
+      """
+    ),
+    "console": (
+      "relay console status [<captureID>] | stop <captureID>",
+      """
+      status prints a JSON array of all captures, or one capture by ID. stop requests termination
+      and reports the captured app process as ended, running, or unknown. It may terminate the app.
+      stop waits up to 12 s. A timeout leaves the stop request pending; check relay console status
+      <captureID>. Ended captures can be stopped again. Interrupting launch leaves capture running;
+      relay console status lists the ID printed to stderr at startup.
       """
     ),
     "record": (
