@@ -15,6 +15,8 @@ relay console stop <captureID>                 # stop; the app may go with it
 | `relay console status [<captureID>]` | No runner needed. Without an ID it returns a JSON array of every capture (all sessions; `[]` when there is none) and exits 0; with an ID, that one capture. 1 with a `console_*` code, or 2 for a usage error such as a malformed ID |
 | `relay console stop <captureID>` | The ID is required. Stops the capture, waiting up to 12 seconds, and prints it with `appState`. 0, 1 with a `console_*` code, or 2 for a missing or malformed ID |
 
+- `relay console status` and `relay console stop` take neither `--session` nor `--runner`: adding one is a usage error (2). SKILL.md's `--session` on every command leaves these two out, since both read `~/.relay/consoles` on the Mac: `status` without an ID reports the captures of every session, and `stop` picks its capture by the captureID you give it. `relay launch --console` does take `--session` (or `--runner`), as the other runner commands do.
+- `state` is `starting` (the record exists, before the app's output is captured), `recording`, or `ended` (with a `reason`). In the list from `status` without an ID, a record relay cannot verify shows `state` `ownership_unverified` and a `code` (see `console_ownership_unverified`) instead of these.
 - The app must not be running: exit 1 with `console_requires_restart`. `--restart` terminates it first, then launches it again, so use it only when the user agrees the app may be terminated. A failed launch can leave the app stopped. `--restart` without `--console` is a usage error (2).
 - The output must be a new file outside `~/.relay/consoles`, in a directory that exists. An existing file or a symbolic link fails (`console_save_failed`). Relay never overwrites or deletes an existing file, but when a launch fails it may remove the empty file it created, so pick a name of your own.
 - The file is mode 0600 and holds the bytes of one PTY: stdout and stderr are mixed and can't be told apart. Control characters and bytes that are not UTF-8 stay in it.
@@ -30,7 +32,7 @@ relay console stop <captureID>                 # stop; the app may go with it
 | `code` | Exit code | What to do |
 | --- | --- | --- |
 | `console_requires_restart` | 1 | The app is running: add `--restart` (it will be terminated) or `relay terminate` first, then launch |
-| `console_unsupported` | 1 | The target is not a simulator: drop `--console`, and read the log with `relay logs` instead |
+| `console_unsupported` | 1 | The target is a physical device: relay cannot capture `print()` or stdout/stderr there, so drop `--console` (a simulator captures it). `relay logs` is no substitute for those writes: it reads only Logger, os_log, and NSLog lines |
 | `console_unavailable` | 1 | Another console launch is in progress (find and stop it with `relay console status` / `console stop`), the process that owns the runner ended, simctl failed to launch, or start/stop timed out. Read `relay console status`: when it lists the capture, stop it or continue with that captureID; otherwise launch again |
 | `console_save_failed` | 1 | The new file or the state could not be created, or a write during the capture failed (`saveError`). Choose a new path outside `~/.relay/consoles` in an existing directory |
 | `console_not_found` | 1 | No record for that captureID: list the captures with `relay console status` and use the ID it prints |
