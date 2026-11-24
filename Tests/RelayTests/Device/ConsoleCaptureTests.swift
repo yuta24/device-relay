@@ -183,7 +183,7 @@ struct ConsoleCaptureTests {
     capture.appStart = .distantPast
     #expect(ConsoleCapture.appOutcome(capture) == "ended")
     let body = Data(#"{ "ok": false, "code": "busy", "extra": 42 }"#.utf8)
-    let result = try #require(JSONSerialization.jsonObject(with: capture.attaching(to: body, in: dir)) as? [String: Any])
+    let result = try #require(JSONSerialization.jsonObject(with: capture.attaching(to: body)) as? [String: Any])
     #expect(result["code"] as? String == "busy" && result["extra"] as? Int == 42)
     let console = try #require(result["console"] as? [String: Any])
     #expect(console["captureID"] as? String == capture.captureID && console["stream"] as? String == "combined")

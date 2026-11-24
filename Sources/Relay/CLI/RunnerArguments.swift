@@ -385,6 +385,10 @@ extension Arguments {
       com.apple.* apps are not checked on a device. Waits up to 150 seconds for the answer.
       --console captures simulator stdout and stderr together from launch in a new 0600 file
       (16 MiB maximum). A running app requires --restart. Returns JSON with console.captureID.
+      If capture or the captured app process ends during foreground activation, launch returns
+      console_unavailable (exit 1). The app may be running in a different process.
+      If relay cannot verify capture or app identity before or after activation, it exits 1 with
+      console.state ownership_unverified and the verification error code (for example, console_not_found).
       --restart terminates the app first. A failed launch may leave it stopped or leave an output
       file. Termination and its follow-up query can take 30 s each. The worker waits up to 15 s
       for a previous capture, then 90 s for acknowledgement (178 s total with cleanup and slack).

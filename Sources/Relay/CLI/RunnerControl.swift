@@ -167,14 +167,41 @@ enum RunnerControl {
     }
     func withConsole(_ body: Data) -> Data {
       guard let capture else { return body }
-      return capture.attaching(to: body, in: consoleRuntime.directory)
+      let latest = (try? ConsoleState.read(capture.captureID, in: consoleRuntime.directory)) ?? capture
+      return latest.attaching(to: body)
     }
-    if let capture {
-      let latest = try? ConsoleCapture.checked(capture.captureID, in: consoleRuntime.directory, executableName: URL(fileURLWithPath: consoleRuntime.relay).lastPathComponent)
-      guard latest?.state == "recording", ConsoleCapture.appOutcome(capture) == "running" else {
-        CLIOutput.writeLine(withConsole(CLIOutput.failureBody(.consoleUnavailable, "console capture ended before foreground activation")), to: failureOutput)
-        return RunnerExitCode.failure.rawValue
+    func recordingCapture(_ capture: ConsoleState, phase: String) -> ConsoleState? {
+      func unverified(_ problem: ConsoleProblem, appState: String? = nil) {
+        var details = capture.json
+        details["state"] = "ownership_unverified"
+        details["code"] = problem.code.rawValue
+        details["appState"] = appState
+        let message = "could not verify console capture \(phase) foreground activation: \(problem.message)"
+        CLIOutput.writeLine(CLIOutput.failureBody(problem.code, message, extra: ["console": details]), to: failureOutput)
       }
+
+      let latest: ConsoleState
+      do {
+        latest = try ConsoleCapture.checked(capture.captureID, in: consoleRuntime.directory,
+                                            executableName: URL(fileURLWithPath: consoleRuntime.relay).lastPathComponent)
+      } catch {
+        unverified(ConsoleProblem.from(error))
+        return nil
+      }
+      let appState = consoleRuntime.appOutcome(capture)
+      if latest.state == "recording", appState == "running" { return latest }
+      if latest.state == "ended" || appState == "ended" {
+        var details = latest.json
+        details["appState"] = appState
+        let message = "console capture or the captured app process ended \(phase) foreground activation. The app may be running in a different process."
+        CLIOutput.writeLine(CLIOutput.failureBody(.consoleUnavailable, message, extra: ["console": details]), to: failureOutput)
+      } else {
+        unverified(ConsoleProblem(.consoleOwnershipUnverified, "could not confirm the capture is recording and the captured app process is running"), appState: appState)
+      }
+      return nil
+    }
+    if let capture, recordingCapture(capture, phase: "before") == nil {
+      return RunnerExitCode.failure.rawValue
     }
     func connectionFailure(_ code: RelayErrorCode, _ message: String) -> Int32 {
       CLIOutput.writeLine(withConsole(CLIOutput.failureBody(code, message)), to: failureOutput)
@@ -310,8 +337,11 @@ enum RunnerControl {
       if screenshot.isResized, let summary = screenshotSummary(response.headers) {
         CLIOutput.note(summary)
       }
+    } else if let capture {
+      guard let latest = recordingCapture(capture, phase: "during") else { return RunnerExitCode.failure.rawValue }
+      CLIOutput.writeLine(latest.attaching(to: response.body), to: successOutput)
     } else {
-      CLIOutput.writeLine(withConsole(response.body), to: successOutput)
+      CLIOutput.writeLine(response.body, to: successOutput)
     }
     return code.rawValue
   }
