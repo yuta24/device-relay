@@ -21,7 +21,7 @@ relay crashes --since 2026-11-11T01:40:24Z
 
 - `--since` takes `30s`, `5m`, `2h`, `1d`, or an RFC 3339 time with a time zone. Default: 5 minutes for `logs`, 24 hours for `crashes`. A time without a zone is a usage error (2).
 - Read `entries[].message` and `level` (`error` lines first). 0 entries doesn't prove nothing was logged: `--since` is not a retention guarantee.
-- The log has Logger, os_log, and NSLog lines. `print()` output (stdout/stderr) is not in it. Debug lines are not kept in the past log; only `--follow` shows them (`--level debug` doesn't bring them back).
+- The log has Logger, os_log, and NSLog lines. `print()` output (stdout/stderr) is not in it; on a simulator, capture it from launch with [console](console.md). Debug lines are not kept in the past log; only `--follow` shows them (`--level debug` doesn't bring them back).
 - `--bundle-id` keeps the app's main executable as installed now: not its extensions, nor lines from an earlier build. `log_app_unavailable` (1): the app isn't installed on the simulator; check the bundle ID (case-sensitive). `--bundle-id host` is the runner's host app.
 - Without `--bundle-id` the whole simulator is logged; when the lines kept for the output exceed about 64 MiB, it fails with `logs_unavailable`: use a later `--since`, `--bundle-id`, a filter such as `--level error`, or `--limit` (a smaller N if it is already given).
 - `-o <file>` writes the JSON to a new file (mode 0600) and prints a summary with its `path`; an existing file is `logs_save_failed`.
