@@ -105,6 +105,10 @@ private struct ConsoleFixture: Sendable {
       while not (base / 'exit').exists():
           time.sleep(0.01)
       sys.exit(0)
+  elif mode == 'separate-app':
+      while not (base / 'app-pid').exists():
+          time.sleep(0.01)
+      print('host.id: ' + (base / 'app-pid').read_text(), flush=True)
   elif mode == 'old':
       print('host.id: ' + (base / 'oldpid').read_text(), flush=True)
   else:
@@ -301,8 +305,18 @@ extension ConsoleLifecycleTests {
     #expect(status >> 8 == 1)
     chmod(f.runtime.directory.path, 0o700)
     #expect(try f.records().first?.state == "recording")
-    #expect(throws: ConsoleProblem.self) { try ConsoleCapture.checked(capture.captureID, in: f.runtime.directory) }
-    close(guardLock)
+    let failure = #expect(throws: ConsoleProblem.self) { try ConsoleCapture.checked(capture.captureID, in: f.runtime.directory) }
+    #expect(failure?.code == .consoleOwnershipUnverified)
+    #expect(try ConsoleState.read(capture.captureID, in: f.runtime.directory).state == "recording")
+    #expect(close(guardLock) == 0)
+    // A successful close can precede availability of the exclusive lock under contention.
+    // Establish that precondition before asking checked to recover the record once.
+    try f.wait {
+      guard let probe = try ConsoleState.ownerLock(capture.captureID, in: f.runtime.directory, exclusive: true) else { return false }
+      defer { close(probe) }
+      try #require(flock(probe, LOCK_UN) == 0)
+      return true
+    }
     #expect(try ConsoleCapture.checked(capture.captureID, in: f.runtime.directory).reason == "lost")
 
     let broken = UUID().uuidString
@@ -440,6 +454,140 @@ extension ConsoleLifecycleTests {
     }
   }
 
+  enum Activation: CaseIterable {
+    case endedBefore, endedDuring, replacedApp, runnerBusy, normal
+  }
+
+  @Test(arguments: Activation.allCases)
+  func consoleAcrossActivation(_ scenario: Activation) throws {
+    let f = try ConsoleFixture("separate-app")
+    defer { f.cleanUp() }
+    let app = Process(), replacement = Process()
+    for process in [app, replacement] {
+      process.executableURL = URL(fileURLWithPath: "/bin/sleep")
+      process.arguments = ["120"]
+    }
+    defer {
+      for process in [app, replacement] where process.isRunning {
+        process.terminate()
+        process.waitUntilExit()
+      }
+    }
+    // The fake simctl and the app have independent lifetimes, just as on the simulator.
+    let capture = try f.startWhile {
+      try f.wait { FileManager.default.fileExists(atPath: f.home.appendingPathComponent("pids").path) }
+      try app.run()
+      try String(app.processIdentifier).write(to: f.home.appendingPathComponent("app-pid"), atomically: true, encoding: .utf8)
+    }
+    if scenario == .endedBefore { try f.stop(capture) }
+    let calls = Locked(0)
+    let (result, body, console) = try f.activate(capture) {
+      calls.withLock { $0 += 1 }
+      switch scenario {
+      case .endedDuring, .runnerBusy:
+        try f.stop(capture)
+      case .replacedApp:
+        app.terminate()
+        app.waitUntilExit()
+        try replacement.run()
+      case .endedBefore, .normal:
+        break
+      }
+      if scenario == .runnerBusy { return RunnerResponse(status: 409, body: Data(#"{"ok":false,"code":"busy","error":"fixture busy"}"#.utf8)) }
+      return RunnerResponse(status: 200, body: Data(#"{"ok":true}"#.utf8))
+    }
+    #expect(console["captureID"] as? String == capture.captureID)
+    #expect(calls.value == (scenario == .endedBefore ? 0 : 1))
+    #expect(body["ok"] as? Bool == (scenario == .normal))
+    switch scenario {
+    case .endedBefore, .endedDuring, .replacedApp:
+      #expect(result == 1 && body["code"] as? String == "console_unavailable")
+      let message = try #require(body["error"] as? String)
+      #expect(message.contains("capture or the captured app process ended"))
+      if scenario == .endedBefore {
+        #expect(message.contains("before foreground activation"))
+      } else {
+        #expect(message.contains("during foreground activation") && message.contains("different process"))
+      }
+      #expect(console["state"] as? String == (scenario == .replacedApp ? "recording" : "ended"))
+      #expect(console["appState"] as? String == (scenario == .replacedApp ? "ended" : "running"))
+      if scenario == .replacedApp { #expect(replacement.isRunning && replacement.processIdentifier != capture.appPID) }
+    case .runnerBusy:
+      #expect(result == 5 && body["code"] as? String == "busy" && body["error"] as? String == "fixture busy")
+      #expect(console["state"] as? String == "ended")
+    case .normal:
+      #expect(result == 0 && console["state"] as? String == "recording")
+    }
+  }
+
+  enum VerificationIssue: CaseIterable {
+    case wrongOwner, missingRecord, unknownApp
+  }
+
+  @Test(arguments: VerificationIssue.allCases, [true, false])
+  func unverifiedConsoleAcrossActivation(_ issue: VerificationIssue, beforeRequest: Bool) throws {
+    let f = try ConsoleFixture("quiet")
+    defer { f.cleanUp() }
+    let capture = try f.start()
+    defer { try? capture.save(in: f.runtime.directory) }
+    let requestSent = Locked(false)
+    @Sendable func changeJournal() throws {
+      switch issue {
+      case .wrongOwner:
+        var other = capture
+        other.pid = getpid()
+        other.startedAt = RelayProcess.startTime(pid: getpid())
+        try other.save(in: f.runtime.directory)
+      case .missingRecord:
+        try FileManager.default.removeItem(at: ConsoleState.file(capture.captureID, in: f.runtime.directory))
+      case .unknownApp:
+        break
+      }
+    }
+    var runtime = f.runtime
+    runtime.appOutcome = { state in
+      if issue == .unknownApp, beforeRequest || requestSent.value { return "unknown" }
+      return ConsoleCapture.appOutcome(state)
+    }
+    if beforeRequest { try changeJournal() }
+    let (result, body, console) = try f.activate(capture, runtime: runtime) {
+      requestSent.set(true)
+      if !beforeRequest { try changeJournal() }
+      return RunnerResponse(status: 200, body: Data(#"{"ok":true}"#.utf8))
+    }
+    let code = issue == .missingRecord ? "console_not_found" : "console_ownership_unverified"
+    #expect(requestSent.value == !beforeRequest)
+    #expect(result == 1 && body["ok"] as? Bool == false && body["code"] as? String == code)
+    let message = try #require(body["error"] as? String)
+    #expect(message.contains("could not verify") && !message.contains("ended"))
+    #expect(console["captureID"] as? String == capture.captureID && console["state"] as? String == "ownership_unverified")
+    #expect(console["code"] as? String == code)
+    if issue == .unknownApp { #expect(console["appState"] as? String == "unknown") }
+  }
+
+  @Test func successUsesVerifiedConsoleSnapshot() throws {
+    let f = try ConsoleFixture("quiet")
+    defer { f.cleanUp() }
+    let capture = try f.start()
+    let requestSent = Locked(false)
+    var runtime = f.runtime
+    runtime.appOutcome = { state in
+      let outcome = ConsoleCapture.appOutcome(state)
+      if requestSent.value {
+        // Both observations have been made. Publish the final journal before JSON is assembled.
+        do { try f.stop(state) } catch { Issue.record(error) }
+      }
+      return outcome
+    }
+    let (result, body, console) = try f.activate(capture, runtime: runtime) {
+      requestSent.set(true)
+      return RunnerResponse(status: 200, body: Data(#"{"ok":true}"#.utf8))
+    }
+    #expect(try ConsoleState.read(capture.captureID, in: f.runtime.directory).state == "ended")
+    #expect(result == 0 && body["ok"] as? Bool == true)
+    #expect(console["state"] as? String == "recording" && console["captureID"] as? String == capture.captureID)
+  }
+
   @Test func restartTerminatesBeforeNextLaunch() throws {
     let f = try ConsoleFixture("restart")
     defer { f.cleanUp() }
@@ -550,6 +698,17 @@ extension ConsoleLifecycleTests {
 }
 
 private extension ConsoleFixture {
+  func activate(_ capture: ConsoleState, runtime override: ConsoleRuntime? = nil,
+                response: @escaping @Sendable () throws -> RunnerResponse) throws -> (Int32, [String: Any], [String: Any]) {
+    let pipe = Pipe()
+    let exit = RunnerControl.perform(.launch(bundleID: "host"), on: connection, console: ConsoleLaunch(path: output.path, restart: false),
+                                     consoleRuntime: override ?? runtime, startConsole: { _, _, _, _ in capture },
+                                     failureOutput: pipe.fileHandleForWriting, successOutput: pipe.fileHandleForWriting) { _ in try response() }
+    try pipe.fileHandleForWriting.close()
+    let body = try #require(JSONSerialization.jsonObject(with: pipe.fileHandleForReading.readDataToEndOfFile()) as? [String: Any])
+    return try (exit, body, #require(body["console"] as? [String: Any]))
+  }
+
   func toolAndGuard() throws -> (Int32, Int32) {
     let pids = try String(contentsOf: home.appendingPathComponent("pids"), encoding: .utf8).split(separator: " ").compactMap { Int32($0) }
     try #require(pids.count == 2)

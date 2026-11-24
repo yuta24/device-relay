@@ -222,9 +222,9 @@ struct ConsoleState: Codable {
     return result
   }
 
-  func attaching(to body: Data, in directory: URL = directory) -> Data {
+  func attaching(to body: Data) -> Data {
     var object = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] ?? [:]
-    object["console"] = ((try? Self.read(captureID, in: directory)) ?? self).json
+    object["console"] = json
     return CLIOutput.json(object)
   }
 

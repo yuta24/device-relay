@@ -7,6 +7,7 @@ struct ConsoleRuntime: Sendable {
   var tool = "/usr/bin/xcrun"
   var owner: @Sendable (RunnerInfo) -> Int32? = RelayProcess.runningRelayStart
   var simulator: @Sendable (String) throws -> Void = { try ConsoleCapture.requireSimulator($0) }
+  var appOutcome: @Sendable (ConsoleState) -> String = ConsoleCapture.appOutcome
   var acknowledgeTimeout: TimeInterval = 90
   var leaseTimeout: TimeInterval = 15
   var directory: URL { home.appendingPathComponent(".relay/consoles") }

@@ -455,10 +455,10 @@ relay 自身は次の `code` を出します。ランナーは返しません。
 | `screenshot_save_failed` | `1` | 画像を受け取ったが、ファイルに保存できない |
 | `console_requires_restart` | `1` | 起動済みのアプリを採取するには明示的な `--restart` が必要 |
 | `console_unsupported` | `1` | シミュレータ以外を指定した |
-| `console_unavailable` | `1` | 同時起動、所有するランナーの終了、simctl の起動失敗、採取の開始・停止の時間切れ |
+| `console_unavailable` | `1` | 同時起動、所有するランナーの終了、simctl の起動失敗、採取の開始・停止の時間切れ、前面化の直前または成功応答の直後に採取または対象プロセスの終了を確認した |
 | `console_save_failed` | `1` | 新規ファイルまたは状態を作成・保存できない、採取中の書き込みに失敗した |
 | `console_not_found` | `1` | 指定した captureID の記録がない |
-| `console_ownership_unverified` | `1` | 状態が壊れている、またはプロセスと状態の所有情報が一致しない |
+| `console_ownership_unverified` | `1` | 状態が壊れている、ワーカーの所有情報が一致しない、または採取対象のプロセスを確認できない |
 | `app_not_installed` | `6` | `launch` と `open --bundle-id` で、アプリが端末に入っていない（ランナーには送らない）。`uninstall` では何も消していない |
 | `app_bundle_invalid` | `1` | `install` のパスがない、`.app`・`.ipa` でない、Info.plist が読めない |
 | `app_platform_mismatch` | `1` | `install` で、シミュレータ用のアプリを実機に、または実機用をシミュレータに入れようとした（送らない） |
@@ -724,7 +724,9 @@ launch は従来の JSON に `console` を加えて戻ります。ここに絶�
 CLI はワーカーを起動するとすぐに、captureID と停止コマンドを stderr に 1 行表示します。応答待ち中に Ctrl-C で launch を中断しても、起動と採取は続きます。
 `relay console status` で ID を探し、`relay console stop <captureID>` で停止できます。
 `--restart` の終了要求と、失敗時の起動状態の再確認には、それぞれ最大 30 秒かかります。その後、前の採取の解放を最大 15 秒待ち、simctl 起動後は応答を別枠で最大 90 秒待ちます。時間切れの理由はそれぞれ `lease_timeout`、`launch_timeout` です。CLI はワーカー起動後の状態通知を、後片付けと処理の余裕 13 秒を含めて最大 178 秒待ち、失敗後の空ファイルの片付けにはワーカーの終了を最大 4 秒待ちます。前面化の直前に採取の終了を確認した場合は、アプリを再起動せず失敗を返します。
-前面化に失敗した場合も元のエラーコードと終了コードを返し、同じオブジェクトの `console` で採取を照会・停止できます。
+ランナーが前面化に成功した直後にも、採取状態と採取対象のプロセス（PID と起動時刻）を確認します。前面化の間に採取または対象プロセスが終了していたら、`ok: false`、`code: "console_unavailable"`、`console` を返し、終了コードは 1 です。対象プロセスが正常終了した場合も同じです。別のプロセスでアプリが前面にいても、その出力は採取されません。CLI は起動や採取を自動でやり直しません。
+前面化の前後で採取の記録やワーカーの所有を確認できない場合も終了コードは 1 です。失敗 JSON の `console.state` は `ownership_unverified` になり、`code` は確認に失敗した理由（`console_ownership_unverified`、記録がなければ `console_not_found` など）を示します。採取対象のプロセスの生存を確認できない場合は `console_ownership_unverified` で、`console.appState` は `unknown` です。
+ランナーが前面化に失敗した場合は元のエラーコードと終了コードを返し、同じオブジェクトの `console` で採取を照会・停止できます。
 コマンドが戻った後も、端末から切り離したプロセスが採取を続けます。アプリの終了、クラッシュ、ランナーの停止、シミュレータの終了で採取も終わります。
 
 出力先には状態ディレクトリの外にある新規ファイル（0600）を指定します。既存ファイルやシンボリックリンクを渡すと失敗します。
