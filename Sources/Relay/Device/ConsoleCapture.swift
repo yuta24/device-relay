@@ -256,7 +256,7 @@ enum ConsoleCapture {
         stop(ConsoleProblem.from(error).message)
       }
       header.flush(to: &sink)
-      transport.finish()
+      transport.finish(into: &sink, buffer: &buffer)
       childStatus = transport.childStatus
       if transport.leaseTimedOut { reason = "lease_timeout" }
       else if childStatus == nil, reason == "child_exited" { reason = "guard_exited" }
@@ -267,6 +267,7 @@ enum ConsoleCapture {
     }
     if close(output) != 0, sink.error == nil { sink.error = String(cString: strerror(errno)) }
     state.saveError = sink.error
+    state.limitReached = sink.count == sink.capacity
     state.bytesWritten = sink.count
     state.finish(reason, status: childStatus)
     do { try state.saveFinal() } catch { return 1 }

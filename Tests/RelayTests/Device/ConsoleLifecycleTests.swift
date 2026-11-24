@@ -51,9 +51,11 @@ private struct ConsoleFixture: Sendable {
   assert args == ['simctl', 'launch', '--console-pty', 'FAKE', 'host.id'], args
   assert os.tcgetpgrp(0) == os.getpid()
   os.close(os.open('/dev/tty', os.O_RDWR))
-  (base / 'pids').write_text(f'{os.getpid()} {os.getppid()}')
   def ack(*_):
       print(f'host.id: {os.getpid()}', flush=True)
+  if mode == 'late':
+      signal.signal(signal.SIGTERM, ack)
+  (base / 'pids').write_text(f'{os.getpid()} {os.getppid()}')
   if mode == 'restart':
       current.write_text(str(os.getpid()))
   if mode in ('resist', 'background', 'marker', 'early', 'die-before-ack'):
@@ -86,15 +88,18 @@ private struct ConsoleFixture: Sendable {
       worker = json.loads(next((base / '.relay/consoles').glob('*.json')).read_text())['pid']
       os.kill(worker, signal.SIGKILL)
   elif mode == 'late':
-      signal.signal(signal.SIGTERM, ack)
+      pass  # Acknowledge on SIGTERM only.
   elif mode == 'slow':
       time.sleep(13)
       ack()
   elif mode == 'bad':
-      signal.signal(signal.SIGTERM, signal.SIG_IGN)
+      # Only write the tail after the worker rejects the header and asks the guard to stop.
+      def finish(*_):
+          os.write(1, b'\x00\xfflast bytes')
+          os._exit(7)
+      signal.signal(signal.SIGTERM, finish)
       print('fixture diagnostic', file=sys.stderr, flush=True)
       print('warning\n' * 18, flush=True)
-      sys.exit(7)
   elif mode == 'early':
       ack()
       while not (base / 'exit').exists():
@@ -113,6 +118,66 @@ private struct ConsoleFixture: Sendable {
     try ConsoleCapture.start(ConsoleLaunch(path: (target ?? output).path, restart: restart), bundleID: "host.id", connection: connection, runtime: runtime)
   }
 
+  /// Run the blocking launch on its own thread. The caller controls the startup interleaving.
+  func startWhile(holdingLease: Bool = false, _ arrange: () throws -> Void) throws -> ConsoleState {
+    var lease: StartLock?
+    if holdingLease {
+      let seed = ConsoleState(captureID: "", udid: connection.info.udid, bundleID: "host.id", path: "", runnerPID: 1, runnerStart: Date())
+      lease = try #require(try StartLock.take(seed.lockURL(in: runtime.directory).appendingPathExtension("capture")))
+    }
+    let result = Locked<Result<ConsoleState, ConsoleProblem>?>(nil)
+    let group = DispatchGroup()
+    group.enter()
+    Thread.detachNewThread {
+      defer { group.leave() }
+      do { result.set(.success(try start())) }
+      catch { result.set(.failure(ConsoleProblem.from(error))) }
+    }
+    // On a failed setup or deadline the thread can still be creating the journal.
+    defer {
+      while group.wait(timeout: .now() + 0.05) == .timedOut {
+        for state in (try? records()) ?? [] where state.pid != nil && state.finishedAt == nil {
+          try? requestStop(state)
+        }
+      }
+    }
+    do {
+      defer { lease?.release() }
+      try arrange()
+    }
+    guard group.wait(timeout: .now() + 15) == .success else { throw SetupError(description: "fixture launch did not finish") }
+    return try #require(result.value).get()
+  }
+
+  func requestStop(_ state: ConsoleState) throws {
+    try state.write(to: runtime.directory.appendingPathComponent(state.captureID + ".stop"))
+  }
+
+  /// The guard may still be writing after start returns an error. Keep the journal until all
+  /// its owners have released it, including when an assertion or a fixture wait failed.
+  func cleanUp() {
+    do {
+      for record in try records() {
+        try wait({
+          guard let state = try? ConsoleCapture.checked(record.captureID, in: runtime.directory, executableName: "relay") else { return false }
+          guard state.finishedAt != nil else {
+            if state.pid != nil { try requestStop(state) }
+            return false
+          }
+          guard let owner = try ConsoleState.ownerLock(record.captureID, in: runtime.directory, exclusive: true) else { return false }
+          close(owner)
+          if let pid = state.pid, let start = state.startedAt, RelayProcess.startTime(pid: pid) == start {
+            var status: Int32 = 0
+            let reaped = waitpid(pid, &status, WNOHANG)
+            return reaped == pid || (reaped < 0 && errno == ECHILD)
+          }
+          return true
+        }, seconds: 20)
+      }
+      try FileManager.default.removeItem(at: home)
+    } catch { Issue.record("could not clean up console fixture at \(home.path): \(error)") }
+  }
+
   func records() throws -> [ConsoleState] {
     try ConsoleState.ids(in: runtime.directory).map { try ConsoleState.read($0, in: runtime.directory) }
   }
@@ -127,7 +192,7 @@ private struct ConsoleFixture: Sendable {
   }
 
   func stop(_ state: ConsoleState) throws {
-    try state.write(to: runtime.directory.appendingPathComponent(state.captureID + ".stop"))
+    try requestStop(state)
     try wait { try ConsoleState.read(state.captureID, in: runtime.directory).finishedAt != nil }
   }
 }
@@ -157,23 +222,16 @@ struct ConsoleLifecycleTests {
   @Test func stoppedOrTimedOutBeforeAcknowledgement() throws {
     for explicitStop in [false, true] {
       var fixture = try ConsoleFixture("late")
-      fixture.runtime.acknowledgeTimeout = explicitStop ? 10 : 0.5
+      fixture.runtime.acknowledgeTimeout = explicitStop ? 30 : 3
       let f = fixture
-      defer { try? FileManager.default.removeItem(at: f.home) }
-      let result = Locked<ConsoleProblem?>(nil)
-      let done = DispatchSemaphore(value: 0)
-      DispatchQueue.global().async {
-        defer { done.signal() }
-        do { _ = try f.start(); Issue.record("late acknowledgement reported as recording") }
-        catch { result.set(ConsoleProblem.from(error)) }
+      defer { f.cleanUp() }
+      let failure = #expect(throws: ConsoleProblem.self) {
+        try f.startWhile {
+          try f.wait { FileManager.default.fileExists(atPath: f.home.appendingPathComponent("pids").path) }
+          if explicitStop { try f.requestStop(try #require(try f.records().first)) }
+        }
       }
-      try f.wait { FileManager.default.fileExists(atPath: f.home.appendingPathComponent("pids").path) }
-      if explicitStop {
-        let record = try #require(try f.records().first)
-        try record.write(to: f.runtime.directory.appendingPathComponent(record.captureID + ".stop"))
-      }
-      #expect(done.wait(timeout: .now() + 8) == .success)
-      let capture = try #require(result.value?.capture)
+      let capture = try #require(failure?.capture)
       #expect(capture.reason == (explicitStop ? "stopped" : "launch_timeout"))
       #expect(capture.state == "ended" && capture.appPID != nil && capture.childSignal == SIGKILL)
       #expect(!FileManager.default.fileExists(atPath: f.output.path))
@@ -201,7 +259,9 @@ struct ConsoleLifecycleTests {
     let bad = #expect(throws: ConsoleProblem.self) { try f.start() }
     #expect(bad?.capture?.childExit == 7)
     #expect(bad?.message.contains("fixture diagnostic") == true)
-    #expect(try Data(contentsOf: f.output).starts(with: Data("warning\n".utf8)))
+    let output = try Data(contentsOf: f.output)
+    #expect(output.starts(with: Data("warning\n".utf8)))
+    #expect(output.suffix(12) == Data([0, 255]) + Data("last bytes".utf8))
   }
 
   @Test func foregroundFailuresIncludeCapture() throws {
@@ -259,31 +319,27 @@ extension ConsoleLifecycleTests {
 
   @Test func stopDuringLeaseDoesNotSpawnTool() throws {
     let f = try ConsoleFixture("quiet")
-    defer { try? FileManager.default.removeItem(at: f.home) }
-    let seed = ConsoleState(captureID: "", udid: "FAKE", bundleID: "host.id", path: "", runnerPID: 1, runnerStart: Date())
-    let lock = try #require(try StartLock.take(seed.lockURL(in: f.runtime.directory).appendingPathExtension("capture")))
-    defer { lock.release() }
-    let done = DispatchSemaphore(value: 0)
-    DispatchQueue.global().async {
-      defer { done.signal() }
-      let problem = #expect(throws: ConsoleProblem.self) { try f.start() }
-      #expect(problem?.capture?.reason == "stopped")
+    defer { f.cleanUp() }
+    func stopWhileWaiting() throws {
+      try f.wait { try f.records().first?.pid != nil }
+      let state = try #require(try f.records().first)
+      let second = #expect(throws: ConsoleProblem.self) { try f.start() }
+      #expect(second?.code == .consoleUnavailable)
+      var wrong = state
+      wrong.pid = 1
+      let request = f.runtime.directory.appendingPathComponent(state.captureID + ".stop")
+      try Data("corrupt".utf8).write(to: request)
+      usleep(100000)
+      #expect(try f.records().first?.finishedAt == nil)
+      try wrong.write(to: request)
+      usleep(150000)
+      #expect(try f.records().first?.finishedAt == nil)
+      try f.requestStop(state)
+      // The request must take effect while the lease is still held.
+      try f.wait { try f.records().first?.finishedAt != nil }
     }
-    try f.wait { try f.records().first?.pid != nil }
-    let state = try #require(try f.records().first)
-    let second = #expect(throws: ConsoleProblem.self) { try f.start() }
-    #expect(second?.code == .consoleUnavailable)
-    var wrong = state
-    wrong.pid = 1
-    let request = f.runtime.directory.appendingPathComponent(state.captureID + ".stop")
-    try Data("corrupt".utf8).write(to: request)
-    usleep(100000)
-    #expect(try f.records().first?.finishedAt == nil)
-    try wrong.write(to: request)
-    usleep(150000)
-    #expect(try f.records().first?.finishedAt == nil)
-    try state.write(to: request)
-    #expect(done.wait(timeout: .now() + 5) == .success)
+    let failure = #expect(throws: ConsoleProblem.self) { try f.startWhile(holdingLease: true, stopWhileWaiting) }
+    #expect(failure?.capture?.reason == "stopped")
     #expect(!FileManager.default.fileExists(atPath: f.home.appendingPathComponent("pids").path))
   }
 
@@ -305,23 +361,19 @@ extension ConsoleLifecycleTests {
 extension ConsoleLifecycleTests {
   @Test func leaseWaitDoesNotSpendAcknowledgementTime() throws {
     var fixture = try ConsoleFixture("quiet")
-    fixture.runtime.leaseTimeout = 6
-    fixture.runtime.acknowledgeTimeout = 1
+    fixture.runtime.leaseTimeout = 20
+    fixture.runtime.acknowledgeTimeout = 3
     let f = fixture
-    defer { try? FileManager.default.removeItem(at: f.home) }
-    let seed = ConsoleState(captureID: "", udid: "FAKE", bundleID: "host.id", path: "", runnerPID: 1, runnerStart: Date())
-    let lock = try #require(try StartLock.take(seed.lockURL(in: f.runtime.directory).appendingPathExtension("capture")))
-    let done = DispatchSemaphore(value: 0)
-    let result = Locked<ConsoleState?>(nil)
-    DispatchQueue.global().async {
-      defer { done.signal() }
-      do { result.set(try f.start()) } catch { Issue.record("startup failed after lease release: \(error)") }
+    defer { f.cleanUp() }
+    let recording = try f.startWhile(holdingLease: true) {
+      try f.wait {
+        guard let worker = try f.records().first?.pid else { return false }
+        return RelayProcess.descendants(of: worker).contains { RelayProcess.arguments(pid: $0)?.dropFirst().first == "__console-child" }
+      }
+      Thread.sleep(forTimeInterval: f.runtime.acknowledgeTimeout + 0.5)
     }
-    try f.wait { try f.records().first?.pid != nil }
-    Thread.sleep(forTimeInterval: 1.5)
-    lock.release()
-    #expect(done.wait(timeout: .now() + 5) == .success)
-    try f.stop(try #require(result.value))
+    #expect(recording.state == "recording")
+    try f.stop(recording)
   }
 }
 
@@ -390,15 +442,13 @@ extension ConsoleLifecycleTests {
 
   @Test func restartTerminatesBeforeNextLaunch() throws {
     let f = try ConsoleFixture("restart")
-    defer { try? FileManager.default.removeItem(at: f.home) }
+    defer { f.cleanUp() }
     let first = try f.start()
-    defer { try? f.stop(first) }
     let terminated = f.home.appendingPathComponent("terminated")
     let next = f.home.appendingPathComponent("next")
     let second = try f.start(restart: true, output: next)
-    defer { try? f.stop(second) }
     #expect(try String(contentsOf: terminated, encoding: .utf8) == String(try #require(first.appPID)))
-    #expect(try ConsoleState.read(first.captureID, in: f.runtime.directory).finishedAt != nil)
+    try f.wait { try ConsoleState.read(first.captureID, in: f.runtime.directory).finishedAt != nil }
     #expect(second.appPID != first.appPID)
     try "bad".write(to: f.home.appendingPathComponent("mode"), atomically: true, encoding: .utf8)
     let failure = #expect(throws: ConsoleProblem.self) { try f.start(restart: true, output: f.home.appendingPathComponent("third")) }
@@ -510,44 +560,33 @@ private extension ConsoleFixture {
 extension ConsoleLifecycleTests {
   @Test func appStartedDuringLeaseIsAlreadyRunning() throws {
     let f = try ConsoleFixture("old")
-    defer { try? FileManager.default.removeItem(at: f.home) }
-    let seed = ConsoleState(captureID: "", udid: "FAKE", bundleID: "host.id", path: "", runnerPID: 1, runnerStart: Date())
-    let lease = try #require(try StartLock.take(seed.lockURL(in: f.runtime.directory).appendingPathExtension("capture")))
-    let failure = Locked<ConsoleProblem?>(nil)
-    let done = DispatchSemaphore(value: 0)
-    DispatchQueue.global().async {
-      defer { done.signal() }
-      do { try f.stop(f.start()) } catch { failure.set(ConsoleProblem.from(error)) }
-    }
-    try f.wait { try f.records().first?.pid != nil }
+    defer { f.cleanUp() }
     let app = Process()
     app.executableURL = URL(fileURLWithPath: "/bin/sleep")
-    app.arguments = ["15"]
-    try app.run()
+    app.arguments = ["60"]
     defer { if app.isRunning { app.terminate(); app.waitUntilExit() } }
-    try String(app.processIdentifier).write(to: f.home.appendingPathComponent("oldpid"), atomically: true, encoding: .utf8)
-    lease.release()
-    #expect(done.wait(timeout: .now() + 8) == .success)
-    #expect(failure.value?.code == .consoleRequiresRestart && app.isRunning)
+    let failure = #expect(throws: ConsoleProblem.self) {
+      try f.startWhile(holdingLease: true) {
+        try f.wait { try f.records().first?.pid != nil }
+        try app.run()
+        try String(app.processIdentifier).write(to: f.home.appendingPathComponent("oldpid"), atomically: true, encoding: .utf8)
+      }
+    }
+    #expect(failure?.code == .consoleRequiresRestart && app.isRunning)
   }
 
   @Test func missingAppIdentityAndWorkerDeathFailStartup() throws {
     for mode in ["missing", "die-before-ack"] {
       let f = try ConsoleFixture(mode)
-      defer { try? FileManager.default.removeItem(at: f.home) }
-      let failure = Locked<ConsoleProblem?>(nil)
-      let done = DispatchSemaphore(value: 0)
-      DispatchQueue.global().async {
-        defer { done.signal() }
-        do { _ = try f.start() } catch { failure.set(ConsoleProblem.from(error)) }
+      defer { f.cleanUp() }
+      let failure = #expect(throws: ConsoleProblem.self) {
+        try f.startWhile {
+          // Start the failure deadline once the fake tool has actually begun the scenario.
+          try f.wait { FileManager.default.fileExists(atPath: f.home.appendingPathComponent("pids").path) }
+        }
       }
-      if done.wait(timeout: .now() + 6) == .timedOut {
-        Issue.record("startup did not fail promptly")
-        if let record = try f.records().first { try f.stop(record) }
-        _ = done.wait(timeout: .now() + 4)
-      }
-      #expect(failure.value?.code == .consoleUnavailable)
-      if mode == "missing" { #expect(failure.value?.capture?.reason == "app_identity_unavailable") }
+      #expect(failure?.code == .consoleUnavailable)
+      if mode == "missing" { #expect(failure?.capture?.reason == "app_identity_unavailable") }
       try f.wait { try f.records().first?.finishedAt != nil }
     }
   }

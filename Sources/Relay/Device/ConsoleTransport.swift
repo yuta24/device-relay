@@ -54,6 +54,7 @@ final class ConsoleTransport {
   }
 
   func stop() { try? control.fileHandleForWriting.close() }
+  // Darwin defines TIOCSIG as _IO, so ioctl takes the signal number by value.
   func killTool() { _ = ioctl(master, TIOCSIG, SIGKILL) }
 
   func update() {
@@ -84,11 +85,19 @@ final class ConsoleTransport {
   }
 
   /// Never block on waitUntilExit or a descendant holding a pipe open.
-  func finish() {
+  func finish(into sink: inout ConsoleSink, buffer: inout [UInt8]) {
     stop()
     let until = ConsoleCapture.now + ConsoleCapture.drainTimeout
     repeat {
       update()
+      // Even an exiting tool can be waiting for its last PTY write to drain.
+      // Limit each pass so a writer cannot postpone the guard deadline indefinitely.
+      for _ in 0 ..< 8 {
+        let n = read(master, &buffer, buffer.count)
+        if n < 0, errno == EINTR { continue }
+        guard n > 0 else { break }
+        buffer.withUnsafeBytes { sink.append(UnsafeRawBufferPointer(rebasing: $0[..<n])) }
+      }
       if guardEndedAt != nil { return }
       usleep(20000)
     } while ConsoleCapture.now < until
@@ -108,15 +117,26 @@ final class ConsoleTransport {
     return 127
   }
 
+  /// A status check can briefly hold the exclusive lock while verifying a capture.
+  static func acquireOwner(_ id: String, in directory: URL, timeout: TimeInterval = 1, cancelled: () -> Bool) throws -> Int32? {
+    let until = ConsoleCapture.now + timeout
+    repeat {
+      if cancelled() { return nil }
+      if let fd = try ConsoleState.ownerLock(id, in: directory, exclusive: false) { return fd }
+      usleep(20000)
+    } while ConsoleCapture.now < until
+    return nil
+  }
+
   static func guardChild(_ args: [String]) -> Int32 {
     guard args.count == 7, ConsoleState.validID(args[0]) == args[0], let parent = Int32(args[1]), let timeout = Double(args[6]),
-          let owner = try? ConsoleState.ownerLock(args[0], in: ConsoleState.directory, exclusive: false) else { return 1 }
-    defer { close(owner) }
-    guard getppid() == parent, let state = try? ConsoleState.read(args[0]), state.pid == parent,
+          getppid() == parent, let state = try? ConsoleState.read(args[0]), state.pid == parent,
           state.owns(RelayProcess.snapshot(pid: parent)), state.udid == args[2], state.bundleID == args[3] else { return 1 }
 
     var input = pollfd(fd: STDIN_FILENO, events: Int16(POLLIN), revents: 0)
     func cancelled() -> Bool { getppid() != parent || poll(&input, 1, 0) > 0 || ConsoleCapture.requestedStop(state) }
+    guard let owner = try? acquireOwner(state.captureID, in: ConsoleState.directory, cancelled: cancelled) else { return cancelled() ? 0 : 1 }
+    defer { close(owner) }
     let until = ConsoleCapture.now + timeout
     var lease: StartLock?
     repeat {

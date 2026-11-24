@@ -199,3 +199,30 @@ struct ConsoleCaptureTests {
     #expect(exit == 0 && pipe.fileHandleForReading.readDataToEndOfFile() == success + Data([10]))
   }
 }
+
+extension ConsoleCaptureTests {
+  @Test func guardRetriesContendedOwnerLockUntilReleasedOrCancelled() throws {
+    let dir = try temporaryHome()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let id = UUID().uuidString
+    let reader = try #require(try ConsoleState.ownerLock(id, in: dir, exclusive: true))
+    defer { close(reader) }
+    var attempts = 0
+    let cancelled = try ConsoleTransport.acquireOwner(id, in: dir) {
+      attempts += 1
+      return attempts == 2
+    }
+    #expect(cancelled == nil && attempts == 2)
+    let expired = try ConsoleTransport.acquireOwner(id, in: dir, timeout: 0.05) { false }
+    #expect(expired == nil)
+    attempts = 0
+    let guardFD = try #require(try ConsoleTransport.acquireOwner(id, in: dir) {
+      attempts += 1
+      if attempts == 2 { flock(reader, LOCK_UN) }
+      return false
+    })
+    defer { close(guardFD) }
+    #expect(attempts == 2)
+    #expect(try ConsoleState.ownerLock(id, in: dir, exclusive: true) == nil)
+  }
+}
