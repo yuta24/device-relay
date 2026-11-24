@@ -291,6 +291,7 @@ enum RelayPrune {
   /// At the start of `relay start`, with the port's lock held. The runner project is looked up here as
   /// `StartSetup.prepare` does next; when that fails, so does the start.
   static func atStart(port: Int, project: String?) {
+    ConsoleState.prune()
     let own = (try? RunnerProject.resolve(explicitPath: project)).map { RunnerProject.buildDirectory(root: $0.root).lastPathComponent }
     if let own {
       try? StartBuildClaim(pid: getpid(), buildDirectory: own).write(port: port)

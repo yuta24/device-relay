@@ -15,6 +15,10 @@
 
 ランナーの作り直しが必要です。動作中なら `relay stop` して `relay start --rebuild` で起動し直してください。古いランナーの404や不完全な応答は終了コード8（`runner_bad_response`）になります。詳しい値と制約は[ピンチ](docs/http-api.md#ピンチpinch)を参照してください。
 
+### シミュレータのコンソール出力
+
+`relay launch <bundle-id> --console <新規ファイル>` で、起動時から stdout と stderr を合わせて最大 16 MiB まで保存できます。起動済みのアプリを採取するときは `--restart` が必要です。`relay console status` で採取を一覧でき、`relay console stop <captureID>` で停止できます。停止するとアプリも終了する場合があります。
+
 ## 0.10.1
 
 ### orientation の応答と待機を全端末でそろえる

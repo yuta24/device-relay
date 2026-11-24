@@ -44,6 +44,7 @@ struct RunnerControlOptions: Equatable {
   /// `relay find --require`: no element is a failure (exit 6), not `"count":0` with exit 0. With
   /// `find --gone`, an element still there is the failure.
   var requireMatch = false
+  var console: ConsoleLaunch?
 }
 
 /// runner.json as read once: where it is, what it says, and the runner URL.
@@ -74,7 +75,7 @@ enum RunnerControl {
     let command = options.operation.commandName
     switch connect(runnerPath: options.runnerPath, session: options.session, command: command,
                    failureOutput: failureHandle(for: options.operation)) {
-    case .success(let connection): return perform(options.operation, on: connection, requireMatch: options.requireMatch)
+    case .success(let connection): return perform(options.operation, on: connection, requireMatch: options.requireMatch, console: options.console)
     case .failure(let failure): return failure.code
     }
   }
@@ -118,7 +119,10 @@ enum RunnerControl {
   /// `failureOutput` replaces where the JSON of a failure goes (`failureHandle(for:)`), and `transport` how the
   /// request is sent (`RunnerClient.Transport`), for tests.
   static func perform(_ operation: RunnerOperation, on connection: RunnerConnection, requireMatch: Bool = false,
-                      failureOutput: FileHandle? = nil, transport: @escaping RunnerClient.Transport = RunnerClient.urlSession) -> Int32 {
+                      console: ConsoleLaunch? = nil, consoleRuntime: ConsoleRuntime = ConsoleRuntime(),
+                      startConsole: (ConsoleLaunch, String, RunnerConnection, ConsoleRuntime) throws -> ConsoleState = ConsoleCapture.start,
+                      failureOutput: FileHandle? = nil, successOutput: FileHandle = .standardOutput,
+                      transport: @escaping RunnerClient.Transport = RunnerClient.urlSession) -> Int32 {
     let infoURL = connection.infoURL
     let info = connection.info
     let failureOutput = failureOutput ?? failureHandle(for: operation)
@@ -129,6 +133,13 @@ enum RunnerControl {
       resolved = try operation.resolvingHostAlias(info.hostBundleID)
     } catch {
       return fail(.runnerInfoInvalid, "\(error)", exit: .failure, to: failureOutput)
+    }
+    if console != nil {
+      do { try consoleRuntime.simulator(info.udid) }
+      catch {
+        let problem = ConsoleProblem.from(error)
+        return fail(problem.code, problem.message, exit: .failure, to: failureOutput)
+      }
     }
     if let bundleID = resolved.installRequiredBundleID {
       let device = info.name ?? info.udid
@@ -144,6 +155,31 @@ enum RunnerControl {
         break
       }
     }
+    var capture: ConsoleState?
+    if let console, case .launch(let bundleID) = resolved {
+      do { capture = try startConsole(console, bundleID, connection, consoleRuntime) }
+      catch {
+        let problem = ConsoleProblem.from(error)
+        let extra: [String: Any] = problem.capture.map { ["console": $0.json] } ?? [:]
+        CLIOutput.writeLine(CLIOutput.failureBody(problem.code, problem.message, extra: extra), to: failureOutput)
+        return RunnerExitCode.failure.rawValue
+      }
+    }
+    func withConsole(_ body: Data) -> Data {
+      guard let capture else { return body }
+      return capture.attaching(to: body, in: consoleRuntime.directory)
+    }
+    if let capture {
+      let latest = try? ConsoleCapture.checked(capture.captureID, in: consoleRuntime.directory, executableName: URL(fileURLWithPath: consoleRuntime.relay).lastPathComponent)
+      guard latest?.state == "recording", ConsoleCapture.appOutcome(capture) == "running" else {
+        CLIOutput.writeLine(withConsole(CLIOutput.failureBody(.consoleUnavailable, "console capture ended before foreground activation")), to: failureOutput)
+        return RunnerExitCode.failure.rawValue
+      }
+    }
+    func connectionFailure(_ code: RelayErrorCode, _ message: String) -> Int32 {
+      CLIOutput.writeLine(withConsole(CLIOutput.failureBody(code, message)), to: failureOutput)
+      return RunnerExitCode.unavailable.rawValue
+    }
     let request = resolved.request
     let response: RunnerResponse
     do {
@@ -151,18 +187,20 @@ enum RunnerControl {
     } catch {
       if RunnerConnectionError.isRefusedByOS(error) {
         // Not "is relay start running?": the runner may be fine, and restarting it would not help.
-        return fail(.runnerUnavailable,
-                    "cannot reach the runner at \(info.url): \(RunnerConnectionError.refusedByOSHint) (runner info: \(infoURL.path))",
-                    exit: .unavailable, to: failureOutput)
+        return connectionFailure(.runnerUnavailable,
+                                 "cannot reach the runner at \(info.url): \(RunnerConnectionError.refusedByOSHint) (runner info: \(infoURL.path))")
       }
       let timedOut = (error as? URLError)?.code == .timedOut
       let reason = timedOut ? timeoutReason(for: resolved, seconds: Int(client.timeout)) : "is relay start running?"
-      return fail(timedOut ? .runnerTimeout : .runnerUnavailable,
-                  "cannot reach the runner at \(info.url) (\(error.localizedDescription)); \(reason) (runner info: \(infoURL.path))",
-                  exit: .unavailable, to: failureOutput)
+      return connectionFailure(timedOut ? .runnerTimeout : .runnerUnavailable,
+                               "cannot reach the runner at \(info.url) (\(error.localizedDescription)); \(reason) (runner info: \(infoURL.path))")
     }
 
     let code = RunnerExitCode(status: response.status)
+    if capture != nil, code == .success, !((try? JSONSerialization.jsonObject(with: response.body)) is [String: Any]) {
+      CLIOutput.writeLine(withConsole(CLIOutput.failureBody(.runnerBadResponse, "the runner returned a non-object launch response")), to: failureOutput)
+      return RunnerExitCode.runnerError.rawValue
+    }
     if resolved.scrollOptions != nil {
       let object = (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any]
       let message = (object?["error"] as? String ?? "").lowercased()
@@ -196,7 +234,7 @@ enum RunnerControl {
                   exit: .runnerError, to: failureOutput)
     }
     guard code == .success else {
-      CLIOutput.writeLine(failureBody(of: response), to: failureOutput)
+      CLIOutput.writeLine(withConsole(failureBody(of: response)), to: failureOutput)
       if let hint = hint(for: code, errorCode: RunnerErrorCode.parse(body: response.body), infoURL: infoURL) {
         CLIOutput.note(hint)
       }
@@ -273,7 +311,7 @@ enum RunnerControl {
         CLIOutput.note(summary)
       }
     } else {
-      CLIOutput.writeLine(response.body, to: .standardOutput)
+      CLIOutput.writeLine(withConsole(response.body), to: successOutput)
     }
     return code.rawValue
   }

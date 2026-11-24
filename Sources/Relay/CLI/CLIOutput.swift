@@ -12,6 +12,12 @@ enum RelayErrorCode: String, CaseIterable {
   case runnerInfoInvalid = "runner_info_invalid"
   /// Exit 8: the runner answered an error that is not a JSON object (an older runner, or something else on the port).
   case runnerBadResponse = "runner_bad_response"
+  case consoleRequiresRestart = "console_requires_restart"
+  case consoleUnsupported = "console_unsupported"
+  case consoleUnavailable = "console_unavailable"
+  case consoleSaveFailed = "console_save_failed"
+  case consoleNotFound = "console_not_found"
+  case consoleOwnershipUnverified = "console_ownership_unverified"
   /// Exit 1: the screenshot arrived but could not be written to the file.
   case screenshotSaveFailed = "screenshot_save_failed"
   /// Exit 6: `relay launch` of an app that is not installed; nothing was sent to the runner. `relay uninstall`

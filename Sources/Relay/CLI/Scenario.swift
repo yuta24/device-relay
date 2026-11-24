@@ -145,6 +145,7 @@ enum Scenario {
     guard case .runner(let options) = try Arguments.parseRunnerCommand(name, rest, standardInput: { Data() }) else {
       throw ArgumentError(description: "\(name) cannot be a step")
     }
+    guard options.console == nil else { throw ArgumentError(description: "launch --console cannot be a step") }
     if case .screenshot(let screenshot) = options.operation, screenshot.output == nil || screenshot.output == "-" {
       throw ArgumentError(description: "screenshot needs --output <file> in a step (stdout carries the other steps' output)")
     }

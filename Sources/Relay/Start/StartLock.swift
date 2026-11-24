@@ -160,7 +160,7 @@ struct StartLock {
 
   /// Opens and locks `url` without waiting; nil when another process holds it. A second try covers the
   /// moment `holder(of:)` in another process holds the lock to see whether it is free.
-  private static func take(_ url: URL, session: String? = nil) throws -> StartLock? {
+  static func take(_ url: URL, session: String? = nil) throws -> StartLock? {
     do {
       try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
     } catch {

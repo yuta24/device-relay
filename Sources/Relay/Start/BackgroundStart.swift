@@ -216,8 +216,9 @@ enum BackgroundStart {
   /// Runs this executable with `arguments` as a new session, with stdin from /dev/null and stdout and
   /// stderr appended to `logURL`, which must exist. Signals ignored here (SIGINT while waiting) are reset in the child.
   /// The child inherits `locks` and finds each through its key (`StartLocks.inheritable`).
-  static func spawnDetached(arguments: [String], logURL: URL, locks: [(key: String, lock: StartLock)] = []) throws -> pid_t {
-    let executable = RelayProcess.currentExecutable
+  static func spawnDetached(arguments: [String], logURL: URL, locks: [(key: String, lock: StartLock)] = [],
+                            descriptors: [Int32] = [], blockedSignals: [Int32] = [], executable: String = RelayProcess.currentExecutable,
+                            environment: [String: String] = ProcessInfo.processInfo.environment) throws -> pid_t {
     var attributes: posix_spawnattr_t?
     posix_spawnattr_init(&attributes)
     defer { posix_spawnattr_destroy(&attributes) }
@@ -230,6 +231,7 @@ enum BackgroundStart {
     posix_spawnattr_setsigdefault(&attributes, &defaults)
     var mask = sigset_t()
     sigemptyset(&mask)
+    for sig in blockedSignals { sigaddset(&mask, sig) }
     posix_spawnattr_setsigmask(&attributes, &mask)
 
     var actions: posix_spawn_file_actions_t?
@@ -238,7 +240,8 @@ enum BackgroundStart {
     posix_spawn_file_actions_addopen(&actions, 0, "/dev/null", O_RDONLY, 0)
     posix_spawn_file_actions_addopen(&actions, 1, logURL.path, O_WRONLY | O_APPEND, 0)
     posix_spawn_file_actions_adddup2(&actions, 1, 2)
-    var environment = ProcessInfo.processInfo.environment
+    for fd in descriptors { posix_spawn_file_actions_addinherit_np(&actions, fd) }
+    var environment = environment
     environment[StartLock.inheritedEnvironmentKey] = nil
     environment[StartLock.inheritedSessionEnvironmentKey] = nil
     for (key, lock) in locks {
