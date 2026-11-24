@@ -19,6 +19,7 @@ Each file in `references/` stands alone; read only the one you need.
 - [waiting-for-the-screen](references/waiting-for-the-screen.md): waiting for the screen to settle (`relay wait --stable`)
 - [recording](references/recording.md): `relay record`
 - [logs](references/logs.md): `relay logs`, `relay crashes`
+- [console](references/console.md): `print()` and stdout/stderr from launch, on a simulator (`relay launch --console`, `relay console`)
 - [relay-run](references/relay-run.md): replaying confirmed steps
 - [test-app](references/test-app.md): RelayRunnerHost, to try things on
 - [troubleshooting](references/troubleshooting.md): start failures, prompts, logs
