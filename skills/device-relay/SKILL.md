@@ -5,14 +5,14 @@ description: Drive iOS simulators and physical devices with the relay CLI (devic
 
 # device-relay
 
-`relay` controls iOS simulators and physical devices from the Mac through a long-running XCTest runner; the target app needs no changes.
-Details are in topic files in `references/` (index: [reference.md](reference.md)): read the one named here when needed.
+`relay` controls iOS simulators and physical devices through a long-running XCTest runner; apps need no changes.
+Details: topic files in `references/` (index: [reference.md](reference.md)); read as needed.
 
 ## Before you start
 
 - If `command -v relay` finds nothing, ask the user to install it (`mise use -g github:yuta24/device-relay`, or the README). Don't install it yourself.
 - Sandbox: if relay prints `Operation not permitted`, or `relay doctor` shows ✗ for `localhost` / `~/.relay`, the runner has not stopped; relay is inside a sandbox. Don't stop or restart anything; ask the user to run relay outside it, and don't edit their settings yourself ([sandbox](references/sandbox.md)). Call relay alone, not with `cd … &&`, `>`, or `$(…)`.
-- Sessions: run `echo "$RELAY_SESSION"`. If it is empty and other agents may use relay, pick a name and pass `--session <name>` on every command; `export` doesn't carry over to the next command ([sessions](references/sessions.md#sessions)).
+- Sessions: run `echo "$RELAY_SESSION"`. If it is empty and other agents may use relay, pick a name and pass `--session <name>` on every command except `devices`, `doctor`, `skill`, `console status|stop`; `export` doesn't carry over to the next command ([sessions](references/sessions.md#sessions)).
 
 ## Flow
 
@@ -23,14 +23,14 @@ relay start --background --device "<name>"  # or --udid; --os narrows. Note the 
 relay launch <bundle-id>  # not installed? relay install <path>
 relay screenshot --scale 1  # prints a path; read it as an image
 relay source --format compact --filter interactive  # operable elements
-relay find --type button  # elements matching a selector (JSON)
+relay find --type button  # matching elements (JSON)
 relay tap --id <identifier>
 relay find --id <next-screen element> --timeout 5 --require  # wait; exit 6 if it never appears
 relay stop  # when done, if you started it
 ```
 
-- The first start builds the runner for minutes: give it a long timeout (up to 30 min).
-- `waiting for another relay start's build` is not a failure: wait. If start exits 1 as another start is starting on that port, wait for `relay status` to return 0 and use that runner.
+- The first start builds the runner: give it a long timeout (up to 30 min).
+- `waiting for another relay start's build` is not a failure: wait. If start exits 1 as another is starting on that port, wait for `relay status` to exit 0 and use that runner.
 - If start fails, read the log tail it prints before acting ([troubleshooting](references/troubleshooting.md)).
 
 ## Rules
@@ -42,14 +42,14 @@ relay stop  # when done, if you started it
 - **Start from a known state:** `relay button home` and `relay launch <bundle-id>` (`relay terminate` first for a fresh launch).
 - **No passwords or personal data on your own.** Enter only what the user gave you, and secrets via stdin, never argv: `printf '%s' "$PASSWORD" | relay type --stdin`.
 - **Nothing destructive on a physical device** (deleting data or apps, purchases, sending messages, changing settings, signing out) without the user's confirmation. Share its screenshots only as far as the task needs.
-- **Clean up when the task is done:** after rotating, `relay orientation portrait` (after folding, `relay hinge close`); leave the app on a sensible screen; then `relay stop` the runner you started, even if the user may want more (starting again is cheap).
+- **Clean up when the task is done:** after rotating, `relay orientation portrait` (after folding, `relay hinge close`); leave the app on a sensible screen; then `relay stop` the runner you started, even if the user may want more.
 
 ## Observe and operate
 
 - `relay screenshot --scale 1`: 1 px = 1 pt, so pixels are tap coordinates. Plain `relay screenshot` only for small text.
 - Pick selectors from `relay source --format compact --filter interactive` or `relay find`: a line's `type`, `label`, `id`, `value` are selectors. Use the whole tree only when needed ([formats](references/element-tree.md)).
 - Prefer selectors (`--id`, else `--label` + `--type`) over coordinates.
-- Coordinates are points from the top left (`relay tap x y`; `relay swipe x1 y1 x2 y2` to scroll).
+- Coordinates: points from the top left (`relay tap x y`; `relay swipe x1 y1 x2 y2` to scroll).
 - Double-tap: `tap --count 2`, not two taps. Zoom: `pinch`. Sliders, pickers: `adjust`, not `swipe`.
 - Text: tap the field, `relay type "text"` (`--key return` submits); to replace text, `relay type --clear "text"`, not repeated `delete`; `relay key return|delete|space`.
 - Wait with `relay find <selector> --timeout <s>` (≤ 10 s, repeat for longer) or `tap --timeout`; for it to go, `find <selector> --gone --timeout <s> --require`; for motion to end, `relay wait --stable` ([waiting](references/waiting-for-the-screen.md)). Never `sleep`.
@@ -72,7 +72,7 @@ relay stop  # when done, if you started it
   - `covered_by_other_app`: an alert etc. covers the app: `relay screenshot`, close it, resend
   - `app_not_installed`: check the bundle ID (case-sensitive) or `relay install <path>`
   - `point_offscreen` (7): re-read `screen` in `relay health`
-  - others: [list of codes](references/failures.md#list-of-codes)
+  - others: [codes](references/failures.md#list-of-codes)
 
 ## When a person is needed
 
@@ -88,5 +88,6 @@ Device asking for its passcode during automation mode (`Failed to initialize for
 - [coordinates](references/coordinates.md): orientation, iPad windows, iPhone Duo
 - [scrolling](references/scrolling.md): `--scroll`, swipes; [waiting-for-the-screen](references/waiting-for-the-screen.md): `wait --stable`
 - [recording](references/recording.md), [logs](references/logs.md): `record`, `logs`, `crashes`
-- [relay-run](references/relay-run.md): replaying confirmed steps
-- [test-app](references/test-app.md): an app to try things on
+- [console](references/console.md): `print()` output (`launch --console`)
+- [relay-run](references/relay-run.md): replaying steps
+- [test-app](references/test-app.md): a practice app
