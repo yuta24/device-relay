@@ -10,7 +10,7 @@ If the file or session named in 1 or 2 doesn't exist, the exit code is 3, withou
 
 ## Sessions
 
-When several agents work in parallel, keep them in separate sessions (names start with a letter or digit, with up to 64 letters, digits, `.`, `_`, and `-`). Check `echo "$RELAY_SESSION"` first: if the user set it when launching the agent (`RELAY_SESSION=agent-1 claude`, for example), every command already uses that session. If it isn't set, add `--session <name>` to every command. In environments that start a new shell for each command, `export` doesn't carry over to the next one, and a command without the session either exits 3 or operates someone else's runner.
+When several agents work in parallel, keep them in separate sessions (names start with a letter or digit, with up to 64 letters, digits, `.`, `_`, and `-`). Check `echo "$RELAY_SESSION"` first: if the user set it when launching the agent (`RELAY_SESSION=agent-1 claude`, for example), every command already uses that session. If it isn't set, add `--session <name>` to every command except those that work without a session and reject it: `devices`, `doctor`, `config`, `runner`, `skill`, and `console status|stop`. In environments that start a new shell for each command, `export` doesn't carry over to the next one, and a command without the session either exits 3 or operates someone else's runner.
 
 ```sh
 relay status --all                                                     # every session (which devices are in use)
