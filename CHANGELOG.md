@@ -2,7 +2,7 @@
 
 以前の版から更新するときに、スクリプトや設定を直す必要がある変更を書きます。すべての変更の一覧は GitHub の [Releases](https://github.com/yuta24/device-relay/releases) にあります。全体の入口は [README](README.ja.md) です。
 
-## 次の版
+## 0.11.0
 
 ### relay logs の絞り込みと件数制限
 
@@ -18,6 +18,12 @@
 ### シミュレータのコンソール出力
 
 `relay launch <bundle-id> --console <新規ファイル>` で、起動時から stdout と stderr を合わせて最大 16 MiB まで保存できます。起動済みのアプリを採取するときは `--restart` が必要です。`relay console status` で採取を一覧でき、`relay console stop <captureID>` で停止できます。停止するとアプリも終了する場合があります。
+前面化の前後に採取かアプリが終わっていれば、起動は `console_unavailable`（終了コード 1）で失敗します。採取やアプリの状態を確認できないときは、`console_ownership_unverified` などの確認の失敗のコードで失敗します。
+
+### 更新の後にすること
+
+- ランナーは、次の `relay start` で自動でビルドし直します。すでに動いているランナーは `relay stop` してから起動し直してください。
+- エージェントのスキルを入れている場合は、`relay skill install`（または `--global`）で入れ直してください。ピンチ、ログの絞り込み、コンソール出力の説明が加わります。
 
 ## 0.10.1
 
