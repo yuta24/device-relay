@@ -12,11 +12,11 @@ xcrun swift test
 xcrun swift run relay doctor
 ```
 
-変更後の CLI の一括検証は、リポジトリ内で `mise run check` を実行します。
-初回は `mise trust` と `mise install --locked` を実行してください。
-Swift・Python の整形検査、Python・Workflow・Shell の静的検査、カバレッジ付き Swift テストと Python テストを実行し、Swift テスト成功後に
-カバレッジ下限を検証します。Python テストは独立して並列実行できます。
-いずれかが失敗するとタスク全体が失敗します。CI の CLI ジョブも同じタスクを使います。
+変更後の CLI の一括検証は、リポジトリ内で `mise run check`（mise を使わない場合は `bash scripts/check.sh`）を実行します。
+mise を使う場合の初回は `mise trust` と `mise install --locked` を実行してください。
+Swift・Python の整形検査、Python・Workflow・Shell の静的検査、カバレッジ付き Swift テストと Python テストを
+この順に実行し、Swift テスト成功後にカバレッジ下限を検証します。
+いずれかの手順が失敗するとそこで止まり、`check` 全体も失敗します。CI の CLI ジョブも同じスクリプトを使います。
 結果は `coverage/` に出力します。端末側 Runner のビルドとシミュレータ動作は CI の別ジョブで検証します。
 
 必要な検証だけを個別に実行することもできます。
@@ -34,11 +34,25 @@ Swift・Python の整形検査、Python・Workflow・Shell の静的検査、カ
 | `mise run format:python` | Python スクリプトのimport順序と書式を Ruff で自動整形 |
 | `mise run lint:python` | Python の静的検査と整形チェック（ファイルは変更しない） |
 | `mise run check` | 静的検査、Python テスト、Swift テストとカバレッジ検証を一括実行 |
+| `mise run dist` | `RelayVersion.current` の arm64・Intel 配布パッケージを `dist/` に生成 |
 | `mise run test:package` | 署名なしの arm64・Intel 配布パッケージを生成・検証 |
 | `mise run test:runner` | 専用シミュレータでRunnerの起動・認証・ping・停止を検証 |
 | `mise run tools:outdated` | プロジェクトのツール更新候補を確認（候補があれば終了コード1） |
 
-`check` は `lint:swift`・`lint:python`・`lint:workflow`・`lint:shell`・`coverage`・`test:python` に、`coverage` は `test:swift` に依存します。
+### スクリプトと mise のタスク
+
+処理と組み立ての本体は `scripts/` にあります。mise はツールの版の固定（`[tools]`・`mise.lock`）と、
+そのスクリプトを呼ぶ 1 行のタスクだけを持ちます。`build`・`format`・`format:python` などのタスクは
+これまでどおり mise がコマンドを直接実行します。
+
+- `scripts/check.sh`: `check`・`lint:swift`・`lint:python`・`lint:workflow`・`lint:shell`・`test:swift`・`test:python`・`coverage` の実体。
+  引数なしで一括実行、`bash scripts/check.sh lint:shell test:python` のようにタスク名を並べるとその手順だけを順に実行します。
+  知らない名前は何も実行せず終了コード2で止まります。
+- `scripts/dist.sh`: `dist` の実体。`RelayVersion.current` を読み、`scripts/package.sh` を arm64、x86_64 の順に呼びます。
+
+どちらもどのディレクトリからでも動き、mise を呼びません。ツールは PATH から使い、足りないときはその名前を出して失敗します。
+`scripts/check.sh` は引数なしのとき `lint:swift`・`lint:python`・`lint:workflow`・`lint:shell`・`coverage`・`test:python` を
+この順に実行し、`coverage` が先に `test:swift` を実行します。途中で失敗した手順があると、残りは実行しません。
 `swift test` がビルドも行うため、`check` から `build` を別途呼び出すことはありません。
 `test:package` は Release ビルドを行うため `check` には含めず、CI の専用ジョブで実行します。
 PR では README・CHANGELOG・`docs/` だけの変更のときに省略し、それ以外（`skills/` の Markdown や、
@@ -149,7 +163,7 @@ region は LLVM の実行領域であり、分岐カバレッジとは異なり�
 `main.swift` など直下のファイルは従来どおり全体の下限で検証し、領域別の設定は不要です。
 新しい Swift ファイルが計測結果から欠落した場合も失敗します。
 
-ローカルでも CI と同じ `check` タスクを使用します。
+ローカルでも CI と同じ `check`（`scripts/check.sh`）を使用します。
 
 カバレッジ集計用の Python は `mise.toml` で 3.14.3 に固定しています。
 CI も同じ設定を使用し、mise 本体は 2026.11.4 に固定しています。
@@ -631,7 +645,7 @@ git push origin v0.11.0
 
 Hardened Runtime で entitlements は要りません。tarball や単体の Mach-O には公証のチケットを staple できないので、macOS はオンラインで確認します。
 
-手元で同じ tarball を作るには `make dist`、または `scripts/package.sh <version> <arm64|x86_64>` を使います。出力先は `dist/` です。バイナリは作業ツリーから、ほかのファイルは `git archive` で HEAD からとるので、未コミットの変更があると警告します。シークレットは要らず、署名も公証もされません（`RELAY_CODESIGN_IDENTITY` を設定すると署名だけします）。
+手元で同じ tarball を作るには `scripts/dist.sh`（`mise run dist`）、または `scripts/package.sh <version> <arm64|x86_64>` を使います。出力先は `dist/` です。バイナリは作業ツリーから、ほかのファイルは `git archive` で HEAD からとるので、未コミットの変更があると警告します。シークレットは要らず、署名も公証もされません（`RELAY_CODESIGN_IDENTITY` を設定すると署名だけします）。
 
 ### Intel Mac（x86_64）
 

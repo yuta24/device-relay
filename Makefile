@@ -6,12 +6,17 @@ BINDIR ?= $(PREFIX)/bin
 SWIFT ?= xcrun swift
 PRODUCT := $(CURDIR)/.build/release/relay
 
-.PHONY: build install uninstall test dist
+.DEFAULT_GOAL := help
+.PHONY: help install uninstall
 
-build:
+help:
+	@echo "make install    build a release and link $(BINDIR)/relay to this checkout"
+	@echo "make uninstall  remove that link when it points to this checkout"
+	@echo "checks:  scripts/check.sh  (mise run check)"
+	@echo "package: scripts/dist.sh   (mise run dist)"
+
+install:
 	$(SWIFT) build -c release
-
-install: build
 	@mkdir -p "$(BINDIR)"
 	@if [ -e "$(BINDIR)/relay" ] && [ ! -L "$(BINDIR)/relay" ]; then \
 		echo "$(BINDIR)/relay exists and is not a symlink; remove it first" >&2; exit 1; \
@@ -30,11 +35,3 @@ uninstall:
 	else \
 		echo "$(BINDIR)/relay is not installed"; \
 	fi
-
-test:
-	$(SWIFT) test
-
-# The release tarballs of RelayVersion.current, in dist/ (the release workflow runs the same script).
-dist:
-	@version=$$(sed -n 's/^ *static let current = "\(.*\)"$$/\1/p' Sources/Relay/Setup/RunnerInstall.swift); \
-	SWIFT="$(SWIFT)" scripts/package.sh "$$version" arm64 && SWIFT="$(SWIFT)" scripts/package.sh "$$version" x86_64

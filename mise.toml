@@ -14,24 +14,23 @@ run = "xcrun swift build"
 
 [tasks."test:swift"]
 description = "Build and run Swift tests with code coverage"
-run = "xcrun swift test --enable-code-coverage"
+run = "bash scripts/check.sh test:swift"
 
 [tasks."test:python"]
 description = "Run Python maintenance script tests"
-run = "python3 -m unittest discover -s scripts -p 'test_*.py'"
+run = "bash scripts/check.sh test:python"
 
 [tasks.coverage]
 description = "Run Swift tests, report coverage, and enforce coverage floors"
-depends = ["test:swift"]
-run = '''
-set -euo pipefail
-coverage_path="$(xcrun swift test --show-codecov-path)"
-python3 scripts/coverage.py "$coverage_path" --output coverage
-'''
+run = "bash scripts/check.sh coverage"
 
 [tasks.check]
 description = "Lint workflows/scripts, run Swift/Python tests, and enforce coverage floors"
-depends = ["lint:swift", "lint:python", "lint:workflow", "lint:shell", "coverage", "test:python"]
+run = "bash scripts/check.sh"
+
+[tasks.dist]
+description = "Build the release tarballs of both architectures into dist/"
+run = "bash scripts/dist.sh"
 
 [tasks.format]
 description = "Format tracked Swift source directories and the package manifest"
@@ -39,7 +38,7 @@ run = "swiftformat Package.swift Sources Tests Runner --cache ignore"
 
 [tasks."lint:swift"]
 description = "Check Swift formatting without modifying files"
-run = "swiftformat Package.swift Sources Tests Runner --lint --cache ignore"
+run = "bash scripts/check.sh lint:swift"
 
 [tasks."format:python"]
 description = "Sort imports and format Python maintenance scripts"
@@ -47,15 +46,15 @@ run = ["ruff check scripts --select I --fix", "ruff format scripts"]
 
 [tasks."lint:python"]
 description = "Lint Python maintenance scripts and check formatting without modifying files"
-run = ["ruff check scripts", "ruff format scripts --check"]
+run = "bash scripts/check.sh lint:python"
 
 [tasks."lint:workflow"]
 description = "Lint GitHub Actions workflows, including embedded shell scripts"
-run = "actionlint -pyflakes="
+run = "bash scripts/check.sh lint:workflow"
 
 [tasks."lint:shell"]
 description = "Lint release shell scripts"
-run = "shellcheck scripts/*.sh"
+run = "bash scripts/check.sh lint:shell"
 
 [tasks."test:package"]
 description = "Build and smoke-test unsigned arm64 and Intel release packages"

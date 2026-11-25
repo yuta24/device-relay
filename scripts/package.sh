@@ -62,7 +62,7 @@ fi
 built_binary="dist/build/$arch/relay"
 
 if [ "$mode" != pack ]; then
-	# Xcode's toolchain: another swift first in PATH (swiftly) may not match the Xcode SDK (see the Makefile).
+	# Xcode's toolchain: another swift first in PATH (swiftly) may not match the Xcode SDK (see README.md).
 	swift=${SWIFT:-xcrun swift}
 	$swift build -c release --arch "$arch"
 	binary="$($swift build -c release --arch "$arch" --show-bin-path)/relay"
