@@ -37,7 +37,9 @@ Package.swift / Sources/Relay      ホスト CLI (relay start / status / stop / 
 Tests/RelayTests                   CLI のユニットテスト (Swift Testing)
   <Dir>/<File>Tests.swift          Sources/Relay/<Dir>/<File>.swift のテスト (ソースと同じディレクトリ構成)。複数のファイルが使う補助は Fixtures/
 Runner/RelayRunner.xcodeproj       RelayRunnerHost (文字入力を試すためのホストアプリ) + RelayRunnerUITests (常駐ランナー)
-Makefile                           make install / make uninstall (relay を ~/.local/bin にリンク)、make dist
+Makefile                           make install / make uninstall (relay を ~/.local/bin にリンク)、make help。利用者向けはこれだけ
+scripts/check.sh                   静的検査・テスト・カバレッジを順に実行（mise run check と CI が使う）
+scripts/dist.sh                    RelayVersion.current の tarball を arm64・x86_64 の順に作る (dist/)
 scripts/package.sh                 リリースの tarball を作る (.github/workflows/release.yml も使う)
 skills/device-relay/               コーディングエージェント向けのスキル (SKILL.md、references/ の話題別ファイルと索引の reference.md)
 

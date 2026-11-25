@@ -84,6 +84,7 @@ mise run check
 ```
 
 `check` checks Swift and Python formatting, lints Python scripts, workflows and shell scripts, runs Swift and Python tests, and enforces coverage floors, using the same task as CI.
+The steps live in `scripts/check.sh`: with the tools in PATH, `bash scripts/check.sh` runs the same checks and `bash scripts/check.sh <step>` runs named ones, with or without mise. `scripts/dist.sh` (or `mise run dist`) builds the release tarballs into `dist/`.
 For PRs changing only `README.md`, `README.ja.md`, or `docs/`, CI keeps lightweight checks and skips builds and tests. Pushes to `main` run the full CI.
 `mise.lock` records tool download URLs and checksums for Apple Silicon and Intel Macs.
 For individual tasks (`build`, `test:swift`, `test:python`, `coverage`, `lint:python`, `lint:workflow`, and `lint:shell`), see [Development](docs/development.md).
