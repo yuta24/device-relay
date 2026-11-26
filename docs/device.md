@@ -133,7 +133,7 @@ bundle ID prefix changed from X to Y; rebuilding, and the device gets new apps w
 ## 接続の経路
 
 実機への接続には CoreDevice トンネルを使います。usbmux には対応していません。
-トンネルは、USB ケーブルでも、Mac と同じネットワークにつないだ Wi-Fi でも張られます。どちらも既定（`--allow-wifi` なし）で使えます。
+トンネルは、USB ケーブルでも、Mac と同じネットワークにつないだ Wi-Fi でも張られます。Wi-Fi で使えるのは、一度 USB でペアリングした端末です（[準備](#準備)の 2）。どちらも既定（`--allow-wifi` なし）で使えます。
 `--allow-wifi` は、トンネルが使えないときに、ランナーが報告する端末の Wi-Fi のアドレスへ直接送るためのものです。
 実機のランナーは、すべてのインターフェースで待ち受けます。
 
