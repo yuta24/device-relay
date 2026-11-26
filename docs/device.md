@@ -132,12 +132,14 @@ bundle ID prefix changed from X to Y; rebuilding, and the device gets new apps w
 
 ## 接続の経路
 
-実機への接続には CoreDevice トンネルか、`--allow-wifi` による Wi-Fi が必要です。usbmux には対応していません。
+実機への接続には CoreDevice トンネルを使います。usbmux には対応していません。
+トンネルは、USB ケーブルでも、Mac と同じネットワークにつないだ Wi-Fi でも張られます。Wi-Fi で使えるのは、一度 USB でペアリングした端末です（[準備](#準備)の 2）。どちらも既定（`--allow-wifi` なし）で使えます。
+`--allow-wifi` は、トンネルが使えないときに、ランナーが報告する端末の Wi-Fi のアドレスへ直接送るためのものです。
 実機のランナーは、すべてのインターフェースで待ち受けます。
 
 `relay start` は次の順に `/health` を送り、最初に応答したアドレスを `ready:` として表示します。
 
-1. CoreDevice トンネルアドレス: `xcrun devicectl device info details` の `tunnelIPAddress`。USB 接続だけで使える IPv6 の ULA です。
+1. CoreDevice トンネルアドレス: `xcrun devicectl device info details` の `tunnelIPAddress`。IPv6 の ULA で、USB 接続でも Wi-Fi 接続でも返ります。
 2. `<udid>.coredevice.local`
 3. `--allow-wifi` を付けたときだけ、ランナーが `RELAY_RUNNER_READY` で報告したインターフェースのアドレス。Wi-Fi などを使い、`169.254.*` は除外します。
 
@@ -145,8 +147,13 @@ bundle ID prefix changed from X to Y; rebuilding, and the device gets new apps w
 
 | 経路 | 長所 | 短所 |
 | --- | --- | --- |
-| CoreDevice トンネル | USB だけで動き、同じ LAN にいる必要がありません。 | Xcode/CoreDevice のトンネルが張られている間しか使えません。 |
-| Wi-Fi IP（`--allow-wifi`） | ケーブルが不要です。 | 同じ LAN とローカルネットワーク許可が必要で、トークンと画面は LAN 上を平文で流れ、ネットワークによっては AP 間の通信が遮断されます。 |
+| CoreDevice トンネル | USB でも、Mac と同じネットワークの Wi-Fi でも動きます。 | Xcode/CoreDevice のトンネルが張られている間しか使えません。Wi-Fi 接続では録画ができず（[録画（relay record）](cli.md#録画relay-record)）、通信が途切れるとランナーが止まります。 |
+| Wi-Fi IP（`--allow-wifi`） | トンネルが張られないときに、端末の Wi-Fi のアドレスで届きます。 | 同じ LAN とローカルネットワーク許可が必要で、トークンと画面は LAN 上を平文で流れ、ネットワークによっては AP 間の通信が遮断されます。 |
+
+Wi-Fi 接続では、数秒の途切れでもランナーが止まります。生存確認が続けて失敗すると xcodebuild を止めて終了 1 になり、通信が戻っても自動では戻りません。`relay start` をやり直してください。端末側にランナーのプロセスが残ることがあります。動きは「[ready 後の生存確認と失敗](setup.md#ready-後の生存確認と失敗)」を参照してください。
+
+iPhone 14 Pro（iOS 26.7.3）を Wi-Fi だけでつないだ実測では、transport は `localNetwork`、ready までは約 5.7 秒（USB は約 5.3 秒）で、タップとスクリーンショットの時間は USB とほぼ同じでした。
+1 台・1 つのネットワークだけの計測で、`--allow-wifi` の経路と `<udid>.coredevice.local` で ready になる場合は確かめていません。
 
 ## ホームと音量ボタン
 
